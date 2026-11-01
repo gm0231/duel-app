@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>トトと簡易デュエル v2 (ocgcore) — Phase 1</title>
+<style>
+  :root{
+    --gold:#c9a227; --gold-dim:#8a6d1f; --ink:#0d0b08; --panel:#1b1712; --panel2:#241e16;
+    --tile:#2a2318; --tile-edge:#4a3d22; --txt:#e8dcc0; --txt-dim:#a89878; --bad:#e06666; --ok:#7fc97f;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;background:var(--ink);color:var(--txt);font-family:"Hiragino Sans","Noto Sans JP",sans-serif;}
+  #app{max-width:430px;margin:0 auto;min-height:100dvh;display:flex;flex-direction:column;position:relative;}
+  /* ---------- top bar ---------- */
+  #topbar{display:flex;align-items:center;gap:8px;padding:6px 8px;background:linear-gradient(#241c10,#171208);border-bottom:1px solid var(--gold-dim);}
+  #topbar .who{font-size:11px;color:var(--txt-dim);}
+  #topbar .lp{font-size:17px;font-weight:700;color:var(--gold);min-width:64px;}
+  #topbar .mid{flex:1;text-align:center;font-size:12px;}
+  #topbar .piles{font-size:11px;color:var(--txt-dim);text-align:right;line-height:1.5;}
+  /* ---------- field ---------- */
+  .field{padding:4px 6px 2px;}
+  .zrow{display:flex;gap:4px;justify-content:center;align-items:flex-end;margin:2px 0;}
+  .zrow .rowlabel{font-size:9px;color:var(--txt-dim);width:26px;text-align:right;padding-bottom:4px;}
+  .slot{width:47px;height:60px;border:1px solid var(--tile-edge);border-radius:5px;background:var(--tile);position:relative;flex:0 0 auto;overflow:hidden;}
+  .slot.small{width:40px;height:52px;}
+  .slot.emz{border-style:dashed;}
+  .slot .znum{position:absolute;top:0;left:2px;font-size:8px;color:#6b5c3a;z-index:3;}
+  .slot.hl{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold),0 0 12px #c9a22788;cursor:pointer;animation:pulse 1s infinite alternate;}
+  .slot.picked{border-color:var(--ok);box-shadow:0 0 0 2px var(--ok);}
+  @keyframes pulse{from{box-shadow:0 0 0 1px var(--gold);}to{box-shadow:0 0 0 3px var(--gold),0 0 14px #c9a227aa;}}
+  .tile{position:absolute;inset:1px;border-radius:4px;background:#3a2f1d url('../assets/card-art-placeholder-s.jpg') center/cover;display:flex;flex-direction:column;justify-content:flex-end;padding:2px;}
+  .tile .nm{font-size:8px;line-height:1.15;background:#000a;padding:1px 2px;border-radius:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .tile .st{font-size:8px;background:#000a;padding:0 2px;border-radius:2px;color:var(--gold);}
+  .tile.def .inner{transform:rotate(90deg);}
+  .tile .inner{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:flex-end;padding:2px;transition:transform .15s;}
+  .tile.back{background:repeating-linear-gradient(45deg,#3d2c14 0 6px,#2c1f0d 6px 12px);}
+  .tile.back .nm{display:none;}
+  .tile .mats{position:absolute;top:1px;right:1px;background:var(--gold);color:#000;font-size:9px;font-weight:700;border-radius:8px;padding:0 4px;z-index:2;}
+  .tile.actionable{box-shadow:0 0 0 2px #7fc97f inset;cursor:pointer;}
+  .slot.targeted{border-color:var(--bad);box-shadow:0 0 0 2px var(--bad);}
+  /* ---------- piles ---------- */
+  .pilebar{display:flex;gap:4px;justify-content:center;margin:1px 0;}
+  .pile{min-width:52px;padding:2px 4px;border:1px solid var(--tile-edge);border-radius:5px;background:var(--panel);font-size:10px;text-align:center;color:var(--txt-dim);cursor:pointer;}
+  .pile b{color:var(--txt);font-size:12px;}
+  .pile.actionable{border-color:var(--ok);color:var(--txt);}
+  /* ---------- mid bar ---------- */
+  #midbar{background:var(--panel);border-top:1px solid var(--tile-edge);border-bottom:1px solid var(--tile-edge);padding:3px 6px;}
+  #chainbar{display:none;gap:4px;overflow-x:auto;padding:2px 0;}
+  #chainbar.on{display:flex;}
+  .link{flex:0 0 auto;font-size:10px;border:1px solid var(--gold-dim);border-radius:10px;padding:2px 7px;background:var(--panel2);white-space:nowrap;}
+  .link.solving{border-color:var(--gold);background:#4a3a10;color:#fff;}
+  .link.negated{text-decoration:line-through;opacity:.55;}
+  .link .no{color:var(--gold);font-weight:700;}
+  #logline{font-size:10px;color:var(--txt-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:14px;}
+  #phasebar{display:flex;align-items:center;gap:8px;}
+  #phasebar .lp{font-size:16px;font-weight:700;color:var(--gold);}
+  #phaseinfo{flex:1;font-size:12px;text-align:center;}
+  #phasebtn{background:var(--gold);color:#191104;border:0;border-radius:6px;font-size:13px;font-weight:700;padding:8px 10px;min-width:104px;}
+  #phasebtn:disabled{background:#4a3d22;color:#8a7c55;}
+  #menubtn{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:6px;font-size:12px;padding:8px;}
+  /* ---------- hand ---------- */
+  #handbar{background:var(--panel);border-top:1px solid var(--gold-dim);padding:4px 4px 6px;}
+  #handbar .who{font-size:10px;color:var(--txt-dim);padding:0 2px 2px;}
+  #hand{display:flex;gap:4px;overflow-x:auto;min-height:74px;}
+  .hcard{width:56px;height:72px;flex:0 0 auto;border:1px solid var(--tile-edge);border-radius:5px;background:#3a2f1d url('../assets/card-art-placeholder-s.jpg') center/cover;position:relative;padding:2px;display:flex;flex-direction:column;justify-content:flex-end;cursor:pointer;}
+  .hcard .nm{font-size:8px;line-height:1.15;background:#000a;padding:1px 2px;border-radius:2px;}
+  .hcard .st{font-size:8px;background:#000a;padding:0 2px;border-radius:2px;color:var(--gold);}
+  .hcard.actionable{box-shadow:0 0 0 2px var(--ok);}
+  .hcard.back{background:repeating-linear-gradient(45deg,#3d2c14 0 6px,#2c1f0d 6px 12px);}
+  /* ---------- chain dock ---------- */
+  #dock{position:absolute;left:0;right:0;bottom:0;z-index:40;background:#171208f2;border-top:2px solid var(--gold);padding:8px;display:none;}
+  #dock.on{display:block;}
+  #dock .ttl{font-size:12px;color:var(--gold);font-weight:700;}
+  #dock .ctx{font-size:11px;color:var(--txt-dim);margin:2px 0 6px;}
+  #dock .cands{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;}
+  .cand{flex:0 0 auto;max-width:150px;border:1px solid var(--ok);border-radius:6px;background:var(--panel2);padding:6px 8px;font-size:11px;cursor:pointer;position:relative;}
+  .cand .loc{color:var(--txt-dim);font-size:10px;}
+  .cand .dismiss{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:10px;background:#54301a;color:#f0c08a;border:1px solid #a86a2a;font-size:11px;line-height:18px;text-align:center;}
+  .cand.dismissed{opacity:.45;border-style:dashed;}
+  #dock .row{display:flex;gap:6px;margin-top:6px;}
+  .bigbtn{flex:1;background:var(--gold);color:#191104;border:0;border-radius:6px;font-size:14px;font-weight:700;padding:10px;}
+  .bigbtn.sub{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);font-weight:400;}
+  .bigbtn:disabled{background:#4a3d22;color:#8a7c55;}
+  /* ---------- sheet (modal selections) ---------- */
+  #sheetwrap{position:absolute;inset:0;z-index:50;display:none;background:#0008;}
+  #sheetwrap.on{display:block;}
+  #sheet{position:absolute;left:0;right:0;bottom:0;max-height:62dvh;overflow-y:auto;background:#1d1811;border-top:2px solid var(--gold);border-radius:12px 12px 0 0;padding:10px;}
+  #sheet .ttl{font-size:13px;font-weight:700;color:var(--gold);}
+  #sheet .sub{font-size:11px;color:var(--txt-dim);margin:2px 0 8px;}
+  #sheet .warn{font-size:11px;color:var(--bad);margin-bottom:6px;}
+  #tray{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;}
+  .chip{font-size:11px;border:1px solid var(--gold);border-radius:10px;padding:2px 8px;background:#4a3a10;cursor:pointer;}
+  .chip.locked{border-color:var(--txt-dim);background:var(--panel2);cursor:default;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(82px,1fr));gap:6px;}
+  .gcard{border:1px solid var(--tile-edge);border-radius:6px;background:#3a2f1d url('../assets/card-art-placeholder-s.jpg') center/cover;min-height:64px;padding:4px;display:flex;flex-direction:column;justify-content:flex-end;cursor:pointer;}
+  .gcard .nm{font-size:10px;background:#000a;padding:1px 3px;border-radius:2px;line-height:1.2;}
+  .gcard .loc{font-size:9px;color:var(--gold);background:#000a;padding:0 3px;border-radius:2px;}
+  .gcard.sel{box-shadow:0 0 0 2px var(--ok);}
+  .btnrow{display:flex;gap:6px;margin-top:10px;}
+  .optbtn{display:block;width:100%;text-align:left;background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:6px;font-size:13px;padding:11px;margin:4px 0;cursor:pointer;}
+  .posrow{display:flex;gap:8px;justify-content:center;margin:8px 0;}
+  .posbtn{width:74px;border:1px solid var(--tile-edge);border-radius:6px;background:var(--panel2);padding:8px 4px;text-align:center;cursor:pointer;font-size:11px;}
+  .posbtn .glyph{width:34px;height:44px;margin:0 auto 4px;border-radius:3px;background:#3a2f1d url('../assets/card-art-placeholder-s.jpg') center/cover;}
+  .posbtn .glyph.def{transform:rotate(90deg);}
+  .posbtn .glyph.back{background:repeating-linear-gradient(45deg,#3d2c14 0 6px,#2c1f0d 6px 12px);}
+  .sortrow{display:flex;align-items:center;gap:6px;border:1px solid var(--tile-edge);border-radius:6px;padding:6px 8px;margin:4px 0;background:var(--panel2);font-size:12px;}
+  .sortrow .mv{margin-left:auto;display:flex;gap:4px;}
+  .sortrow button{background:var(--panel);color:var(--txt);border:1px solid var(--tile-edge);border-radius:4px;padding:5px 9px;}
+  .counterrow{display:flex;align-items:center;gap:8px;border:1px solid var(--tile-edge);border-radius:6px;padding:6px 8px;margin:4px 0;background:var(--panel2);font-size:12px;}
+  .counterrow .ctl{margin-left:auto;display:flex;gap:6px;align-items:center;}
+  .counterrow button{width:32px;height:32px;border-radius:16px;background:var(--panel);color:var(--txt);border:1px solid var(--gold-dim);font-size:16px;}
+  /* ---------- overlays ---------- */
+  .overlay{position:absolute;inset:0;z-index:60;background:#0d0b08f5;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px;text-align:center;}
+  .overlay h1{font-size:22px;color:var(--gold);margin:0;}
+  .overlay p{font-size:13px;color:var(--txt-dim);line-height:1.7;margin:0;}
+  .overlay .startbtn{background:var(--gold);color:#191104;border:0;border-radius:8px;font-size:17px;font-weight:700;padding:14px 34px;}
+  #result{display:none;}
+  #placehint{display:none;background:#4a3a10;color:#ffe9a8;font-size:12px;text-align:center;padding:6px;border-bottom:1px solid var(--gold);}
+  #placehint.on{display:block;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <div><div class="who">相手（CPU）</div><div class="lp" id="oppLp">8000</div></div>
+    <div class="mid" id="turninfo">—</div>
+    <div class="piles" id="opppiles">手札 -<br>デッキ -</div>
+  </div>
+  <div id="placehint"></div>
+  <div class="field" id="oppField">
+    <div class="pilebar" id="oppPilebar"></div>
+    <div class="zrow" id="oppSzone"></div>
+    <div class="zrow" id="oppMzone"></div>
+  </div>
+  <div id="midbar">
+    <div id="chainbar"></div>
+    <div id="logline">エンジン読み込み中…</div>
+    <div id="phasebar">
+      <div><div style="font-size:10px;color:var(--txt-dim)">自分</div><div class="lp" id="myLp">8000</div></div>
+      <div id="phaseinfo">—</div>
+      <button id="menubtn" style="display:none">手札操作</button>
+      <button id="phasebtn" disabled>—</button>
+    </div>
+  </div>
+  <div class="field" id="myField">
+    <div class="zrow" id="myMzone"></div>
+    <div class="zrow" id="mySzone"></div>
+    <div class="pilebar" id="myPilebar"></div>
+  </div>
+  <div id="handbar">
+    <div class="who">自分の手札（<span id="handcount">0</span>）</div>
+    <div id="hand"></div>
+  </div>
+  <div id="dock"></div>
+  <div id="sheetwrap"><div id="sheet"></div></div>
+  <div class="overlay" id="start">
+    <h1>トトと簡易デュエル v2</h1>
+    <p>ocgcore（YGOPro系エンジン）版・Phase 1<br>あなた：イシズデッキ ／ CPU：ゲート・ガーディアンデッキ<br>処理は全てエンジンの要求に答える形で進行します。</p>
+    <button class="startbtn" id="startbtn">デュエル開始</button>
+    <p id="loadmsg">読み込み中…</p>
+  </div>
+  <div class="overlay" id="result">
+    <h1 id="resultTitle">—</h1>
+    <p id="resultDetail">—</p>
+    <button class="startbtn" id="againbtn">もう一度</button>
+  </div>
+</div>
+<script src="build/ocgcore.js"></script>
+<script src="engine.js"></script>
+<script src="client.js"></script>
+</body>
+</html>
