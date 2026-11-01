@@ -25,5 +25,6 @@
 
 ## 状態
 
-- ローカルリポジトリ：作成済み（初回コミットは v102 時点のソース）
-- GitHubリモート：未接続（アカウント側の用意ができたら `git remote add` して push するだけ）
+- GitHub：https://github.com/gm0231/duel-app（Public、2026-11-02 接続）
+- 本番（GitHub Pages）：https://gm0231.github.io/duel-app/
+- Pages の Source は GitHub Actions。main へ push すると自動でデプロイされる
