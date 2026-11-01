@@ -16851,13 +16851,15 @@ spec('選択UI','多段階確認','多段階選択では選んだカードがト
       else if(stage===1){ tiles[1].click(); stage=2; }
       else if(stage===2){
         const tray=document.querySelector('#modal .pickTray');
-        const chips=document.querySelectorAll('#modal .pickChip');
-        if(tray && tray.textContent.indexOf('カルボン')>=0 && tray.textContent.indexOf('ムドラ')>=0 && tray.textContent.indexOf('選択中 2/2枚')>=0) seen.trayBoth=true;
+        const hint=document.querySelector('#modal .pickHint');
+        const chips=document.querySelectorAll('#modal .pt-chip');
+        if(tray && tray.textContent.indexOf('カルボン')>=0 && tray.textContent.indexOf('ムドラ')>=0 && hint && hint.textContent.indexOf('選択中 2 / 2 枚')>=0) seen.trayBoth=true;
         if(chips.length===2){ chips[0].click(); stage=3; }
       }
       else if(stage===3){
         const tray=document.querySelector('#modal .pickTray');
-        if(tray) seen.afterCancel=(tray.textContent.indexOf('カルボン')<0 && tray.textContent.indexOf('選択中 1/2枚')>=0)?1:0;
+        const hint=document.querySelector('#modal .pickHint');
+        if(tray) seen.afterCancel=(tray.textContent.indexOf('カルボン')<0 && hint && hint.textContent.indexOf('選択中 1 / 2 枚')>=0)?1:0;
         tiles[0].click(); stage=4;
       }
       else if(stage===4){ const cf=document.getElementById('pickConfirm'); if(cf){ cf.click(); stage=5; } }
