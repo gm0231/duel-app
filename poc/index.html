@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ocgcore WASM PoC — static page</title>
+<style>body{background:#111;color:#ddd;font-family:monospace}pre{white-space:pre-wrap}</style>
+</head>
+<body>
+<h1>ocgcore (EDOPro core) WASM — static-file proof</h1>
+<p>Runs a full duel (Ishizu vs Gate Guardian decks) entirely client-side from static files. No server logic, no COOP/COEP headers, no SharedArrayBuffer (single-threaded build).</p>
+<pre id="out">loading…</pre>
+<script src="duel.js"></script>
+<script src="build/ocgcore.js"></script>
+<script>
+(async () => {
+  const out = document.getElementById('out');
+  const lines = [];
+  const log = (...a) => { lines.push(a.join(' ')); out.textContent = lines.join('\n'); };
+  try {
+    const M = await OcgCoreModule();
+    log('core module instantiated');
+    const data = await (await fetch('data.json')).json();
+    log('data.json loaded: ' + Object.keys(data.cards).length + ' cards, ' + Object.keys(data.scripts).length + ' scripts');
+    await runDuel(M, data, log);
+    log('DONE — duel ran to completion in the browser context.');
+  } catch (e) {
+    log('ERROR: ' + (e && e.message));
+  }
+})();
+</script>
+</body>
+</html>
