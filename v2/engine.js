@@ -232,9 +232,9 @@ function parsePrompt(msg) {
       const player = r.u8(); const count = r.u8(); const avail = r.u32();
       return { type, name: 'ANNOUNCE_ATTRIB', player, count, avail };
     }
-    case 142: { // ANNOUNCE_CARD
+    case 142: { // ANNOUNCE_CARD — opcodes are u64 stack-machine words; keep them exact as BigInt
       const player = r.u8(); const n = r.u8(); const opcodes = [];
-      for (let i = 0; i < n; i++) opcodes.push(r.u64n());
+      for (let i = 0; i < n; i++) { const [lo, hi] = r.u64raw(); opcodes.push((BigInt(hi) << 32n) | BigInt(lo)); }
       return { type, name: 'ANNOUNCE_CARD', player, opcodes };
     }
     case 143: { // ANNOUNCE_NUMBER
@@ -273,18 +273,86 @@ function sumSelectionValid(prompt, chosenIdx) {
   return !(mx < prompt.acc || sum - mn >= prompt.acc);
 }
 
+// ---------------------------------------------------------------- announce-card filter
+// Faithful port of is_declarable() in playerop.cpp (edo9300/ygopro-core): the
+// core validates a declared code by running the prompt's opcode stack against
+// the card data. The UI uses the same check to offer only declarable cards.
+const OPC = {
+  ADD: 0x4000000000000000n, SUB: 0x4000000100000000n, MUL: 0x4000000200000000n, DIV: 0x4000000300000000n,
+  AND: 0x4000000400000000n, OR: 0x4000000500000000n, NEG: 0x4000000600000000n, NOT: 0x4000000700000000n,
+  BAND: 0x4000000800000000n, BOR: 0x4000000900000000n, BNOT: 0x4000001000000000n, BXOR: 0x4000001100000000n,
+  LSHIFT: 0x4000001200000000n, RSHIFT: 0x4000001300000000n,
+  ALLOW_ALIASES: 0x4000001400000000n, ALLOW_TOKENS: 0x4000001500000000n,
+  ISCODE: 0x4000010000000000n, ISSETCARD: 0x4000010100000000n, ISTYPE: 0x4000010200000000n,
+  ISRACE: 0x4000010300000000n, ISATTRIBUTE: 0x4000010400000000n,
+  GETCODE: 0x4000010500000000n, GETSETCARD: 0x4000010600000000n, GETTYPE: 0x4000010700000000n,
+  GETRACE: 0x4000010800000000n, GETATTRIBUTE: 0x4000010900000000n,
+};
+function isDeclarable(cd, opcodes) {
+  const stack = [];
+  let allowAlias = false, allowToken = false;
+  const bin = (f) => { if (stack.length >= 2) { const rhs = stack.pop(); const lhs = stack.pop(); stack.push(f(lhs, rhs)); } };
+  const un = (f) => { if (stack.length >= 1) stack.push(f(stack.pop())); };
+  for (const opcode of opcodes) {
+    switch (opcode) {
+      case OPC.ADD: bin((a, b) => a + b); break;
+      case OPC.SUB: bin((a, b) => a - b); break;
+      case OPC.MUL: bin((a, b) => a * b); break;
+      case OPC.DIV: bin((a, b) => (b === 0n ? 0n : a / b)); break;
+      case OPC.AND: bin((a, b) => (a !== 0n && b !== 0n) ? 1n : 0n); break;
+      case OPC.OR: bin((a, b) => (a !== 0n || b !== 0n) ? 1n : 0n); break;
+      case OPC.NEG: un((a) => -a); break;
+      case OPC.NOT: un((a) => (a === 0n ? 1n : 0n)); break;
+      case OPC.BAND: bin((a, b) => a & b); break;
+      case OPC.BOR: bin((a, b) => a | b); break;
+      case OPC.BXOR: bin((a, b) => a ^ b); break;
+      case OPC.BNOT: un((a) => ~a); break;
+      case OPC.LSHIFT: bin((a, b) => a << b); break;
+      case OPC.RSHIFT: bin((a, b) => a >> b); break;
+      case OPC.ISCODE: un((a) => (a === BigInt(cd.code) ? 1n : 0n)); break;
+      case OPC.ISTYPE: un((a) => BigInt(cd.type) & a); break;
+      case OPC.ISRACE: un((a) => BigInt(cd.race) & a); break;
+      case OPC.ISATTRIBUTE: un((a) => BigInt(cd.attribute) & a); break;
+      case OPC.GETCODE: stack.push(BigInt(cd.code)); break;
+      case OPC.GETTYPE: stack.push(BigInt(cd.type)); break;
+      case OPC.GETRACE: stack.push(BigInt(cd.race)); break;
+      case OPC.GETATTRIBUTE: stack.push(BigInt(cd.attribute)); break;
+      case OPC.ISSETCARD: {
+        if (stack.length >= 1) {
+          const sc = Number(stack.pop() & 0xffffffffn);
+          const settype = sc & 0xfff, setsubtype = sc & 0xf000;
+          let res = 0n;
+          for (const c of (cd.setcodes || [])) {
+            if ((c & 0xfff) === settype && (c & 0xf000 & setsubtype) === setsubtype) { res = 1n; break; }
+          }
+          stack.push(res);
+        }
+        break;
+      }
+      case OPC.ALLOW_ALIASES: allowAlias = true; break;
+      case OPC.ALLOW_TOKENS: allowToken = true; break;
+      default: stack.push(opcode); break;
+    }
+  }
+  if (stack.length !== 1 || stack[0] === 0n) return false;
+  const TYPE_MONSTER = 0x1, TYPE_TOKEN = 0x4000;
+  return cd.code === 78734254 || cd.code === 13857930 ||
+    ((allowAlias || !cd.alias) && (allowToken || ((cd.type & (TYPE_MONSTER + TYPE_TOKEN)) !== (TYPE_MONSTER + TYPE_TOKEN))));
+}
+
 // ---------------------------------------------------------------- game state
 // Client-side mirror of the field, maintained from the core's message stream.
 // Cards in piles are tracked as code arrays; removal prefers the exact sequence
 // and falls back to the first matching code (hand order can change silently in
 // a few paths — matching by code self-heals the mirror).
 class GameState {
-  constructor(data) {
+  constructor(data, deckP0, deckP1) {
     this.names = data.names || {};
     this.cardData = data.cards || {};
-    this.reset(data);
+    this.humanPlayer = 0; // core seat treated as "自分" in logs; Duel overrides from opts
+    this.reset(data, deckP0, deckP1);
   }
-  reset(data) {
+  reset(data, deckP0, deckP1) {
     const mk = (deck) => ({
       lp: 8000,
       hand: [],                       // [{code|null}]
@@ -292,10 +360,10 @@ class GameState {
       extra: deck.extra.map(code => ({ code, pos: POS.FD_DEF })), // [{code, pos}]
       grave: [],                      // [code]
       removed: [],                    // [code]
-      mzone: Array(7).fill(null),     // {code|null, pos, materials}
+      mzone: Array(7).fill(null),     // {code|null, pos, materials, curAtk?, curDef?}
       szone: Array(8).fill(null),     // {code|null, pos}
     });
-    this.players = [mk(data.decks.ishizu), mk(data.decks.gg)];
+    this.players = [mk(deckP0 || data.decks.ishizu), mk(deckP1 || data.decks.gg)];
     this.turnPlayer = 0; this.turnCount = 0; this.phase = 0; this.phaseName = '';
     this.chain = [];                  // [{code, con, loc, seq, desc, player, negated, disabled, solved}]
     this.solvingLink = 0;             // chain_count currently resolving (0 = building)
@@ -303,9 +371,25 @@ class GameState {
     this.lastAttack = null;           // {attacker, target|null}
     this.deckTop = [null, null];
     this.log = [];                    // recent event strings (system text only)
+    this.events = [];                 // transient event queue for presentation (SE cues), drained by the client
   }
   nameOf(code) { return this.names[code] || ('#' + code); }
-  pushLog(s) { this.log.push(s); if (this.log.length > 40) this.log.shift(); }
+  who(p) { return p === this.humanPlayer ? '自分' : '相手'; }
+  pushLog(s) { this.log.push(s); if (this.log.length > 60) this.log.shift(); }
+  pushEvent(e) { this.events.push(e); if (this.events.length > 300) this.events.splice(0, this.events.length - 300); }
+  // The card whose effect is currently asking something: the link being solved,
+  // else the newest chain link. Used to give every prompt a visible source.
+  chainContext() {
+    if (this.solvingLink > 0 && this.chain[this.solvingLink - 1]) {
+      const l = this.chain[this.solvingLink - 1];
+      return { code: l.code, con: l.con, loc: l.loc, seq: l.seq, player: l.player, link: this.solvingLink };
+    }
+    if (this.chain.length) {
+      const l = this.chain[this.chain.length - 1];
+      return { code: l.code, con: l.con, loc: l.loc, seq: l.seq, player: l.player, link: this.chain.length };
+    }
+    return null;
+  }
   _pileRemove(arr, seq, code, getCode) {
     if (seq >= 0 && seq < arr.length && getCode(arr[seq]) === code) { arr.splice(seq, 1); return; }
     const i = arr.findIndex(e => getCode(e) === code);
@@ -357,14 +441,32 @@ class GameState {
       case 40: this.turnPlayer = r.u8(); this.turnCount++; break; // NEW_TURN
       case 41: { const ph = r.u16(); this.phase = ph; this.phaseName = PHASES[ph] || ('PH' + ph); break; } // NEW_PHASE
       case 94: { const p = r.u8(); this.players[p].lp = r.i32(); break; } // LPUPDATE
-      case 91: { const p = r.u8(); const amt = r.u32(); this.players[p].lp -= amt; this.pushLog((p === 0 ? '自分' : '相手') + 'に ' + amt + ' ダメージ'); break; } // DAMAGE
-      case 92: { const p = r.u8(); const amt = r.u32(); this.players[p].lp += amt; break; } // RECOVER
+      case 91: { const p = r.u8(); const amt = r.u32(); this.players[p].lp -= amt; this.pushLog(this.who(p) + 'に ' + amt + ' ダメージ'); this.pushEvent({ kind: 'damage', player: p, amount: amt }); break; } // DAMAGE
+      case 92: { const p = r.u8(); const amt = r.u32(); this.players[p].lp += amt; this.pushEvent({ kind: 'recover', player: p, amount: amt }); break; } // RECOVER
       case 100: { const p = r.u8(); const amt = r.u32(); this.players[p].lp -= amt; break; } // PAY_LPCOST
       case 50: { // MOVE: code, from loc_info, to loc_info, reason
-        const code = r.u32(); const from = r.locInfo(); const to = r.locInfo(); r.u32();
+        const code = r.u32(); const from = r.locInfo(); const to = r.locInfo(); const reason = r.u32();
         if (code !== 0) { // code 0 = deck-internal reorder noise
           this._removeAt(from, code);
           if (to.loc !== 0) this._insertAt(to, code);
+          const nm = this.nameOf(code);
+          // Every change to a hand must be explained in the log (Phase 2 requirement).
+          if (from.loc === LOC.HAND && to.loc !== LOC.HAND && to.loc !== LOC.MZONE && to.loc !== LOC.SZONE) {
+            const dest = to.loc === LOC.GRAVE ? (reason & 0x4000 ? '手札から捨てた' : '手札から墓地へ送った')
+              : to.loc === LOC.REMOVED ? '手札から除外した'
+              : to.loc === LOC.DECK ? '手札からデッキに戻した'
+              : to.loc === LOC.EXTRA ? '手札からEXデッキに戻した' : '手札から移動した';
+            this.pushLog(this.who(from.con) + '：' + nm + ' を' + dest);
+          }
+          if (to.loc === LOC.HAND && from.loc !== LOC.HAND) {
+            const src = from.loc === LOC.GRAVE ? '墓地から' : from.loc === LOC.REMOVED ? '除外されている'
+              : from.loc === LOC.DECK ? 'デッキから' : (from.loc === LOC.MZONE || from.loc === LOC.SZONE) ? 'フィールドから' : '';
+            this.pushLog(this.who(to.con) + '：' + nm + ' を' + src + '手札に加えた');
+          }
+          if (to.loc === LOC.GRAVE && (reason & 0x1) && (from.loc === LOC.MZONE || from.loc === LOC.SZONE))
+            this.pushEvent({ kind: 'destroy', code, con: from.con, fromLoc: from.loc, battle: !!(reason & 0x20) });
+          if (to.loc === LOC.REMOVED && from.loc !== LOC.REMOVED)
+            this.pushEvent({ kind: 'banish', code, con: from.con });
         }
         break;
       }
@@ -372,12 +474,14 @@ class GameState {
         const p = r.u8(); const n = r.u32();
         for (let i = 0; i < n; i++) { const code = r.u32(); r.u32(); this.players[p].hand.push({ code }); }
         this.players[p].deckCount = Math.max(0, this.players[p].deckCount - n);
+        if (n > 0) this.pushLog(this.who(p) + '：' + n + ' 枚ドロー');
         break;
       }
       case 33: { // SHUFFLE_HAND: player, count u32, codes — exact new order
         const p = r.u8(); const n = r.u32(); const codes = [];
         for (let i = 0; i < n; i++) codes.push(r.u32());
         this.players[p].hand = codes.map(code => ({ code }));
+        this.pushLog(this.who(p) + 'の手札をシャッフル（' + n + ' 枚）');
         break;
       }
       case 39: { // SHUFFLE_EXTRA: player, count u32, codes
@@ -399,8 +503,10 @@ class GameState {
         if (zone[li.seq]) { zone[li.seq].code = code; zone[li.seq].pos = li.pos; }
         else if (li.loc === LOC.MZONE) this.players[li.con].mzone[li.seq] = { code, pos: li.pos, materials: 0 };
         else this.players[li.con].szone[li.seq] = { code, pos: li.pos };
-        if (t === 60) this.pushLog((li.con === 0 ? '自分' : '相手') + '：' + this.nameOf(code) + ' を召喚');
-        if (t === 62) this.pushLog((li.con === 0 ? '自分' : '相手') + '：' + this.nameOf(code) + ' を特殊召喚');
+        if (t === 54) { this.pushLog(this.who(li.con) + '：カードをセット'); this.pushEvent({ kind: 'set', code, con: li.con, loc: li.loc }); }
+        if (t === 60) { this.pushLog(this.who(li.con) + '：' + this.nameOf(code) + ' を召喚'); this.pushEvent({ kind: 'summon', code, con: li.con }); }
+        if (t === 62) { this.pushLog(this.who(li.con) + '：' + this.nameOf(code) + ' を特殊召喚'); this.pushEvent({ kind: 'spsummon', code, con: li.con }); }
+        if (t === 64) this.pushEvent({ kind: 'flipsummon', code, con: li.con });
         break;
       }
       case 55: { // SWAP: code1, info1, code2, info2 — control swap, cards stay in their slots
@@ -418,17 +524,20 @@ class GameState {
         this.chain.push({ code, con: li.con, loc: li.loc, seq: li.seq, pos: li.pos, player: tcon,
                           tloc, tseq, desc, negated: false, disabled: false, solved: false });
         this.pushLog('チェーン' + this.chain.length + '：' + this.nameOf(code));
+        this.pushEvent({ kind: 'activate', code, con: li.con, loc: li.loc });
         break;
       }
       case 72: this.solvingLink = r.u8(); break; // CHAIN_SOLVING
       case 73: { const n = r.u8(); const link = this.chain[n - 1]; if (link) link.solved = true; break; } // CHAIN_SOLVED
-      case 75: { const n = r.u8(); const link = this.chain[n - 1]; if (link) link.negated = true; break; } // CHAIN_NEGATED
+      case 75: { const n = r.u8(); const link = this.chain[n - 1]; if (link) link.negated = true; this.pushEvent({ kind: 'negate' }); break; } // CHAIN_NEGATED
       case 76: { const n = r.u8(); const link = this.chain[n - 1]; if (link) link.disabled = true; break; } // CHAIN_DISABLED
       case 74: this.chain = []; this.solvingLink = 0; break; // CHAIN_END
       case 110: { // ATTACK: attacker loc_info, target loc_info (zeroed = direct)
         const a = r.locInfo(); const tg = r.locInfo();
         this.lastAttack = { attacker: a, target: tg.loc === 0 ? null : tg };
         this.pushLog('攻撃宣言');
+        const az = a.loc === LOC.MZONE ? this.players[a.con].mzone[a.seq] : null;
+        this.pushEvent({ kind: 'attack', code: az ? az.code : null, con: a.con, direct: tg.loc === 0 });
         break;
       }
       case 31: { // CONFIRM_CARDS: shownPlayer, count u32, entries code+con+loc+seq — reveal knowledge
@@ -595,14 +704,22 @@ function botAnswer(prompt, state, data, mem) {
 //   pace: { bot: ms, botChain: ms, batch: ms, human: 0 }   (delays, watchability)
 //   seed: number
 //   maxSteps: safety cap
+//   deckP0 / deckP1: deck objects for core seats 0/1 (default ishizu / gg)
+//   humanTeam: core seat answered by humanAnswerer (default 0)
+//   onMessage(msgBytes): raw tap of every core message (tests/diagnostics)
 const sleepDefault = (ms) => new Promise(res => setTimeout(res, ms));
 class Duel {
   constructor(M, data, opts) {
     this.M = M; this.data = data; this.opts = opts || {};
-    this.state = new GameState(data);
+    this.deckP0 = this.opts.deckP0 || data.decks.ishizu;
+    this.deckP1 = this.opts.deckP1 || data.decks.gg;
+    this.humanTeam = this.opts.humanTeam || 0;
+    this.state = new GameState(data, this.deckP0, this.deckP1);
+    this.state.humanPlayer = this.humanTeam;
     this.stats = { prompts: 0, retries: 0, humanPrompts: 0, botPrompts: 0, turns: 0, steps: 0, stopReason: '' };
     this.botMem = makeBotMemory();
     this.over = false;
+    this._duelHandle = null;
   }
   _register() {
     const M = this.M, data = this.data, ccall = M.ccall;
@@ -631,6 +748,7 @@ class Duel {
     const duel = ccall('poc_create', 'number', ['number','bigint','number','number','number'],
       [opts.seed || 20261102, BigInt(FLAGS_MR5), 8000, 5, 1]);
     if (!duel) throw new Error('OCG_CreateDuel failed');
+    this._duelHandle = duel;
     let globalFails = 0;
     for (const g of GLOBALS_ORDER) {
       if (!(g in this.data.scripts)) { globalFails++; continue; }
@@ -641,8 +759,8 @@ class Duel {
       deck.main.forEach((code, i) => ccall('poc_new_card', null, ['number','number','number','number','number','number','number','number'], [duel, team, 0, code, team, LOC.DECK, i, 1]));
       deck.extra.forEach((code, i) => ccall('poc_new_card', null, ['number','number','number','number','number','number','number','number'], [duel, team, 0, code, team, LOC.EXTRA, i, 1]));
     };
-    addDeck(0, this.data.decks.ishizu);
-    addDeck(1, this.data.decks.gg);
+    addDeck(0, this.deckP0);
+    addDeck(1, this.deckP1);
     ccall('poc_start', null, ['number'], [duel]);
     const scratch = ccall('poc_scratch', 'number', [], []);
     const respond = (bytes) => { M.HEAPU8.set(bytes, scratch); ccall('poc_respond', null, ['number','number'], [duel, bytes.length]); };
@@ -658,6 +776,7 @@ class Duel {
       let pending = null, sawRetry = false;
       for (const m of msgs) {
         if (m[0] === 1) { this.stats.retries++; sawRetry = true; }
+        if (opts.onMessage) opts.onMessage(m);
         this.state.apply(m);
         if (SELECT_TYPES.has(m[0])) pending = m;
       }
@@ -670,6 +789,7 @@ class Duel {
           prompt = parsePrompt(pending);
           if (!prompt) { this.stats.stopReason = 'unparseable prompt type ' + pending[0]; break; }
           prompt.retryCount = 0;
+          prompt.context = this.state.chainContext(); // source card of the asking effect (may be null)
           prompt.rawKey = pending[0] + ':' + Array.from(pending.slice(0, 24)).join(',');
           lastPrompt = prompt;
           retryStreak = 0;
@@ -688,7 +808,7 @@ class Duel {
         else { samePrompt = 0; lastPromptKey = key; }
         this.stats.prompts++;
         let bytes;
-        if (prompt.player === 0 && opts.humanAnswerer) {
+        if (prompt.player === this.humanTeam && opts.humanAnswerer) {
           this.stats.humanPrompts++;
           bytes = await opts.humanAnswerer(prompt, this.state);
         } else {
@@ -706,13 +826,65 @@ class Duel {
     if (!this.over) this.stats.stopReason = this.stats.stopReason || 'step cap';
     this.stats.turns = this.state.turnCount;
     ccall('poc_destroy', null, ['number'], [duel]);
+    this._duelHandle = null;
     return this.stats;
+  }
+  // Live card query via the driver's OCG_DuelQuery bridge. Returns the parsed
+  // TLV record set {code,pos,level,atk,def,baseAtk,baseDef} or null (empty slot
+  // / duel not running). Record format is card::get_infos in card.cpp:
+  // repeated [u16 recordLen][u32 flag][value (recordLen-4 bytes)], QUERY_END last.
+  queryCard(con, loc, seq) {
+    if (!this._duelHandle) return null;
+    const M = this.M;
+    const FLAGS = 0x1 | 0x2 | 0x10 | 0x100 | 0x200 | 0x400 | 0x800; // CODE, POSITION, LEVEL, ATK, DEF, BASE_ATK, BASE_DEF
+    const len = M.ccall('poc_query_card', 'number', ['number','number','number','number','number'],
+      [this._duelHandle, FLAGS, con, loc, seq]);
+    if (!len) return null;
+    const ptr = M.ccall('poc_query_ptr', 'number', [], []);
+    const buf = M.HEAPU8.slice(ptr, ptr + len);
+    const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    const out = {};
+    let o = 0;
+    while (o + 6 <= buf.length) {
+      const recLen = dv.getUint16(o, true);
+      if (recLen < 4 || o + 2 + recLen > buf.length) break;
+      const flag = dv.getUint32(o + 2, true);
+      if (flag === 0x80000000) break; // QUERY_END
+      const v = o + 6;
+      if (flag === 0x1) out.code = dv.getUint32(v, true);
+      else if (flag === 0x2) out.pos = dv.getUint32(v, true);
+      else if (flag === 0x10) out.level = dv.getUint32(v, true);
+      else if (flag === 0x100) out.atk = dv.getInt32(v, true);
+      else if (flag === 0x200) out.def = dv.getInt32(v, true);
+      else if (flag === 0x400) out.baseAtk = dv.getInt32(v, true);
+      else if (flag === 0x800) out.baseDef = dv.getInt32(v, true);
+      o += 2 + recLen;
+    }
+    return out;
+  }
+  // Refresh current (effect-modified) ATK/DEF/level on every occupied monster
+  // zone of the state mirror. Call at prompt boundaries / after message batches.
+  refreshFieldStats() {
+    const st = this.state;
+    for (let p = 0; p < 2; p++) {
+      for (let s = 0; s < 7; s++) {
+        const cell = st.players[p].mzone[s];
+        if (!cell) continue;
+        const q = this.queryCard(p, LOC.MZONE, s);
+        if (q) {
+          if (q.atk != null) cell.curAtk = q.atk;
+          if (q.def != null) cell.curDef = q.def;
+          if (q.level != null) cell.curLevel = q.level;
+          if (q.pos != null) cell.queryPos = q.pos;
+        }
+      }
+    }
   }
 }
 
 const Engine = { MSG, SELECT_TYPES, PHASES, LOC, POS, POS_FACEUP, POS_ATTACK, POS_DEFENSE, FLAGS_MR5,
   ATTRIBUTES, RACES, Reader, splitMessages, i32resp, cancelResp, cardsResp, cmdResp, placeResp,
-  counterResp, sortResp, unselectToggleResp, u64resp, parsePrompt, sumSelectionValid,
+  counterResp, sortResp, unselectToggleResp, u64resp, parsePrompt, sumSelectionValid, isDeclarable,
   GameState, botAnswer, makeBotMemory, Duel };
 if (typeof module !== 'undefined') module.exports = Engine;
 else global.Engine = Engine;

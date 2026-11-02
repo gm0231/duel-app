@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>トトと簡易デュエル v2 (ocgcore) — Phase 1</title>
+<title>トトと簡易デュエル v2 (ocgcore) — Phase 2</title>
 <style>
   :root{
     --gold:#c9a227; --gold-dim:#8a6d1f; --ink:#0d0b08; --panel:#1b1712; --panel2:#241e16;
@@ -118,6 +118,21 @@
   #result{display:none;}
   #placehint{display:none;background:#4a3a10;color:#ffe9a8;font-size:12px;text-align:center;padding:6px;border-bottom:1px solid var(--gold);}
   #placehint.on{display:block;}
+  /* ---------- phase 2 additions ---------- */
+  #sheet .ctx{font-size:11px;color:var(--gold);margin:2px 0 6px;}
+  #sheet .cardtext{font-size:11px;line-height:1.6;color:var(--txt);background:var(--panel2);border:1px solid var(--tile-edge);border-radius:6px;padding:7px 9px;margin-top:8px;white-space:pre-wrap;}
+  .gcard .itext{font-size:9px;line-height:1.45;color:var(--txt);background:#000a;padding:2px 3px;border-radius:2px;margin-top:2px;max-height:64px;overflow:hidden;}
+  .cand .dueldismiss{display:block;margin-top:4px;font-size:9px;color:#f0c08a;text-decoration:underline;cursor:pointer;}
+  #dock .duelsection{font-size:10px;color:var(--txt-dim);margin-top:6px;}
+  #dock .duelsection button{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:10px;padding:2px 8px;margin-left:6px;cursor:pointer;}
+  #autopass{display:none;position:absolute;left:8px;bottom:86px;z-index:45;background:#4a3a10ee;color:#ffe9a8;border:1px solid var(--gold);border-radius:12px;font-size:11px;padding:5px 10px;cursor:pointer;}
+  #autopass.on{display:block;}
+  #autopass.flash{background:#7a5a10;color:#fff;font-weight:700;}
+  .segrow{margin:6px 0 2px;font-size:12px;color:var(--txt-dim);}
+  .seg{display:flex;gap:6px;justify-content:center;margin-top:4px;flex-wrap:wrap;}
+  .seg button{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:13px;padding:9px 14px;cursor:pointer;}
+  .seg button.sel{background:var(--gold);color:#191104;font-weight:700;border-color:var(--gold);}
+  .soundbtn{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:12px;padding:8px 14px;cursor:pointer;}
 </style>
 </head>
 <body>
@@ -153,11 +168,31 @@
     <div id="hand"></div>
   </div>
   <div id="dock"></div>
+  <div id="autopass"></div>
   <div id="sheetwrap"><div id="sheet"></div></div>
   <div class="overlay" id="start">
     <h1>トトと簡易デュエル v2</h1>
-    <p>ocgcore（YGOPro系エンジン）版・Phase 1<br>あなた：イシズデッキ ／ CPU：ゲート・ガーディアンデッキ<br>処理は全てエンジンの要求に答える形で進行します。</p>
+    <p>ocgcore（YGOPro系エンジン）版・Phase 2<br>処理は全てエンジンの要求に答える形で進行します。</p>
+    <div>
+      <div class="segrow">自分のデッキ</div>
+      <div class="seg" id="seg-mydeck">
+        <button data-v="ishizu" class="sel">イシズ</button>
+        <button data-v="gg">ゲート・ガーディアン</button>
+      </div>
+      <div class="segrow">相手のデッキ</div>
+      <div class="seg" id="seg-opdeck">
+        <button data-v="ishizu">イシズ</button>
+        <button data-v="gg" class="sel">ゲート・ガーディアン</button>
+      </div>
+      <div class="segrow">先攻・後攻</div>
+      <div class="seg" id="seg-first">
+        <button data-v="first" class="sel">先攻</button>
+        <button data-v="second">後攻</button>
+        <button data-v="random">ランダム</button>
+      </div>
+    </div>
     <button class="startbtn" id="startbtn">デュエル開始</button>
+    <button class="soundbtn" id="soundbtn">音：ON</button>
     <p id="loadmsg">読み込み中…</p>
   </div>
   <div class="overlay" id="result">

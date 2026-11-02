@@ -132,6 +132,7 @@ Known mirror limits (Phase 1):
 - Duel BGM: `../assets/bgm/ishizu-start.mp3` from duel start, looped.
 - Click SE: `../assets/se/ui_click.mp3` on taps/buttons.
 - Not wired yet: scene-based BGM switching, summon/attack/destroy SEs, VS SE.
+  (All of these were wired in Phase 2 — see the Phase 2 section below.)
 
 ## Verification performed
 - `node test-node.js` — full duel through engine.js (bot policy as the human
@@ -164,23 +165,152 @@ Known mirror limits (Phase 1):
   the verified response primitives, but they are not yet proven in a live
   duel.
 
+## Phase 2 (branch client-phase2)
+
+### Item 1 — the "unexplained" ANNOUNCE_CARD at the opponent's draw phase: SOLVED
+- Source: **Gravekeeper's Trap (98715423)**, the human's own face-up trap.
+  Static audit of all 88 Lua scripts in the bundle: it is the ONLY script that
+  calls `Duel.AnnounceCard`. Its ⑤ effect is a mandatory FIELD trigger
+  (`EVENT_PREDRAW`, condition `Duel.IsTurnPlayer(1-tp)`): at the OPPONENT's
+  pre-draw the trap's controller must declare a card name (filter: not an
+  Extra-Deck-type card). On the opponent's rule draw the drawn card is shown
+  to the controller; if it matches the declaration it is sent to the GY, then
+  the opponent's hand is shuffled. The prompt is genuinely the human's — not
+  a bot-seat leak.
+- Reproduced exactly in Node (`test-investigate.js`): 7 events in one duel at
+  turns 10/12/14/16/18/20/22 (the browser report said turns 12 and 14), every
+  one phase=DRAW, turnPlayer=1, prompt.player=0, immediately preceded in the
+  message stream by `CHAINING Gravekeeper's Trap by P0 @SZONE` — and card
+  conservation held at every prompt boundary (0 violations), so the state
+  mirror never desynced. The "unexplained" hand/GY/count changes in the
+  browser run were real core events (this trap's draw-check GY send + hand
+  shuffle, and other resolutions in the same window) that the Phase 1 UI
+  applied silently.
+- Fixes shipped regardless of cause:
+  - **Prompt source context**: the driver now attaches `prompt.context` (the
+    chain link being solved, else the newest link — sourced from the core's
+    CHAINING stream) and every prompt UI shows it (selection grids, sort,
+    counters, yes/no, options, announces, position, place hint, chain dock).
+  - **Hand-change logging**: the state mirror now logs EVERY hand departure
+    and arrival (discard, send to GY, banish, return to deck, add from
+    GY/deck/field), every draw count, and every hand shuffle; also set and
+    flip-summon lines that were missing.
+  - **Declarable-only announce grid**: `isDeclarable()` in engine.js is a
+    faithful port of the core's `is_declarable()` (playerop.cpp) running on
+    exact BigInt opcodes (the parser now keeps u64 opcodes as BigInt). The
+    announce grid offers only cards passing the prompt's own filter.
+    Verified for all 63 pool cards against the real prompt opcode stream
+    [TYPE_EXTRA=0x4802040, ISTYPE, NOT] (test-phase2 A/A2).
+
+### Item 2 — live ATK/DEF via the core query API
+- The driver (`poc/driver.cpp`, source kept at `build/driver.cpp`) now wraps
+  `OCG_DuelQuery` (`poc_query_card`/`poc_query_ptr`/`poc_query_len`); the WASM
+  was rebuilt with the existing `poc/build.sh` (wasm 1,334,518 bytes).
+- `Duel.queryCard()` parses the core's TLV query records (card::get_infos
+  format); `Duel.refreshFieldStats()` fills `curAtk/curDef/curLevel` on every
+  occupied monster zone. The client refreshes at every prompt and every state
+  update; board tiles show current values, printed values only until the
+  first refresh lands.
+- Verified (test-phase2 B): 2,649 occupied-zone observations across 2 explore
+  duels — query code always matched the mirror, values always sane, and 517
+  effect-modified sightings (e.g. Jirai Gumo 2100→1050 under Lost Wind).
+
+### Item 3 — Japanese names and texts
+- `gen-texts.js` extracts the old app's `def('slug', {...})` definitions from
+  `../index.html` (official Japanese texts) and joins them via
+  `~/workspace/ocgcore-poc/passcodes.json`. Result: `data.json` `names` are
+  Japanese and a new `texts` section carries name+text for **63/63 cards —
+  zero English fallbacks**. UI shows the text in action sheets, selection
+  grids, and a read-only card-info sheet (tap a graveyard/removed/EX row).
+
+### Item 4 — chain prompt fatigue (presentation only)
+- Per-card **duel-long dismissal** ("このデュエル中は聞かない") on chain
+  candidates, keyed like the existing per-chain dismissal. Implemented
+  strictly as auto-answering pass (−1) when EVERY candidate of a
+  SELECT_CHAIN belongs to dismissed classes; any other candidate (or a
+  forced prompt) shows the dock normally. Never touches legality.
+- Visible indicator: an amber chip flashes "自動パス：<card>" when an
+  auto-pass fires, and persists as "自動パス設定中：N件（タップで管理）"
+  while any dismissal is active. The management sheet (tap the chip, only
+  when no prompt is open) and the dock's own "自動パス設定中" section both
+  allow re-enabling. The per-chain × dismissal is unchanged.
+
+### Item 5 — start choices
+- Start screen: own deck (Ishizu / Gate Guardian), opponent deck, and
+  先攻/後攻/ランダム. The core's first player is always seat 0, so a
+  second-player human is seated at core seat 1 with the decks swapped
+  (standard ygopro approach); all rendering, labels, piles and the result
+  screen follow the human seat (`HP`). Engine support: `Duel` opts
+  `deckP0/deckP1/humanTeam`, `GameState` takes per-seat decks and a
+  `humanPlayer` for log wording. Verified at engine level (test-phase2 D:
+  seat-swapped duel completes, per-seat totals 55/58 at all 220 prompts,
+  retries 0) and in the jsdom click-through run 2.
+
+### Item 6 — audio
+- BGM: start = ishizu-upload; duel scenes from the state mirror's advantage
+  signal — score = LP difference + face-up field ATK difference (live query
+  values) — mapped to neutral/advantage/big-advantage/disadvantage/
+  big-disadvantage (the last a random pick from voice-note-2 + mystical,
+  as assigned), win → big-advantage track, loss → big-disadvantage pool.
+  Hysteresis bands + 8 s minimum dwell + never switching while a prompt is
+  open, so the signal cannot flap. A sound ON/OFF toggle sits on the start
+  screen.
+- SE: an event queue on the state mirror (set/summon/spsummon/flipsummon/
+  activate/attack/damage/destroy/banish/recover/negate) is drained by the
+  client into the user's files: set_card, activate_card, ui_click,
+  vs_start (duel start), summon_circle/big/land, attribute attack sounds
+  (atk_earth/water/fire/wind/light/dark, sword fallback), hit_big/
+  hit_critical by damage size, destroy_blast (battle) / destroy_stone
+  (effect), banish_warp, recover, negate_shield. Same-file cues are
+  throttled to one per 150 ms. No generated audio anywhere.
+- Caveat: jsdom/Node cannot play audio — wiring is code-level only; actual
+  playback still needs a real-browser/phone check.
+
+### Phase 2 verification
+- `node test-node.js` — unchanged Phase 1 scripted duel: 72 turns, 651
+  prompts, winner P0 deck-out, **0 MSG_RETRY**, conservation 651/651.
+- `node test-explore.js` — PASS (0 retries).
+- `node test-investigate.js` — item 1 evidence above (exit 0).
+- `node test-phase2.js` — ALL CHECKS PASSED (declarable filter A/A2, live
+  query B0–B4, announce context C, seat swap D1–D4).
+- jsdom click-through (`test-ui.js`, needs jsdom via NODE_PATH): two full
+  duels played purely through DOM clicks on the real page. Run 1 (defaults,
+  先攻): 61 turns, deck-out finish, result screen reached, Japanese names
+  rendered, the duel-dismissal control was exercised once and the auto-pass
+  chip appeared. Run 2 (自分=Gate Guardian / 相手=Ishizu / 後攻, human on
+  core seat 1): 72 turns, deck-out finish, result screen reached. In both
+  runs the retry warning never appeared in any prompt container
+  (MSG_RETRY proxy = 0) and nothing stalled. No ANNOUNCE_CARD prompt
+  occurred in either clicker duel (the trap never stayed face-up under
+  generic clicking) — its context/filter behavior is covered by
+  test-investigate/test-phase2 instead. Note: an early version of this
+  test false-flagged a retry by scanning document.body, which includes
+  the client.js source text itself; the scan is now scoped to the prompt
+  containers, and the same duel trajectories pass clean.
+
 ## Known gaps for later phases
 - CPU intelligence: player 1 is the PoC's minimal legal bot (summon a
   level ≤4, otherwise advance phases; always passes chains unless forced).
   In Main 1 it takes the direct-to-End-Phase option whenever the core offers
   it, so it rarely enters battle; when it does, it attacks with the first
   available attacker. No tactics of any kind.
-- Effects/presentation polish: printed ATK/DEF only; no summon/attack
-  animations, no target lines, no damage numbers; chain links are text chips.
+- Effects/presentation polish: no summon/attack animations, no target lines,
+  no damage numbers; chain links are text chips. (Printed-only ATK/DEF was
+  fixed in Phase 2 — board values are live from the core query.)
 - SELECT_OPTION buttons are numbered placeholders — the core sends string
   table IDs (descriptions); a strings table is needed to label them.
 - Genesis restrictions (no EMZ/Link/Pendulum, no first-turn draw, point
   limits): NOT applied — duels run MR5 as in the PoC, per phase instructions.
   The restriction path (duel flags + pool limits) is a later phase.
 - Save/resume: none. Reloading restarts from the start screen.
-- Turn timer, surrender, deck choice (human is always Ishizu, bot always
-  Gate Guardian), side decking: none.
+- Turn timer, surrender, side decking: none. (Deck and first/second choice
+  were added in Phase 2.)
 - Opponent hand is shown as a count (backs in the top bar); revealed cards
   are tracked in state but only own-hand is rendered as tiles.
-- jsdom smoke test drives clicks generically (first available action); it
-  proves reachability/completion of the UI paths, not usability quality.
+- jsdom click-through drives clicks generically (first available action);
+  it proves reachability/completion of the UI paths, not usability quality.
+- Phase 2 leftovers: audio playback itself is unverifiable in jsdom/Node
+  (wiring only); BGM scene switching is driven by the LP+ATK score and has
+  not been ear-checked on a phone; the chain duel-dismissal is keyed per
+  candidate (code+location+sequence+effect desc), so the same card in a
+  different zone is a separate dismissal entry.
