@@ -81,55 +81,115 @@ function playSe(name) {
   } catch (e) {}
 }
 function playClick() { playSe('ui_click'); }
-// BGM scenes: start = user upload track; duel scenes follow the old app's
-// LP + field-ATK advantage mapping, with hysteresis and a minimum dwell so
-// the track never flaps. Switching is deferred while a prompt is open.
-const BGM = { start: 'ishizu-upload.mp3', neutral: 'ishizu-start.mp3', adv: 'ishizu-advantage.mp3',
-  bigadv: 'ishizu-big-advantage.mp3', dis: 'ishizu-caravan.mp3' };
-const BIGDIS_POOL = ['ishizu-voice-note-2.mp3', 'ishizu-mystical.mp3'];
-let bgmEl = null, bgmScene = null, bgmSceneSince = 0;
+// BGM (user decision 2026-11-03 — replaces the old advantage-score
+// scenes): the start screen plays the user's upload track, looped, and
+// the duel itself uses the MD-style 3-stage ladder Normal -> Keycard ->
+// Climax. Stages only ever go UP. Each stage owns a 2-track pool; the
+// track is picked at random, stage tracks do NOT loop — when one ends,
+// the next pick from the same stage excludes the track that just
+// finished. Triggers: Keycard = either player summons a key card
+// (KEYCARD_CODES below); Climax = either player's LP reaches 2000 or
+// below. Result: a win plays the pyramid track, a loss draws from the
+// Climax pool.
+const BGM_START_FILE = 'ishizu-upload.mp3';
+const BGM_STAGES = {
+  normal: ['ishizu-start.mp3', 'ishizu-caravan.mp3'],
+  keycard: ['ishizu-advantage.mp3', 'ishizu-big-advantage.mp3'],
+  climax: ['ishizu-voice-note-2.mp3', 'ishizu-mystical.mp3'],
+};
+const BGM_STAGE_RANK = { normal: 0, keycard: 1, climax: 2 };
+const BGM_STAGE_NAME = ['normal', 'keycard', 'climax'];
+const BGM_WIN_FILE = 'ishizu-big-advantage.mp3';
+// Boss-class cards of both decks (codes/names from data.json; the
+// rationale and the borderline candidates are recorded in NOTES.md,
+// section "BGM 3-stage"): the four combined Gate Guardians + Dark
+// Guardian (GG deck), Yami no Luce + Masterflare Hyperion (Ishizu deck).
+const KEYCARD_CODES = new Set([8505920, 97783338, 34904525, 61398234, 26746975, 45409943, 63101468]);
+let bgmEl = null, bgmScene = null, bgmFile = null;
+let bgmWantedRank = -1;            // highest stage this duel's triggers have demanded (latched)
+const bgmSeenKeys = new Set();     // key-card codes already seen on a field this duel
+function bgmPick(pool, exclude) {
+  if (pool.length <= 1) return pool[0];
+  let f = exclude;
+  while (f === exclude) f = pool[Math.floor(Math.random() * pool.length)];
+  return f;
+}
+function playBgmFile(file, loop) {
+  try {
+    if (!bgmEl) {
+      bgmEl = new Audio(); bgmEl.volume = 0.55;
+      bgmEl.addEventListener('ended', () => {
+        // Stage tracks do not loop: draw the next track of the SAME
+        // stage, excluding the one that just ended. Looping scenes
+        // ('start' / 'win') never reach this handler.
+        if (!audioOn || !bgmScene || !BGM_STAGES[bgmScene]) return;
+        playBgmFile(bgmPick(BGM_STAGES[bgmScene], bgmFile), false);
+      });
+    }
+    bgmEl.loop = !!loop;
+    bgmEl.src = '../assets/bgm/' + file;
+    bgmEl.play().catch(() => {});
+    bgmFile = file;
+  } catch (e) {}
+}
+// scene: 'start' | 'normal' | 'keycard' | 'climax' | 'win' | 'lose'
 function setBgmScene(scene, force) {
   if (!audioOn) return;
   if (scene === bgmScene && !force) return;
-  const file = scene === 'bigdis' ? BIGDIS_POOL[Math.floor(Math.random() * BIGDIS_POOL.length)] : BGM[scene];
-  if (!file) return;
-  try {
-    if (!bgmEl) { bgmEl = new Audio(); bgmEl.loop = true; bgmEl.volume = 0.55; }
-    bgmEl.src = '../assets/bgm/' + file;
-    bgmEl.play().catch(() => {});
-    bgmScene = scene; bgmSceneSince = Date.now();
-  } catch (e) {}
+  if (scene === bgmScene && force && bgmFile) { playBgmFile(bgmFile, scene === 'start' || scene === 'win'); return; }
+  if (scene === 'start') { bgmScene = 'start'; playBgmFile(BGM_START_FILE, true); return; }
+  if (scene === 'win') { bgmScene = 'win'; playBgmFile(BGM_WIN_FILE, true); return; }
+  if (scene === 'lose') { bgmScene = 'climax'; playBgmFile(bgmPick(BGM_STAGES.climax, null), false); return; }
+  if (BGM_STAGES[scene]) { bgmScene = scene; playBgmFile(bgmPick(BGM_STAGES[scene], null), false); }
 }
-function advantageScore(state) {
-  const sumAtk = (P) => P.mzone.reduce((a, c) => a + (c && (c.pos & E.POS_FACEUP)
-    ? (c.curAtk != null ? c.curAtk : (cardData(c.code) ? cardData(c.code).atk : 0)) : 0), 0);
-  const me = state.players[HP], op = state.players[1 - HP];
-  return (me.lp - op.lp) + (sumAtk(me) - sumAtk(op));
-}
-function sceneForScore(score, cur) {
-  if (score >= 2600) return 'bigadv';
-  if (score <= -2600) return 'bigdis';
-  if (cur === 'bigadv' && score >= 2000) return 'bigadv';
-  if (cur === 'bigdis' && score <= -2000) return 'bigdis';
-  if (score >= 900) return 'adv';
-  if (score <= -900) return 'dis';
-  if (cur === 'adv' && score >= 500) return 'adv';
-  if (cur === 'dis' && score <= -500) return 'dis';
-  return 'neutral';
+function noteBgmEvent(ev) {
+  // Summon events carry the card code (engine.js MSG_SUMMONING /
+  // MSG_SPSUMMONING presentation events), so a key card is latched the
+  // moment it is summoned — even if it leaves the field again before
+  // the next render. Either player's summon counts.
+  if ((ev.kind === 'summon' || ev.kind === 'spsummon') && ev.code != null && KEYCARD_CODES.has(ev.code))
+    bgmWantedRank = Math.max(bgmWantedRank, BGM_STAGE_RANK.keycard);
 }
 function updateBgm(state) {
-  if (!duel || !state || state.winner != null || !bgmScene || bgmScene === 'start') return;
+  if (!state || state.winner != null || !bgmScene || bgmScene === 'start' || bgmScene === 'win') return;
+  // Trigger detection runs (and latches) even while a prompt is open,
+  // so a stage-up is deferred, never lost. The field scan complements
+  // noteBgmEvent: a key card still on a field counts however it got
+  // there (control change, revival with a missed event, ...).
+  if (state.players[0].lp <= 2000 || state.players[1].lp <= 2000)
+    bgmWantedRank = Math.max(bgmWantedRank, BGM_STAGE_RANK.climax);
+  for (const P of state.players) for (const c of P.mzone) {
+    if (c && c.code != null && KEYCARD_CODES.has(c.code) && !bgmSeenKeys.has(c.code)) {
+      bgmSeenKeys.add(c.code);
+      bgmWantedRank = Math.max(bgmWantedRank, BGM_STAGE_RANK.keycard);
+    }
+  }
   if (currentPrompt) return; // never switch under the player's fingers
-  if (Date.now() - bgmSceneSince < 8000) return;
-  const sc = sceneForScore(advantageScore(state), bgmScene);
-  if (sc !== bgmScene) setBgmScene(sc);
+  // Stage-ups bypass the old 8-second dwell: stages never go back down,
+  // so there is nothing left to flap, and the cue belongs to the moment
+  // itself (MD cuts the music when the key card lands) — holding it
+  // back up to 8 s would detach it from the play it marks.
+  const cur = BGM_STAGE_RANK[bgmScene];
+  if (cur == null || bgmWantedRank <= cur) return;
+  setBgmScene(BGM_STAGE_NAME[bgmWantedRank]);
 }
+// Test surface (same spirit as window.__layout): lets the jsdom harness
+// observe BGM state and drive updateBgm / setBgmScene with synthetic
+// states — the same functions the duel flow itself calls.
+window.__bgm = {
+  get scene() { return bgmScene; },
+  get file() { return bgmFile; },
+  get wantedRank() { return bgmWantedRank; },
+  update(state) { updateBgm(state); },
+  sceneTo(scene) { setBgmScene(scene, true); },
+};
 // Drain the engine's presentation event queue into SE cues.
 const ATTR_SE = { 1: 'atk_earth', 2: 'atk_water', 4: 'atk_fire', 8: 'atk_wind', 16: 'atk_light', 32: 'atk_dark', 64: 'atk_light' };
 function drainSeEvents(state) {
   if (!state.events || !state.events.length) return;
   const evs = state.events.splice(0, state.events.length);
   for (const ev of evs) {
+    noteBgmEvent(ev); // BGM key-card latch (see the BGM block above)
     switch (ev.kind) {
       case 'set': playSe('set_card'); break;
       case 'activate': playSe('activate_card'); break;
@@ -1290,7 +1350,8 @@ function wireSeg(id, apply) {
     dismissedDuel = new Map();
     confirmTurn = -1; confirmSeq = 0; // per-turn confirmation counter restarts with the duel
     updateAutoPassChip();
-    setBgmScene('neutral', true);
+    bgmWantedRank = -1; bgmSeenKeys.clear(); // BGM stage ladder restarts with the duel
+    setBgmScene('normal', true);
     $('start').style.display = 'none';
     $('logline').textContent = 'エンジン起動中…';
     const M = await OcgCoreModule();
@@ -1311,7 +1372,7 @@ function wireSeg(id, apply) {
     const stats = await duel.run();
     const st = duel.state;
     render(st);
-    setBgmScene(st.winner === HP ? 'bigadv' : 'bigdis', true);
+    setBgmScene(st.winner === HP ? 'win' : 'lose', true);
     $('resultTitle').textContent = st.winner === HP ? '勝利！' : '敗北';
     $('resultDetail').textContent = 'ターン ' + stats.turns + '／決着理由：' + (st.winReason === 1 ? 'LP' : st.winReason === 2 ? 'デッキ切れ' : 'その他') +
       '／最終LP 自分 ' + st.players[HP].lp + ' ― 相手 ' + st.players[1 - HP].lp;

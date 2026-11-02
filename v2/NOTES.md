@@ -255,6 +255,8 @@ Known mirror limits (Phase 1):
   Hysteresis bands + 8 s minimum dwell + never switching while a prompt is
   open, so the signal cannot flap. A sound ON/OFF toggle sits on the start
   screen.
+  [SUPERSEDED 2026-11-03: the advantage-score scene system above was
+  replaced by the user's 3-stage decision — see "## BGM 3-stage" below.]
 - SE: an event queue on the state mirror (set/summon/spsummon/flipsummon/
   activate/attack/damage/destroy/banish/recover/negate) is drained by the
   client into the user's files: set_card, activate_card, ui_click,
@@ -1892,6 +1894,95 @@ labels were not captured; 11 other runs pass in full (D3 passes in
 every captured run) — consistent with the previously documented
 sampling flake, left as-is.
 
+## BGM 3-stage (branch feat/bgm-3stage, 2026-11-03)
+
+The user replaced the advantage-score BGM scenes (see Item 6, marked
+superseded) with the MD-style 3-stage system, after listening to preview
+clips of the exact assignment and approving it ("その割り振りでいいよ").
+All tracks are the user's own assigned files in assets/bgm; nothing was
+substituted.
+
+### Spec (as implemented in v2/client.js)
+- Start screen: `ishizu-upload.mp3`, starts on the first tap, LOOPED,
+  plays only while the start screen is up (unchanged from before).
+- Duel stages climb Normal → Keycard → Climax and NEVER go back down
+  (latched per duel; reset at the start button).
+  - Normal pool: `ishizu-start.mp3` (way-of-egypt), `ishizu-caravan.mp3`
+  - Keycard pool: `ishizu-advantage.mp3` (dunes-distortion),
+    `ishizu-big-advantage.mp3` (pyramid)
+  - Climax pool: `ishizu-voice-note-2.mp3`, `ishizu-mystical.mp3`
+- Within a stage the track is picked at random. Stage tracks do NOT
+  loop: on the element's `ended`, the next track is drawn from the same
+  stage EXCLUDING the one that just finished (a 2-track pool therefore
+  alternates). The start track (and the win track) keep looping.
+- Triggers: Keycard = either player summons a key card; Climax = either
+  player's LP reaches 2000 or below (boundary included, tested at 2000).
+- Result: win → `ishizu-big-advantage.mp3` (pyramid, looped);
+  loss → a random draw from the Climax pool.
+- Guards kept from the old system: never switch while a human prompt is
+  open (the stage-up is latched and applies at the next update), audio
+  OFF pauses and ON resumes the current scene/track, switching is the
+  same src-swap on a single Audio element.
+
+### Key cards (KEYCARD_CODES in client.js)
+Derived from v2/data.json deck lists; criterion = each deck's boss
+class (its highest-level / highest-ATK monsters, the ones MD's
+"key card" BGM stage exists for):
+- GG deck, extra: 8505920 合体魔神－ゲート・ガーディアン (Lv12/3750),
+  97783338 水雷魔神－ゲート・ガーディアン (Lv9/2550),
+  34904525 雷風魔神－ゲート・ガーディアン (Lv9/2500),
+  61398234 風水魔神－ゲート・ガーディアン (Lv9/2450)
+- GG deck, main: 26746975 闇の守護神－ダーク・ガーディアン (Lv12/3800,
+  the main deck's top monster)
+- Ishizu deck, extra: 45409943 宵闇のルーチェ (Lv8/3500),
+  63101468 マスターフレア・ヒュペリオン (Lv10/3200)
+Borderline candidates deliberately NOT included (left as a decision
+for the parent/user, not silently decided here): 46148485 転輪の
+スフィンクス (Ishizu main, Lv8/2500 — the main deck's biggest monster
+but a tier below the rest), the Gate Guardian pieces 25955164 サンガ /
+62340868 ヒューガ / 98434877 スーガ (Lv7 parts, not the combined
+bosses), 99551425 迷宮の魔戦車 (Lv7 fusion), 37706769 冥府の執行者
+プルート (Lv5). Adding any of them is a one-line Set change.
+
+### Trigger implementation
+Two paths, both feeding the per-duel latch `bgmWantedRank`:
+1. Events — engine.js presentation events for MSG_SUMMONING /
+   MSG_SPSUMMONING carry `{kind: 'summon'|'spsummon', code, con}`
+   (engine.js lines ~712-713), and drainSeEvents sees every event
+   before draining the queue, so `noteBgmEvent` latches a key card the
+   moment it is summoned, even if it leaves the field before the next
+   render. Either player counts (con is not filtered).
+2. Field scan — updateBgm (called on every onUpdate) checks both
+   players' LP (Climax) and scans both mzones for key-card codes not
+   yet seen this duel (Keycard). This covers a key card that reaches
+   the field without a summon event passing the queue (revival edge
+   cases, control changes).
+The actual track switch happens only in updateBgm, after the
+currentPrompt guard, from the latched rank — so a stage-up demanded
+during a prompt is deferred, never dropped.
+Design decision — the old 8-second minimum dwell does NOT apply to
+stage-ups: the dwell existed to stop the two-way advantage scenes from
+flapping, stages never go down so there is nothing to flap, and the
+cue belongs to the summon/LP moment itself (MD cuts at the moment).
+Delaying it up to 8 s would detach it from the play it marks.
+
+### Verification — v2/test-bgm.js (new, jsdom)
+Seeded-LCG Math.random; Audio stub records the BGM element. 17 checks,
+ALL PASSED: start-scene wiring via the real start flow (pointerdown →
+upload looped; start button → Normal pool, not looped); updateBgm
+inert before a duel; opponent-side key card climbs to Keycard;
+non-key piece + plain states never lower the stage; `ended` re-draws
+the same stage's other track (both Keycard and Climax); LP exactly
+2000 climbs to Climax and stays latched after LP rises; win → pyramid
+looped; loss → Climax pool.
+Regression on this branch (all PASS): test-node, test-explore,
+test-phase2 (passed on the first run this time; its sampling flake is
+a known main-branch property and did not occur), test-ui, test-layout,
+test-genesis, test-overlay, test-facedown, test-ggfusion, test-swap,
+test-investigate, test-cpu, test-cpu-tune, test-cpu-tune2, test-bgm.
+NOT verified: how any of this SOUNDS — jsdom/Node cannot play audio;
+stage timing and track feel are for the user's ears on the real app.
+
 ## Known gaps for later phases
 - CPU intelligence: DONE in the CPU phase (see "CPU phase" above) —
   player 1 is now a heuristic policy (fair-view masked, per-card
@@ -1923,6 +2014,8 @@ sampling flake, left as-is.
   it proves reachability/completion of the UI paths, not usability quality.
 - Phase 2 leftovers: audio playback itself is unverifiable in jsdom/Node
   (wiring only); BGM scene switching is driven by the LP+ATK score and has
-  not been ear-checked on a phone; the chain duel-dismissal is keyed per
+  not been ear-checked on a phone [the LP+ATK score system was superseded
+  by the 3-stage ladder on 2026-11-03 — see "## BGM 3-stage"; how the new
+  stages SOUND is likewise not ear-checked]; the chain duel-dismissal is keyed per
   candidate (code+location+sequence+effect desc), so the same card in a
   different zone is a separate dismissal entry.
