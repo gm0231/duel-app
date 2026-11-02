@@ -88,9 +88,10 @@ function playClick() { playSe('ui_click'); }
 // track is picked at random, stage tracks do NOT loop — when one ends,
 // the next pick from the same stage excludes the track that just
 // finished. Triggers: Keycard = either player summons a key card
-// (KEYCARD_CODES below); Climax = either player's LP reaches 2000 or
-// below. Result: a win plays the pyramid track, a loss draws from the
-// Climax pool.
+// (KEYCARD_CODES below) or activates a key trap (KEYCARD_ACTIVATE_CODES
+// below — traps fire on activation, not summon); Climax = either
+// player's LP reaches 2000 or below. Result: a win plays the pyramid
+// track, a loss draws from the Climax pool.
 const BGM_START_FILE = 'ishizu-upload.mp3';
 const BGM_STAGES = {
   normal: ['ishizu-start.mp3', 'ishizu-caravan.mp3'],
@@ -100,11 +101,19 @@ const BGM_STAGES = {
 const BGM_STAGE_RANK = { normal: 0, keycard: 1, climax: 2 };
 const BGM_STAGE_NAME = ['normal', 'keycard', 'climax'];
 const BGM_WIN_FILE = 'ishizu-big-advantage.mp3';
-// Boss-class cards of both decks (codes/names from data.json; the
-// rationale and the borderline candidates are recorded in NOTES.md,
-// section "BGM 3-stage"): the four combined Gate Guardians + Dark
-// Guardian (GG deck), Yami no Luce + Masterflare Hyperion (Ishizu deck).
-const KEYCARD_CODES = new Set([8505920, 97783338, 34904525, 61398234, 26746975, 45409943, 63101468]);
+// Boss-class cards of both decks, five per side (codes/names from
+// data.json; the rationale and the borderline candidates are recorded
+// in NOTES.md, section "BGM 3-stage"). Summon triggers: the four
+// combined Gate Guardians + Dark Guardian (GG deck), Yami no Luce +
+// Tenrin no Sphinx + Metaphys Horus Dragon (Ishizu deck).
+// Masterflare Hyperion was in the first list and was REMOVED by the
+// user's decision (2026-11-03) — it is deliberately not here.
+const KEYCARD_CODES = new Set([8505920, 97783338, 34904525, 61398234, 26746975, 45409943, 46148485, 36898537]);
+// Key TRAPS (Ishizu deck): a trap has no summon, so these latch on
+// ACTIVATION instead — 98715423 Gravekeeper's Trap (a permanent trap,
+// it stays face-up once flipped) and 17484499 Exchange of the Spirit
+// (the deck's signature reversal). User decision 2026-11-03.
+const KEYCARD_ACTIVATE_CODES = new Set([98715423, 17484499]);
 let bgmEl = null, bgmScene = null, bgmFile = null;
 let bgmWantedRank = -1;            // highest stage this duel's triggers have demanded (latched)
 const bgmSeenKeys = new Set();     // key-card codes already seen on a field this duel
@@ -149,6 +158,13 @@ function noteBgmEvent(ev) {
   // the next render. Either player's summon counts.
   if ((ev.kind === 'summon' || ev.kind === 'spsummon') && ev.code != null && KEYCARD_CODES.has(ev.code))
     bgmWantedRank = Math.max(bgmWantedRank, BGM_STAGE_RANK.keycard);
+  // Activation events (engine.js MSG_CHAINING presentation event) also
+  // carry the card code, so a key TRAP is latched the moment it is
+  // activated — flipping a set trap face-up is its activation, and a
+  // permanent trap's later effect activations chain with the same code.
+  // Either player's activation counts.
+  if (ev.kind === 'activate' && ev.code != null && KEYCARD_ACTIVATE_CODES.has(ev.code))
+    bgmWantedRank = Math.max(bgmWantedRank, BGM_STAGE_RANK.keycard);
 }
 function updateBgm(state) {
   if (!state || state.winner != null || !bgmScene || bgmScene === 'start' || bgmScene === 'win') return;
@@ -160,6 +176,17 @@ function updateBgm(state) {
     bgmWantedRank = Math.max(bgmWantedRank, BGM_STAGE_RANK.climax);
   for (const P of state.players) for (const c of P.mzone) {
     if (c && c.code != null && KEYCARD_CODES.has(c.code) && !bgmSeenKeys.has(c.code)) {
+      bgmSeenKeys.add(c.code);
+      bgmWantedRank = Math.max(bgmWantedRank, BGM_STAGE_RANK.keycard);
+    }
+  }
+  // Same complement for the key traps: one that is FACE-UP in a spell/
+  // trap zone has been activated, however the event stream went (the
+  // permanent Gravekeeper's Trap stays face-up after its flip). A trap
+  // that is merely set (face-down) has NOT been activated and must not
+  // latch — hence the face-up requirement.
+  for (const P of state.players) for (const c of P.szone) {
+    if (c && c.code != null && KEYCARD_ACTIVATE_CODES.has(c.code) && (c.pos & E.POS_FACEUP) !== 0 && !bgmSeenKeys.has(c.code)) {
       bgmSeenKeys.add(c.code);
       bgmWantedRank = Math.max(bgmWantedRank, BGM_STAGE_RANK.keycard);
     }
@@ -181,6 +208,7 @@ window.__bgm = {
   get file() { return bgmFile; },
   get wantedRank() { return bgmWantedRank; },
   update(state) { updateBgm(state); },
+  note(ev) { noteBgmEvent(ev); },
   sceneTo(scene) { setBgmScene(scene, true); },
 };
 // Drain the engine's presentation event queue into SE cues.
