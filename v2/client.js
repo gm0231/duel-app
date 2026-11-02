@@ -206,6 +206,460 @@ function drainSeEvents(state) {
   }
 }
 
+// ---------------------------------------------------------------- presentation FX (rounds A/B)
+// Read-only presentation: this layer consumes the engine's event queue
+// (the same transient queue drainSeEvents reads) and state diffs
+// between renders, and draws overlays in #fxlayer. It NEVER answers a
+// prompt, mutates state, or touches layout: the layer is absolutely
+// positioned, pointer-events:none, and not part of the in-flow stack,
+// so the frozen board (applyLayout) cannot be affected, and a zone
+// re-render cannot kill an in-flight overlay (zone DOM is rebuilt per
+// batch; the layer is not). Geometry comes from painted rects of the
+// standing board — the same rect discipline as the layout fit loop.
+// Grammar follows the approved presentation (method = portal shape,
+// destination = how a move reads; see NOTES "FX round A/B").
+const fxLog = [];            // spawn record for tests: {kind, ...}
+let fxError = null;          // last FX processor error (must stay null)
+let fxPrev = null;           // previous render's snapshot (fxSnap)
+let fxHandRects = [];        // own-hand card rects captured pre-render (FLIP reflow)
+function fxRecord(kind, detail) { fxLog.push(Object.assign({ kind }, detail || {})); if (fxLog.length > 400) fxLog.splice(0, fxLog.length - 400); }
+function fxLayerEl() { return $('fxlayer'); }
+function fxRel(el) { // element rect in fx-layer coordinates + center
+  const a = $('app').getBoundingClientRect(), r = el.getBoundingClientRect();
+  return { x: r.left - a.left, y: r.top - a.top, w: r.width, h: r.height, cx: r.left - a.left + r.width / 2, cy: r.top - a.top + r.height / 2 };
+}
+function fxSlotEl(key) { return document.querySelector('.slot[data-zone="' + key + '"]'); }
+function fxPileEl(con, kind) { return document.querySelector('[data-pile="' + kind + ':' + con + '"]'); }
+function fxAnim(el, frames, opts) { if (el && el.animate) { try { el.animate(frames, opts); } catch (e) {} } }
+function fxNode(cls, cx, cy, w, h) {
+  const layer = fxLayerEl(); if (!layer) return null;
+  const d = document.createElement('div');
+  d.className = 'fx ' + cls;
+  d.style.left = (cx - w / 2) + 'px'; d.style.top = (cy - h / 2) + 'px';
+  d.style.width = w + 'px'; d.style.height = h + 'px';
+  layer.appendChild(d);
+  return d;
+}
+function fxKill(el, ms) { if (el) setTimeout(() => { try { el.remove(); } catch (e) {} }, ms); }
+function fxGhostEl(code, faceDown, w, h) {
+  const d = document.createElement('div');
+  d.className = 'fx fx-ghost' + (faceDown ? ' back' : '');
+  d.style.width = w + 'px'; d.style.height = h + 'px';
+  if (!faceDown && code != null) d.innerHTML = '<div class="nm">' + cardName(code) + '</div>';
+  return d;
+}
+function fxPlaceGhost(code, faceDown, pt, w, h) {
+  const layer = fxLayerEl(); if (!layer) return null;
+  const d = fxGhostEl(code, faceDown, w, h);
+  d.style.left = (pt.cx - w / 2) + 'px'; d.style.top = (pt.cy - h / 2) + 'px';
+  layer.appendChild(d);
+  return d;
+}
+// A card ghost flies from one point to another (slight arc). Used for
+// every "hand-ward / pile-ward" movement: the destination is what the
+// player reads (presentation 3-5, supplement grammar asymmetry).
+function fxFly(code, faceDown, fromPt, toPt, w, h, dur) {
+  const d = fxPlaceGhost(code, faceDown, fromPt, w, h); if (!d) return;
+  const dx = toPt.cx - fromPt.cx, dy = toPt.cy - fromPt.cy;
+  fxAnim(d, [
+    { transform: 'translate(0px,0px)', opacity: 1 },
+    { transform: 'translate(' + (dx * 0.5) + 'px,' + (dy * 0.5 - 16) + 'px)', opacity: 1, offset: 0.55 },
+    { transform: 'translate(' + dx + 'px,' + dy + 'px) scale(.72)', opacity: 0.9 },
+  ], { duration: dur || 430, easing: 'ease-in-out' });
+  fxKill(d, (dur || 430) + 40);
+}
+function fxZoneGlow(key, ms) {
+  const el = fxSlotEl(key); if (!el) return;
+  const r = fxRel(el);
+  const d = fxNode('fx-zoneglows', r.cx, r.cy, r.w, r.h); if (!d) return;
+  fxAnim(d, [{ opacity: 0 }, { opacity: 1, offset: 0.25 }, { opacity: 0 }], { duration: ms || 620, easing: 'ease-out' });
+  fxKill(d, (ms || 620) + 40);
+}
+function fxPortal(key, method, delay) {
+  const el = fxSlotEl(key); if (!el) return;
+  const r = fxRel(el);
+  const size = Math.max(r.w, r.h) * 1.3;
+  const spawn = () => {
+    const d = fxNode('fx-portal ' + method, r.cx, r.cy, size, size); if (!d) return;
+    d.innerHTML = '<div class="ring"></div>';
+    fxAnim(d, [{ opacity: 0 }, { opacity: 1, offset: 0.2 }, { opacity: 1, offset: 0.75 }, { opacity: 0 }], { duration: 780, easing: 'ease-out' });
+    fxKill(d, 820);
+  };
+  if (delay) setTimeout(spawn, delay); else spawn();
+}
+function fxPuff(key) { // normal summons & sets: a small placement beat only
+  const el = fxSlotEl(key); if (!el) return;
+  const r = fxRel(el);
+  const d = fxNode('fx-portal generic', r.cx, r.cy, Math.max(r.w, r.h) * 0.95, Math.max(r.w, r.h) * 0.95);
+  if (!d) return;
+  d.innerHTML = '<div class="ring"></div>';
+  fxAnim(d, [{ opacity: 0 }, { opacity: 0.9, offset: 0.3 }, { opacity: 0 }], { duration: 430, easing: 'ease-out' });
+  fxKill(d, 470);
+}
+function fxWhiteFlash(key) { // destruction: flash white, gone (restrained)
+  const el = fxSlotEl(key); if (!el) return;
+  const r = fxRel(el);
+  const d = fxNode('fx-flash', r.cx, r.cy, r.w * 1.25, r.h * 1.25); if (!d) return;
+  fxAnim(d, [{ opacity: 1 }, { opacity: 0 }], { duration: 320, easing: 'ease-out' });
+  fxKill(d, 360);
+}
+function fxVanish(key, code, faceDown) { // deck returns: gone in place, no flight (supplement)
+  const el = fxSlotEl(key); if (!el) return;
+  const r = fxRel(el);
+  const d = fxPlaceGhost(code, faceDown, r, r.w - 2, r.h - 24); if (!d) return;
+  fxAnim(d, [{ transform: 'scale(1)', opacity: 1 }, { transform: 'scale(.55)', opacity: 0 }], { duration: 340, easing: 'ease-in' });
+  fxKill(d, 380);
+}
+function fxSlide(fromKey, toKey, code, faceDown) { // control change: the card slides (supplement)
+  const a = fxSlotEl(fromKey), b = fxSlotEl(toKey); if (!a || !b) return;
+  const ra = fxRel(a), rb = fxRel(b);
+  const d = fxPlaceGhost(code, faceDown, ra, ra.w - 2, ra.h - 24); if (!d) return;
+  const dx = rb.cx - ra.cx, dy = rb.cy - ra.cy;
+  fxAnim(d, [
+    { transform: 'translate(0px,0px) scale(1)', opacity: 1 },
+    { transform: 'translate(' + (dx * 0.5) + 'px,' + (dy * 0.5) + 'px) scale(1.18)', opacity: 1, offset: 0.5 },
+    { transform: 'translate(' + dx + 'px,' + dy + 'px) scale(1)', opacity: 0.95 },
+  ], { duration: 480, easing: 'ease-in-out' });
+  fxKill(d, 520);
+}
+function fxConverge(fromKey, toKey) { // materials: glow (red when chosen) -> vanish -> one point
+  const a = fxSlotEl(fromKey), b = fxSlotEl(toKey); if (!a || !b) return;
+  const ra = fxRel(a), rb = fxRel(b);
+  const d = fxPlaceGhost(null, true, ra, ra.w - 2, ra.h - 24); if (!d) return;
+  d.classList.add('srcglow');
+  const dx = rb.cx - ra.cx, dy = rb.cy - ra.cy;
+  fxAnim(d, [
+    { transform: 'translate(0px,0px) scale(1)', opacity: 1 },
+    { transform: 'translate(' + dx + 'px,' + dy + 'px) scale(.25)', opacity: 0.4 },
+  ], { duration: 400, easing: 'ease-in' });
+  fxKill(d, 440);
+}
+function fxPeel(key) { // an Xyz material leaves: the stack visibly thins first
+  const el = fxSlotEl(key); if (!el) return;
+  const r = fxRel(el);
+  const layer = fxLayerEl(); if (!layer) return;
+  const d = document.createElement('div');
+  d.className = 'fx fx-peel';
+  d.style.left = (r.x + 4) + 'px'; d.style.top = (r.y + 4) + 'px';
+  d.style.width = (r.w - 4) + 'px'; d.style.height = (r.h - 26) + 'px';
+  layer.appendChild(d);
+  fxAnim(d, [{ transform: 'translate(0px,0px)', opacity: 1 }, { transform: 'translate(3px,14px)', opacity: 0 }], { duration: 460, easing: 'ease-in' });
+  fxKill(d, 500);
+}
+function fxStripFlash(key) { // ATK/DEF changed: the value flashes, once (3-7)
+  const el = fxSlotEl(key); if (!el) return;
+  const r = fxRel(el);
+  const layer = fxLayerEl(); if (!layer) return;
+  const d = document.createElement('div');
+  d.className = 'fx fx-stripflash';
+  d.style.left = r.x + 'px'; d.style.top = (r.y + r.h - 22) + 'px';
+  d.style.width = r.w + 'px'; d.style.height = '22px';
+  layer.appendChild(d);
+  fxAnim(d, [{ opacity: 0.95 }, { opacity: 0 }], { duration: 650, easing: 'ease-out' });
+  fxKill(d, 690);
+}
+function fxPileFlash(con, kind) { // landing reaction: the pile lights up (3-5)
+  const el = fxPileEl(con, kind); if (!el) return;
+  const r = fxRel(el);
+  const d = fxNode('fx-pilebox', r.cx, r.cy, r.w, r.h); if (!d) return;
+  fxAnim(d, [{ opacity: 1 }, { opacity: 0 }], { duration: 420, easing: 'ease-out' });
+  fxKill(d, 460);
+}
+const FX_PHASES = {
+  draw: { label: 'ドローフェイズ', battle: false }, standby: { label: 'スタンバイフェイズ', battle: false },
+  main1: { label: 'メインフェイズ 1', battle: false }, battle: { label: 'バトルフェイズ', battle: true },
+  main2: { label: 'メインフェイズ 2', battle: false }, end: { label: 'エンドフェイズ', battle: false },
+};
+function fxPhaseFamily(ph) {
+  if (!ph) return null;
+  if (ph === 'DRAW') return 'draw';
+  if (ph === 'STANDBY') return 'standby';
+  if (ph === 'MAIN1') return 'main1';
+  if (ph === 'MAIN2') return 'main2';
+  if (ph === 'END') return 'end';
+  if (/BATTLE|DAMAGE/.test(ph)) return 'battle';
+  return null;
+}
+let fxBannerEl = null;
+function fxPhaseBanner(fam) {
+  const info = FX_PHASES[fam]; if (!info) return;
+  const layer = fxLayerEl(); if (!layer) return;
+  if (fxBannerEl) { try { fxBannerEl.remove(); } catch (e) {} fxBannerEl = null; }
+  const d = document.createElement('div');
+  d.className = 'fx-phase' + (info.battle ? ' battle' : '');
+  d.textContent = info.label;
+  layer.appendChild(d);
+  fxBannerEl = d;
+  fxAnim(d, [
+    { transform: 'translateX(-7%)', opacity: 0 }, { transform: 'translateX(0)', opacity: 1, offset: 0.18 },
+    { transform: 'translateX(0)', opacity: 1, offset: 0.78 }, { transform: 'translateX(7%)', opacity: 0 },
+  ], { duration: 820, easing: 'ease-out' });
+  fxKill(d, 860);
+  fxRecord('phase', { phase: fam });
+}
+// ------------------------------------------------------------ FX snapshots
+function fxSnap(state) {
+  const z = {};
+  for (let p = 0; p < 2; p++) {
+    const P = state.players[p];
+    for (let s = 0; s < 5; s++) { const c = P.mzone[s]; z[p + ':' + E.LOC.MZONE + ':' + s] = c ? { code: c.code, pos: c.pos, mats: c.materials || 0, atk: c.curAtk, def: c.curDef } : null; }
+    for (let s = 0; s < 6; s++) { const c = P.szone[s]; z[p + ':' + E.LOC.SZONE + ':' + s] = c ? { code: c.code, pos: c.pos } : null; }
+  }
+  return {
+    z,
+    grave: state.players.map(P => P.grave.slice()),
+    removed: state.players.map(P => P.removed.slice()),
+    extra: state.players.map(P => P.extra.map(e => e.code)),
+    deck: state.players.map(P => P.deckCount),
+    handLen: state.players.map(P => P.hand.length),
+    myHand: state.players[HP].hand.map(c => c.code),
+    phaseFam: fxPhaseFamily(state.phaseName), turn: state.turnCount,
+    chainLen: state.chain.length, solving: state.solvingLink,
+    lp: state.players.map(P => P.lp), winner: state.winner,
+  };
+}
+function fxBagDiff(before, after) {
+  const count = (arr) => { const m = new Map(); for (const c of arr) m.set(c, (m.get(c) || 0) + 1); return m; };
+  const bm = count(before), am = count(after), added = [], removed = [];
+  am.forEach((n, c) => { for (let i = 0; i < n - (bm.get(c) || 0); i++) added.push(c); });
+  bm.forEach((n, c) => { for (let i = 0; i < n - (am.get(c) || 0); i++) removed.push(c); });
+  return { added, removed };
+}
+function fxMethodOf(code) {
+  const d = code != null ? cardData(code) : null;
+  if (!d) return 'generic';
+  if (d.type & 0x40) return 'fusion';
+  if (d.type & 0x800000) return 'xyz';
+  if (d.type & 0x2000) return 'synchro';
+  return 'generic';
+}
+function fxCaptureDom() { // pre-render hand geometry for the FLIP reflow
+  fxHandRects = [...document.querySelectorAll('#hand .hcard')].map(el => {
+    const r = fxRel(el);
+    return { code: el.dataset.code != null ? +el.dataset.code : null, cx: r.cx, cy: r.cy, w: r.w, h: r.h };
+  });
+}
+function fxResetDuel() {
+  fxPrev = null; fxHandRects = []; fxLog.length = 0; fxError = null;
+  const layer = fxLayerEl(); if (layer) layer.innerHTML = '';
+  const cut = $('fxcutin'); if (cut) { cut.className = ''; cut.innerHTML = ''; }
+  fxResetRoundB();
+}
+// ------------------------------------------------------------ FX processor
+function fxProcess(evs, state) {
+  if (!state || !state.players || !fxLayerEl()) return;
+  try { fxProcessInner(evs || [], state); }
+  catch (e) { fxError = String((e && e.stack) || e); }
+}
+function fxProcessInner(evs, state) {
+  const cur = fxSnap(state);
+  const prev = fxPrev;
+  fxPrev = cur;
+  if (!prev) return; // first update of the duel is the baseline, nothing "happened" yet
+  // ---- phase banner (3-8): only at the transition, an overlay band
+  if (cur.phaseFam && cur.phaseFam !== prev.phaseFam && cur.turn > 0) fxPhaseBanner(cur.phaseFam);
+  // ---- zone cell diffs
+  const arrived = [], departed = [], changed = [];
+  for (const key of Object.keys(cur.z)) {
+    const a = prev.z[key], b = cur.z[key];
+    if (!a && b) arrived.push({ key, entry: b });
+    else if (a && !b) departed.push({ key, entry: a });
+    else if (a && b) changed.push({ key, before: a, after: b });
+  }
+  const evSummon = evs.filter(e => e.kind === 'summon'), evSp = evs.filter(e => e.kind === 'spsummon');
+  const graveD = cur.grave.map((g, p) => fxBagDiff(prev.grave[p], g));
+  const remD = cur.removed.map((g, p) => fxBagDiff(prev.removed[p], g));
+  const extraD = cur.extra.map((g, p) => fxBagDiff(prev.extra[p], g));
+  const flashed = new Set(); // piles already given a landing reaction this batch
+  const pileLand = (con, kind) => { const k = kind + ':' + con; if (!flashed.has(k)) { flashed.add(k); fxPileFlash(con, kind); } };
+  const ptOf = (key) => { const el = fxSlotEl(key); return el ? fxRel(el) : null; };
+  const handPt = (con) => {
+    if (con === HP) { const el = $('handbar'); return el ? fxRel(el) : null; }
+    const el = $('opppiles'); return el ? fxRel(el) : null;
+  };
+  const pilePt = (con, kind) => { const el = fxPileEl(con, kind); return el ? fxRel(el) : null; };
+  const consumedArr = new Set(), consumedDep = new Set();
+  // ---- control change: a monster leaves one field and appears on the
+  // other in the same batch — it slides (supplement), never teleports
+  for (const ar of arrived) {
+    if (ar.entry.code == null) continue;
+    const [con, loc] = ar.key.split(':').map(Number);
+    if (loc !== E.LOC.MZONE) continue;
+    const dep = departed.find(d => !consumedDep.has(d.key) && d.entry.code === ar.entry.code &&
+      d.key.split(':').map(Number)[0] === 1 - con && d.key.split(':').map(Number)[1] === E.LOC.MZONE);
+    if (dep) {
+      consumedDep.add(dep.key); consumedArr.add(ar.key);
+      fxSlide(dep.key, ar.key, ar.entry.code, (ar.entry.pos & E.POS_FACEUP) === 0);
+      fxRecord('controlslide', { code: ar.entry.code });
+    }
+  }
+  // ---- field departures: the destination is what reads (3-5)
+  const fieldDeps = departed.filter(d => !consumedDep.has(d.key));
+  const destOfDep = (dep) => { // returns {kind:'grave'|'removed'|'extra'|'hand'|'deck'|'gone', idx}
+    const [con] = dep.key.split(':').map(Number);
+    const code = dep.entry.code;
+    if (code != null) {
+      if (graveD[con].added.includes(code)) return 'grave';
+      if (remD[con].added.includes(code)) return 'removed';
+      if (extraD[con].added.includes(code)) return 'extra';
+    }
+    return null;
+  };
+  // ---- arrivals on the monster zone: summons & returns
+  const spArrivals = arrived.filter(a => !consumedArr.has(a.key) && a.key.split(':').map(Number)[1] === E.LOC.MZONE);
+  // fusion / xyz materials: same-controller field departures in this batch
+  const matDepsOf = (con) => fieldDeps.filter(d => !consumedDep.has(d.key) &&
+    d.key.split(':').map(Number)[0] === con && d.key.split(':').map(Number)[1] === E.LOC.MZONE);
+  for (const ar of spArrivals) {
+    const [con] = ar.key.split(':').map(Number);
+    const code = ar.entry.code;
+    const fromGrave = code != null && graveD[con].removed.includes(code);
+    const fromRemoved = code != null && remD[con].removed.includes(code);
+    const method = fxMethodOf(code);
+    const isSp = evSp.length > 0, isNormal = evSummon.length > 0 && !isSp;
+    if (fromGrave || fromRemoved) { // revival / return: NO flight — the zone lights and it appears
+      fxZoneGlow(ar.key, 700); fxPortal(ar.key, 'revive', 90);
+      fxRecord('portal', { method: 'revive', code });
+      consumedArr.add(ar.key);
+      continue;
+    }
+    if (method === 'fusion' || method === 'xyz') {
+      const mats = matDepsOf(con);
+      for (const m of mats) { consumedDep.add(m.key); fxConverge(m.key, ar.key); fxRecord('converge', { code: m.entry.code }); }
+      fxZoneGlow(ar.key, 640);
+      fxPortal(ar.key, method, mats.length ? 210 : 60);
+      fxRecord('portal', { method, code });
+      consumedArr.add(ar.key);
+      continue;
+    }
+    if (isNormal) { fxPuff(ar.key); fxRecord('place', { how: 'summon', code }); consumedArr.add(ar.key); continue; }
+    // other special summons (from hand / deck / extra): zone glows first
+    fxZoneGlow(ar.key, 600); fxPortal(ar.key, method, 80);
+    fxRecord('portal', { method, code });
+    consumedArr.add(ar.key);
+  }
+  // arrivals on the spell/trap zone (sets): a small placement beat
+  for (const ar of arrived) {
+    if (consumedArr.has(ar.key)) continue;
+    if (ar.key.split(':').map(Number)[1] === E.LOC.SZONE) { fxPuff(ar.key); fxRecord('place', { how: 'set', code: ar.entry.code }); consumedArr.add(ar.key); }
+  }
+  // remaining departures fly / vanish by destination
+  for (const dep of fieldDeps) {
+    if (consumedDep.has(dep.key)) continue;
+    consumedDep.add(dep.key);
+    const [con] = dep.key.split(':').map(Number);
+    const fromPt = ptOf(dep.key);
+    const faceDown = (dep.entry.pos & E.POS_FACEUP) === 0;
+    const dest = destOfDep(dep);
+    if (dest === 'grave' || dest === 'removed' || dest === 'extra') {
+      const toPt = pilePt(con, dest);
+      fxRecord('flight', { to: dest, code: dep.entry.code }); // intent is recorded even if a rect is momentarily unreadable; the ghost spawns when geometry exists (always, post-render)
+      if (fromPt && toPt) fxFly(dep.entry.code, faceDown, fromPt, toPt, fromPt.w - 2, fromPt.h - 24);
+      pileLand(con, dest);
+    } else if (cur.handLen[con] > prev.handLen[con]) { // bounced to a hand
+      const toPt = handPt(con);
+      fxRecord('flight', { to: 'hand', code: dep.entry.code });
+      if (fromPt && toPt) fxFly(dep.entry.code, faceDown, fromPt, toPt, fromPt.w - 2, fromPt.h - 24);
+    } else if (cur.deck[con] > prev.deck[con]) { // returned to the deck: vanishes in place
+      fxVanish(dep.key, dep.entry.code, faceDown);
+      fxRecord('vanish', { to: 'deck', code: dep.entry.code });
+      pileLand(con, 'deck');
+    } else { // token / material / untracked: a quiet fade
+      fxVanish(dep.key, dep.entry.code, faceDown);
+      fxRecord('vanish', { to: 'gone', code: dep.entry.code });
+    }
+  }
+  // destroy events: white flash at the zone the card occupied
+  for (const ev of evs) {
+    if (ev.kind !== 'destroy') continue;
+    const dep = departed.find(d => d.entry.code === ev.code && d.key.split(':').map(Number)[0] === ev.con);
+    if (dep) { fxWhiteFlash(dep.key); fxRecord('destroyflash', { code: ev.code }); }
+  }
+  // ---- in-place changes: xyz detach / attach, stat changes, flips (round B hook)
+  for (const ch of changed) {
+    const [con, loc] = ch.key.split(':').map(Number);
+    if (loc !== E.LOC.MZONE) { fxRoundBChanged(ch, evs, prev, cur); continue; }
+    if (ch.before.code === ch.after.code) {
+      if ((ch.after.mats || 0) < (ch.before.mats || 0)) { fxPeel(ch.key); fxRecord('peel', { code: ch.after.code }); }
+      else if ((ch.after.mats || 0) > (ch.before.mats || 0)) { fxZoneGlow(ch.key, 450); fxRecord('attach', { code: ch.after.code }); }
+      if (ch.before.atk != null && ch.after.atk != null && (ch.before.atk !== ch.after.atk || ch.before.def !== ch.after.def)) {
+        fxStripFlash(ch.key);
+        fxRecord('statflash', { code: ch.after.code });
+      }
+    }
+    fxRoundBChanged(ch, evs, prev, cur);
+  }
+  // ---- hand movements (own hand: identities known)
+  const myD = fxBagDiff(prev.myHand, cur.myHand);
+  for (const code of myD.added) {
+    let fromPt = null, fromKind = null;
+    if (graveD[HP].removed.includes(code)) { fromPt = pilePt(HP, 'grave'); fromKind = 'grave'; }
+    else if (remD[HP].removed.includes(code)) { fromPt = pilePt(HP, 'removed'); fromKind = 'removed'; }
+    else if (extraD[HP].removed.includes(code)) { fromPt = pilePt(HP, 'extra'); fromKind = 'extra'; }
+    else if (cur.deck[HP] < prev.deck[HP]) { fromPt = pilePt(HP, 'deck'); fromKind = 'deck'; }
+    const toPt = handPt(HP);
+    if (fromKind) fxRecord('flight', { to: 'hand', from: fromKind, code });
+    if (fromPt && toPt) fxFly(code, false, fromPt, toPt, 44, 58);
+  }
+  for (const code of myD.removed) {
+    // placed on the field? the arrival/puff already tells it — no flight (grammar asymmetry)
+    const placed = arrived.some(a => a.entry.code === code);
+    if (placed) continue;
+    const fromRect = fxHandRects.find(r => r.code === code);
+    const fromPt = fromRect || handPt(HP);
+    if (graveD[HP].added.includes(code)) { const toPt = pilePt(HP, 'grave'); fxRecord('flight', { to: 'grave', from: 'hand', code }); if (fromPt && toPt) fxFly(code, false, fromPt, toPt, 44, 58); pileLand(HP, 'grave'); }
+    else if (remD[HP].added.includes(code)) { const toPt = pilePt(HP, 'removed'); fxRecord('flight', { to: 'removed', from: 'hand', code }); if (fromPt && toPt) fxFly(code, false, fromPt, toPt, 44, 58); pileLand(HP, 'removed'); }
+    else if (cur.deck[HP] > prev.deck[HP]) { if (fromRect) { const layer = fxLayerEl(); const d = fxPlaceGhost(code, false, fromRect, fromRect.w - 2, fromRect.h - 2); if (d) { fxAnim(d, [{ transform: 'scale(1)', opacity: 1 }, { transform: 'scale(.55)', opacity: 0 }], { duration: 320, easing: 'ease-in' }); fxKill(d, 360); } } fxRecord('vanish', { to: 'deck', from: 'hand', code }); pileLand(HP, 'deck'); }
+  }
+  // opponent hand count changes: draws fly in as card backs
+  const opp = 1 - HP;
+  if (cur.handLen[opp] > prev.handLen[opp] && cur.deck[opp] < prev.deck[opp]) {
+    const fromPt = pilePt(opp, 'deck'), toPt = handPt(opp);
+    fxRecord('flight', { to: 'opphand', from: 'deck' });
+    if (fromPt && toPt) fxFly(null, true, fromPt, toPt, 40, 52);
+  }
+  // ---- pile count ticks where no flight already landed
+  for (let p = 0; p < 2; p++) {
+    if (graveD[p].added.length || graveD[p].removed.length) pileLand(p, 'grave');
+    if (remD[p].added.length || remD[p].removed.length) pileLand(p, 'removed');
+    if (extraD[p].added.length || extraD[p].removed.length) pileLand(p, 'extra');
+    if (cur.deck[p] !== prev.deck[p]) pileLand(p, 'deck');
+  }
+  // ---- hand reflow (FLIP): surviving cards slide to their new spots
+  if (fxHandRects.length) {
+    const used = new Array(fxHandRects.length).fill(false);
+    document.querySelectorAll('#hand .hcard').forEach(el => {
+      const code = el.dataset.code != null ? +el.dataset.code : null;
+      if (code == null) return;
+      const i = fxHandRects.findIndex((r, j) => !used[j] && r.code === code);
+      if (i < 0) return;
+      used[i] = true;
+      const now = fxRel(el), dx = fxHandRects[i].cx - now.cx, dy = fxHandRects[i].cy - now.cy;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        fxAnim(el, [{ transform: 'translate(' + dx + 'px,' + dy + 'px)' }, { transform: 'translate(0px,0px)' }], { duration: 280, easing: 'ease-out' });
+        fxRecord('reflow', { code });
+      }
+    });
+  }
+  fxRoundBEvents(evs, prev, cur, { arrived, departed, changed });
+}
+// Round B hooks — fxRoundBChanged / fxRoundBEvents are defined in the
+// round-B section below (function declarations hoist; in round A they
+// were no-ops). Kept as calls so the diff pipeline stays single-pass.
+function fxRoundBChanged(ch, evs, prev, cur) {}
+function fxRoundBEvents(evs, prev, cur, diff) {}
+function fxResetRoundB() {}
+// Test surface (same spirit as window.__layout / window.__bgm). process/snap
+// let test-fx drive the diff pipeline with synthetic state pairs so each
+// grammar is asserted deterministically, not just observed in live duels.
+window.__fx = {
+  log: fxLog,
+  get error() { return fxError; },
+  get ready() { return !!fxPrev; },
+  process: fxProcess,
+  reset: fxResetDuel,
+};
+
 // ---------------------------------------------------------------- rendering
 function tileHTML(card, con, actKey) {
   if (!card) return '';
@@ -213,9 +667,13 @@ function tileHTML(card, con, actKey) {
   const isDef = (card.pos & E.POS_DEFENSE) !== 0;
   const showFace = faceUp || con === HP;
   const nm = showFace && card.code != null ? cardName(card.code) : '';
-  return '<div class="tile' + (isDef ? ' def' : '') + (showFace ? '' : ' back') + (actKey && actionMap.has(actKey) ? ' actionable' : '') + '"' +
+  const ctrTotal = card.counters ? (Array.isArray(card.counters) ? card.counters.reduce((a, c) => a + (c.count || 0), 0) : card.counters) : 0;
+  return '<div class="tile' + (isDef ? ' def' : '') + (showFace ? '' : ' back') +
+    (card.materials >= 2 ? ' mats2' : card.materials === 1 ? ' mats1' : '') +
+    (actKey && actionMap.has(actKey) ? ' actionable' : '') + '"' +
     (actKey ? ' data-act="' + actKey + '"' : '') + '>' +
     (card.materials ? '<div class="mats">×' + card.materials + '</div>' : '') +
+    (ctrTotal ? '<div class="ctrs">◉' + ctrTotal + '</div>' : '') +
     '<div class="inner">' +
     (nm ? '<div class="nm">' + nm + '</div>' : '') +
     '</div></div>';
@@ -1289,7 +1747,10 @@ function renderPreview() {
     const d = cardData(previewState.code);
     const atk = card && card.curAtk != null ? card.curAtk : d.atk;
     const def = card && card.curDef != null ? card.curDef : d.def;
-    stats = 'ATK ' + atk + '／DEF ' + def;
+    // changed values are tinted (presentation 3-7): only the value that
+    // differs from the printed one is coloured, so "what changed" reads off
+    stats = 'ATK ' + (atk !== d.atk ? '<span class="mod">' + atk + '</span>' : atk) +
+      '／DEF ' + (def !== d.def ? '<span class="mod">' + def + '</span>' : def);
   }
   const sig = previewState.code + '|' + stats + '|' + (card ? card.pos : '');
   if (sig === previewState.sig) return; // no DOM churn on unrelated re-renders
@@ -1350,6 +1811,7 @@ function wireSeg(id, apply) {
     dismissedDuel = new Map();
     confirmTurn = -1; confirmSeq = 0; // per-turn confirmation counter restarts with the duel
     updateAutoPassChip();
+    fxResetDuel(); // FX snapshot/layers restart with the duel (stale overlays must not survive)
     bgmWantedRank = -1; bgmSeenKeys.clear(); // BGM stage ladder restarts with the duel
     setBgmScene('normal', true);
     $('start').style.display = 'none';
@@ -1362,9 +1824,12 @@ function wireSeg(id, apply) {
       onLog: () => {},
       onUpdate: (state) => {
         if (duel) { try { duel.refreshFieldStats(); } catch (e) {} }
+        const fxEvs = state.events ? state.events.slice() : []; // presentation queue: copied before drainSeEvents consumes it
+        fxCaptureDom(); // pre-render hand geometry for the FX reflow (FLIP)
         drainSeEvents(state);
         render(state);
         updateBgm(state);
+        fxProcess(fxEvs, state); // presentation FX overlays (read-only; board geometry is final now)
         maybeSettleLayout(); // round 3: first render done, first prompt not yet delivered (engine order)
       },
       humanAnswerer: async (prompt, state) => { maybeSettleLayout(); render(state); return uiAnswer(prompt, state); },
