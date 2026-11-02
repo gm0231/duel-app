@@ -815,13 +815,43 @@ $('menubtn').addEventListener('click', () => {
 // were not the cause (217 is exact; margin collapsing inside .field can
 // only make the real stack a few px SHORTER than the model).
 // Fix: (1) budget against the VISUAL viewport height (visualViewport
-// when available) minus a safety margin; (2) after applying, MEASURE the
-// real stack bottom from the rendered boxes and step the budget down
-// until it fits — all still inside the duel-start click, so the mid-duel
-// freeze is untouched. Where measurement is unavailable (jsdom: all
-// offsets are 0), the formula result stands as-is.
+// when available) minus a safety margin; (2) after applying, measure
+// the real stack and step the budget down until it fits — all still
+// inside the duel-start click, so the mid-duel freeze is untouched.
+//
+// LAYOUT FIX ROUND 2 (real-browser defect in the round above): round
+// 1's step-down measured the stack bottom as offsetTop + offsetHeight
+// accumulated up the offsetParent chain — a DOCUMENT-coordinate value
+// (distance from the document's top edge; it does not move with scroll
+// or with the visual viewport) — and compared it against a VIEWPORT-
+// coordinate budget (visualViewport.height). The two numbers are only
+// interchangeable when scrollY == 0, visualViewport.offsetTop == 0 and
+// vv.height == innerHeight == documentElement.clientHeight; round 1
+// never read offsetTop, scrollY or clientHeight, so it could not
+// notice when that identity failed (in-app webview bands overlaying
+// the layout viewport, chrome states, 100dvh on #app making the
+// document box taller than the painted visible region — document
+// coordinates happily extend below the visible bottom while the page
+// does not scroll). Round 1's "fit" certified document fit against a
+// modeled target, never painted visibility: in the verification
+// browser the formula content sat within vv.height − 4 while the
+// PAINTED hand strip was still half-clipped at the screen's bottom
+// edge, flush, with no dead band — a delta a document-space loop
+// cannot see at all.
+// Fix: close the loop on the painted box. The formula budget now
+// starts from the most conservative of the reported heights
+// (visualViewport.height / innerHeight / clientHeight — a 0 reading
+// means "no signal" and is ignored), and the step-down measures the
+// stack's real bottom with getBoundingClientRect() — the same
+// coordinate system the browser paints in — stepping down until
+// rect.bottom <= visualViewport.offsetTop + visualViewport.height
+// − safety. window.__layout records both bottoms (document and rect),
+// every height signal, and each step, so a real-browser check can
+// read the numbers directly. Where getBoundingClientRect has no
+// layout to report (jsdom: all-zero rects), the loop stays inert and
+// __layout.fit reports 'unmeasurable' instead of claiming a fit.
 const LAYOUT_FIXED = 217;
-const LAYOUT_SAFETY = 4; // px kept free below the stack, always
+const LAYOUT_SAFETY = 6; // px kept free below the stack, always
 let layoutInfo = null;
 function layoutParts(W) {
   const imgH = Math.round(W * 1.22);
@@ -849,10 +879,26 @@ function computeLayout(vwIn, vh) {
   const contentH = LAYOUT_FIXED + 4 * p.slotH + handH + pvShown;
   return { vw, vh, tileW: W, imgH: p.imgH, slotH: p.slotH, handW: p.handW, handH, pv, pvShown, contentH, dead: vh - contentH };
 }
-function visibleViewportH() {
+// Every height signal the environment offers, in one place. The
+// formula budgets against baseH = the SMALLEST positive signal (the
+// most conservative reading wins; a 0 means the API has nothing to
+// say here — jsdom reports clientHeight 0 — and is ignored, it must
+// never zero the budget). visibleBottom is the bottom edge of the
+// visible region in RECT coordinates: the visual viewport occupies
+// [offsetTop, offsetTop + height] of the same coordinate system
+// getBoundingClientRect reports in; without a visual viewport the
+// layout viewport's own height is that edge.
+function viewportHeights() {
   const vv = window.visualViewport;
-  const h = vv && vv.height ? vv.height : window.innerHeight;
-  return Math.max(0, Math.floor(h || 0));
+  const ih = Math.floor(window.innerHeight || 0);
+  const ch = document.documentElement ? Math.floor(document.documentElement.clientHeight || 0) : 0;
+  const hasVV = !!(vv && vv.height);
+  const vvH = hasVV ? Math.floor(vv.height) : null;
+  const vvTop = vv && vv.offsetTop ? vv.offsetTop : 0;
+  const signals = [ih, ch, vvH].filter(v => v && v > 0);
+  const baseH = signals.length ? Math.min.apply(null, signals) : ih;
+  return { innerHeight: ih, clientHeight: ch, vvHeight: vvH, vvOffsetTop: vvTop,
+           baseH, visibleBottom: hasVV ? vvTop + vvH : ih };
 }
 function applyLayoutVars(info) {
   const rs = document.documentElement.style;
@@ -864,12 +910,12 @@ function applyLayoutVars(info) {
   $('preview').className = info.pvShown > 0 ? (info.pvShown < 56 ? 'on compact' : 'on') : '';
   if (previewState) renderPreview();
 }
-// Real rendered bottom of the in-flow stack (document px), from the boxes
-// themselves — ground truth that includes margin collapsing, font metrics
-// and any environment quirk the formula cannot model. Absolutely
-// positioned children (dock/sheet/overlays) are excluded by construction:
-// only the six in-flow sections are read. Returns 0 when layout
-// measurement does not exist (jsdom), which disables the step-down.
+// Document-coordinate bottom of the in-flow stack, from offsetTop +
+// offsetHeight accumulated over the six in-flow sections (absolute
+// children — dock/sheet/overlays — are excluded by construction).
+// Kept as a RECORD only: round 1's defect was steering the fit loop
+// with this number (see the round-2 note above); visibility is judged
+// from painted rects, not from document coordinates.
 function measureStackBottom() {
   const app = $('app');
   const base = app && app.offsetTop ? app.offsetTop : 0;
@@ -882,40 +928,75 @@ function measureStackBottom() {
   }
   return bottom;
 }
+// Painted bottom of the in-flow stack in RECT coordinates — where the
+// browser actually draws the stack's last pixel row, directly
+// comparable to viewportHeights().visibleBottom. The hand bar is the
+// last in-flow section, but the max is taken over all six (a
+// display:none section reads an all-zero rect and drops out). Returns
+// null when no rect carries any layout information at all (jsdom:
+// every rect is 0) — the caller must then report the fit as
+// unmeasurable rather than claim it.
+function measureStackRectBottom() {
+  let bottom = 0, seen = false;
+  for (const id of ['topbar', 'oppField', 'midbar', 'myField', 'preview', 'handbar']) {
+    const el = $(id);
+    if (!el || !el.getBoundingClientRect) continue;
+    const r = el.getBoundingClientRect();
+    if (r.height > 0 || r.bottom !== 0) seen = true;
+    if (r.bottom > bottom) bottom = r.bottom;
+  }
+  return seen ? bottom : null;
+}
 function applyLayout() {
-  const visH = visibleViewportH();
-  const allowed = Math.max(0, visH - LAYOUT_SAFETY);
-  let budget = allowed;
-  let info = computeLayout(window.innerWidth, budget);
-  info.vh = visH; info.budget = budget; info.dead = visH - info.contentH;
+  const vp = viewportHeights();
+  const allowedRect = vp.visibleBottom - LAYOUT_SAFETY; // rect-coord ceiling for the painted stack bottom
+  let budget = Math.max(0, vp.baseH - LAYOUT_SAFETY);
+  const decorate = (info) => {
+    info.vh = vp.baseH; info.budget = budget; info.dead = vp.baseH - info.contentH;
+    info.innerHeight = vp.innerHeight; info.clientHeight = vp.clientHeight;
+    info.vvHeight = vp.vvHeight; info.vvOffsetTop = vp.vvOffsetTop;
+    info.visibleBottom = vp.visibleBottom;
+    return info;
+  };
+  let info = decorate(computeLayout(window.innerWidth, budget));
   layoutInfo = info;
   window.__layout = info; // measurement hook for tests (jsdom has no layout engine)
   applyLayoutVars(info);
-  // Fit guarantee: measure the real stack and step the budget down by the
-  // measured excess until it fits. Shrinking the budget first eats the
-  // preview, then the hand growth, then the tile unit (computeLayout's
-  // own order), so the board shrinks only as much as reality demands.
-  // Bounded: at most 16 steps, and the loop stops as soon as a step can
-  // no longer shrink contentH (minimum layout reached — W floor 40 and
-  // no preview; if a viewport is shorter than even that stack, the
-  // minimum layout is kept and info.fit reports false).
+  // Visible-fit guarantee: measure the PAINTED stack bottom (rect
+  // coordinates) and step the budget down by the measured excess until
+  // it clears the visible bottom minus the safety margin. Shrinking
+  // the budget first eats the preview, then the hand growth, then the
+  // tile unit (computeLayout's own order), so the board shrinks only
+  // as much as reality demands. Bounded: at most 16 steps, and the
+  // loop stops as soon as a step can no longer shrink contentH
+  // (minimum layout reached — W floor 40 and no preview; if a visible
+  // region is shorter than even that stack, the minimum layout is
+  // kept and info.fit reports false). When rect measurement does not
+  // exist here (jsdom), the loop is inert, the corrected formula
+  // stands, and info.fit reports 'unmeasurable'.
   let measured = measureStackBottom();
+  let rect = measureStackRectBottom();
+  const fitLog = [{ step: 0, budget, contentH: info.contentH, measured, rectBottom: rect }];
   let steps = 0;
-  while (measured > allowed && steps < 16) {
-    budget = Math.max(0, budget - (measured - allowed));
-    const next = computeLayout(window.innerWidth, budget);
+  while (rect !== null && rect > allowedRect && steps < 16) {
+    budget = Math.max(0, budget - Math.ceil(rect - allowedRect));
+    const next = decorate(computeLayout(window.innerWidth, budget));
     if (next.contentH >= info.contentH) break; // cannot shrink further
-    next.vh = visH; next.budget = budget; next.dead = visH - next.contentH;
     info = next;
     layoutInfo = info;
     window.__layout = info;
     applyLayoutVars(info);
     measured = measureStackBottom();
+    rect = measureStackRectBottom();
     steps++;
+    fitLog.push({ step: steps, budget, contentH: info.contentH, measured, rectBottom: rect });
   }
-  info.measured = measured;
+  info.measured = measured;      // document-coordinate bottom (record only)
+  info.rectBottom = rect;        // painted bottom in rect coordinates (null = unmeasurable)
   info.fitSteps = steps;
-  info.fit = measured === 0 || measured <= allowed; // 0 = unmeasurable here; formula stands
+  info.fitLog = fitLog;
+  info.fitVisible = rect === null ? null : rect <= allowedRect;
+  info.fit = rect === null ? 'unmeasurable' : info.fitVisible; // true only on a rect-verified visible fit
 }
 // ---------------------------------------------------------------- preview
 // Persistent card-detail strip in the leftover space (never overlays or
