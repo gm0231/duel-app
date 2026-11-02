@@ -288,6 +288,89 @@ Known mirror limits (Phase 1):
   the client.js source text itself; the scan is now scoped to the prompt
   containers, and the same duel trajectories pass clean.
 
+## Fix round 1 (branch client-fixes-1)
+
+### Issue 1 — decks were never shuffled: PROVEN, FIXED
+Browser verification reported spell/trap-only hands across sessions, with
+monsters arriving only via search effects. Investigation:
+- No shuffle existed anywhere: `engine.js` registered each deck with the
+  core in `data.json` array order (same in the PoC driver, `duel.js`).
+  In the ygopro family the deck order at registration is the client's
+  responsibility; the core deals it verbatim, from the END of the list
+  (last registered = top of deck).
+- `data.json` stores both main decks grouped by type (monsters first,
+  then spells, then traps) — so the dealt opening was always the array's
+  spell/trap tail.
+- Proof: a Node probe recording MSG_DRAW for both seats over 4 fresh
+  module loads with 4 different duel seeds produced byte-identical draw
+  sequences every time — e.g. the Ishizu seat opened 転生の予言 /
+  巨神封じの矢 / 光の護封霊剣 / 運命の抱く爆弾 x2 and had drawn 墓守の罠 x3
+  by turn 3 (the array tail, verbatim). The duel seed had no effect on
+  deck order.
+Fix (`engine.js`): `Duel.run()` now registers Fisher-Yates-shuffled
+COPIES of both main and extra decks, fresh per duel. The RNG is
+`crypto.getRandomValues` with unbiased rejection sampling
+(`Math.random` fallback). `data.decks` is never mutated, so rematches
+re-shuffle. `shuffledCopy` / `randBelow` are exported for tests.
+Verification: the same probe now yields unrelated draw sequences per
+run, with monsters throughout the opening hands; the full-duel Node
+harness still completes with 0 retries and conservation intact.
+
+### Issue 2 — chain 「パス」 appeared not to advance: mechanism found
+The reported prompt (set メタバース during the opponent's turn, with a
+パス button and a × dismiss control) was SELECT_CHAIN — only uiChain
+renders those controls. Findings:
+- Encodings are correct: the dock's pass sends i32 -1 (same as the bot's
+  pass for SELECT_CHAIN); EFFECTYN/YESNO declines send i32 0. Both match
+  the core protocol.
+- Reproduction (Node; scripted Gate-Guardian human who sets S/T and
+  passes every chain): across 6 full duels, MSG_RETRY total was 0 with
+  empty retry attribution — a pass is NEVER rejected, so there is no
+  retry/re-prompt loop, and the click path is not at fault either
+  (the jsdom clicker presses #chain-pass through whole duels).
+- The real mechanism: once the human has a set activatable card, the
+  core issues a NEW SELECT_CHAIN at every fast-effect timing of the
+  opponent's turn. In the reproduction duels the human received
+  74–173 chain prompts during bot turns alone; 74–172 of them had a
+  candidate set identical to the previous prompt (the same single set
+  card, re-asked at DRAW — twice — STANDBY, MAIN1, END, ...). Each pass
+  DID advance the game — to the next timing, which asked the same
+  question again. uiChain rendered every one of those prompts
+  identically (its context line falls back to 「効果への応答」 whenever
+  the chain is empty and carried no turn/phase information), so two
+  passes looked like "nothing changed". The duel-long dismissal
+  appeared to "fix" it only because it auto-passes ALL such re-asks.
+Fix (`client.js`, `index.html`): every shown chain dock now displays
+the timing — turn owner + phase (e.g. 相手のターン・スタンバイ) — and a
+per-turn confirmation counter （このターンN回目の確認） that increments
+with each new prompt, and the dock plays a short arrival animation on
+each NEW prompt (first draw only; dismissal redraws don't replay it).
+The yes/no and effect-yes/no sheet received the same timing + counter
+line (their decline path was audited as above: same recurring-timing
+pattern is possible there, encoding is correct). Dismissal mechanics
+are unchanged.
+
+### Fix round 1 regression
+- `node test-node.js` — PASS (full duel completes; 554 conservation
+  checks, 0 violations; retries 0).
+- `node test-explore.js` — PASS (0 retries).
+- `node test-phase2.js` — ALL CHECKS PASSED (seat-swap duel included,
+  retries 0).
+- `node test-investigate.js` — PASS (exit 0).
+- jsdom click-through (`test-ui.js`, NODE_PATH jsdom) — ALL UI CHECKS
+  PASSED (run 1: 52 turns, deck-out win, duel-dismissal exercised once;
+  run 2 seat-swap: 72 turns, deck-out; retry warning never seen in
+  either run). Cautionary tale: the FIRST stock run of this round timed
+  out in both duels. Root cause was in this round's own Issue 2 change —
+  the dock's arrival animation was first implemented by appending an
+  `arrive` class, which broke the exact `className === 'on'` contract
+  the clicker (and potentially other tooling) uses to detect the open
+  dock; a pace-0 probe showed the game blocked on a dock reading
+  `className "on arrive"`. The animation now uses the Web Animations
+  API (`element.animate`, guarded) and the class contract is restored;
+  the unmodified stock suite then passed both runs within budget.
+
+
 ## Known gaps for later phases
 - CPU intelligence: player 1 is the PoC's minimal legal bot (summon a
   level ≤4, otherwise advance phases; always passes chains unless forced).
