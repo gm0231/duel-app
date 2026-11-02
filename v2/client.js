@@ -850,8 +850,43 @@ $('menubtn').addEventListener('click', () => {
 // read the numbers directly. Where getBoundingClientRect has no
 // layout to report (jsdom: all-zero rects), the loop stays inert and
 // __layout.fit reports 'unmeasurable' instead of claiming a fit.
+//
+// LAYOUT FIX ROUND 3 (the loop still certified a clip in the real
+// browser; measured in headless Chromium 156 against this code):
+// (1) THE LOOP MEASURED A SKELETON. applyLayout runs inside the
+// start-button click, BEFORE the duel's first render — the four zone
+// rows are still empty divs, so the painted stack it measured was
+// shorter than the real one by exactly the four zone rows. At
+// 430×1080 the fit recorded rectBottom 685 and fit:true while the
+// post-render stack actually painted to 1069 — a 384px blind spot
+// (4 × slotH 96). Any formula/signal overshoot smaller than that
+// sailed through both rounds untouched. Fix: after the duel's first
+// render (the engine calls onUpdate after the first message batch,
+// strictly BEFORE the first prompt is delivered — see maybeSettleLayout),
+// the fit pass runs ONCE more against the fully rendered stack,
+// continuing from the standing budget (sizes only ever shrink).
+// It is part of the duel-start sizing: armed by the start click,
+// one-shot, no listeners, and the mid-duel freeze is unchanged.
+// (2) THE TARGET TRUSTED THE LARGEST CANDIDATE. Round 2's ceiling
+// was vv.offsetTop + vv.height; rect coordinates are anchored at
+// the visual viewport's own top edge, so with an offset visual
+// viewport the visible bottom in rect coords is vv.height — the
+// +offsetTop form overstates it by exactly offsetTop (a 13px offset
+// overstates by 13px: with the 6px margin, a ~7px clip — the
+// observed half-strip). Fix: the target is now the MOST
+// CONSERVATIVE visible bottom among the rect-coordinate candidates
+// (see viewportHeights) and the safety margin is 8px. Distrusting
+// the largest can only over-shrink (a bigger dead band), never clip.
+// (3) Checked and NOT a cause: the preview's rendered height equals
+// its --pv budget exactly in Chromium at every tested size
+// (including compact 26px and full 330px) — no min-content growth.
+// Fonts cannot grow the stack either: every in-flow text sits in a
+// fixed-height box, and the page loads no webfonts.
+// (4) ?layoutdebug=1 renders the final fit state as on-page TEXT
+// (renderLayoutDebug) — the verification harness cannot evaluate
+// JS, so window.__layout alone was unreachable there.
 const LAYOUT_FIXED = 217;
-const LAYOUT_SAFETY = 6; // px kept free below the stack, always
+const LAYOUT_SAFETY = 8; // px kept free below the stack, always (round 3: 6 → 8)
 let layoutInfo = null;
 function layoutParts(W) {
   const imgH = Math.round(W * 1.22);
@@ -883,11 +918,21 @@ function computeLayout(vwIn, vh) {
 // formula budgets against baseH = the SMALLEST positive signal (the
 // most conservative reading wins; a 0 means the API has nothing to
 // say here — jsdom reports clientHeight 0 — and is ignored, it must
-// never zero the budget). visibleBottom is the bottom edge of the
-// visible region in RECT coordinates: the visual viewport occupies
-// [offsetTop, offsetTop + height] of the same coordinate system
-// getBoundingClientRect reports in; without a visual viewport the
-// layout viewport's own height is that edge.
+// never zero the budget).
+// visibleBottom — the fit loop's target — is the bottom edge of the
+// visible region expressed in RECT coordinates (the coordinate
+// system getBoundingClientRect reports in, anchored at the visual
+// viewport's own top-left). ROUND 3: it is the MOST CONSERVATIVE of
+// the derivable candidates. With an offset visual viewport there
+// are two readings of its bottom edge: vv.height (anchored at the
+// visual viewport's top edge — the rect-coordinate reading) and
+// vv.offsetTop + vv.height (anchored at the layout origin — round
+// 2's target, and always the LARGEST candidate when offsetTop > 0).
+// When the signals disagree, the largest is distrusted: the layout
+// viewport's own edges (clientHeight, innerHeight) are candidates
+// on the same footing, and the minimum wins. The cost of distrust
+// is bounded (a dead band larger by at most offsetTop); the cost of
+// trusting the largest was the observed clip.
 function viewportHeights() {
   const vv = window.visualViewport;
   const ih = Math.floor(window.innerHeight || 0);
@@ -897,8 +942,13 @@ function viewportHeights() {
   const vvTop = vv && vv.offsetTop ? vv.offsetTop : 0;
   const signals = [ih, ch, vvH].filter(v => v && v > 0);
   const baseH = signals.length ? Math.min.apply(null, signals) : ih;
+  const bottoms = [];
+  if (hasVV) { bottoms.push(vvH); bottoms.push(vvTop + vvH); }
+  if (ch > 0) bottoms.push(ch);
+  if (ih > 0) bottoms.push(ih);
+  const visibleBottom = bottoms.length ? Math.min.apply(null, bottoms) : ih;
   return { innerHeight: ih, clientHeight: ch, vvHeight: vvH, vvOffsetTop: vvTop,
-           baseH, visibleBottom: hasVV ? vvTop + vvH : ih };
+           baseH, visibleBottom };
 }
 function applyLayoutVars(info) {
   const rs = document.documentElement.style;
@@ -947,10 +997,33 @@ function measureStackRectBottom() {
   }
   return seen ? bottom : null;
 }
-function applyLayout() {
+// Painted bottom of the hand bar alone (the stack's last section and
+// the element whose ATK/DEF strip was clipped) — recorded on
+// window.__layout and shown by the ?layoutdebug=1 readout so a
+// real-browser check can compare it against the visible bottom
+// directly. Null where rects carry no layout (jsdom).
+function measureHandRectBottom() {
+  const el = $('handbar');
+  if (!el || !el.getBoundingClientRect) return null;
+  const r = el.getBoundingClientRect();
+  return (r.height > 0 || r.bottom !== 0) ? Math.round(r.bottom * 10) / 10 : null;
+}
+// One fit pass. isSettle=false is the duel-start pass (fresh budget
+// from the target). isSettle=true is the round-3 settle: it CONTINUES
+// from the standing budget — sizes only ever shrink — but measures
+// the fully rendered stack (zone slots, hand cards and preview
+// content all in the DOM), which the start pass cannot see (its
+// zone rows are still empty; see the round-3 note above). Both
+// passes run inside the duel-start sequence; nothing here is bound
+// to any event, so the mid-duel freeze is untouched.
+function layoutFit(isSettle) {
   const vp = viewportHeights();
   const allowedRect = vp.visibleBottom - LAYOUT_SAFETY; // rect-coord ceiling for the painted stack bottom
-  let budget = Math.max(0, vp.baseH - LAYOUT_SAFETY);
+  const prev = isSettle ? layoutInfo : null;
+  // The painted bottom BEFORE this pass touches any size — for the
+  // settle this is the number the start pass was blind to.
+  const settleRectBefore = isSettle ? measureStackRectBottom() : null;
+  let budget = prev && prev.budget != null ? prev.budget : Math.max(0, vp.visibleBottom - LAYOUT_SAFETY);
   const decorate = (info) => {
     info.vh = vp.baseH; info.budget = budget; info.dead = vp.baseH - info.contentH;
     info.innerHeight = vp.innerHeight; info.clientHeight = vp.clientHeight;
@@ -976,7 +1049,12 @@ function applyLayout() {
   // stands, and info.fit reports 'unmeasurable'.
   let measured = measureStackBottom();
   let rect = measureStackRectBottom();
-  const fitLog = [{ step: 0, budget, contentH: info.contentH, measured, rectBottom: rect }];
+  // The start pass always opens the log; the settle appends its
+  // opening entry only when its measurement carries information
+  // (a null rect in jsdom adds nothing the start pass didn't say).
+  const fitLog = prev && prev.fitLog ? prev.fitLog.slice() : [];
+  if (!isSettle || rect !== null)
+    fitLog.push({ pass: isSettle ? 'settle' : 'start', step: 0, budget, contentH: info.contentH, measured, rectBottom: rect });
   let steps = 0;
   while (rect !== null && rect > allowedRect && steps < 16) {
     budget = Math.max(0, budget - Math.ceil(rect - allowedRect));
@@ -989,14 +1067,76 @@ function applyLayout() {
     measured = measureStackBottom();
     rect = measureStackRectBottom();
     steps++;
-    fitLog.push({ step: steps, budget, contentH: info.contentH, measured, rectBottom: rect });
+    fitLog.push({ pass: isSettle ? 'settle' : 'start', step: steps, budget, contentH: info.contentH, measured, rectBottom: rect });
   }
   info.measured = measured;      // document-coordinate bottom (record only)
   info.rectBottom = rect;        // painted bottom in rect coordinates (null = unmeasurable)
-  info.fitSteps = steps;
+  info.handRectBottom = measureHandRectBottom();
+  info.fitSteps = (prev && prev.fitSteps ? prev.fitSteps : 0) + steps;
   info.fitLog = fitLog;
   info.fitVisible = rect === null ? null : rect <= allowedRect;
   info.fit = rect === null ? 'unmeasurable' : info.fitVisible; // true only on a rect-verified visible fit
+  if (isSettle) { info.settled = true; info.settleRectBefore = settleRectBefore; }
+  else if (prev && prev.settled) { info.settled = true; info.settleRectBefore = prev.settleRectBefore; }
+  renderLayoutDebug();
+}
+function applyLayout() { layoutFit(false); }
+// ------------------------------------------------------- layout settle
+// Round 3 (see the note at LAYOUT_FIXED): the start pass measures a
+// skeleton — the zone rows are empty until the duel's first render.
+// The settle re-runs the fit ONCE against the rendered stack. It is
+// armed by the start-button handler and fires from the duel's first
+// onUpdate (the engine delivers state updates after each message
+// batch, strictly before answering the first prompt) or, as a
+// fallback, at the head of the first humanAnswerer call — in both
+// cases before any duel interaction has been answered, i.e. still
+// inside the duel-start sizing. One-shot; no listeners; a resize or
+// a later prompt can never re-trigger it.
+let layoutSettleArmed = false;
+let layoutSettled = false;
+function maybeSettleLayout() {
+  if (!layoutSettleArmed || layoutSettled) return;
+  // A rect measurement only describes the real stack once the board
+  // is rendered: zone slots and hand cards in the DOM.
+  if (!document.querySelector('#myMzone .slot') || !document.querySelector('#hand .hcard')) return;
+  layoutSettled = true;
+  try { layoutFit(true); }
+  catch (e) { if (window.__layout) window.__layout.settleError = String(e); }
+}
+// ------------------------------------------------------- layout debug
+// ?layoutdebug=1: a small fixed-position TEXT readout (bottom-left,
+// monospace, dismissible via the ×) of the final fit state —
+// signals, budget, rect bottoms, fit — updated at each fit pass.
+// The parent's verification harness cannot evaluate JS in the page,
+// so window.__layout's numbers were unreachable in the real
+// environment; this puts them on the screen itself. Default off:
+// without the parameter nothing is created and nothing changes.
+const layoutDebugOn = /[?&]layoutdebug=1(?:&|$)/.test(window.location.search || '');
+function renderLayoutDebug() {
+  if (!layoutDebugOn) return;
+  let el = document.getElementById('layoutdebug');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'layoutdebug';
+    el.style.cssText = 'position:fixed;left:4px;bottom:4px;z-index:999;pointer-events:none;background:rgba(0,0,0,.88);color:#7fc97f;border:1px solid #7fc97f;border-radius:4px;font:10px/1.6 monospace;padding:5px 8px;white-space:pre;';
+    const txt = document.createElement('span');
+    const x = document.createElement('span');
+    x.textContent = ' [×]';
+    x.style.cssText = 'cursor:pointer;color:#e06666;pointer-events:auto;';
+    x.addEventListener('click', () => { el.remove(); });
+    el.appendChild(txt); el.appendChild(x);
+    el._txt = txt;
+    document.body.appendChild(el);
+  }
+  const L = window.__layout || {};
+  const hb = $('handbar');
+  const handNow = hb && hb.getBoundingClientRect ? Math.round(hb.getBoundingClientRect().bottom * 10) / 10 : null;
+  el._txt.textContent =
+    'LAYOUT FIT\n' +
+    'inner=' + L.innerHeight + ' client=' + L.clientHeight + ' vvH=' + L.vvHeight + ' vvTop=' + L.vvOffsetTop + '\n' +
+    'baseH=' + L.vh + ' target=' + L.visibleBottom + ' budget=' + L.budget + '\n' +
+    'contentH=' + L.contentH + ' rectBottom=' + L.rectBottom + ' handBottom=' + (L.handRectBottom != null ? L.handRectBottom : handNow) + '\n' +
+    'fit=' + L.fit + ' steps=' + L.fitSteps + ' settled=' + !!L.settled + (L.settled ? ' settleRect=' + L.settleRectBefore : '');
 }
 // ---------------------------------------------------------------- preview
 // Persistent card-detail strip in the leftover space (never overlays or
@@ -1075,6 +1215,7 @@ function wireSeg(id, apply) {
     playSe('vs_start');
     previewState = null; // preview restarts with the duel (default: first hand card)
     applyLayout(); // fit once to this viewport, then frozen for the whole duel
+    layoutSettleArmed = true; layoutSettled = false; // round 3: one post-render settle, still inside the start sequence
     // Seat wiring (item 5): the core's first player is always seat 0, so a
     // second-player human takes seat 1 with the decks swapped.
     const humanFirst = firstChoice === 'first' ? true : firstChoice === 'second' ? false : Math.random() < 0.5;
@@ -1099,8 +1240,9 @@ function wireSeg(id, apply) {
         drainSeEvents(state);
         render(state);
         updateBgm(state);
+        maybeSettleLayout(); // round 3: first render done, first prompt not yet delivered (engine order)
       },
-      humanAnswerer: async (prompt, state) => { render(state); return uiAnswer(prompt, state); },
+      humanAnswerer: async (prompt, state) => { maybeSettleLayout(); render(state); return uiAnswer(prompt, state); },
     });
     const stats = await duel.run();
     const st = duel.state;
