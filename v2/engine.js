@@ -27,8 +27,28 @@ const PHASES = {1:'DRAW',2:'STANDBY',4:'MAIN1',8:'BATTLE_START',16:'BATTLE_STEP'
 const LOC = { DECK:0x01, HAND:0x02, MZONE:0x04, SZONE:0x08, GRAVE:0x10, REMOVED:0x20, EXTRA:0x40, OVERLAY:0x80 };
 const POS = { FU_ATK:0x1, FD_ATK:0x2, FU_DEF:0x4, FD_DEF:0x8 };
 const POS_FACEUP = 0x5, POS_ATTACK = 0x3, POS_DEFENSE = 0xC;
-// DUEL_MODE_MR5 (ocgapi_constants.h) — same flags as the verified PoC.
-const FLAGS_MR5 = 0x800 | 0x2000 | 0x40000 | 0x10000 | 0x80000 | 0x4000 | 0x8000 | 0x20000;
+// Duel option flags (ocgapi_constants.h) — Genesis-format restrictions on an
+// MR5 base, per the user's format decision:
+//   base set (unchanged from the verified PoC/MR5 configuration):
+//     0x4000  DUEL_FSX_MMZONE                 (Fusion/Synchro/Xyz use main zones)
+//     0x8000  DUEL_TRAP_MONSTERS_NOT_USE_ZONE
+//     0x10000 DUEL_RETURN_TO_DECK_TRIGGERS
+//     0x20000 DUEL_TRIGGER_ONLY_IN_LOCATION
+//     0x40000 DUEL_SPSUMMON_ONCE_OLD_NEGATE
+//     0x80000 DUEL_CANNOT_SUMMON_OATH_OLD
+//   Genesis restrictions:
+//     DUEL_EMZONE (0x2000) NOT set  -> no Extra Monster Zones; the core's
+//       get_tofield_count then always masks MZONE seq 5/6 as unusable, so
+//       Extra-Deck summons land in main zones 0-4 only.
+//     DUEL_PZONE (0x800) NOT set    -> no Pendulum Zones (the card pool has
+//       no Pendulum cards anyway; audited in NOTES.md).
+//     DUEL_1ST_TURN_DRAW (0x200) NOT set -> the starting player does not
+//       draw on turn 1 (core: processor.cpp only draws on turn 1 when this
+//       flag is present). Opening hand 5, then 1 draw per turn.
+// The flags are passed verbatim to OCG_DuelOptions via poc_create in
+// v2/build/driver.cpp, so this constant IS the core-level configuration;
+// no driver/WASM change is involved.
+const FLAGS_GENESIS = 0x40000 | 0x10000 | 0x80000 | 0x4000 | 0x8000 | 0x20000;
 const GLOBALS_ORDER = ['constant.lua','archetype_setcode_constants.lua','card_counter_constants.lua','utility.lua',
   'cards_specific_functions.lua','chain.lua','deprecated_functions.lua','proc_equip.lua','proc_fusion.lua',
   'proc_fusion_spell.lua','proc_gemini.lua','proc_link.lua','proc_maximum.lua','proc_normal.lua','proc_pendulum.lua',
@@ -775,7 +795,7 @@ class Duel {
     const log = opts.onLog || (() => {});
     this._register();
     const duel = ccall('poc_create', 'number', ['number','bigint','number','number','number'],
-      [opts.seed || 20261102, BigInt(FLAGS_MR5), 8000, 5, 1]);
+      [opts.seed || 20261102, BigInt(FLAGS_GENESIS), 8000, 5, 1]);
     if (!duel) throw new Error('OCG_CreateDuel failed');
     this._duelHandle = duel;
     let globalFails = 0;
@@ -915,7 +935,7 @@ class Duel {
   }
 }
 
-const Engine = { MSG, SELECT_TYPES, PHASES, LOC, POS, POS_FACEUP, POS_ATTACK, POS_DEFENSE, FLAGS_MR5,
+const Engine = { MSG, SELECT_TYPES, PHASES, LOC, POS, POS_FACEUP, POS_ATTACK, POS_DEFENSE, FLAGS_GENESIS,
   ATTRIBUTES, RACES, Reader, splitMessages, i32resp, cancelResp, cardsResp, cmdResp, placeResp,
   counterResp, sortResp, unselectToggleResp, u64resp, parsePrompt, sumSelectionValid, isDeclarable,
   shuffledCopy, randBelow,
