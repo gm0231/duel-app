@@ -169,8 +169,7 @@ function zoneRow(el, cards, con, loc, small) {
     const key = con + ':' + loc + ':' + seq;
     const hl = placeCtx && placeCtx.avail.has(key) ? ' hl' : '';
     const pk = placeCtx && placeCtx.chosen.has(key) ? ' picked' : '';
-    const emz = loc === E.LOC.MZONE && seq >= 5 ? ' emz' : '';
-    return '<div class="slot' + (small ? ' small' : '') + emz + hl + pk + '" data-zone="' + key + '">' +
+    return '<div class="slot' + (small ? ' small' : '') + hl + pk + '" data-zone="' + key + '">' +
       '<span class="znum">' + (loc === E.LOC.SZONE && seq === 5 ? 'F' : (seq + 1)) + '</span>' +
       (card ? tileHTML(card, con, key) : '') +
       '</div>';
@@ -197,8 +196,11 @@ function render(state) {
   $('turninfo').textContent = 'ターン' + Math.max(1, state.turnCount) + '／' + (state.turnPlayer === HP ? '自分' : '相手');
   $('phaseinfo').textContent = state.phaseName ? ('フェイズ：' + phaseJa(state.phaseName) + (state.turnPlayer === HP ? '（自分のターン）' : '（相手のターン）')) : '—';
   zoneRow($('oppSzone'), [0,1,2,3,4,5].map(i => op.szone[i]), 1 - HP, E.LOC.SZONE, true);
-  zoneRow($('oppMzone'), op.mzone, 1 - HP, E.LOC.MZONE, false);
-  zoneRow($('myMzone'), me.mzone, HP, E.LOC.MZONE, false);
+  // Genesis format: no Extra Monster Zones — render main monster zones 0-4
+  // only. The state mirror keeps 7 slots (the core's RELOAD_FIELD always
+  // serializes 7), but seq 5/6 can never be offered or occupied now.
+  zoneRow($('oppMzone'), op.mzone.slice(0, 5), 1 - HP, E.LOC.MZONE, false);
+  zoneRow($('myMzone'), me.mzone.slice(0, 5), HP, E.LOC.MZONE, false);
   zoneRow($('mySzone'), [0,1,2,3,4,5].map(i => me.szone[i]), HP, E.LOC.SZONE, true);
   $('oppPilebar').innerHTML = pileHTML(null, 1 - HP);
   $('myPilebar').innerHTML = pileHTML(null, HP);

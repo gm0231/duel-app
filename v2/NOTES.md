@@ -371,6 +371,82 @@ are unchanged.
   the unmodified stock suite then passed both runs within budget.
 
 
+## Genesis format restrictions (branch client-genesis)
+
+The duel now runs under the user's Genesis-equivalent restrictions on an
+MR5 base. The flags live in `engine.js` (`FLAGS_GENESIS`) and are passed
+verbatim to `OCG_DuelOptions` via `poc_create` in `v2/build/driver.cpp`
+(the driver takes flags as a JS parameter, so no driver/WASM rebuild was
+needed — `v2/build/ocgcore.wasm` is unchanged):
+
+- `DUEL_EMZONE` (0x2000) removed -> no Extra Monster Zones. Core-side
+  proof: without the flag, `field::get_tofield_count` always sets MZONE
+  bits 5/6 in the unusable mask, so SELECT_PLACE never offers them and
+  Extra-Deck summons route to main zones 0-4 (`get_useable_count_fromex`
+  falls back to the non-rule4 path).
+- `DUEL_PZONE` (0x800) removed -> no Pendulum Zones.
+- `DUEL_1ST_TURN_DRAW` (0x200) stays absent -> the starting player does
+  not draw on turn 1 (core `processor.cpp`: turn-1 draw only happens when
+  this flag is set). All other base flags unchanged (incl. DUEL_FSX_MMZONE,
+  so Fusion/Synchro/Xyz use main monster zones).
+
+Measured before (MR5 flags) vs after (Genesis flags), `test-genesis.js`
+(exploratory policy on both seats; deck order is crypto-shuffled per duel,
+so figures are aggregates over independent duels):
+
+- Turn-1 draw: starting player's hand at their first MAIN1 prompt was 5
+  and their turn-1 maximum was 5 in all 15 complete baseline duels and
+  all 6 Genesis duels; first-prompt hands were [5,5] every time. The restriction
+  was ALREADY satisfied before this change (the PoC flag set never
+  included DUEL_1ST_TURN_DRAW) and remains satisfied — measured, not
+  assumed.
+- Extra Monster Zones: baseline — 39 of 43 observed Extra-Deck monster
+  appearances landed in seq 5/6, and 39 of 580 SELECT_PLACE/DISFIELD
+  prompts offered an EMZ bit. After — 218 place prompts with 0 EMZ offers,
+  13 Extra-Deck appearances, ALL in main zones (seqs {0:4, 1:3, 2:3,
+  3:2, 4:1}), 0 in EMZ. MSG_RETRY 0 in every duel, all duels completed.
+- UI: `client.js` renders only monster zones 0-4 for both players (the
+  state mirror keeps its 7-slot arrays because RELOAD_FIELD always
+  serializes 7; seq 5/6 can now never be offered or occupied). The dead
+  `.slot.emz` styling was removed. Zone-tap mapping is unchanged (core
+  sequences for main zones are 0-4 with or without the flag).
+
+Card-pool audit (no deck changes): all 63 pool cards checked in
+`data.json` — 0 Link (TYPE_LINK), 0 Pendulum (TYPE_PENDULUM), no nonzero
+lscale/rscale, no link markers. Extra decks are Fusion 18 / Synchro 5 /
+Xyz 6 (counting duplicates across both decks). Script audit of all 63
+card scripts: no reference to linked zones, link markers, or an Extra
+Monster Zone; no hardcoded seq 5/6. One non-issue hit:
+`c36898537.lua` （メタファイズ・ホルス・ドラゴン） reads TYPE_PENDULUM only
+as a flag on its Synchro materials (an optional bonus effect if a
+Pendulum monster was used as material — impossible in this pool, and the
+card functions fully without it).
+
+Pre-existing issue found during verification (NOT caused by, and NOT
+fixed by, this change — flagged for a later fix round): the state
+mirror's Xyz-material accounting dips during inherent Xyz summons. Wire
+evidence: materials move to loc 0xc0 (EXTRA|OVERLAY) with seq = the
+host's Extra-Deck index while the host is still in the Extra Deck;
+`engine.js` `_insertAt` credits OVERLAY units only to a host already in
+`mzone[seq]`, so the materials go uncounted until they detach (loc
+0x84/0x90), which restores the count. Consequences are display-side
+only: the mirror's running total dips by the material count (and an Xyz
+monster's materials badge under-reports) until detachment; if a duel
+ends while an Xyz monster still holds materials, the mirror's final
+total stays dipped (observed once: 57/58). The core state is always
+consistent — duels complete with correct winners and MSG_RETRY 0. The
+same artifact makes `test-phase2.js` check B2 (query code vs mirror
+code) fail intermittently: it failed on unmodified main in 2 of 2
+observed runs as well, so it is not a regression of this branch.
+
+Regression on this branch: `test-node.js` PASS (644 conservation
+checks, 0 violations, retries 0, final totals 58/55), `test-explore.js`
+PASS, `test-genesis.js` PASS (6 duels), `test-phase2.js` all checks
+pass except the pre-existing intermittent B2 above, `test-ui.js`
+(jsdom click-through, NODE_PATH=/tmp/jsdomtest/node_modules) — ALL UI
+CHECKS PASSED (both runs reached the result screen; run 2 seat-swapped
+72 turns, deck-out; retry warning never shown, no stalls).
+
 ## Known gaps for later phases
 - CPU intelligence: player 1 is the PoC's minimal legal bot (summon a
   level ≤4, otherwise advance phases; always passes chains unless forced).
@@ -382,9 +458,14 @@ are unchanged.
   fixed in Phase 2 — board values are live from the core query.)
 - SELECT_OPTION buttons are numbered placeholders — the core sends string
   table IDs (descriptions); a strings table is needed to label them.
-- Genesis restrictions (no EMZ/Link/Pendulum, no first-turn draw, point
-  limits): NOT applied — duels run MR5 as in the PoC, per phase instructions.
-  The restriction path (duel flags + pool limits) is a later phase.
+- Genesis point limits: NOT applied — the format restrictions (no
+  EMZ/PZONE, no first-turn draw, pool excludes Link/Pendulum) are in
+  (see the Genesis section above), but per-card Genesis point costs and
+  the 100-point deck budget are not enforced anywhere.
+- Xyz materials mirror accounting: overlay units attached during an
+  inherent Xyz summon are uncounted by the state mirror until they
+  detach (see the Genesis section for wire-level evidence). Display-side
+  only; core state is unaffected.
 - Save/resume: none. Reloading restarts from the start screen.
 - Turn timer, surrender, side decking: none. (Deck and first/second choice
   were added in Phase 2.)
