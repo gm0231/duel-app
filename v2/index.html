@@ -8,29 +8,37 @@
   :root{
     --gold:#c9a227; --gold-dim:#8a6d1f; --ink:#0d0b08; --panel:#1b1712; --panel2:#241e16;
     --tile:#2a2318; --tile-edge:#4a3d22; --txt:#e8dcc0; --txt-dim:#a89878; --bad:#e06666; --ok:#7fc97f;
+    /* layout sizes — recomputed by client.js applyLayout() at duel start and
+       frozen for the whole duel; these are pre-duel fallbacks */
+    --sw:47px; --sh:72px; --hw:56px; --hh:86px; --pv:0px;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{margin:0;padding:0;background:var(--ink);color:var(--txt);font-family:"Hiragino Sans","Noto Sans JP",sans-serif;}
   #app{max-width:430px;margin:0 auto;min-height:100dvh;display:flex;flex-direction:column;position:relative;}
+  #app>*{flex:0 0 auto;}
   /* ---------- top bar ---------- */
-  #topbar{display:flex;align-items:center;gap:8px;padding:6px 8px;background:linear-gradient(#241c10,#171208);border-bottom:1px solid var(--gold-dim);}
+  #topbar{display:flex;align-items:center;gap:8px;height:44px;padding:3px 8px;background:linear-gradient(#241c10,#171208);border-bottom:1px solid var(--gold-dim);overflow:hidden;}
   #topbar .who{font-size:11px;color:var(--txt-dim);}
   #topbar .lp{font-size:17px;font-weight:700;color:var(--gold);min-width:64px;}
   #topbar .mid{flex:1;text-align:center;font-size:12px;}
   #topbar .piles{font-size:11px;color:var(--txt-dim);text-align:right;line-height:1.5;}
   /* ---------- field ---------- */
-  .field{padding:4px 6px 2px;}
+  .field{padding:3px 6px 2px;}
   .zrow{display:flex;gap:4px;justify-content:center;align-items:flex-end;margin:2px 0;}
   .zrow .rowlabel{font-size:9px;color:var(--txt-dim);width:26px;text-align:right;padding-bottom:4px;}
-  .slot{width:47px;height:60px;border:1px solid var(--tile-edge);border-radius:5px;background:var(--tile);position:relative;flex:0 0 auto;overflow:hidden;}
-  .slot.small{width:40px;height:52px;}
+  /* all zones share ONE size (user spec); the slot is the zone box, the tile
+     (card image) sits inside it, and ATK/DEF live in a strip at the slot
+     bottom — OUTSIDE the card frame, with ATK/DEF labels */
+  .slot{width:var(--sw);height:var(--sh);border:1px solid var(--tile-edge);border-radius:5px;background:var(--tile);position:relative;flex:0 0 auto;overflow:hidden;}
   .slot .znum{position:absolute;top:0;left:2px;font-size:8px;color:#6b5c3a;z-index:3;}
   .slot.hl{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold),0 0 12px #c9a22788;cursor:pointer;animation:pulse 1s infinite alternate;}
   .slot.picked{border-color:var(--ok);box-shadow:0 0 0 2px var(--ok);}
   @keyframes pulse{from{box-shadow:0 0 0 1px var(--gold);}to{box-shadow:0 0 0 3px var(--gold),0 0 14px #c9a227aa;}}
-  .tile{position:absolute;inset:1px;border-radius:4px;background:#3a2f1d url('../assets/card-art-placeholder-s.jpg') center/cover;display:flex;flex-direction:column;justify-content:flex-end;padding:2px;}
-  .tile .nm{font-size:8px;line-height:1.15;background:#000a;padding:1px 2px;border-radius:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .tile .st{font-size:8px;background:#000a;padding:0 2px;border-radius:2px;color:var(--gold);}
+  .tile{position:absolute;top:1px;left:1px;right:1px;bottom:1px;border-radius:4px;background:#3a2f1d url('../assets/card-art-placeholder-s.jpg') center/cover;display:flex;flex-direction:column;justify-content:flex-end;padding:2px;}
+  .slot.hs .tile{bottom:16px;}
+  .slotstats{position:absolute;left:0;right:0;bottom:0;height:15px;display:flex;justify-content:space-between;align-items:center;padding:0 3px;font-size:9px;color:var(--txt-dim);}
+  .slotstats b{color:var(--txt);font-size:10px;}
+  .tile .nm{font-size:clamp(8px, calc(var(--sw) * 0.17), 12px);line-height:1.15;background:#000a;padding:1px 2px;border-radius:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .tile.def .inner{transform:rotate(90deg);}
   .tile .inner{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:flex-end;padding:2px;transition:transform .15s;}
   .tile.back{background:repeating-linear-gradient(45deg,#3d2c14 0 6px,#2c1f0d 6px 12px);}
@@ -39,34 +47,53 @@
   .tile.actionable{box-shadow:0 0 0 2px #7fc97f inset;cursor:pointer;}
   .slot.targeted{border-color:var(--bad);box-shadow:0 0 0 2px var(--bad);}
   /* ---------- piles ---------- */
-  .pilebar{display:flex;gap:4px;justify-content:center;margin:1px 0;}
-  .pile{min-width:52px;padding:2px 4px;border:1px solid var(--tile-edge);border-radius:5px;background:var(--panel);font-size:10px;text-align:center;color:var(--txt-dim);cursor:pointer;}
+  .pilebar{display:flex;gap:4px;justify-content:center;margin:1px 0;height:21px;}
+  .pile{min-width:52px;height:21px;padding:0 4px;display:flex;align-items:center;justify-content:center;border:1px solid var(--tile-edge);border-radius:5px;background:var(--panel);font-size:10px;text-align:center;color:var(--txt-dim);cursor:pointer;}
   .pile b{color:var(--txt);font-size:12px;}
   .pile.actionable{border-color:var(--ok);color:var(--txt);}
   /* ---------- mid bar ---------- */
   #midbar{background:var(--panel);border-top:1px solid var(--tile-edge);border-bottom:1px solid var(--tile-edge);padding:3px 6px;}
-  #chainbar{display:none;gap:4px;overflow-x:auto;padding:2px 0;}
-  #chainbar.on{display:flex;}
+  /* the chain row's height is ALWAYS reserved (visibility toggles, never
+     display) so a chain appearing mid-duel cannot shift the board */
+  #chainbar{display:flex;visibility:hidden;gap:4px;overflow-x:auto;height:21px;padding:2px 0;}
+  #chainbar.on{visibility:visible;}
   .link{flex:0 0 auto;font-size:10px;border:1px solid var(--gold-dim);border-radius:10px;padding:2px 7px;background:var(--panel2);white-space:nowrap;}
   .link.solving{border-color:var(--gold);background:#4a3a10;color:#fff;}
   .link.negated{text-decoration:line-through;opacity:.55;}
   .link .no{color:var(--gold);font-weight:700;}
-  #logline{font-size:10px;color:var(--txt-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:14px;}
-  #phasebar{display:flex;align-items:center;gap:8px;}
+  #logline{font-size:10px;color:var(--txt-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:15px;line-height:15px;}
+  #phasebar{display:flex;align-items:center;gap:8px;height:34px;}
   #phasebar .lp{font-size:16px;font-weight:700;color:var(--gold);}
   #phaseinfo{flex:1;font-size:12px;text-align:center;}
-  #phasebtn{background:var(--gold);color:#191104;border:0;border-radius:6px;font-size:13px;font-weight:700;padding:8px 10px;min-width:104px;}
+  #phasebtn{background:var(--gold);color:#191104;border:0;border-radius:6px;font-size:13px;font-weight:700;padding:0 10px;height:32px;min-width:104px;}
   #phasebtn:disabled{background:#4a3d22;color:#8a7c55;}
-  #menubtn{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:6px;font-size:12px;padding:8px;}
+  #menubtn{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:6px;font-size:12px;padding:0 8px;height:32px;}
   /* ---------- hand ---------- */
   #handbar{background:var(--panel);border-top:1px solid var(--gold-dim);padding:4px 4px 6px;}
-  #handbar .who{font-size:10px;color:var(--txt-dim);padding:0 2px 2px;}
-  #hand{display:flex;gap:4px;overflow-x:auto;min-height:74px;}
-  .hcard{width:56px;height:72px;flex:0 0 auto;border:1px solid var(--tile-edge);border-radius:5px;background:#3a2f1d url('../assets/card-art-placeholder-s.jpg') center/cover;position:relative;padding:2px;display:flex;flex-direction:column;justify-content:flex-end;cursor:pointer;}
-  .hcard .nm{font-size:8px;line-height:1.15;background:#000a;padding:1px 2px;border-radius:2px;}
-  .hcard .st{font-size:8px;background:#000a;padding:0 2px;border-radius:2px;color:var(--gold);}
+  #handbar .who{font-size:10px;color:var(--txt-dim);padding:0 2px;height:13px;line-height:13px;}
+  #hand{display:flex;gap:4px;overflow-x:auto;overflow-y:hidden;height:var(--hh);}
+  /* hand card: image area on top (name overlaid at its bottom), ATK/DEF in a
+     strip BELOW the image — outside the card frame, same as board tiles */
+  .hcard{width:var(--hw);height:var(--hh);flex:0 0 auto;border:1px solid var(--tile-edge);border-radius:5px;background:var(--tile);position:relative;padding:0;display:flex;flex-direction:column;overflow:hidden;cursor:pointer;}
+  .himg{flex:1 1 auto;position:relative;background:#3a2f1d url('../assets/card-art-placeholder-s.jpg') center/cover;}
+  .hcard .nm{position:absolute;left:2px;right:2px;bottom:2px;font-size:clamp(8px, calc(var(--hw) * 0.13), 12px);line-height:1.15;background:#000a;padding:1px 2px;border-radius:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .hstats{height:14px;flex:0 0 auto;display:flex;justify-content:space-between;align-items:center;padding:0 3px;font-size:9px;color:var(--txt-dim);}
+  .hstats b{color:var(--txt);font-size:10px;}
   .hcard.actionable{box-shadow:0 0 0 2px var(--ok);}
-  .hcard.back{background:repeating-linear-gradient(45deg,#3d2c14 0 6px,#2c1f0d 6px 12px);}
+  .hcard.back .himg{background:repeating-linear-gradient(45deg,#3d2c14 0 6px,#2c1f0d 6px 12px);}
+  /* ---------- persistent card-detail preview (leftover space only) ---------- */
+  #preview{display:none;height:var(--pv);border-top:1px solid var(--gold-dim);background:var(--panel);padding:6px 8px;gap:8px;overflow:hidden;cursor:pointer;}
+  #preview.on{display:flex;}
+  #preview .pv-art{flex:0 0 auto;width:calc((var(--pv) - 12px) * 0.72);background:#3a2f1d url('../assets/card-art-placeholder-s.jpg') center/cover;border-radius:4px;border:1px solid var(--tile-edge);}
+  #preview .pv-body{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;}
+  #preview .pv-top{display:flex;gap:8px;align-items:baseline;}
+  #preview .pv-name{font-size:13px;font-weight:700;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  #preview .pv-stats{font-size:11px;color:var(--txt);white-space:nowrap;}
+  #preview .pv-meta{font-size:10px;color:var(--txt-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  #preview .pv-text{flex:1 1 auto;overflow-y:auto;font-size:11px;line-height:1.55;white-space:pre-wrap;margin-top:2px;}
+  #preview.compact .pv-art{display:none;}
+  #preview.compact .pv-text{display:none;}
+  #preview.compact .pv-meta{display:none;}
   /* ---------- chain dock ---------- */
   #dock{position:absolute;left:0;right:0;bottom:0;z-index:40;background:#171208f2;border-top:2px solid var(--gold);padding:8px;display:none;}
   #dock.on{display:block;}
@@ -115,7 +142,9 @@
   .overlay p{font-size:13px;color:var(--txt-dim);line-height:1.7;margin:0;}
   .overlay .startbtn{background:var(--gold);color:#191104;border:0;border-radius:8px;font-size:17px;font-weight:700;padding:14px 34px;}
   #result{display:none;}
-  #placehint{display:none;background:#4a3a10;color:#ffe9a8;font-size:12px;text-align:center;padding:6px;border-bottom:1px solid var(--gold);}
+  /* placement hint is an overlay banner under the top bar — it must never
+     push the board down when it appears mid-duel */
+  #placehint{display:none;position:absolute;top:44px;left:0;right:0;z-index:30;background:#4a3a10;color:#ffe9a8;font-size:12px;text-align:center;padding:6px;border-bottom:1px solid var(--gold);}
   #placehint.on{display:block;}
   /* ---------- phase 2 additions ---------- */
   #sheet .ctx{font-size:11px;color:var(--gold);margin:2px 0 6px;}
@@ -124,7 +153,7 @@
   .cand .dueldismiss{display:block;margin-top:4px;font-size:9px;color:#f0c08a;text-decoration:underline;cursor:pointer;}
   #dock .duelsection{font-size:10px;color:var(--txt-dim);margin-top:6px;}
   #dock .duelsection button{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:10px;padding:2px 8px;margin-left:6px;cursor:pointer;}
-  #autopass{display:none;position:absolute;left:8px;bottom:86px;z-index:45;background:#4a3a10ee;color:#ffe9a8;border:1px solid var(--gold);border-radius:12px;font-size:11px;padding:5px 10px;cursor:pointer;}
+  #autopass{display:none;position:absolute;left:8px;bottom:calc(var(--hh) + 33px);z-index:45;background:#4a3a10ee;color:#ffe9a8;border:1px solid var(--gold);border-radius:12px;font-size:11px;padding:5px 10px;cursor:pointer;}
   #autopass.on{display:block;}
   #autopass.flash{background:#7a5a10;color:#fff;font-weight:700;}
   .segrow{margin:6px 0 2px;font-size:12px;color:var(--txt-dim);}
@@ -162,6 +191,7 @@
     <div class="zrow" id="mySzone"></div>
     <div class="pilebar" id="myPilebar"></div>
   </div>
+  <div id="preview"></div>
   <div id="handbar">
     <div class="who">自分の手札（<span id="handcount">0</span>）</div>
     <div id="hand"></div>

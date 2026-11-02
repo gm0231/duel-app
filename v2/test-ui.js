@@ -49,13 +49,16 @@ async function playDuel(window, opts) {
     const ap = $('autopass');
     if (ap && ap.textContent.includes('自動パス')) obs.autopassChipSeen = true;
     for (const hc of qa('#hand .hcard .nm')) if (/[ぁ-んァ-ヶ一-龯]/.test(hc.textContent)) obs.jpSeen = true;
-    for (const t of qa('.tile')) {
-      const nm = t.querySelector('.nm'), st = t.querySelector('.st');
+    for (const t of qa('.slot')) {
+      // live stats now render in the slot-level .slotstats strip (ATK/DEF
+      // labels, outside the card frame) instead of inside the tile
+      const tile = t.querySelector('.tile');
+      const nm = tile ? tile.querySelector('.nm') : null, st = t.querySelector('.slotstats');
       if (nm && st && nameToCode[nm.textContent] != null) {
         const cd = data.cards[nameToCode[nm.textContent]];
-        const m = st.textContent.match(/攻(\d+)／守(\d+)/);
+        const m = st.textContent.match(/ATK (\d+)DEF (\d+)/);
         if (cd && m && (+m[1] !== cd.atk || +m[2] !== cd.def) && obs.liveStatSamples.length < 4)
-          obs.liveStatSamples.push(nm.textContent + ' 表示 ' + st.textContent + ' / 印刷 ' + cd.atk + '/' + cd.def);
+          obs.liveStatSamples.push(nm.textContent + ' 表示 ATK ' + m[1] + '／DEF ' + m[2] + ' / 印刷 ' + cd.atk + '/' + cd.def);
       }
     }
     const sheetOn = $('sheetwrap').className === 'on';

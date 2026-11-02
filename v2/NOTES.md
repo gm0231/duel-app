@@ -447,6 +447,110 @@ pass except the pre-existing intermittent B2 above, `test-ui.js`
 CHECKS PASSED (both runs reached the result screen; run 2 seat-swapped
 72 turns, deck-out; retry warning never shown, no stalls).
 
+## Layout phase (branch client-layout)
+
+User decision (2026-11-02, after playing the Phase 2 build on his phone:
+"the lower half is dead space"): **"fit the board to the screen, and if
+space remains, a persistent card-detail preview."** Previously every
+element was fixed-size (slots 47×60, S/T slots even smaller at 40×52,
+hand 56×72) and nothing stretched, so tall screens kept a dead band
+under the hand.
+
+### Fit once, then freeze
+`applyLayout()` (client.js) runs exactly once per duel, inside the
+start-button handler, and publishes sizes as CSS vars on `:root`
+(`--sw/--sh/--hw/--hh/--pv`) plus `window.__layout` for tests. There is
+no resize listener; a new duel (page reload via もう一度 → start) is the
+only recompute. The freeze is structural, not just "we don't recompute":
+- dock / sheet / autopass chip / start & result overlays were already
+  absolutely positioned and stay that way;
+- `#chainbar` now always reserves its 21px row (visibility toggles
+  instead of display) — a chain appearing mid-duel used to grow the mid
+  bar and push the player's field down;
+- `#placehint` was in-flow (it pushed the whole board down during
+  SELECT_PLACE); it is now an absolute banner under the top bar;
+- `#app > *` is `flex:0 0 auto`, so flex shrink can never compress a
+  row if a real browser's font metrics differ by a pixel.
+
+### Sizing formula
+Every bar carries an explicit px height in index.html, so the stack is
+exact arithmetic (constant `LAYOUT_FIXED = 217` in client.js):
+topbar 44 + 2 fields × (padding 5 + pilebar block 23) + zone-row
+margins 16 + midbar 78 (chainbar 21 + logline 15 + phasebar 34 +
+padding/borders 8) + handbar extras 23 (label 13 + padding 10).
+On top of that: 4 × slotH + handH + previewH, where
+slotH = round(W×1.22) + 15 (image + ATK/DEF strip) and
+handH = round(handW×1.22) + 14, handW = round(W×56/47).
+W starts at the width cap — the widest row is the S/T row: 6 slots +
+5×4 gaps + 12 field padding ≤ app width (≤430) — and is decremented
+until the stack fits the viewport height (floor 40px; at the tested
+heights it never binds). The board is never shrunk below the old
+47×60 baseline to force a preview: at 660 the slot is 58×86.
+
+Slack distribution, in order: preview up to 56px (a fully usable
+strip), then hand growth up to 1.3× its standard height, then any
+rest to the preview. A computed preview under 24px is not shown
+(the sliver becomes the dead band, which is then < 24px by
+construction).
+
+Measured at width 390 (test-layout.js, jsdom — see caveat below):
+
+| vh | tile W | slot H (image) | hand W×H | preview | dead band |
+|----|--------|----------------|----------|---------|-----------|
+| 660 | 58 | 86 (71 img) | 69×98 | 1 → hidden | 1px |
+| 720 | 59 | 87 (72 img) | 70×99 | 56 shown | 0px |
+| 800 | 59 | 87 (72 img) | 70×129 (grown) | 106 shown | 0px |
+
+### Card display spec, now actually applied to tiles
+- All zones share ONE size: the `.slot.small` variant is gone (S/T
+  zones used to render smaller than monster zones).
+- ATK/DEF moved OUT of the tile: a `.slotstats` strip at the slot
+  bottom shows `ATK n / DEF n` with labels, using the live query
+  values (`curAtk/curDef`) exactly as before; the tile image shrinks
+  inside the slot when the strip is present (`.slot.hs`). Hand cards
+  got the same structure (`.himg` image area + `.hstats` strip).
+  Names stay single-line with ellipsis; no state text on tiles.
+- test-ui.js's live-stat sampler was repointed from `.tile .st` to
+  `.slotstats` in the same commit (observational only — no assertion
+  depends on it; neither clicker duel happened to surface a modified
+  face-up monster at a sampling tick, so samples stayed empty; the
+  engine-level live-value proof remains test-phase2 B).
+
+### Preview strip
+`#preview` sits between the player's field and the hand bar, height =
+`--pv` (0 ⇒ display:none). Content: art thumb, name, meta line
+(attribute/race/level), ATK/DEF, and the full effect text scrolling
+inside the strip only. Under 56px it switches to compact mode (name +
+stats on one line; tap opens the full card-info sheet — tapping the
+strip always opens that sheet). It follows the most recent tap:
+hand cards, field zones (face-up or own cards), action sheets, and
+pile-list card info all call `setPreview()`; field-sourced previews
+refresh their live stats on every render (signature-guarded, no DOM
+churn). Default before any tap: the first card of the opening hand.
+
+### Verification
+- `test-layout.js` (new): ALL LAYOUT CHECKS PASSED — per-height fill
+  (dead band 1/0/0px), baseline floor respected, preview shown +
+  tap-updated at 800 (tapped 花と野原の春化精）, sizes byte-identical
+  with a pile sheet open/closed, after a mid-duel resize event, and
+  with the chain dock open (click-play reached a dock at both 660
+  and 800).
+- `test-ui.js`: ALL UI CHECKS PASSED, run twice (before and after the
+  sampler repoint): run 1 — 62 then 72 turns, deck-out win, dismissal
+  exercised; run 2 — 72 turns, deck-out loss (seat swap); retry
+  warning never shown in any run, no stalls.
+- `test-node.js`: PASS (699 conservation checks, 0 violations).
+- `test-genesis.js`: PASS (retries 0, EMZ offers 0, EX-in-EMZ 0; the
+  mid-duel total dips are the known pre-existing Xyz-overlay mirror
+  artifact documented in the Genesis section, being fixed on
+  client-fixes-2 — engine.js is untouched by this branch).
+- Caveat: jsdom has no layout engine, so the measurements are the px
+  inputs (CSS vars / `window.__layout`) that fully determine every
+  box height in a real browser (all bars have explicit heights). A
+  real-device visual pass is still the parent's browser check. Very
+  short viewports (< ~620px, e.g. landscape) solve W down to the
+  40px floor and may scroll — portrait phones are the target.
+
 ## Known gaps for later phases
 - CPU intelligence: player 1 is the PoC's minimal legal bot (summon a
   level ≤4, otherwise advance phases; always passes chains unless forced).
