@@ -1278,6 +1278,134 @@ this file only), so neither can be an effect of this round:
 Both are flagged for a future fix round; neither is addressed
 here (out of this round's layout-only scope). The remaining
 suites above are deterministic in this environment and pass.
+
+## Layout fix round 4 (branch fix/layout-short-height)
+
+Trigger: on the user's phone (iPhone, in-app webview, ~650–700px
+usable height) BOTH ATK/DEF strips — the hand strip (.hstats) and
+the board strip (.slotstats) — read as clipped, after three layout
+rounds had certified the stack in a real browser at 998px visible.
+The parent's own real-browser pass at 1919×998 (?layoutdebug=1,
+turn 5) reproduced the contradiction exactly: fit=true,
+settled=true, budget 990 / contentH 990 / rectBottom 985 /
+handBottom 985 — yet both strips visibly cut. Board symptom: the
+"ATK DEF" labels read fine, the numbers' lower half is hidden, as
+if covered by the next zone row. Hand symptom: turn 1 the numbers
+sit at the screen's bottom edge cut in half; turn 5 (6 hand cards)
+the numbers row is gone entirely, names only, with a horizontal
+scrollbar at the bottom.
+
+### Root cause (measured, headless Chromium 156, pre-fix code)
+
+Not a stack-height defect at all, and NOT height-dependent. At
+390×{620,700,998}, fit=true throughout, every measured stat span
+was **28px tall inside a 14px (.hstats) / 15px (.slotstats) strip**:
+
+- The strips were one flex ROW of two spans. One-line content:
+  "ATK 3750" = 41.6px, "DEF 3400" = 42.8px (measured, 9px label /
+  10px bold digits) — a pair needs ~83px; strip inner widths are
+  53px (slot at W=59) to 64px (hand at handW=70). It cannot fit on
+  one line at ANY viewport size.
+- flex-shrink narrowed each span to 24–33px; the text wrapped at
+  the label/number space into two ~14px lines ("ATK" over "3750").
+- The 28px span, centered in the strip, protruded ~7px above and
+  ~7px below. Below the strip lies the slot's / card's own bottom
+  edge (overflow:hidden) → the number line's lower half is clipped
+  exactly as reported; the upward protrusion crowds the tile above
+  it ("rows look packed / covered by the next row").
+- The fit loop measures BOX bottoms (handbar, stack). Every box
+  was inside the target while the glyphs inside the strips were
+  cut — three rounds of stack work were treating a healthy
+  quantity because the instrument never looked inside the strips.
+
+Aggravator (hand, classic-scrollbar environments only): at 6+
+hand cards #hand scrolls horizontally; a classic horizontal
+scrollbar renders INSIDE #hand's fixed height and eats the bottom
+~15px of every card — the whole strip — matching the parent's
+turn-5 observation. iOS overlay scrollbars consume no space, so
+the phone symptom is fully explained by the wrap alone.
+Hypotheses considered and set aside: (b) WKWebView text
+inflation — not needed to explain any observation (the wrap
+reproduces the full symptom set in honest Chromium at 998px with
+all signals in agreement); the standard text-size-adjust:100%
+hardening was still applied (below). (c) in-app webview chrome
+overstating every height signal — likewise unnecessary; the
+round-3 conservative target (minimum of the signals) stays as
+defense in depth.
+
+### Fix
+
+- CSS (index.html): the strips are now two STACKED lines (ATK
+  line over DEF line), each `white-space:nowrap` with an explicit
+  11px line-height inside a 22px strip (flex-direction:column),
+  label 8px / digits 9px bold, letter-spacing −.5px. Measured
+  worst line "DEF 3400" = 38.3px at these sizes, ≈35.8px with the
+  letter-spacing — inside even the minimum tile's 36px inner
+  width (W=40, padding 0 2px), so the wrap cannot recur; a
+  pathological 5-digit value can now only graze horizontally
+  inside its own line, never fold vertically. .slot.hs .tile
+  bottom offset 16px → 23px to match. #hand's scrollbar is hidden
+  (scrollbar-width:none + ::-webkit-scrollbar) so a classic
+  scrollbar can never eat the strip; touch/wheel scrolling is
+  unaffected. html gets text-size-adjust:100%.
+- Model (client.js): layoutParts budgets the strip at 22px for
+  both slot and hand (slotH = imgH + 22; handH = handImgH + 22).
+  Fallback CSS vars updated (--sh 79px, --hh 90px).
+- The fit loop now measures the strips themselves
+  (measureStripClip: strips whose scrollHeight exceeds
+  clientHeight) and fit requires zero clipped strips wherever
+  strip layout is measurable — this failure class is inside the
+  guarantee from now on, and the ?layoutdebug readout prints
+  stripClip. The start+settle-only timing is unchanged (no
+  listeners added; the board still never resizes mid-duel).
+- test-layout.js: added the 390×620 and 390×600 boot cases, the
+  LAY-s0..s6 strip-contract checks, and scoped the 47×60 baseline
+  (LAY-a2) to vh ≥ 660 — at 600/620 the two full strip lines cost
+  real tile size (this is the round's one deliberate trade: tiles
+  shrink at the shortest heights so the numbers fit whole). The
+  chain-freeze click play (b3) runs at 660/800 only (height-
+  independent path, proven there; bounds suite time). LAY-g6's
+  expected standing bottom moved 732 → 727: with 22px strips the
+  step-down arithmetic lands the standing stack at 30 + 649 + 48
+  (verified in the test's own printed record).
+
+### Verification (Chromium 156, fixed code, real duels)
+
+- 390×998 (the parent's condition): stripClip=0, tile 59×94,
+  contentH 990 = budget, rectBottom 985, handBottom 985,
+  fit=true. Crop of a board monster's strip: "ATK 2400 /
+  DEF 2400", both lines complete.
+- 390×700: stripClip=0, tile 57×92, handH 105, contentH 690,
+  rectBottom 685, handBottom 685, fit=true.
+- 390×660 (start): stripClip=0, tile 51×84, handH 96, contentH
+  649, rectBottom 644 — the opening hand's strip reads "ATK 1400 /
+  DEF 1000" complete in the screenshot.
+- Short heights (confirmation run, start + mid-duel): 390×600 —
+  tile 42×73, handH 83, contentH 592 = budget, dead band 8,
+  rectBottom/handBottom 587, fit=true; 390×620 — tile 44×76,
+  handH 85, contentH 606 vs budget 612, dead 14, bottoms 601,
+  fit=true; 390×660 mid-duel — tile 51×84, handH 96, bottoms
+  644, fit=true. At every one of these heights, every measured
+  span (hand + board, up to 14 strips per snapshot) is a single
+  11px line with 0 spans outside their strip box. (stripClip
+  reads 0 in the on-page readouts — see the 660/700/998
+  screenshots; a __layout snapshot can also read null when the
+  settle lands before the first hand render, the same
+  "unmeasurable" convention as the rect channel. The direct span
+  geometry above is the verification instrument at 600/620.)
+- Every measured span at every height is a single 11.5px line
+  inside its 22px strip (was: 28px in 14/15px). Screenshots:
+  ~/workspace/duel-app-fix-layout/shots/ (before-*, before2-*,
+  after-* per height, start + mid-duel).
+- Full suite, all passing: test-node, test-explore, test-phase2,
+  test-investigate, test-ui, test-genesis, test-overlay,
+  test-facedown, test-layout (incl. the new cases), test-cpu,
+  test-cpu-tune, test-cpu-tune2, test-ggfusion, test-swap.
+  Not measured here: iOS/WKWebView itself (no such engine in this
+  VM) — the two iOS-specific hypotheses are addressed by the
+  conservative signal target (unchanged) and text-size-adjust,
+  and the defect class itself is engine-independent CSS.
+
 ## CPU tuning round (branch client-cpu-tune)
 
 Trigger: a real-browser game (human Ishizu vs CPU Gate Guardian) in which

@@ -1,8 +1,23 @@
 'use strict';
 /* test-layout.js — layout phase verification (jsdom; NODE_PATH=<dir with jsdom>).
-   Boots the real page at 390x{660,720,800} and 500x900 (the 430px column
-   cap), starts a duel (defaults: イシズ vs ゲート・ガーディアン, 先攻) and
+   Boots the real page at 390x{600,620,660,720,800} and 500x900 (the 430px
+   column cap), starts a duel (defaults: イシズ vs ゲート・ガーディアン, 先攻) and
    checks:
+     (s) round 4 strip accounting: the ATK/DEF strip is budgeted at
+         22px in BOTH the slot and the hand (slotH - imgH == 22,
+         handH - round(handW*1.22) == 22), the CSS carries the
+         two-line strip contract (22px height, column direction,
+         nowrap lines, hidden hand scrollbar, text-size-adjust:100%),
+         and __layout records stripClip (null in jsdom — no strip
+         layout to measure). The 600/620 heights are the short-viewport
+         cases the user hit on-device (in-app webview, ~650-700px
+         class and below); they were added in round 4 together with
+         the strip fix. At those heights the taller strips cost tile
+         size, so the 47x60 baseline (LAY-a2) is asserted only for
+         vh >= 660; the short cases assert the W floor instead. The
+         chain-dock freeze play (b3) likewise runs at 660/800 only —
+         the freeze code path is height-independent and proven there;
+         this bounds suite time.
      (a) the computed stack fits the viewport WITH the safety margin:
          contentH <= vh - 8 and the dead band vh - contentH is in [8, 24)
          at every size (round 3: margin 6 -> 8; layout-fix accounting: the
@@ -186,8 +201,17 @@ async function clickUntilDock(window, timeoutMs) {
   ok(/\.slot\{width:var\(--sw\);height:var\(--sh\)/.test(html), 'LAY0: all zones sized by the single --sw/--sh pair');
   ok(!html.includes('.slot.small'), 'LAY0b: no smaller S/T-zone slot variant remains');
 
+  // round 4 strip contract (CSS level — jsdom cannot lay out text, so the
+  // wrap-freedom of the strips is asserted as the CSS contract here and
+  // verified geometrically in real Chromium; see NOTES round 4)
+  ok(/\.slotstats\{[^}]*height:22px[^}]*flex-direction:column/.test(html), 'LAY-s0: .slotstats is a 22px two-line (column) strip');
+  ok(/\.hstats\{[^}]*height:22px[^}]*flex-direction:column/.test(html), 'LAY-s1: .hstats is a 22px two-line (column) strip');
+  ok(/\.slotstats span\{[^}]*white-space:nowrap/.test(html) && /\.hstats span\{[^}]*white-space:nowrap/.test(html), 'LAY-s2: strip lines are nowrap (a line can never wrap into the strip height again)');
+  ok(/text-size-adjust:100%/.test(html), 'LAY-s3: text-size-adjust:100% set (no webview text inflation)');
+  ok(/#hand\{[^}]*scrollbar-width:none/.test(html), 'LAY-s4: #hand scrollbar hidden (classic-scrollbar environments must not eat the strip)');
+
   const pvShownAt = {};
-  for (const [vw, vh] of [[390, 660], [390, 720], [390, 800], [500, 900]]) {
+  for (const [vw, vh] of [[390, 600], [390, 620], [390, 660], [390, 720], [390, 800], [500, 900]]) {
     const window = await boot(vw, vh);
     const doc = window.document;
     const $ = (id) => doc.getElementById(id);
@@ -198,7 +222,13 @@ async function clickUntilDock(window, timeoutMs) {
     ok(!!L && L.vh === vh && L.vw === Math.min(vw, 430), 'LAY-a0 ' + vw + 'x' + vh + ': layout computed for the requested viewport (column cap ' + Math.min(vw, 430) + ')');
     ok(L.contentH <= vh - 8 && L.dead >= 8 && L.dead < 24, 'LAY-a ' + vw + 'x' + vh + ': stack fits with the 8px safety margin, dead band ' + L.dead + 'px (in [8, 24), no scroll, no clip)');
     ok(L.settled === true && L.settleRectBefore === null && L.handRectBottom === null, 'LAY-a5 ' + vw + 'x' + vh + ': the round-3 settle ran inside the start sequence (settled=true) and, rects being absent in jsdom, honestly recorded null measurements');
-    ok(L.tileW >= 47 && L.slotH >= 60, 'LAY-a2 ' + vw + 'x' + vh + ': board never below the old fixed baseline 47x60 (tile ' + L.tileW + 'x' + L.slotH + ')');
+    if (vh >= 660) ok(L.tileW >= 47 && L.slotH >= 60, 'LAY-a2 ' + vw + 'x' + vh + ': board never below the old fixed baseline 47x60 (tile ' + L.tileW + 'x' + L.slotH + ')');
+    else ok(L.tileW >= 40 && L.slotH >= 70, 'LAY-a2s ' + vw + 'x' + vh + ': short-height case — tile at/above the W floor 40 with the 22px strips (tile ' + L.tileW + 'x' + L.slotH + '); the 47px baseline is not reachable at this height once the strips carry two full lines');
+    // the hand may additionally GROW with leftover (pre-existing distribution),
+    // so its strip share is 22 + growth, bounded by the 1.3x hand cap
+    ok(L.slotH - L.imgH === 22 && L.handH - Math.round(L.handW * 1.22) >= 22 && L.handH <= Math.round((Math.round(L.handW * 1.22) + 22) * 1.3),
+      'LAY-s5 ' + vw + 'x' + vh + ': strip budgeted at 22px in slot and hand (slotH-imgH ' + (L.slotH - L.imgH) + ', handH-handImgH ' + (L.handH - Math.round(L.handW * 1.22)) + ' = 22 + hand growth, within the 1.3x cap)');
+    ok(L.stripClip === null, 'LAY-s6 ' + vw + 'x' + vh + ': stripClip recorded as null in jsdom (no strip layout to measure — the field exists and stays honest)');
     ok(L.fit === 'unmeasurable' && L.fitVisible === null && L.fitSteps === 0, 'LAY-a3 ' + vw + 'x' + vh + ': rect measurement unavailable in jsdom — fit honestly reported as unmeasurable, formula stands');
     ok(L.innerHeight === vh && L.vvHeight === null && L.vvOffsetTop === 0 && L.visibleBottom === vh && Array.isArray(L.fitLog) && L.fitLog.length === 1 && L.fitLog[0].rectBottom === null, 'LAY-a4 ' + vw + 'x' + vh + ': __layout records the height signals + step log (innerHeight ' + L.innerHeight + ', clientHeight ' + L.clientHeight + ', visibleBottom ' + L.visibleBottom + ')');
     handH[vh] = L.handH;
@@ -242,8 +272,9 @@ async function clickUntilDock(window, timeoutMs) {
     ok(sizeSnapshot(window) === snap0, 'LAY-b3 vh=' + vh + ': sizes frozen against a mid-duel resize event');
     Object.defineProperty(window, 'innerHeight', { value: vh, configurable: true, writable: true });
 
-    // (b3) chain dock opens -> sizes unchanged (full click play until then)
-    if (vw === 390 && vh !== 720) {
+    // (b3) chain dock opens -> sizes unchanged (full click play until then;
+    // 660/800 only — the freeze path is height-independent, see header (s))
+    if (vw === 390 && (vh === 660 || vh === 800)) {
       const how = await clickUntilDock(window, 300000);
       ok(how === 'dock' || how === 'result', 'LAY-b4 vh=' + vh + ': play reached a chain dock (ended via: ' + how + ')');
       if (how === 'dock') ok(sizeSnapshot(window) === snap0, 'LAY-b5 vh=' + vh + ': tile/hand sizes identical with the chain dock open');
@@ -296,7 +327,7 @@ async function clickUntilDock(window, timeoutMs) {
     ok(L.rectBottom !== null && L.rectBottom <= 732, 'LAY-g3: final painted bottom ' + L.rectBottom + ' clears the visible ceiling 732 (740 − 8)');
     ok(L.budget === 654 && L.contentH <= 654, 'LAY-g4: budget stepped down by exactly the 78px rect excess over the round-3 ceiling (budget ' + L.budget + ', contentH ' + L.contentH + ')');
     ok(L.measured === 0, 'LAY-g5: document-coordinate record stays 0 here (jsdom offsets) — the loop no longer steers by it');
-    ok(L.settled === true && L.settleRectBefore === 732 && L.fitLog.some(e => e.pass === 'settle'), 'LAY-g6: the settle pass ran post-render, recorded the standing painted bottom (732) and appended its fitLog entry');
+    ok(L.settled === true && L.settleRectBefore === 727 && L.fitLog.some(e => e.pass === 'settle'), 'LAY-g6: the settle pass ran post-render, recorded the standing painted bottom (727; round 4 accounting — the taller strips coarsen the step-down, the standing stack after the start pass is 30 + 649 + 48) and appended its fitLog entry');
     window.close();
   }
 

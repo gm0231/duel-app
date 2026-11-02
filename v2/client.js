@@ -801,8 +801,10 @@ $('menubtn').addEventListener('click', () => {
 //   + my field (2 zone rows + pilebar 23 + pad 5) + handbar extras 23
 //   (who 13 + padding 10) + 4 zone-row margins 16  =  FIXED 217
 //   plus 4 × slotH + handH + previewH.
-// Slot: width W, image height round(W×1.22), +15 stats strip = slotH.
-// Hand: width round(W×56/47), image round(handW×1.22), +14 stats strip.
+// Slot: width W, image height round(W×1.22), +22 stats strip = slotH.
+// Hand: width round(W×56/47), image round(handW×1.22), +22 stats strip.
+// (Round 4: the strip is two stacked 11px lines — see the round-4 note
+// below; it was a single 15/14px row until then.)
 //
 // LAYOUT FIX (real-browser defect): the formula targets an EXACT fill —
 // whenever the preview is shown, the distribution consumes every leftover
@@ -885,14 +887,55 @@ $('menubtn').addEventListener('click', () => {
 // (4) ?layoutdebug=1 renders the final fit state as on-page TEXT
 // (renderLayoutDebug) — the verification harness cannot evaluate
 // JS, so window.__layout alone was unreachable there.
+//
+// LAYOUT FIX ROUND 4 (the strip clip was NOT a stack-height defect at
+// all; measured in headless Chromium 156 at 390×{620,700,998} against
+// this code, and matching the parent's 1919×998 real-browser report):
+// every ATK/DEF span measured 28px tall inside its 14px (.hstats) /
+// 15px (.slotstats) strip, at EVERY height, with fit=true throughout.
+// The strips were one flex ROW of two spans ("ATK 3750" + "DEF 3400"
+// ≈ 83px of text at 9/10px) inside 53–64px of strip width: flex-
+// shrink narrowed each span to 24–33px, the text wrapped at the
+// label/number space, and the resulting two-line span overflowed the
+// fixed-height strip symmetrically (7px above, 7px below). The
+// overflow below the strip is clipped by the slot's / card's own
+// overflow:hidden — visually: the ATK/DEF labels read fine, the
+// numbers' lower half is cut, mid-board rows look "covered by the
+// next row". The fit loop could never see it: it measures BOX
+// bottoms (handbar, stack), and every box was inside the target
+// while the glyphs inside the strips were cut. Three rounds of
+// stack-height work were therefore treating a healthy quantity.
+// Fix: the strips are now two STACKED lines (ATK over DEF), each
+// nowrap with an explicit 11px line-height in a 22px strip (CSS in
+// index.html; worst line "DEF 3400" measures 38.3px at 8px/9px,
+// ~35.8px with the -.5px letter-spacing — inside even the minimum
+// tile's 36px inner width, so the wrap cannot recur; a pathological
+// 5-digit value can now only graze horizontally inside its own
+// line). layoutParts budgets the strip at 22px for both slot and
+// hand. The fit loop additionally measures the strips themselves
+// (measureStripClip): fit now requires zero vertically-overflowing
+// strips wherever strip layout is measurable, so this failure class
+// is inside the guarantee from now on. Two companion hardenings in
+// index.html: text-size-adjust:100% (a webview inflating text was
+// hypothesis (b) — with nowrap lines inflation could no longer wrap
+// text, and the explicit 100% removes the variable entirely), and
+// #hand's scrollbar is hidden (in classic-scrollbar environments
+// the horizontal bar renders inside #hand's fixed height and eats
+// the strip whole at 6+ hand cards — the parent's turn-5 symptom;
+// iOS overlay scrollbars never consumed the space, so this is a
+// no-op there). Hypotheses (b)/(c) are not needed to explain ANY of
+// the observed evidence — the wrap reproduces the full symptom set
+// in honest Chromium at 998px, signals in agreement, fit=true —
+// and the conservative signal target of round 3 stays as defense
+// in depth for environments Chromium cannot model.
 const LAYOUT_FIXED = 217;
 const LAYOUT_SAFETY = 8; // px kept free below the stack, always (round 3: 6 → 8)
 let layoutInfo = null;
 function layoutParts(W) {
   const imgH = Math.round(W * 1.22);
-  const slotH = imgH + 15;
+  const slotH = imgH + 22;
   const handW = Math.round(W * 56 / 47);
-  const handH = Math.round(handW * 1.22) + 14;
+  const handH = Math.round(handW * 1.22) + 22;
   return { imgH, slotH, handW, handH, stack: LAYOUT_FIXED + 4 * slotH + handH };
 }
 function computeLayout(vwIn, vh) {
@@ -1008,6 +1051,24 @@ function measureHandRectBottom() {
   const r = el.getBoundingClientRect();
   return (r.height > 0 || r.bottom !== 0) ? Math.round(r.bottom * 10) / 10 : null;
 }
+// Round 4: count stat strips whose TEXT overflows the strip box
+// vertically (scrollHeight beyond clientHeight) — the failure class
+// the box-bottom loop was blind to for three rounds (see the round-4
+// note at LAYOUT_FIXED). Elements without layout (jsdom reports
+// clientHeight 0) are skipped; returns null when no strip was
+// measurable at all, the clipped count otherwise. Folded into the
+// fit verdict in layoutFit: a stack can no longer certify fit while
+// a strip's text is cut inside its own box.
+function measureStripClip() {
+  let seen = 0, clipped = 0;
+  const els = document.querySelectorAll('.hstats, .slotstats');
+  for (const el of els) {
+    if (!el.clientHeight) continue;
+    seen++;
+    if (el.scrollHeight > el.clientHeight + 1) clipped++;
+  }
+  return seen ? clipped : null;
+}
 // One fit pass. isSettle=false is the duel-start pass (fresh budget
 // from the target). isSettle=true is the round-3 settle: it CONTINUES
 // from the standing budget — sizes only ever shrink — but measures
@@ -1074,8 +1135,10 @@ function layoutFit(isSettle) {
   info.handRectBottom = measureHandRectBottom();
   info.fitSteps = (prev && prev.fitSteps ? prev.fitSteps : 0) + steps;
   info.fitLog = fitLog;
-  info.fitVisible = rect === null ? null : rect <= allowedRect;
-  info.fit = rect === null ? 'unmeasurable' : info.fitVisible; // true only on a rect-verified visible fit
+  info.stripClip = measureStripClip(); // round 4: vertically overflowing stat strips (null = unmeasurable)
+  const stripsOk = info.stripClip === null || info.stripClip === 0;
+  info.fitVisible = rect === null ? null : (rect <= allowedRect && stripsOk);
+  info.fit = rect === null ? 'unmeasurable' : info.fitVisible; // true only on a rect-verified visible fit with no clipped strip
   if (isSettle) { info.settled = true; info.settleRectBefore = settleRectBefore; }
   else if (prev && prev.settled) { info.settled = true; info.settleRectBefore = prev.settleRectBefore; }
   renderLayoutDebug();
@@ -1136,7 +1199,8 @@ function renderLayoutDebug() {
     'inner=' + L.innerHeight + ' client=' + L.clientHeight + ' vvH=' + L.vvHeight + ' vvTop=' + L.vvOffsetTop + '\n' +
     'baseH=' + L.vh + ' target=' + L.visibleBottom + ' budget=' + L.budget + '\n' +
     'contentH=' + L.contentH + ' rectBottom=' + L.rectBottom + ' handBottom=' + (L.handRectBottom != null ? L.handRectBottom : handNow) + '\n' +
-    'fit=' + L.fit + ' steps=' + L.fitSteps + ' settled=' + !!L.settled + (L.settled ? ' settleRect=' + L.settleRectBefore : '');
+    'fit=' + L.fit + ' steps=' + L.fitSteps + ' settled=' + !!L.settled + (L.settled ? ' settleRect=' + L.settleRectBefore : '') +
+    '\nstripClip=' + L.stripClip + ' tile=' + L.tileW + 'x' + L.slotH + ' hand=' + L.handH + ' pv=' + L.pvShown;
 }
 // ---------------------------------------------------------------- preview
 // Persistent card-detail strip in the leftover space (never overlays or
