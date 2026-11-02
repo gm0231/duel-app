@@ -2420,7 +2420,12 @@ class Duel {
       // already be random. Copies keep data.decks pristine for rematches.
       const main = shuffledCopy(deck.main), extra = shuffledCopy(deck.extra);
       main.forEach((code, i) => ccall('poc_new_card', null, ['number','number','number','number','number','number','number','number'], [duel, team, 0, code, team, LOC.DECK, i, 1]));
-      extra.forEach((code, i) => ccall('poc_new_card', null, ['number','number','number','number','number','number','number','number'], [duel, team, 0, code, team, LOC.EXTRA, i, 1]));
+      // Extra Deck cards MUST be registered face-down (POS.FD_DEF): the core
+      // stores the position verbatim, and the contact-fusion procedure
+      // condition (proc_fusion.lua Fusion.ContactCon) requires the fusion
+      // monster to be IsFacedown() — with pos=1 (face-up) every contact
+      // fusion was silently never offered. See NOTES "GG contact fusions".
+      extra.forEach((code, i) => ccall('poc_new_card', null, ['number','number','number','number','number','number','number','number'], [duel, team, 0, code, team, LOC.EXTRA, i, POS.FD_DEF]));
     };
     addDeck(0, this.deckP0);
     addDeck(1, this.deckP1);

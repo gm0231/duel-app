@@ -282,7 +282,25 @@ async function runBatch(M, data, label, seeds, makeAnswerers, mode) {
   const expected = [data.decks.ishizu.main.length + data.decks.ishizu.extra.length,
                     data.decks.gg.main.length + data.decks.gg.extra.length];
   const agg = { duels: 0, retries: 0, violations: 0, seatDeviations: 0, wireBad: 0, wireExamples: [],
-                attachExtra: 0, detachField: 0, releaseGrave: 0, xyzSummons: 0, endExact: 0 };
+                attachExtra: 0, detachField: 0, releaseGrave: 0, xyzSummons: 0, endExact: 0, endCtlChanged: 0 };
+  // The two deck pools are disjoint, so a card from the other pool present
+  // in a player's zones at duel end is a control-changed card (e.g. taken
+  // by "Monster Reborn") — the documented explanation for a per-seat final
+  // total being off while the combined total stays exact.
+  const pools = [new Set(data.decks.ishizu.main.concat(data.decks.ishizu.extra)),
+                 new Set(data.decks.gg.main.concat(data.decks.gg.extra))];
+  const poolsDisjoint = ![...pools[0]].some(c => pools[1].has(c));
+  const hasForeignCard = (state) => {
+    if (!poolsDisjoint) return false;
+    for (let p = 0; p < 2; p++) {
+      for (const zn of ['deck', 'hand', 'mzone', 'szone', 'grave', 'removed', 'extra']) {
+        const z = state.players[p][zn];
+        if (!Array.isArray(z)) continue;
+        for (const c of z) if (c && c.code && pools[1 - p].has(c.code) && !pools[p].has(c.code)) return true;
+      }
+    }
+    return false;
+  };
   const xyzCodes = new Set(Object.keys(data.cards).filter(c => data.cards[c].type & TYPE_XYZ).map(Number));
   for (const seed of seeds) {
     installSeededCrypto(seed * 2654435761 % 4294967296);
@@ -321,6 +339,8 @@ async function runBatch(M, data, label, seeds, makeAnswerers, mode) {
     agg.duels++;
     agg.retries += stats.retries;
     if (duel.state.totalCards(0) === expected[0] && duel.state.totalCards(1) === expected[1]) agg.endExact++;
+    else if (duel.state.totalCards(0) + duel.state.totalCards(1) === expected[0] + expected[1]
+             && hasForeignCard(duel.state)) agg.endCtlChanged++;
     console.log('  ' + label + ' seed ' + seed + ': over=' + duel.over + ' turns=' + stats.turns + ' retries=' + stats.retries);
   }
   console.log(label + ' totals: ' + JSON.stringify(agg));
@@ -330,7 +350,14 @@ async function runBatch(M, data, label, seeds, makeAnswerers, mode) {
     : ': per-prompt COMBINED conservation exact (0 violations; per-seat deviations from control changes: ' + agg.seatDeviations + ')'));
   ok(agg.wireBad === 0, label + ': wire-model per-host materials == mirror at every prompt' +
      (agg.wireExamples.length ? ' — e.g. ' + agg.wireExamples.join(' ; ') : ''));
-  ok(agg.endExact === agg.duels, label + ': final totals exact in all duels (' + agg.endExact + '/' + agg.duels + ')');
+  // Final per-seat totals must be exact, except duels whose only mismatch
+  // is a control-changed card still on the field/zones at the end (the
+  // combined total is exact there — same reasoning as the combined-mode
+  // conservation gate above and the test-cpu precedent). After the GG
+  // contact-fusion fix, ACTIVATOR seed 22 ends with the GG seat's
+  // Labyrinth Heavy Tank (35026117) under seat 0's control: P0=59/P1=54,
+  // combined 113 exact, wire model exact.
+  ok(agg.endExact + agg.endCtlChanged === agg.duels, label + ': final totals exact in all duels (' + agg.endExact + '/' + agg.duels + ' exact, ' + agg.endCtlChanged + ' explained by a control-changed card at end)');
   return agg;
 }
 

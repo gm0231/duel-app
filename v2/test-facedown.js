@@ -26,6 +26,13 @@
  * model already knowing the true code from the preceding MOVE), and at
  * least one such monster must later be observed face-up. If a run
  * contains none, this test FAILS as vacuous instead of passing silently.
+ *
+ * Seed note (GG contact-fusion fix, see NOTES): with the contact fusions
+ * restored, the seat-1 Gate Guardian policy takes different lines and
+ * the original four seeds stopped producing Morphing Jar 2 flips at all
+ * (fdss 0, correctness checks still 0 violations). Seed 7 exercises the
+ * scenario under the new behaviour (fdss 4, SHUFFLE_SET_CARD 2), so it
+ * was ADDED to the batch; the original seeds and all gates are unchanged.
  */
 const fs = require('fs');
 const path = require('path');
@@ -211,7 +218,7 @@ class WireIdentity {
 (async () => {
   const M = await factory();
   const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'data.json'), 'utf8'));
-  const SEEDS = [11, 222, 33, 44];
+  const SEEDS = [11, 222, 33, 44, 7];
   let violations = 0, queryMismatch = 0, checks = 0, fdFlipsChecked = 0, retries = 0, completed = 0, shuffleTotal = 0;
   const violationExamples = [];
   let fdssTotal = 0; const fdssExamplesAll = [];
