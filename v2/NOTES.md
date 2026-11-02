@@ -653,6 +653,108 @@ churn). Default before any tap: the first card of the opening hand.
   short viewports (< ~620px, e.g. landscape) solve W down to the
   40px floor and may scroll — portrait phones are the target.
 
+## Layout fix round (branch client-layout-fix)
+
+Real-browser verification of the layout phase found the duel stack
+slightly EXCEEDING the visible height: the hand cards' ATK/DEF strip
+was clipped by a few tens of px at the bottom edge, and the page does
+not scroll, so it was unreachable. The jsdom arithmetic (test-layout)
+had reported a dead band of 0–1px at 390×660/720/800, i.e. the model
+believed the stack fit exactly.
+
+### Root cause (with evidence)
+The formula's per-element constants were NOT off. `LAYOUT_FIXED = 217`
+was re-derived element by element from the CSS (all boxes are
+border-box with explicit px heights): topbar 44 (incl. its 1px border)
++ 2 × (field padding 5 + pilebar 21+2 margins) + midbar 78 (padding 6
++ borders 2 + chainbar 21 + logline 15 + phasebar 34) + handbar extras
+23 (label 13 + padding 10) + zone-row margins 16 = 217 exactly. The
+only divergence available to a real browser goes the other way:
+vertical margin collapsing inside `.field` (pilebar↔zrow,
+zrow↔zrow) can make the real fields up to ~3px each SHORTER than the
+model — the model is conservative there.
+
+The wrong assumptions were on the height side, two of them:
+1. **Zero tolerance by construction.** Whenever the preview strip is
+   shown, the slack distribution consumes EVERY leftover px, so
+   contentH == the height the formula budgeted against (dead band
+   exactly 0 at 720/800/900 in the old model; 1px at 660). Any
+   real-world shortfall translates 1:1 into clipped px at the bottom
+   of the stack — and the last element in the stack is the hand bar,
+   whose 14px ATK/DEF strip is the first thing eaten.
+2. **`window.innerHeight` == visible height.** applyLayout read
+   innerHeight once at duel start. In the verification browser (and
+   in app webviews / mobile browser chrome states generally) the
+   actually-visible height can be a few tens of px less than
+   innerHeight — 100dvh semantics diverge the same way. That delta is
+   precisely the observed clip ("a few tens of px").
+
+### Fix: budget honestly, then measure and step down
+Still entirely inside the duel-start click — no resize listeners, no
+mid-duel changes; the freeze invariants are untouched.
+- Budget height = **visual viewport height** (`window.visualViewport
+  .height` when available, else `innerHeight`), floored, minus a
+  **4px safety margin** (`LAYOUT_SAFETY`), so bottom strips are never
+  flush with the screen edge.
+- After the vars are applied, `measureStackBottom()` reads the real
+  rendered bottom of the six in-flow sections (topbar, both fields,
+  midbar, preview, handbar — absolute children like dock/sheet are
+  excluded by construction) from `offsetTop + offsetHeight`. If it
+  exceeds the allowed height, the budget is stepped down by the
+  measured excess and the layout recomputed (shrinking order is the
+  distribution's own: preview first, then hand growth, then the tile
+  unit), re-measuring after each step, at most 16 steps. The loop also
+  stops the moment a step can no longer shrink contentH — that is the
+  minimum layout (W floor 40, no preview; formula stack 546px): if a
+  viewport's visible height were below ~550px, even that cannot fit,
+  the minimum layout is kept and `__layout.fit` reports `false`
+  (nothing more can shrink; portrait phones are far above this).
+- Where measurement does not exist (jsdom: all offsets are 0), the
+  loop is inert and the corrected formula stands — `fit` reports true
+  with `measured: 0` meaning "unmeasurable here".
+
+`window.__layout` now also carries `budget`, `measured`, `fitSteps`,
+`fit`, and `vh` is the height actually budgeted against (the visual
+viewport height).
+
+### Measured before / after (formula model, px)
+Before: dead band 1 @390×660, **0 @390×720, 0 @390×800, 0 @500×900** —
+zero tolerance, so the real-browser clip equalled the environment's
+visible-vs-innerHeight delta.
+After (dead = budgeted height − contentH; fit guaranteed against the
+visual height + measurement):
+
+| case | tile W | hand H | preview | contentH | dead |
+|------|--------|--------|---------|----------|------|
+| 390×660 | 57 | 97 | hidden | 654 | 6 |
+| 390×720 | 59 | 99 | 52 | 716 | 4 |
+| 390×800 | 59 | 129 | 102 | 796 | 4 |
+| 500×900 (430 col) | 66 | 143 | 152 | 896 | 4 |
+| 390, inner 800 / visual 760 | 59 | 129 | 62 | 756 | 4 (vs 760) |
+| 390×800, rendered +28 phantom | 59 | 129 | 74 | 768 | measured 796 = allowed, 1 step |
+
+The 40px visual shortfall and the 28px phantom overshoot both came
+entirely out of the preview slack; the tile unit (59) never moved.
+
+### Verification
+- `test-layout.js`: ALL LAYOUT CHECKS PASSED — updated accounting
+  (safety margin in [4,24) dead band) at 390×660/720/800 AND 500×900;
+  freeze checks (sheet open/close, mid-duel resize event, chain dock
+  open via click-play) byte-identical sizes; preview tap-update at
+  800; new LAY-e (visualViewport honoured) and LAY-f (phantom +28px
+  step-down converges in 1 step, measured fits exactly).
+- `test-ui.js`: ALL UI CHECKS PASSED — run 1: 62 turns, deck-out win,
+  duel-dismissal + autopass chip exercised; run 2 (seat swap, 後攻）:
+  72 turns, deck-out; retry warning never shown in either run
+  (MSG_RETRY proxy 0), 0 stalls.
+- `test-node.js`: PASS (561 conservation checks, 0 violations).
+- `test-genesis.js`: PASS (all seeds retries 0, EMZ offers 0,
+  EX-in-EMZ 0, final totals exact).
+- Caveat unchanged: jsdom cannot measure real rendering, so the
+  step-down's real-browser behaviour is proven by construction + the
+  stubbed-measurement case (LAY-f); a real-device visual pass remains
+  the parent's browser check.
+
 ## Known gaps for later phases
 - CPU intelligence: player 1 is the PoC's minimal legal bot (summon a
   level ≤4, otherwise advance phases; always passes chains unless forced).

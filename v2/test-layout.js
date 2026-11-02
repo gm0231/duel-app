@@ -1,16 +1,29 @@
 'use strict';
 /* test-layout.js — layout phase verification (jsdom; NODE_PATH=<dir with jsdom>).
-   Boots the real page at width 390 and viewport heights 660 / 720 / 800,
-   starts a duel (defaults: イシズ vs ゲート・ガーディアン, 先攻) and checks:
-     (a) the computed stack fills the viewport: contentH <= vh, dead band
-         vh - contentH is >= 0 and < 24 at every height;
+   Boots the real page at 390x{660,720,800} and 500x900 (the 430px column
+   cap), starts a duel (defaults: イシズ vs ゲート・ガーディアン, 先攻) and
+   checks:
+     (a) the computed stack fits the viewport WITH the safety margin:
+         contentH <= vh - 4 and the dead band vh - contentH is in [4, 24)
+         at every size (layout-fix accounting: the fixed part 217 was
+         re-derived element by element against the CSS and is exact; the
+         old exact-fill formula left a dead band of exactly 0 whenever the
+         preview showed, so any real-world shortfall of the visible height
+         vs window.innerHeight clipped the stack's bottom);
      (b) tile/hand sizes are frozen mid-duel: the sizing inputs (CSS vars on
          :root + window.__layout) are byte-identical before/after opening a
          selection sheet, after a mid-duel viewport resize event, and while
          the chain dock is open;
      (c) hand card height at 800 is larger than at 660;
      (d) at 800 the preview strip is shown (pvShown > 0, #preview.on) and
-         tapping a hand card updates its content to that card.
+         tapping a hand card updates its content to that card;
+     (e) visualViewport is honoured: with innerHeight 800 but a visual
+         viewport of 760, the layout budgets against 760, not 800;
+     (f) measure-and-step-down: with the hand bar's rendered height
+         stubbed to report the formula stack + 28px (a phantom overshoot
+         of the kind the real browser showed), applyLayout() steps the
+         budget down until the measured stack fits, shrinking the preview
+         before the tiles.
    jsdom has no layout engine, so sizes are measured through the exact
    inputs that determine them in a real browser: applyLayout() computes
    every box height in px (all bars carry explicit heights in index.html)
@@ -26,13 +39,15 @@ const html = fs.readFileSync(path.join(V2, 'index.html'), 'utf8');
 const data = JSON.parse(fs.readFileSync(path.join(V2, 'data.json'), 'utf8'));
 const wasmBinary = fs.readFileSync(path.join(V2, 'build', 'ocgcore.wasm'));
 
-async function boot(vw, vh) {
+async function boot(vw, vh, opts) {
+  opts = opts || {};
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
   const { window } = dom;
   // viewport override BEFORE the duel starts (applyLayout reads these once,
   // at the start-button click)
   Object.defineProperty(window, 'innerWidth', { value: vw, configurable: true, writable: true });
   Object.defineProperty(window, 'innerHeight', { value: vh, configurable: true, writable: true });
+  if (opts.visualH) Object.defineProperty(window, 'visualViewport', { value: { height: opts.visualH, width: vw }, configurable: true });
   window.Audio = class { constructor(src) { this.src = src; this.volume = 1; } play() { return Promise.resolve(); } pause() {} };
   const wasmBuf = wasmBinary.buffer.slice(wasmBinary.byteOffset, wasmBinary.byteOffset + wasmBinary.byteLength);
   window.fetch = async (url) => {
@@ -51,6 +66,17 @@ async function boot(vw, vh) {
   inject('client.js');
   for (let i = 0; i < 100 && !window.document.getElementById('loadmsg').textContent.includes('準備完了'); i++)
     await new Promise(r => setTimeout(r, 50));
+  if (opts.phantom) {
+    // Simulate a browser whose rendered stack overshoots the formula by
+    // opts.phantom px: the hand bar (last in-flow section) reports a
+    // height of (current formula stack + phantom). It tracks __layout,
+    // so as applyLayout steps the budget down the reported height follows.
+    const hb = window.document.getElementById('handbar');
+    Object.defineProperty(hb, 'offsetHeight', {
+      configurable: true,
+      get() { const L = window.__layout; return (L ? L.contentH : 0) + opts.phantom; },
+    });
+  }
   return window;
 }
 
@@ -132,21 +158,28 @@ async function clickUntilDock(window, timeoutMs) {
   ok(/\.slot\{width:var\(--sw\);height:var\(--sh\)/.test(html), 'LAY0: all zones sized by the single --sw/--sh pair');
   ok(!html.includes('.slot.small'), 'LAY0b: no smaller S/T-zone slot variant remains');
 
-  for (const vh of [660, 720, 800]) {
-    const window = await boot(390, vh);
+  const pvShownAt = {};
+  for (const [vw, vh] of [[390, 660], [390, 720], [390, 800], [500, 900]]) {
+    const window = await boot(vw, vh);
     const doc = window.document;
     const $ = (id) => doc.getElementById(id);
     doc.getElementById('startbtn').click();
     await waitFor(() => doc.querySelectorAll('#hand .hcard').length >= 5, 60000, 'opening hand at vh=' + vh);
     const L = window.__layout;
-    console.log('  vh=' + vh + ':', JSON.stringify(L));
-    ok(!!L && L.vh === vh && L.vw === 390, 'LAY-a0 vh=' + vh + ': layout computed for the requested viewport');
-    ok(L.contentH <= vh && L.dead >= 0 && L.dead < 24, 'LAY-a vh=' + vh + ': stack fills viewport, dead band ' + L.dead + 'px (< 24, no scroll)');
-    ok(L.tileW >= 47 && L.slotH >= 60, 'LAY-a2 vh=' + vh + ': board never below the old fixed baseline 47x60 (tile ' + L.tileW + 'x' + L.slotH + ')');
+    console.log('  ' + vw + 'x' + vh + ':', JSON.stringify(L));
+    ok(!!L && L.vh === vh && L.vw === Math.min(vw, 430), 'LAY-a0 ' + vw + 'x' + vh + ': layout computed for the requested viewport (column cap ' + Math.min(vw, 430) + ')');
+    ok(L.contentH <= vh - 4 && L.dead >= 4 && L.dead < 24, 'LAY-a ' + vw + 'x' + vh + ': stack fits with the 4px safety margin, dead band ' + L.dead + 'px (in [4, 24), no scroll, no clip)');
+    ok(L.tileW >= 47 && L.slotH >= 60, 'LAY-a2 ' + vw + 'x' + vh + ': board never below the old fixed baseline 47x60 (tile ' + L.tileW + 'x' + L.slotH + ')');
+    ok(L.fit === true && L.fitSteps === 0, 'LAY-a3 ' + vw + 'x' + vh + ': no step-down needed where measurement is unavailable (jsdom), formula stands');
     handH[vh] = L.handH;
+    pvShownAt[vh] = L.pvShown;
     const snap0 = sizeSnapshot(window);
 
-    if (vh === 800) {
+    if (vw === 500) {
+      ok(L.pvShown > 0, 'LAY-d4 500x900: preview strip is shown in the wide/tall case (pvShown=' + L.pvShown + ')');
+    }
+
+    if (vh === 800 && vw === 390) {
       // (d) preview strip present and follows hand taps
       ok(L.pvShown > 0, 'LAY-d0: preview height > 0 at 800 (pvShown=' + L.pvShown + ')');
       ok($('preview').className.includes('on'), 'LAY-d1: preview strip is displayed at 800');
@@ -180,7 +213,7 @@ async function clickUntilDock(window, timeoutMs) {
     Object.defineProperty(window, 'innerHeight', { value: vh, configurable: true, writable: true });
 
     // (b3) chain dock opens -> sizes unchanged (full click play until then)
-    if (vh === 660 || vh === 800) {
+    if (vw === 390 && vh !== 720) {
       const how = await clickUntilDock(window, 300000);
       ok(how === 'dock' || how === 'result', 'LAY-b4 vh=' + vh + ': play reached a chain dock (ended via: ' + how + ')');
       if (how === 'dock') ok(sizeSnapshot(window) === snap0, 'LAY-b5 vh=' + vh + ': tile/hand sizes identical with the chain dock open');
@@ -189,6 +222,40 @@ async function clickUntilDock(window, timeoutMs) {
   }
 
   ok(handH[800] > handH[660], 'LAY-c: hand card height scales with the layout unit (660: ' + handH[660] + 'px -> 800: ' + handH[800] + 'px)');
+
+  // (e) visualViewport honoured: innerHeight says 800 but only 760 is
+  // actually visible — the layout must budget against the visible 760.
+  {
+    const window = await boot(390, 800, { visualH: 760 });
+    const doc = window.document;
+    doc.getElementById('startbtn').click();
+    await waitFor(() => doc.querySelectorAll('#hand .hcard').length >= 5, 60000, 'opening hand (visualViewport case)');
+    const L = window.__layout;
+    console.log('  visualViewport case:', JSON.stringify(L));
+    ok(L.vh === 760, 'LAY-e0: layout used the visual viewport height 760, not innerHeight 800');
+    ok(L.contentH <= 760 - 4, 'LAY-e1: stack fits the visible 760 with margin (contentH ' + L.contentH + ')');
+    ok(L.pvShown < pvShownAt[800], 'LAY-e2: preview shrank vs the full-800 layout (' + L.pvShown + ' < ' + pvShownAt[800] + ') — the shortfall came out of the slack, not the tiles');
+    ok(L.tileW === 59, 'LAY-e3: tile unit unchanged by a 40px visible shortfall (tileW ' + L.tileW + ')');
+    window.close();
+  }
+
+  // (f) measure-and-step-down against a phantom +28px rendered overshoot:
+  // the budget must step down by the measured excess (preview absorbs it),
+  // ending with the measured stack inside the allowed height.
+  {
+    const window = await boot(390, 800, { phantom: 28 });
+    const doc = window.document;
+    doc.getElementById('startbtn').click();
+    await waitFor(() => doc.querySelectorAll('#hand .hcard').length >= 5, 60000, 'opening hand (phantom overshoot case)');
+    const L = window.__layout;
+    console.log('  phantom case:', JSON.stringify(L));
+    ok(L.fit === true && L.fitSteps >= 1, 'LAY-f0: step-down engaged and converged (steps=' + L.fitSteps + ', fit=' + L.fit + ')');
+    ok(L.measured <= 800 - 4, 'LAY-f1: measured stack bottom ' + L.measured + ' fits the allowed ' + (800 - 4));
+    ok(L.contentH === 800 - 4 - 28, 'LAY-f2: budget stepped down by exactly the 28px excess (contentH ' + L.contentH + ')');
+    ok(L.tileW === 59, 'LAY-f3: tile unit unchanged — the overshoot came out of the preview slack (tileW ' + L.tileW + ')');
+    window.close();
+  }
+
   console.log(failures === 0 ? 'ALL LAYOUT CHECKS PASSED' : failures + ' LAYOUT CHECK(S) FAILED');
   process.exit(failures === 0 ? 0 : 1);
 })().catch(e => { console.error('FATAL', e); process.exit(2); });
