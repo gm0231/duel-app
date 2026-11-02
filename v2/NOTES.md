@@ -1387,6 +1387,111 @@ Worth a separate engine-side investigation.
   promises to the core as responses and every duel stalls at the first
   SELECT_CHAIN.
 
+## GG contact fusions: root cause and fix (branch engine-gg-fusion)
+
+Resolves the CPU tuning round's open finding ("contact fusions are
+never offered in this build"). Verdict: **(a) a defect in our own
+setup layer** — not the core, not the scripts, not the rig's game
+state.
+
+### Root cause (each link measured)
+
+1. `Duel.run`'s `addDeck` registered Extra Deck cards with `pos = 1`
+   (POS_FACEUP_ATTACK), the same value used for main-deck cards.
+2. `OCG_DuelNewCard` (core ocgapi.cpp, duelist-0 path) stores
+   `info.pos` verbatim, and nothing later resets an Extra Deck card's
+   position. Direct core query (`poc_query_card`, QUERY_POSITION) at
+   the first IDLECMD: all five GG Extra Deck cards sat at **pos 1 —
+   face-up in the Extra Deck**.
+3. The contact procedure is an `EFFECT_SPSUMMON_PROC` whose condition
+   is `Fusion.ContactCon` (proc_fusion.lua):
+   `res = c:IsFacedown() and c:CheckFusionMaterial(m, nil, chkf)`.
+   For a face-up Extra Deck card the first conjunct is false forever,
+   so the offer never reaches the IDLECMD spsummon list — silently:
+   no Lua error is raised anywhere (stderr clean throughout).
+4. Materials were never the problem: the same rig queries showed
+   Sanga (25955164) and Kazejin (62340868) face-up on the field with
+   correct codes/stats while the spsummon list stayed empty.
+5. Why only contact fusions died: the Xyz/Synchro/Link procedure
+   conditions do not gate on `IsFacedown()` (grep over the shipped
+   proc_*.lua), and the deck's other boss routes (Dark Element,
+   Dark Guardian's own procedure) summon by card effect, not by
+   SPSUMMON_PROC. Everything else in the app was unaffected.
+
+Ruled out with evidence: all 25 global scripts in data.json are
+byte-identical to the ProjectIgnis/CardScripts snapshot in
+~/workspace/ocgcore-poc (as are the GG card scripts, per the tuning
+round), and the piece constants (CARD_SANGA_OF_THE_THUNDER 25955164,
+CARD_KAZEJIN 62340868, CARD_SUIJIN 98434877,
+CARDS_SANGA_KAZEJIN_SUIJIN) are defined with the correct values.
+
+### Fix
+
+One registration value in `v2/engine.js` (`Duel.run` addDeck): Extra
+Deck cards are now registered face-down, `POS.FD_DEF` (0x8) — the
+position the core itself maintains for deck/extra cards. Main-deck
+registration is deliberately left at pos 1: no failing consumer of a
+main-deck card's stored position was found (core move operations
+assign positions as cards leave the deck), and this round changes
+only what the evidence indicts. (The retired PoC copy in `poc/duel.js`
+has the same registration pattern; it is not the shipped client and
+was left alone.)
+
+### Proof — v2/test-ggfusion.js (new)
+
+Labeled cheat rig: pieces injected with `poc_new_card` just before
+`poc_start` (not played from hand); assertions use direct core
+queries, not the JS mirror. Before the fix: **zero spsummon offers in
+every variant** (pieces MZONE, pieces SZONE, all three pieces across
+MZONE+GY). After the fix, 12/12 assertions pass:
+
+- Extra Deck fusion queries pos 8 (face-down) at the first IDLECMD.
+- Two-piece 雷風魔神 (34904525) is offered with the pieces face-up in
+  the monster zone AND with the pieces face-up in the S/T zone (the
+  deck's real Wall Shadow / Heavy Tank line).
+- Taking it completes: materials banished, fusion on the field,
+  MSG_RETRY 0.
+- 合体魔神 (8505920) is offered with Sanga+Kazejin on the field and
+  Suijin in the GY, and taking it banishes all three (GY included).
+
+### Effect on the GG matchup (test-cpu-tune.js, same 12 seeds)
+
+The shipped policy now takes the fusion route when pieces assemble —
+verbose log shows `1:合体魔神` / `1:水雷魔神` / `1:風水魔神` /
+`1:雷風魔神` spsummon choices and fusion monsters face-up on the GG
+field across the sample. Distribution vs the tuning round's
+post-fix numbers: GG attack by bot turn 5: 10/12 → **12/12**; average
+first-attack bot turn 3.25 → **1.67**; GG wins 7/12 → **11/12**;
+no-body classifications 9 → 5. The tuning round's fix (4) — S/T-zone
+pieces counting as fusion materials — is live now rather than inert.
+Balance note: the matchup has become one-sided in the GG seat's
+favour in this sample; that is a policy/balance question, not a
+correctness one.
+
+### Regression (all on this branch)
+
+test-node ✓, test-explore ✓, test-genesis ✓, test-layout ✓,
+test-ui ✓ (ALL UI CHECKS PASSED), test-cpu ✓ (mirror 40/40),
+test-cpu-tune ✓, test-phase2 ✓ (all checks, this run),
+test-investigate ✓ (completes, conservationOk), test-ggfusion ✓.
+MSG_RETRY 0 everywhere. Two harness gates needed correction for
+trajectory changes caused by the (correct) new behaviour — the
+correctness gates in both files are untouched:
+
+- **test-overlay ACTIVATOR final totals**: seed 22 now ends with the
+  GG seat's Labyrinth Heavy Tank (35026117) under seat 0's control
+  (per-seat 59/54, combined 113 exact, wire model exact, retries 0) —
+  the documented control-change-at-end phenomenon. The gate now also
+  accepts a per-seat mismatch fully explained by a foreign-pool card
+  present at duel end (the two pools are disjoint, so the detection
+  is exact); it reports `endCtlChanged` alongside `endExact`.
+- **test-facedown non-vacuity**: the original four seeds stopped
+  producing face-down special summons entirely under the new GG lines
+  (fdss 0; every correctness check still 0 violations — Morphing
+  Jar 2 simply never flips in those games now). Seed 7 was added to
+  the batch (fdss 4, SHUFFLE_SET_CARD 2, 35 fd→fu transitions);
+  original seeds and all gates unchanged.
+
 ## Known gaps for later phases
 - CPU intelligence: DONE in the CPU phase (see "CPU phase" above) —
   player 1 is now a heuristic policy (fair-view masked, per-card
