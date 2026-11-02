@@ -1135,6 +1135,150 @@ round 1 reported `fit: true` there on the formula's say-so.
   `__layout`'s recorded numbers (fitLog / rectBottom /
   visibleBottom) and eyeballs the hand strip.
 
+## Layout fix round 3 (branch client-layout-fix3)
+
+Round 2's rect loop still certified a clip in the parent's real
+browser (window ~1080 tall; hand flush at the bottom edge, the
+ATK/DEF strip's lower half cut, no dead band, no scroll). This round
+changed the evidence base first: a real browser engine was stood up
+in the VM (headless Chromium 156 via the cached Puppeteer Chrome,
+driving the actual page over a local HTTP server), and the round-2
+code was measured in it before anything was changed.
+
+### Reproduction (round-2 code, Chromium 156)
+
+| scenario | signals ih/ch/vvH/vvTop | fit-recorded rectBottom | painted stack bottom (post-render) | hand bottom | preview rect vs --pv |
+|---|---|---|---|---|---|
+| 430×1080 | 1080/1080/1080/0 | 685 | 1069 | 1069 | 330 = 330 |
+| 390×844 | 844/844/844/0 | 485 | 833 | 833 | 144 = 144 |
+| 390×720 | 720/720/720/0 | 361 | 709 | 709 | 50 = 50 |
+| 390×696 (compact pv) | 696/696/696/0 | 337 | 685 | 685 | 26 = 26 |
+| 430×1080, vv faked 1067 @ offsetTop 13 | 1080/1080/1067/13 | 672 | 1056 | 1056 | 317 = 317 |
+
+Findings:
+- **The fit loop measured a skeleton.** applyLayout runs inside the
+  start-button click, before the duel's first render: the four zone
+  rows are empty divs, so the loop's recorded rectBottom understates
+  the painted stack bottom by exactly the four zone rows (384px at
+  430×1080 = 4 × slotH 96; 348px at 390 widths = 4 × 87). `fit:
+  true` was certified against a stack ~⅓ shorter than the real one;
+  no overshoot smaller than that blind spot could ever engage the
+  step-down. This — not the formula — is why two rounds of
+  formula-side fixes did not converge in the real environment.
+- **In honest Chromium no signal overstates**: innerHeight =
+  clientHeight = vv.height everywhere, and the painted bottom is
+  formula contentH − 5 (margin collapsing), i.e. the formula itself
+  is honest and the strip is fully visible in every honest scenario
+  (screenshot pixel check: strip text present). The parent's
+  environment must supply a delta honest Chromium does not have.
+- **The offset target overstates by exactly offsetTop**: with vv
+  faked to height 1067 / offsetTop 13 in a 1080 window, round 2's
+  target (visibleBottom = offsetTop + height = 1080) sits 13px
+  below the rect-coordinate visible bottom (1067) — with the 6px
+  margin, a stack painted to 1074 passes the loop while ~7px of it
+  (half the 14px strip) is past 1067. Matches the observed symptom.
+- **Preview min-content growth: ruled out.** The preview's rendered
+  height equals its --pv budget exactly in every state tested
+  (330 full / 144 / 50 compact / 26 compact). No cap was added —
+  there was nothing to cap. Fonts likewise cannot grow the stack
+  (no webfonts; every in-flow text sits in a fixed-height box).
+
+### Fix (client.js only; distribution order, preview rules, card
+spec, DOM contracts unchanged)
+
+- **Post-render settle.** The fit pass runs once more after the
+  duel's first render: armed by the start click, fired from the
+  duel's first `onUpdate` (engine order: state updates are
+  delivered after each message batch, strictly before the first
+  prompt is answered; a fallback at the head of the first
+  humanAnswerer call covers any engine path that skips it). It
+  continues from the standing budget — sizes only ever shrink —
+  and records `settleRectBefore` (the painted bottom the start
+  pass was blind to). One-shot, no listeners: this is part of the
+  duel-start sizing, and the mid-duel freeze is untouched
+  (test-layout freeze checks snapshot AFTER the settle point).
+- **Conservative target.** `visibleBottom` is now the minimum of
+  the rect-coordinate candidates {vv.height, vv.offsetTop +
+  vv.height, clientHeight, innerHeight} (positive readings only) —
+  when the signals disagree, the largest is distrusted. The safety
+  margin is 8px (was 6). Distrust costs at most a larger dead band;
+  it cannot clip.
+- `window.__layout` additionally records `handRectBottom`,
+  `settled`, `settleRectBefore`, and fitLog entries now carry a
+  `pass` tag ('start' / 'settle'); `fitSteps` accumulates across
+  both passes.
+
+### Diagnostic readout (?layoutdebug=1)
+
+With `?layoutdebug=1` in the URL, a small fixed-position text block
+(bottom-left, monospace, dismissible via its ×) shows the final fit
+state as TEXT: all height signals + vv offsetTop, baseH, target,
+budget, contentH, rectBottom, handBottom, fit, fitSteps, settled +
+settleRect. Rendered at each fit pass; absent entirely without the
+parameter (no DOM change — test-layout LAY-i2). Verified in
+Chromium at 430×1080: block at (4, 984)–(272, 1076), text matches
+`__layout`, × dismisses it. This exists because the parent's
+verification harness cannot evaluate JS in the page — `__layout`
+was unreachable there; now the numbers are on the screen.
+
+### Verification (round-3 code, Chromium 156)
+
+| scenario | target | budget | settleRectBefore | final rect / hand bottom | fit |
+|---|---|---|---|---|---|
+| 430×1080 | 1080 | 1072 | 1067 | 1067 | true — on the settle's post-render measurement |
+| 390×844 | 844 | 836 | 831 | 831 | true |
+| 390×720 | 720 | 712 | 707 | 707 | true |
+| 390×696 | 696 | 688 | 683 | 683 (preview 24 = budget) | true |
+| vv 1067 @ +13 | 1067 | 1059 | 1054 | 1054 — clears the conservative bottom by 13 | true |
+
+fitLog now shows both passes (start: skeleton 683 → settle: real
+1067 at 430×1080), so `fit: true` is backed by a measurement of
+the rendered stack for the first time. Screenshot pixel checks:
+the strip's text row is present in every scenario.
+
+- `test-layout.js`: ALL LAYOUT CHECKS PASSED — updated accounting
+  (8px margin; LAY-g converges to ceiling 732 / budget 654 with the
+  settle entry on record; new LAY-a5 settle bookkeeping, LAY-h
+  target rule, LAY-i diagnostic readout). Freeze checks unchanged
+  and passing.
+- `test-ui.js`: ALL UI CHECKS PASSED (both runs; retry warning
+  never shown — MSG_RETRY proxy 0).
+- `test-genesis.js`: PASS (all seeds retries 0, EMZ offers 0,
+  EX-in-EMZ 0, final totals exact).
+- `test-node.js`: PASS with 0 retries in the majority of runs —
+  with two pre-existing, trajectory-dependent failure classes
+  recorded below (both reproduced on unmodified main).
+- Not claimed: the parent's browser. What changed there is
+  measurable by the parent directly: open `/v2/?layoutdebug=1`,
+  start a duel, and compare `handBottom` against `target` on the
+  readout — the settle guarantees the painted stack was measured
+  after rendering, and the target now distrusts the largest signal.
+
+### Pre-existing issues observed during this round (NOT regressions)
+
+`test-node.js` intermittently fails (~1 in 3–6 runs for the first
+class, ~1 in 2–5 for the second; deck order is crypto-shuffled per
+duel, so trajectories differ run to run). Two distinct classes,
+BOTH reproduced on UNMODIFIED main with identical signatures, and
+this round touches no engine code (client.js + test-layout.js +
+this file only), so neither can be an effect of this round:
+1. Conservation signature: at some SELECT_CHAIN the mirror totals
+   read P0 59 / P1 54 (expected 58/55) — one card counted for both
+   seats / missing from one — persisting across prompts, then
+   recovering; final totals exact (58/55), retries 0. A
+   mirror-accounting defect around a card moving between the two
+   players' control/zones; display-side only (the core's state
+   decides the duel). Reproduced on main, run 5 of a capture loop.
+2. Answer-rejection signature: the harness's own bot policy
+   answers a SELECT_CARD the core rejects, 13 retries, stopReason
+   "answer rejected repeatedly (SELECT_CARD)"; conservation
+   violations 0, duel aborts without a winner. A defect in the
+   shared bot-answer policy (engine.js) for some selection state.
+   Reproduced on main, run 2 of a capture loop.
+Both are flagged for a future fix round; neither is addressed
+here (out of this round's layout-only scope). The remaining
+suites above are deterministic in this environment and pass.
+
 ## Known gaps for later phases
 - CPU intelligence: DONE in the CPU phase (see "CPU phase" above) —
   player 1 is now a heuristic policy (fair-view masked, per-card
