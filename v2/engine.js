@@ -418,6 +418,8 @@ class GameState {
     // subtract publicly-visible cards — see the CPU policy header).
     this.deckLists = [deckP0 || data.decks.ishizu, deckP1 || data.decks.gg];
     this.turnPlayer = 0; this.turnCount = 0; this.phase = 0; this.phaseName = '';
+    this.transit = [0, 0];            // overlay units in flight to an entry-less pile (see MOVE case)
+    this.graveResync = new Set();     // players whose grave identities must be re-queried (MSG_SWAP_GRAVE_DECK)
     this.chain = [];                  // [{code, con, loc, seq, desc, player, negated, disabled, solved}]
     this.solvingLink = 0;             // chain_count currently resolving (0 = building)
     this.winner = null; this.winReason = 0;
@@ -473,6 +475,14 @@ class GameState {
     if (li.loc & LOC.OVERLAY) {
       const host = this._hostEntry(p, li);
       if (host) host.materials = Math.max(0, (host.materials || 0) - 1);
+      else {
+        // No host entry: the host sits in an entry-less pile (grave/removed/
+        // deck/hand), so this is a unit being released from a host that was
+        // moved there — its count was parked in transit[] by the host's MOVE.
+        const base = li.loc & ~LOC.OVERLAY;
+        if (base === LOC.GRAVE || base === LOC.REMOVED || base === LOC.DECK || base === LOC.HAND)
+          this.transit[li.con] = Math.max(0, (this.transit[li.con] || 0) - 1);
+      }
       return;
     }
     switch (li.loc) {
@@ -543,6 +553,15 @@ class GameState {
             const tp = this.players[to.con];
             if (tp && to.loc === LOC.MZONE && tp.mzone[to.seq]) tp.mzone[to.seq].materials = carry;
             else if (tp && to.loc === LOC.EXTRA) { const e = tp.extra[to.seq]; if (e && e.code === code) e.materials = carry; }
+            else if (to.loc === LOC.GRAVE || to.loc === LOC.REMOVED || to.loc === LOC.DECK || to.loc === LOC.HAND) {
+              // The destination pile has no per-card entries to hold the
+              // count, but the units are still attached to the host in the
+              // core until it releases them with their own MOVEs (encoded
+              // against the host's new location). Park the count in
+              // transit[] so batch-boundary totals stay exact; _removeAt
+              // drains it as each unit's release MOVE arrives.
+              this.transit[to.con] = (this.transit[to.con] || 0) + carry;
+            }
           }
           const nm = this.nameOf(code);
           // Every change to a hand must be explained in the log (Phase 2 requirement).
@@ -593,6 +612,41 @@ class GameState {
           extra.push({ code, pos: POS.FD_DEF, materials: mats });
         }
         if (n) this.players[p].extra = extra;
+        break;
+      }
+      case 35: { // SWAP_GRAVE_DECK: player u8, u32 extra-size-before, u32 bitmapLen, bitmap
+        // Duel.SwapDeckAndGrave (Exchange of the Spirit) swaps the player's
+        // whole deck and graveyard with ONE message — there are no per-card
+        // MOVEs. Payload after the player byte: the Extra Deck size before
+        // extraction (informational), then a bitmap over the post-swap main
+        // deck list (= the old graveyard, in grave order): a set bit marks a
+        // card that is an Extra-Deck monster — the core pulls those OUT of
+        // the new deck into the Extra Deck instead (field::swap_deck_and_grave
+        // in the core source). The deck is shuffled right after (MSG_SHUFFLE_DECK).
+        // Mirror update: the new deck count is old-grave minus the extracted
+        // cards; the extracted cards join the extra pile with their known
+        // codes; the new grave is the old deck — count known, identities not
+        // (the deck was face-down), so it becomes unknown placeholders whose
+        // codes the Duel layer refills from the core query at the next prompt
+        // boundary (graveResync, cf. MSG_SHUFFLE_SET_CARD re-identification).
+        // Ignoring this message leaves deckCount at the pre-swap value: the
+        // split is wrong immediately, and as the real (larger) deck drains,
+        // deckCount clamps at 0 while cards keep arriving elsewhere — the
+        // player's total inflates permanently (reproduced: test-swap.js).
+        const p = r.u8(); r.u32(); const blen = r.u32(); const buff = r.bytes(blen);
+        const P = this.players[p];
+        const oldGrave = P.grave;
+        const oldDeckCount = P.deckCount;
+        let extracted = 0;
+        for (let i = 0; i < oldGrave.length; i++) {
+          const bit = i < blen * 8 ? (buff[i >> 3] >> (i & 7)) & 1 : 0;
+          if (bit) { extracted++; P.extra.push({ code: oldGrave[i], pos: POS.FD_DEF, materials: 0 }); }
+        }
+        P.deckCount = oldGrave.length - extracted;
+        P.grave = new Array(oldDeckCount).fill(null);
+        this.deckTop[p] = null;
+        this.graveResync.add(p);
+        this.pushLog(this.who(p) + '：デッキと墓地が入れ替わった');
         break;
       }
       case 36: { // SHUFFLE_SET_CARD: loc u8, count u8, count from-loc_infos, count to-loc_infos
@@ -737,7 +791,7 @@ class GameState {
   }
   totalCards(p) {
     const P = this.players[p];
-    return P.deckCount + P.hand.length +
+    return P.deckCount + (this.transit[p] || 0) + P.hand.length +
       P.extra.reduce((a, c) => a + 1 + (c.materials || 0), 0) +
       P.grave.length + P.removed.length +
       P.mzone.reduce((a, c) => a + (c ? 1 + (c.materials || 0) : 0), 0) +
@@ -2607,6 +2661,20 @@ class Duel {
   // zone of the state mirror. Call at prompt boundaries / after message batches.
   refreshFieldStats() {
     const st = this.state;
+    // Grave identities after MSG_SWAP_GRAVE_DECK: the new grave is the old
+    // (face-down) deck, so the mirror holds unknown placeholders; the grave
+    // is public, so refill every code from the core's own record — the same
+    // re-identification pattern as MSG_SHUFFLE_SET_CARD below.
+    if (st.graveResync && st.graveResync.size) {
+      for (const p of Array.from(st.graveResync)) {
+        const P = st.players[p];
+        for (let s = 0; s < P.grave.length; s++) {
+          const q = this.queryCard(p, LOC.GRAVE, s);
+          if (q && q.code) P.grave[s] = q.code;
+        }
+        st.graveResync.delete(p);
+      }
+    }
     for (let p = 0; p < 2; p++) {
       for (let s = 0; s < 7; s++) {
         const cell = st.players[p].mzone[s];
