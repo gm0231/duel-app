@@ -653,6 +653,126 @@ churn). Default before any tap: the first card of the opening hand.
   short viewports (< ~620px, e.g. landscape) solve W down to the
   40px floor and may scroll — portrait phones are the target.
 
+## Fix round 3: face-down summon identity in the mirror (branch client-fixes-3)
+
+Two distinct mechanisms made the mirror lose (or mis-record) the identity
+of face-down special-summoned monsters. Both are mirror-layer only;
+answers to the core are untouched, and face-down cards still render as
+card backs — this is about the mirror's internal identity record.
+
+### Mechanism 1 — SPSUMMONING code 0 overwrote the known code (the B2 defect traced in fix round 2)
+
+For a face-down special summon the core writes code 0 in MSG_SPSUMMONING
+(operations.cpp, group-summon step 24 and rule-summon step 5: face-up →
+`target->data.code`, face-down → 0). The monster's MSG_MOVE into the zone
+just before carries the true code and the mirror records it — but
+`GameState.apply` case 62 then overwrote the entry's code unconditionally
+with the announced 0, and case 53 (POS_CHANGE) only filled the code when
+it was `null`, so when the monster later flipped face-up and POS_CHANGE
+carried the true code again, the 0 stuck forever.
+
+Fix (`engine.js`, one invariant for every identity write: **0 on the wire
+means "hidden/unknown" — it never erases a known code, and a stored 0 is
+unknown exactly like `null`**):
+- case 62 group (54 SET / 60 SUMMONING / 62 SPSUMMONING / 64
+  FLIPSUMMONING): an existing entry's code is overwritten only by a
+  non-zero announcement; the position still updates unconditionally.
+- case 53 (POS_CHANGE): fills the code when the stored code is `null`
+  OR 0, and only from a non-zero incoming code.
+- Audit of every other code write in `apply`, same pattern fixed
+  consistently: case 55 (SWAP — the entries themselves change slots, so
+  identity travels with them; the corrective writes of c1/c2 are now
+  non-zero-guarded) and case 31 (CONFIRM_CARDS hand reveal — now
+  non-zero-guarded). Checked and left as-is, with reasons: case 50 MOVE
+  (already skips code 0 wholesale; `_insertAt` writes the moving card's
+  true code into a fresh entry), case 90 DRAW / 33 SHUFFLE_HAND /
+  39 SHUFFLE_EXTRA (construct entries from authoritative wire lists; no
+  known code is overwritten by an announcement), case 162 RELOAD_FIELD
+  (creates `null`-code entries only in empty slots), `queryCard` parsing
+  (reads the core's query buffer, never writes the mirror).
+
+Deterministic reproduction — new `test-facedown.js` (seeded shuffle +
+fixed core seed; the same explore policy as test-phase2 B; an independent
+wire model tracks every monster zone's true code from raw messages, and
+the live query is cross-checked at every prompt):
+- Before the fix: 3 face-down SS with code-0 SPSUMMONING where the wire
+  already knew the code （風魔神－ヒューガ 62340868, 古衛兵アギド
+  62320425, 剣神官ムドラ 99937011 — all face-down Defense), **135
+  wire-vs-mirror violations and 135 query-vs-mirror mismatches** over
+  14,812 occupied-zone observations.
+- After the fix: identical trajectories (same turn counts, same events),
+  **0 violations, 0 mismatches**; 32 face-down→face-up transitions of
+  wire-known monsters all carry the true code. MSG_RETRY 0, all duels
+  complete.
+
+### Mechanism 2 — Morphing Jar #2's set shuffle permutes identities (found during this round's verification)
+
+With mechanism 1 fixed, test-phase2's B2 still failed intermittently
+(~1 in 3 randomized runs). Wire captures (frozen at the failing prompt)
+showed a different signature: a zone's MOVE-in code and SPSUMMONING(0)
+name monster X, but the core query — and, in one capture, the monster's
+own later POS_CHANGE — name monster Y (pairs observed: Vernusylph of
+the Flowering Fields ↔ Morphing Jar #2, Keldo the Sacred Protector ↔
+Vernusylph of the Flourishing Hills, Zolga the Earthbound Knight ↔
+Morphing Jar #2; in each pair both monsters came from the same
+excavation). Cause: Morphing Jar #2's script ends with
+`Duel.ShuffleSetCard(g)` — the core physically permutes the just-set
+monsters among their zones and emits MSG_SHUFFLE_SET_CARD (36), which
+`apply` did not handle at all (fell to `default`). The message names the
+affected slots, but the permutation itself is deliberately withheld:
+in the core's writer (libduel.cpp `ShuffleSetCard`; same layout in the
+group-set path in operations.cpp) the second loc_info list is an EMPTY
+loc_info for every card except Xyz-material hosts — neither player is
+meant to track which set card is which after the shuffle.
+
+Fix: case 36 now records exactly what the wire discloses. Cards whose
+post-shuffle slot IS disclosed (material hosts) are moved exactly;
+every other affected slot's code is voided to 0 and flagged `shuffled`
+(the physical permutation among them is unknown, so keeping the old
+pairing would assert identities the core has permuted). Counts,
+positions and entries are unchanged. `Duel.refreshFieldStats()` then
+re-identifies flagged slots (monster and spell/trap zones) from the
+live core query at prompt boundaries — the same sanctioned channel
+Phase 2 introduced for live ATK/DEF — and clears the flag. A later
+POS_CHANGE/SPSUMMONING naming the card also refills it via mechanism
+1's rule. test-facedown's wire model applies the same honest rule
+(permutation → unknown) and counts the messages: its deterministic
+batch contains 1 SHUFFLE_SET_CARD and stays at 0 violations / 0 query
+mismatches with the handling in place.
+
+### test-phase2 B2 sampling note
+
+test-phase2's B-section duels shuffle with real crypto, so whether a
+given run's trajectories include a face-down SS or an MJ2 set shuffle
+is duel-dependent — B2 is a sampling check, and a single quiet run
+proves little either way. Baselines: B2 FAILED 4/4 runs on unmodified
+main; with mechanism 1 fixed but mechanism 2 open it still FAILED in
+4 of 12 runs. With both fixed: **B2 PASSED 10/10 runs** (2,508–9,213
+occupied-zone observations per run). The deterministic guarantee lives
+in test-facedown.js (non-vacuity gates: the batch must contain code-0
+face-down SS events and face-down→face-up flips, and fails as vacuous
+otherwise). Occasional remaining test-phase2 failures are sampling
+vacuity in OTHER checks — B4 (no effect-modified ATK/DEF sighting in a
+short run), C (no ANNOUNCE_CARD occurred), A2 (depends on C's captured
+opcode stream) — and reproduce on unmodified main as well (B4 seen
+there directly).
+
+### Regression (MSG_RETRY 0 everywhere)
+
+- `test-facedown.js` — PASS (see above; 14,812 observations, 0/0).
+- `test-phase2.js` — B2 10/10 (see sampling note for other checks).
+- `test-node.js` — PASS (620 conservation checks, 0 violations, final
+  totals 58/55).
+- `test-explore.js` — PASS.
+- `test-genesis.js` — PASS (its `endDippedDuels` metric read 1 in 2 of
+  5 runs here and ≥1 in 4 of 10 runs on unmodified main — the
+  pre-existing exploratory-duel anomaly recorded in fix round 2, not a
+  regression; the test's own gates pass on both).
+- `test-overlay.js` — ALL PASS.
+- `test-layout.js` — ALL PASS.
+- `test-ui.js` (jsdom) — ALL UI CHECKS PASSED (both runs reached the
+  result screen; retry warning never shown; no stalls).
+
 ## Known gaps for later phases
 - CPU intelligence: player 1 is the PoC's minimal legal bot (summon a
   level ≤4, otherwise advance phases; always passes chains unless forced).
@@ -671,8 +791,10 @@ churn). Default before any tap: the first card of the opening hand.
 - Xyz materials mirror accounting: FIXED in fix round 2 (see the
   "Fix round 2" section above) — overlay units are tracked against
   their host in the Extra Deck and on the field, through detach and
-  the host leaving the field. A separate code-0 SPSUMMONING mirror
-  defect (test-phase2 B2) remains open; see the same section.
+  the host leaving the field. The separate code-0 SPSUMMONING mirror
+  defect (test-phase2 B2) is FIXED in fix round 3 (see the "Fix
+  round 3" section above), which also covers the Morphing Jar #2
+  set-shuffle permutation (MSG_SHUFFLE_SET_CARD).
 - Save/resume: none. Reloading restarts from the start screen.
 - Turn timer, surrender, side decking: none. (Deck and first/second choice
   were added in Phase 2.)

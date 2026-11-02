@@ -591,17 +591,63 @@ class GameState {
         if (n) this.players[p].extra = extra;
         break;
       }
+      case 36: { // SHUFFLE_SET_CARD: loc u8, count u8, count from-loc_infos, count to-loc_infos
+        // Duel.ShuffleSetCard (Morphing Jar #2 shuffles the monsters it just
+        // set) and the group-set shuffle physically permute face-down cards
+        // among their zones. The first loc_info list names the affected
+        // slots; the second list, in the same card order, names each card's
+        // post-shuffle slot — but an entry is an EMPTY loc_info unless the
+        // card carries Xyz materials: for ordinary set cards the permutation
+        // itself is deliberately not disclosed on the wire (neither player
+        // may track which is which). Keeping the pre-shuffle code<->zone
+        // pairing would record identities the core has since permuted
+        // (observed live: a zone's MOVE-in code names one excavated monster
+        // while the core's query and the later POS_CHANGE name another).
+        // Exact pairs (material hosts) are moved as-is; every other affected
+        // slot's code becomes unknown (0, flagged `shuffled`) until the Duel
+        // layer's live query re-identifies it at a prompt boundary
+        // (refreshFieldStats) or a later message names the card again —
+        // cases 53/62 treat 0 as unknown and refill it.
+        const loc = r.u8(); const ct = r.u8();
+        const froms = []; for (let i = 0; i < ct; i++) froms.push(r.locInfo());
+        const tos = []; for (let i = 0; i < ct; i++) tos.push(r.locInfo());
+        const zoneOf = (li) => li.loc === LOC.MZONE ? this.players[li.con].mzone : this.players[li.con].szone;
+        const before = froms.map(li => { const z = zoneOf(li); return z ? z[li.seq] : null; });
+        const exactEntries = new Set();
+        for (let i = 0; i < ct; i++) if (tos[i] && tos[i].loc !== 0 && before[i]) exactEntries.add(before[i]);
+        const exactTargets = new Set();
+        for (let i = 0; i < ct; i++) if (tos[i] && tos[i].loc !== 0) exactTargets.add(tos[i].con + '|' + tos[i].loc + '|' + tos[i].seq);
+        for (let i = 0; i < ct; i++) {
+          const li = froms[i]; const z = zoneOf(li); if (!z) continue;
+          if (exactTargets.has(li.con + '|' + li.loc + '|' + li.seq)) continue;
+          const e = z[li.seq];
+          if (e && !exactEntries.has(e)) { e.code = 0; e.shuffled = true; }
+        }
+        for (let i = 0; i < ct; i++) {
+          if (tos[i] && tos[i].loc !== 0 && before[i]) zoneOf(tos[i])[tos[i].seq] = before[i];
+        }
+        break;
+      }
       case 32: break; // SHUFFLE_DECK: player only
       case 53: { // POS_CHANGE: code, con u8, loc u8, seq u8, prevPos u8, newPos u8
         const code = r.u32(); const con = r.u8(); const loc = r.u8(); const seq = r.u8(); r.u8(); const npos = r.u8();
         const zone = loc === LOC.MZONE ? this.players[con].mzone : this.players[con].szone;
-        if (zone[seq]) { zone[seq].pos = npos; if (zone[seq].code == null) zone[seq].code = code; }
+        // A stored code of 0 is "unknown", exactly like null: the core zeroes
+        // codes on the wire for hidden cards (see case 62), so a POS_CHANGE
+        // carrying the true code must fill a 0 as well as a null — and a
+        // POS_CHANGE carrying 0 must never erase a known code.
+        if (zone[seq]) { zone[seq].pos = npos; if (!zone[seq].code && code) zone[seq].code = code; }
         break;
       }
       case 54: case 60: case 62: case 64: { // SET / SUMMONING / SPSUMMONING / FLIPSUMMONING: code + loc_info
+        // SPSUMMONING for a face-down special summon carries code 0 (the core
+        // zeroes it); the monster's MOVE into the zone just before carried
+        // the true code and the mirror recorded it. Rule for all four: a
+        // non-zero announcement is authoritative, a 0 never overwrites a
+        // known code (position still updates).
         const code = r.u32(); const li = r.locInfo();
         const zone = li.loc === LOC.MZONE ? this.players[li.con].mzone : this.players[li.con].szone;
-        if (zone[li.seq]) { zone[li.seq].code = code; zone[li.seq].pos = li.pos; }
+        if (zone[li.seq]) { if (code !== 0) zone[li.seq].code = code; zone[li.seq].pos = li.pos; }
         else if (li.loc === LOC.MZONE) this.players[li.con].mzone[li.seq] = { code, pos: li.pos, materials: 0 };
         else this.players[li.con].szone[li.seq] = { code, pos: li.pos };
         if (t === 54) { this.pushLog(this.who(li.con) + '：カードをセット'); this.pushEvent({ kind: 'set', code, con: li.con, loc: li.loc }); }
@@ -615,8 +661,11 @@ class GameState {
         const z1 = i1.loc === LOC.MZONE ? this.players[i1.con].mzone : this.players[i1.con].szone;
         const z2 = i2.loc === LOC.MZONE ? this.players[i2.con].mzone : this.players[i2.con].szone;
         const tmp = z1[i1.seq]; z1[i1.seq] = z2[i2.seq]; z2[i2.seq] = tmp;
-        if (z1[i1.seq]) z1[i1.seq].code = c2;
-        if (z2[i2.seq]) z2[i2.seq].code = c1;
+        // The entries themselves (with their codes) change slots above; these
+        // corrective writes follow the same rule as everywhere else: a 0 on
+        // the wire means "hidden", never an identity to overwrite with.
+        if (z1[i1.seq] && c2) z1[i1.seq].code = c2;
+        if (z2[i2.seq] && c1) z2[i2.seq].code = c1;
         break;
       }
       case 70: { // CHAINING
@@ -645,7 +694,7 @@ class GameState {
         const shown = r.u8(); const n = r.u32();
         for (let i = 0; i < n; i++) {
           const code = r.u32(); const con = r.u8(); const loc = r.u8(); const seq = r.u32();
-          if (shown === 0 && loc === LOC.HAND && this.players[con].hand[seq]) this.players[con].hand[seq].code = code;
+          if (shown === 0 && code && loc === LOC.HAND && this.players[con].hand[seq]) this.players[con].hand[seq].code = code;
           if (shown === 0 && loc === LOC.DECK && seq === this.players[con].deckCount - 1) this.deckTop[con] = code;
         }
         break;
@@ -983,7 +1032,19 @@ class Duel {
           if (q.def != null) cell.curDef = q.def;
           if (q.level != null) cell.curLevel = q.level;
           if (q.pos != null) cell.queryPos = q.pos;
+          // A slot whose set cards were shuffled (MSG_SHUFFLE_SET_CARD) had
+          // its code voided by the mirror — the wire hides the permutation.
+          // The live query is the core's own record: re-identify from it.
+          if (cell.shuffled && q.code) { cell.code = q.code; cell.shuffled = false; }
         }
+      }
+    }
+    for (let p = 0; p < 2; p++) {
+      for (let s = 0; s < 8; s++) {
+        const cell = st.players[p].szone[s];
+        if (!cell || !cell.shuffled) continue;
+        const q = this.queryCard(p, LOC.SZONE, s);
+        if (q && q.code) { cell.code = q.code; cell.shuffled = false; }
       }
     }
   }
