@@ -1080,6 +1080,18 @@ function hasProfitableAttack(view, data) {
 // ---------------------------------------------------------------- main phase
 // Score for firing one IDLECMD "activate" entry (0 = leave it). Entries are
 // the bot's own cards only, so codes are always visible here.
+// Wall Shadow ② / Heavy Tank ③: place a guardian piece from hand/deck/
+// banished face-up in our S/T zone as a Continuous Spell. It is the Gate
+// Guardian deck's fusion engine: a piece there is a face-up card on our
+// field, so it is a legal material for the contact fusions (field
+// materials) and for Dark Guardian's procedure (face-up field).
+function guardianPlaceScore(view, data, rem, fieldUp, oppMons) {
+  const me = view.me;
+  const handCodes = view.hand[me].map(x => x.code);
+  const pieceSomewhere = GUARDIAN_PIECES.some(g => deckHas(rem, g) || handCodes.includes(g) || view.removed[me].includes(g));
+  if (!pieceSomewhere) return 0;
+  return (fieldUp && oppMons.length) ? 1200 : 900;
+}
 function activationScore(e, view, data, prompt) {
   const me = view.me, opp = view.opp;
   const cd = cdOf(data, e.code);
@@ -1109,8 +1121,15 @@ function activationScore(e, view, data, prompt) {
       return (!fieldUp && deckHas(rem, CC.WALL_SHADOW)) ? 1000 : 0;
     case CC.METAVERSE:
       return (!fieldUp && deckHas(rem, CC.WALL_SHADOW)) ? 1000 : 0;
-    case CC.WALL_SHADOW: // activating the field spell itself from hand
-      return fieldUp ? 0 : 1050;
+    case CC.WALL_SHADOW:
+      // From hand: activating the field spell itself. From the field zone
+      // the entry is its ② — the guardian-piece placement scored below
+      // with Heavy Tank's ③ (an earlier version of this case returned
+      // `fieldUp ? 0 : 1050` for EVERY Wall Shadow entry, which silently
+      // scored the face-up spell's own ② at 0 forever: the first matching
+      // case in the switch wins, so the placement case never ran).
+      if (e.loc !== LOC.SZONE) return fieldUp ? 0 : 1050;
+      return guardianPlaceScore(view, data, rem, fieldUp, oppMons);
     case CC.FOOLISH_GOODS: {
       if (deckHas(rem, CC.EXCHANGE) && !view.grave[me].includes(CC.EXCHANGE)) return 1050;
       if (deckHas(rem, CC.DARK_ELEMENT) && !handCodes.includes(CC.DARK_ELEMENT)) return 1000;
@@ -1253,12 +1272,8 @@ function activationScore(e, view, data, prompt) {
       return view.deckCount[me] > 10 ? 900 : (view.deckCount[me] > 6 ? 500 : 0);
     case CC.HYPERION: // ① copy an "Agent" — only Pluto qualifies in this pool
       return (view.grave[me].includes(CC.PLUTO) || handCodes.includes(CC.PLUTO)) ? 700 : 0;
-    case CC.HEAVY_TANK: case CC.WALL_SHADOW: {
-      if (e.loc !== LOC.SZONE && e.code === CC.WALL_SHADOW) return 0;
-      const pieceSomewhere = GUARDIAN_PIECES.some(g => deckHas(rem, g) || handCodes.includes(g) || view.removed[me].includes(g));
-      if (!pieceSomewhere) return 0;
-      return (fieldUp && oppMons.length) ? 1200 : 900;
-    }
+    case CC.HEAVY_TANK: // ③ from the field: the same guardian-piece placement as Wall Shadow ②
+      return guardianPlaceScore(view, data, rem, fieldUp, oppMons);
     case CC.SHADOW_GHOUL: {
       if (e.loc !== LOC.HAND) return 0;
       return (!fieldUp && !handCodes.includes(CC.WALL_SHADOW) && deckHas(rem, CC.WALL_SHADOW)) ? 950 : 0;
@@ -1284,6 +1299,21 @@ function activationScore(e, view, data, prompt) {
 // re-derives the cheapest legal combination from the actual candidates.
 function pickSpsummon(prompt, view, data, mem) {
   const me = view.me;
+  // A guardian piece can be a field material from TWO places: the monster
+  // zone, or the S/T zone, where Wall Shadow ② / Heavy Tank ③ park it
+  // face-up as a Continuous Spell. Both are face-up cards on our field
+  // for the Gate Guardian contact fusions and for Dark Guardian's
+  // procedure. An earlier version only looked in the monster zone, so a
+  // placed piece counted as "missing" and every fusion built on placed
+  // pieces was declined unseen. An S/T piece has no battle presence:
+  // flat card-value cost, zero battle power for the veto below.
+  const fieldPiece = (piece, needFaceUp) => {
+    const m = monList(view, me).find(c => c.code === piece && (!needFaceUp || c.faceUp));
+    if (m) return { cost: boardValue(m, data), power: battlePower(m, data) };
+    const s = view.zones[me].szone.find(c => c && c.faceUp && c.code === piece);
+    if (s) return { cost: 400, power: 0 };
+    return null;
+  };
   let best = -1, bestGain = 249;
   prompt.spsummon.forEach((e, i) => {
     const cd = cdOf(data, e.code);
@@ -1323,21 +1353,23 @@ function pickSpsummon(prompt, view, data, mem) {
       else {
         cost = 0;
         for (const piece of needs) {
-          const onField = monList(view, me).find(c => c.code === piece);
+          const fp = fieldPiece(piece, false);
           const inHand = view.hand[me].some(x => x.code === piece);
           const inGrave = view.grave[me].includes(piece);
           const fieldOnly = e.code !== CC.GG_COMBINED;
-          if (onField) cost += boardValue(onField, data);
+          if (fp) cost += fp.cost;
           else if (!fieldOnly && inGrave) cost += 250;
           else if (!fieldOnly && inHand) cost += handValue(piece, view, data) * 0.35;
           else { cost = null; break; }
         }
         // two-piece field fusions trade ~5000 ATK of board for ~2500: only
         // when the pieces are already weakened (halved/zeroed effects).
+        // Pieces parked in the S/T zone contribute no battle power, so a
+        // fusion built on them is nearly free and never vetoed here.
         if (cost != null && e.code !== CC.GG_COMBINED) {
           const piecePower = needs.reduce((s, piece) => {
-            const c = monList(view, me).find(x => x.code === piece);
-            return s + (c ? battlePower(c, data) : 0);
+            const fp = fieldPiece(piece, false);
+            return s + (fp ? fp.power : 0);
           }, 0);
           if (piecePower > cd.atk + 400) cost = null;
         }
@@ -1346,8 +1378,8 @@ function pickSpsummon(prompt, view, data, mem) {
       // procedure: return the three guardians (hand/face-up field/grave/removed) to the deck
       cost = 0;
       for (const piece of GUARDIAN_PIECES) {
-        const onField = monList(view, me).find(c => c.code === piece && c.faceUp);
-        if (onField) cost += boardValue(onField, data);
+        const fp = fieldPiece(piece, true); // procedure says face-up field
+        if (fp) cost += fp.cost;
         else if (view.grave[me].includes(piece) || view.removed[me].includes(piece)) cost += 250;
         else if (view.hand[me].some(x => x.code === piece)) cost += handValue(piece, view, data) * 0.35;
         else { cost = null; break; }
@@ -1390,8 +1422,17 @@ function pickSummon(prompt, view, data) {
           { const d = cdOf(data, c.code !== undefined ? c.code : c); return d && (d.type & CT.TRAP) && (d.type & CT.CONTINUOUS); })) gain += 250;
       if (e.code === CC.HEAVY_TANK) gain += 150;
       if (gain > 150 && (!best || gain > best.gain)) best = { kind, idx: i, gain };
-    } else { // mset
-      let gain = cd.def * 0.8;
+    } else { // mset — a Tribute Set of a level 5+ monster costs the same
+      // tributes as a Tribute Summon (the core asks SELECT_TRIBUTE for it);
+      // the cost must be charged here too. Without it the bot kept
+      // "setting" guardian pieces by tributing its whole board — e.g. its
+      // only attacker — for a face-down wall (measured in test-cpu-tune).
+      let tributes = lvl <= 4 ? 0 : lvl <= 6 ? 1 : 2;
+      if (e.code === CC.HEAVY_TANK) tributes = 0;
+      if (weakestField.length < tributes) return;
+      let cost = 0;
+      for (let k = 0; k < tributes; k++) cost += boardValue(weakestField[k], data);
+      let gain = cd.def * 0.8 - cost * 0.85;
       if (isFlip) gain += e.code === CC.CHAOS_POD ? 500 : 750;
       if (oppPow > cd.atk && cd.def >= oppPow) gain += 250; // safe wall
       if (gain > 150 && (!best || gain > best.gain)) best = { kind, idx: i, gain };
@@ -1810,10 +1851,20 @@ function selectCardAnswer(prompt, view, data, mem) {
   if (mem.pendingSummon && mem.pendingSummon.turn === view.turnCount && entries.every(x => x.e.con === me)) {
     const target = cdOf(data, mem.pendingSummon.code);
     if (target && (target.type & CT.XYZ)) {
-      const rank = target.level & 0xff;
-      const lv = (x) => { const c = x.e.loc === LOC.MZONE ? view.zones[me].mzone[x.e.seq] : null; return c ? levelOf(c, data) : (cdOf(data, x.e.code) ? cdOf(data, x.e.code).level & 0xff : 0); };
-      const matching = entries.filter(x => lv(x) === rank).sort((a, b) => locCost(a) - locCost(b));
-      if (matching.length >= Math.max(2, min)) return take(matching, Math.max(2, min));
+      // Material attachment for the summon itself takes >= 2 FIELD
+      // monsters. A same-turn detach selection for the new monster's own
+      // effect (Castel: candidates are its OVERLAY units, min = max = 1)
+      // also lands in this branch if it is not fenced off, and answering
+      // it with 2 picks is rejected by the core — the deterministic
+      // re-answer then loops to the driver's retry cap and aborts the
+      // duel (measured in test-cpu-tune, seed 91063 trajectory).
+      if (min >= 2 && entries.every(x => x.e.loc === LOC.MZONE)) {
+        const rank = target.level & 0xff;
+        const lv = (x) => { const c = view.zones[me].mzone[x.e.seq]; return c ? levelOf(c, data) : (cdOf(data, x.e.code) ? cdOf(data, x.e.code).level & 0xff : 0); };
+        const matching = entries.filter(x => lv(x) === rank).sort((a, b) => locCost(a) - locCost(b));
+        const want = Math.min(max, Math.max(2, min));
+        if (matching.length >= want) return take(matching, want);
+      }
     }
     if (target && (target.type & CT.SYNCHRO)) {
       const lvl = target.level & 0xff;
@@ -1846,6 +1897,25 @@ function selectCardAnswer(prompt, view, data, mem) {
     for (const s of scored) { if (picks.length >= min) break; picks.push(s.x.i); }
     for (const s of scored) { if (picks.length >= max) break; if (s.v >= 700 && !picks.includes(s.x.i)) picks.push(s.x.i); }
     return cardsResp(picks);
+  }
+  // --- guardian-piece placement (Wall Shadow ② / Heavy Tank ③): the
+  // candidates are guardian pieces from hand/deck/banished. Prefer a name
+  // that is not already face-up on our field — the payoffs (the contact
+  // fusions' distinct names, Dark Guardian's one-of-each trio) need
+  // distinct pieces, and the generic branches below kept placing the
+  // highest-ATK duplicate (measured: Sanga placed twice while
+  // Kazejin/Suijin sat in the deck). This branch must precede the
+  // all-DECK search branch, which otherwise captures deck placements.
+  // Deck copies before hand copies.
+  if ((ctxCode === CC.WALL_SHADOW || ctxCode === CC.HEAVY_TANK) &&
+      entries.length && entries.every(x => GUARDIAN_PIECES.includes(x.e.code))) {
+    const onFieldNames = new Set();
+    for (const c of monList(view, me)) if (c && c.faceUp) onFieldNames.add(c.code);
+    for (const c of view.zones[me].szone) if (c && c.faceUp) onFieldNames.add(c.code);
+    const score = (x) => (onFieldNames.has(x.e.code) ? 100 : 1000) +
+      (cdOf(data, x.e.code) ? cdOf(data, x.e.code).atk : 0) * 0.05 - locCost(x) * 0.05;
+    const s = entries.slice().sort((a, b) => score(b) - score(a));
+    return take(s, Math.max(1, min));
   }
   // --- search / send from our own deck
   if (entries.every(x => x.e.loc === LOC.DECK)) {
