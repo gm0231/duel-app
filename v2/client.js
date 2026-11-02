@@ -153,25 +153,36 @@ function tileHTML(card, con, actKey) {
   const isDef = (card.pos & E.POS_DEFENSE) !== 0;
   const showFace = faceUp || con === HP;
   const nm = showFace && card.code != null ? cardName(card.code) : '';
-  // live (effect-modified) values from the core query when available
-  const st = showFace && card.code != null
-    ? (card.curAtk != null && isMonster(card.code) ? '攻' + card.curAtk + '／守' + card.curDef : statsLine(card.code)) : '';
   return '<div class="tile' + (isDef ? ' def' : '') + (showFace ? '' : ' back') + (actKey && actionMap.has(actKey) ? ' actionable' : '') + '"' +
     (actKey ? ' data-act="' + actKey + '"' : '') + '>' +
     (card.materials ? '<div class="mats">×' + card.materials + '</div>' : '') +
     '<div class="inner">' +
     (nm ? '<div class="nm">' + nm + '</div>' : '') +
-    (st ? '<div class="st">' + st + '</div>' : '') +
     '</div></div>';
 }
-function zoneRow(el, cards, con, loc, small) {
+// ATK/DEF strip rendered at the SLOT level — outside the card frame, with
+// ATK/DEF labels (user spec). Live (effect-modified) values from the core
+// query when available, printed values otherwise. Same visibility rule as
+// the tile face: face-up cards, plus the owner's own face-down cards.
+function slotStatsHTML(card, con) {
+  if (!card || card.code == null) return '';
+  const faceUp = (card.pos & E.POS_FACEUP) !== 0;
+  if (!faceUp && con !== HP) return '';
+  if (!isMonster(card.code)) return '';
+  const d = cardData(card.code);
+  const atk = card.curAtk != null ? card.curAtk : d.atk;
+  const def = card.curDef != null ? card.curDef : d.def;
+  return '<div class="slotstats"><span>ATK <b>' + atk + '</b></span><span>DEF <b>' + def + '</b></span></div>';
+}
+function zoneRow(el, cards, con, loc) {
   el.innerHTML = cards.map((card, seq) => {
     const key = con + ':' + loc + ':' + seq;
     const hl = placeCtx && placeCtx.avail.has(key) ? ' hl' : '';
     const pk = placeCtx && placeCtx.chosen.has(key) ? ' picked' : '';
-    return '<div class="slot' + (small ? ' small' : '') + hl + pk + '" data-zone="' + key + '">' +
+    const st = card ? slotStatsHTML(card, con) : '';
+    return '<div class="slot' + (st ? ' hs' : '') + hl + pk + '" data-zone="' + key + '">' +
       '<span class="znum">' + (loc === E.LOC.SZONE && seq === 5 ? 'F' : (seq + 1)) + '</span>' +
-      (card ? tileHTML(card, con, key) : '') +
+      (card ? tileHTML(card, con, key) + st : '') +
       '</div>';
   }).join('');
 }
@@ -195,13 +206,13 @@ function render(state) {
   $('opppiles').innerHTML = '手札 ' + op.hand.length + '<br>デッキ ' + op.deckCount;
   $('turninfo').textContent = 'ターン' + Math.max(1, state.turnCount) + '／' + (state.turnPlayer === HP ? '自分' : '相手');
   $('phaseinfo').textContent = state.phaseName ? ('フェイズ：' + phaseJa(state.phaseName) + (state.turnPlayer === HP ? '（自分のターン）' : '（相手のターン）')) : '—';
-  zoneRow($('oppSzone'), [0,1,2,3,4,5].map(i => op.szone[i]), 1 - HP, E.LOC.SZONE, true);
+  zoneRow($('oppSzone'), [0,1,2,3,4,5].map(i => op.szone[i]), 1 - HP, E.LOC.SZONE);
   // Genesis format: no Extra Monster Zones — render main monster zones 0-4
   // only. The state mirror keeps 7 slots (the core's RELOAD_FIELD always
   // serializes 7), but seq 5/6 can never be offered or occupied now.
-  zoneRow($('oppMzone'), op.mzone.slice(0, 5), 1 - HP, E.LOC.MZONE, false);
-  zoneRow($('myMzone'), me.mzone.slice(0, 5), HP, E.LOC.MZONE, false);
-  zoneRow($('mySzone'), [0,1,2,3,4,5].map(i => me.szone[i]), HP, E.LOC.SZONE, true);
+  zoneRow($('oppMzone'), op.mzone.slice(0, 5), 1 - HP, E.LOC.MZONE);
+  zoneRow($('myMzone'), me.mzone.slice(0, 5), HP, E.LOC.MZONE);
+  zoneRow($('mySzone'), [0,1,2,3,4,5].map(i => me.szone[i]), HP, E.LOC.SZONE);
   $('oppPilebar').innerHTML = pileHTML(null, 1 - HP);
   $('myPilebar').innerHTML = pileHTML(null, HP);
   // hand
@@ -209,8 +220,11 @@ function render(state) {
   $('hand').innerHTML = me.hand.map((c, i) => {
     const key = HP + ':' + E.LOC.HAND + ':' + i;
     const act = actionMap.has(key) ? ' actionable' : '';
-    return '<div class="hcard' + act + '" data-act="' + key + '"><div class="nm">' + (c.code != null ? cardName(c.code) : '？') + '</div>' +
-      (c.code != null && statsLine(c.code) ? '<div class="st">' + statsLine(c.code) + '</div>' : '') + '</div>';
+    const st = c.code != null && isMonster(c.code)
+      ? '<div class="hstats"><span>ATK <b>' + cardData(c.code).atk + '</b></span><span>DEF <b>' + cardData(c.code).def + '</b></span></div>'
+      : '<div class="hstats"></div>';
+    return '<div class="hcard' + act + '" data-act="' + key + '"' + (c.code != null ? ' data-code="' + c.code + '"' : '') + '>' +
+      '<div class="himg"><div class="nm">' + (c.code != null ? cardName(c.code) : '？') + '</div></div>' + st + '</div>';
   }).join('');
   // opponent hand = backs in topbar only (count); chain bar
   const cb = $('chainbar');
@@ -228,6 +242,7 @@ function render(state) {
   if (phaseAction) { pb.disabled = false; pb.textContent = phaseAction.label; }
   else { pb.disabled = true; pb.textContent = currentPrompt ? '選択中…' : '—'; }
   $('menubtn').style.display = menuActions.length ? '' : 'none';
+  updatePreviewFromState(state);
 }
 function phaseJa(n) {
   return { DRAW: 'ドロー', STANDBY: 'スタンバイ', MAIN1: 'メイン1', BATTLE_START: 'バトル開始', BATTLE_STEP: 'バトルステップ',
@@ -333,6 +348,7 @@ function uiCmd(prompt, state) {
 function openActionSheet(key) {
   const acts = actionMap.get(key); if (!acts) return;
   const [con, loc, seq] = key.split(':').map(Number);
+  if (acts[0].code) setPreview(acts[0].code, { con, loc, seq });
   const title = acts[0].code ? cardName(acts[0].code) : 'アクション';
   const txt = acts[0].code ? cardText(acts[0].code) : '';
   const meta = acts[0].code ? cardMetaLine(acts[0].code) : '';
@@ -381,6 +397,7 @@ function openPileSheet(kind, con) {
 // read-only card detail (Japanese name + official text) — view only, never
 // part of an answer; safe to open over pile views.
 function openCardInfo(code) {
+  setPreview(code, null);
   const txt = cardText(code);
   const meta = cardMetaLine(code);
   const st = statsLine(code);
@@ -718,7 +735,12 @@ function uiFallback(prompt, state) {
 }
 // ---------------------------------------------------------------- global taps
 $('autopass').addEventListener('click', () => { playClick(); openDismissManager(); });
+$('preview').addEventListener('click', () => { if (previewState) { playClick(); openCardInfo(previewState.code); } });
 document.addEventListener('click', (ev) => {
+  // preview follows the player's taps (hand cards always; field zones when
+  // not placing) — it never consumes the tap, the handlers below still run
+  const handEl = ev.target.closest('#hand .hcard');
+  if (handEl && handEl.dataset.code) setPreview(+handEl.dataset.code, null);
   const zoneEl = ev.target.closest('[data-zone]');
   if (zoneEl && placeCtx) {
     const key = zoneEl.dataset.zone;
@@ -734,6 +756,14 @@ document.addEventListener('click', (ev) => {
       if (duelState) render(duelState);
     }
     return;
+  }
+  if (zoneEl && !placeCtx && duelState) {
+    const [zcon, zloc, zseq] = zoneEl.dataset.zone.split(':').map(Number);
+    if (zloc === E.LOC.MZONE || zloc === E.LOC.SZONE) {
+      const P = duelState.players[zcon];
+      const card = zloc === E.LOC.MZONE ? P.mzone[zseq] : P.szone[zseq];
+      if (card && card.code != null && ((card.pos & E.POS_FACEUP) !== 0 || zcon === HP)) setPreview(card.code, { con: zcon, loc: zloc, seq: zseq });
+    }
   }
   const actEl = ev.target.closest('[data-act]');
   if (actEl && currentPrompt && (currentPrompt.prompt.name === 'SELECT_IDLECMD' || currentPrompt.prompt.name === 'SELECT_BATTLECMD')) {
@@ -756,6 +786,109 @@ $('menubtn').addEventListener('click', () => {
   $('sheet').querySelectorAll('[data-menu]').forEach(b => b.addEventListener('click', () => { playClick(); finishPrompt(menuActions[+b.dataset.menu].bytes); }));
   $('sheet-cancel').addEventListener('click', () => { playClick(); sheetClose(); });
 });
+// ---------------------------------------------------------------- layout
+// User decision (2026-11-02): "fit the board to the screen; if space
+// remains, a persistent card-detail preview." Sizes are computed ONCE at
+// duel start from the viewport and then frozen for the whole duel — prompts
+// (dock/sheets) overlay absolutely and the chain row's height is always
+// reserved, so nothing can resize or shift the board mid-duel.
+//
+// Vertical budget (px, mirrors index.html exactly — every bar has an
+// explicit height there):
+//   topbar 44 + opp field (pad 5 + pilebar 23 + 2 zone rows) + midbar 78
+//   (chainbar 21 reserved + logline 15 + phasebar 34 + padding/borders 8)
+//   + my field (2 zone rows + pilebar 23 + pad 5) + handbar extras 23
+//   (who 13 + padding 10) + 4 zone-row margins 16  =  FIXED 217
+//   plus 4 × slotH + handH + previewH.
+// Slot: width W, image height round(W×1.22), +15 stats strip = slotH.
+// Hand: width round(W×56/47), image round(handW×1.22), +14 stats strip.
+const LAYOUT_FIXED = 217;
+let layoutInfo = null;
+function layoutParts(W) {
+  const imgH = Math.round(W * 1.22);
+  const slotH = imgH + 15;
+  const handW = Math.round(W * 56 / 47);
+  const handH = Math.round(handW * 1.22) + 14;
+  return { imgH, slotH, handW, handH, stack: LAYOUT_FIXED + 4 * slotH + handH };
+}
+function computeLayout(vwIn, vh) {
+  const vw = Math.min(vwIn || 390, 430); // #app max-width
+  // width cap: the widest row is the spell/trap row — 6 slots + 5 gaps of 4
+  // + field padding 12 must fit the app width. All zones share this size.
+  let W = Math.max(40, Math.floor((vw - 12 - 20) / 6));
+  let p = layoutParts(W);
+  while (p.stack > vh && W > 40) { W--; p = layoutParts(W); }
+  // Slack distribution: preview first (up to a fully usable 56px), then the
+  // hand grows up to 1.3× its standard height, then any rest to the preview.
+  let leftover = Math.max(0, vh - p.stack);
+  let pv = Math.min(leftover, 56); leftover -= pv;
+  const handCap = Math.round(p.handH * 1.3);
+  const grow = Math.min(leftover, Math.max(0, handCap - p.handH));
+  const handH = p.handH + grow; leftover -= grow;
+  pv += leftover;
+  const pvShown = pv >= 24 ? pv : 0; // a sub-24px sliver is hidden; it stays as the (<24px) dead band
+  const contentH = LAYOUT_FIXED + 4 * p.slotH + handH + pvShown;
+  return { vw, vh, tileW: W, imgH: p.imgH, slotH: p.slotH, handW: p.handW, handH, pv, pvShown, contentH, dead: vh - contentH };
+}
+function applyLayout() {
+  const info = computeLayout(window.innerWidth, window.innerHeight);
+  layoutInfo = info;
+  window.__layout = info; // measurement hook for tests (jsdom has no layout engine)
+  const rs = document.documentElement.style;
+  rs.setProperty('--sw', info.tileW + 'px');
+  rs.setProperty('--sh', info.slotH + 'px');
+  rs.setProperty('--hw', info.handW + 'px');
+  rs.setProperty('--hh', info.handH + 'px');
+  rs.setProperty('--pv', info.pvShown + 'px');
+  $('preview').className = info.pvShown > 0 ? (info.pvShown < 56 ? 'on compact' : 'on') : '';
+  if (previewState) renderPreview();
+}
+// ---------------------------------------------------------------- preview
+// Persistent card-detail strip in the leftover space (never overlays or
+// shrinks the board). Shows the most recently tapped/selected card: larger
+// art, name, meta, live ATK/DEF for field cards, full text (scrolls inside
+// the strip only). Tapping the strip opens the full card-info sheet.
+// Default before any tap: the first card of the opening hand.
+let previewState = null; // {code, con, loc, seq, sig}
+function setPreview(code, ref) {
+  if (code == null || !DATA || !DATA.cards[code]) return;
+  previewState = { code, con: ref ? ref.con : null, loc: ref ? ref.loc : null, seq: ref ? ref.seq : null, sig: '' };
+  renderPreview();
+}
+function renderPreview() {
+  const el = $('preview');
+  if (!el || !previewState) return;
+  let card = null;
+  if (previewState.con != null && duelState) {
+    const P = duelState.players[previewState.con];
+    if (previewState.loc === E.LOC.MZONE) card = P.mzone[previewState.seq];
+    else if (previewState.loc === E.LOC.SZONE) card = P.szone[previewState.seq];
+    if (card && card.code !== previewState.code) card = null; // zone changed hands: fall back to printed values
+  }
+  let stats = '';
+  if (isMonster(previewState.code)) {
+    const d = cardData(previewState.code);
+    const atk = card && card.curAtk != null ? card.curAtk : d.atk;
+    const def = card && card.curDef != null ? card.curDef : d.def;
+    stats = 'ATK ' + atk + '／DEF ' + def;
+  }
+  const sig = previewState.code + '|' + stats + '|' + (card ? card.pos : '');
+  if (sig === previewState.sig) return; // no DOM churn on unrelated re-renders
+  previewState.sig = sig;
+  el.innerHTML = '<div class="pv-art"></div><div class="pv-body">' +
+    '<div class="pv-top"><span class="pv-name">' + cardName(previewState.code) + '</span>' +
+    (stats ? '<span class="pv-stats">' + stats + '</span>' : '') + '</div>' +
+    '<div class="pv-meta">' + cardMetaLine(previewState.code) + '</div>' +
+    '<div class="pv-text">' + (cardText(previewState.code) || '') + '</div></div>';
+}
+function updatePreviewFromState(state) {
+  if (!previewState) {
+    const me = state.players[HP];
+    if (me && me.hand.length && me.hand[0].code != null) setPreview(me.hand[0].code, null);
+    return;
+  }
+  renderPreview();
+}
 // ---------------------------------------------------------------- boot
 function wireSeg(id, apply) {
   const el = $(id);
@@ -785,6 +918,8 @@ function wireSeg(id, apply) {
   $('startbtn').addEventListener('click', async () => {
     playClick();
     playSe('vs_start');
+    previewState = null; // preview restarts with the duel (default: first hand card)
+    applyLayout(); // fit once to this viewport, then frozen for the whole duel
     // Seat wiring (item 5): the core's first player is always seat 0, so a
     // second-player human takes seat 1 with the decks swapped.
     const humanFirst = firstChoice === 'first' ? true : firstChoice === 'second' ? false : Math.random() < 0.5;
