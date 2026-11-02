@@ -342,8 +342,18 @@ async function runBatch(M, data, label, seeds, makeAnswerers, mode) {
     (prompt, state) => hunterAnswer(prompt, state, data),
     (prompt, state) => Engine.botAnswer(prompt, state, data, Engine.makeBotMemory()),
   ], 'strict');
-  ok(hunter.xyzSummons >= 12, 'HUNTER: Xyz summons exercised (' + hunter.xyzSummons + ')');
-  ok(hunter.attachExtra >= 24, 'HUNTER: attaches to in-Extra hosts exercised (' + hunter.attachExtra + ')');
+  // Exercise thresholds recalibrated for the CPU phase (see v2/NOTES.md):
+  // the original >=12 / >=24 assumed the passive pre-CPU bot at seat 1.
+  // The Gate Guardian deck has NO Xyz monster and no level-4 monster, so
+  // every Xyz in this batch must come from the hunter — and a competent
+  // seat-1 policy contests its level-4 pairs and ends duels sooner
+  // (measured: 4 summons / 8 in-Extra attaches, deterministic under the
+  // seeded shuffle). The machinery itself is additionally covered by the
+  // ACTIVATOR batch below (10 Xyz / 20 attaches / 10 detaches, unchanged).
+  // The correctness gates above (conservation, wire model, retries) are
+  // NOT relaxed.
+  ok(hunter.xyzSummons >= 3, 'HUNTER: Xyz summons exercised (' + hunter.xyzSummons + ')');
+  ok(hunter.attachExtra >= 6, 'HUNTER: attaches to in-Extra hosts exercised (' + hunter.attachExtra + ')');
   ok(hunter.releaseGrave >= 1, 'HUNTER: grave-release after host destruction exercised (' + hunter.releaseGrave + ')');
 
   const act = await runBatch(M, data, 'ACTIVATOR', [21, 22, 23, 24, 25, 26], (seed) => {

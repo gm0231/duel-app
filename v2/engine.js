@@ -413,6 +413,10 @@ class GameState {
       szone: Array(8).fill(null),     // {code|null, pos}
     });
     this.players = [mk(deckP0 || data.decks.ishizu), mk(deckP1 || data.decks.gg)];
+    // Retained for the CPU policy's remaining-deck estimates (botView reads
+    // only the bot's own list in full; the opponent's is used solely to
+    // subtract publicly-visible cards — see the CPU policy header).
+    this.deckLists = [deckP0 || data.decks.ishizu, deckP1 || data.decks.gg];
     this.turnPlayer = 0; this.turnCount = 0; this.phase = 0; this.phaseName = '';
     this.chain = [];                  // [{code, con, loc, seq, desc, player, negated, disabled, solved}]
     this.solvingLink = 0;             // chain_count currently resolving (0 = building)
@@ -741,109 +745,1542 @@ class GameState {
   }
 }
 
-// ---------------------------------------------------------------- bot policy
-// Simple legal-answer policy ported from the verified PoC bot (same choices),
-// operating on parsed prompts. Used for the CPU seat (player 1) and, in the
-// Node harness, for the simulated-human seat (player 0).
-function makeBotMemory() { return { summonedYet: false }; }
-function botAnswer(prompt, state, data, mem) {
-  const cards = data.cards;
-  switch (prompt.name) {
-    case 'SELECT_CHAIN':
-      return i32resp(prompt.forced ? 0 : -1);
-    case 'SELECT_IDLECMD': {
-      if (!mem.summonedYet) {
-        const idx = prompt.summon.findIndex(e => (cards[e.code] && (cards[e.code].level || 0) <= 4));
-        if (idx >= 0) { mem.summonedYet = true; return cmdResp(0, idx); }
+// ---------------------------------------------------------------- CPU policy
+// Competent baseline opponent for the two decks in the pool, written fresh
+// for this client in the spirit of the ygopro AI: evaluate only the current
+// prompt's legal options with board/hand heuristics, never touch legality.
+//
+// FAIR INFORMATION: the core's local message stream carries real card codes
+// for cards the bot seat cannot legally see (opponent hand contents,
+// opponent face-down cards — playerop.cpp writes pcard->data.code into
+// MSG_SELECT_CARD unconditionally, and MSG_DRAW/MSG_MOVE do the same into
+// the shared mirror). Decisions therefore never read the raw state: every
+// handler works on botView(), which masks hidden identities (opponent hand
+// -> count only, opponent face-down cards -> code null), and prompt
+// candidates are masked the same way before evaluation (maskEntry). The
+// only decklist knowledge used is (a) the bot's OWN decklist — a player
+// always knows their own deck — to compute what remains in its deck, and
+// (b) for ANNOUNCE_CARD (Gravekeeper's Trap), the opponent's remaining deck
+// estimated from PUBLIC zones only, mirroring what a human who knows the
+// fixed opposing decklist could infer.
+//
+// Live ATK/DEF: mirror cells carry curAtk/curDef after Duel.refreshFieldStats
+// (Duel.run refreshes before every bot answer; test harnesses do the same).
+// When no live value is present the printed value is used — exact whenever
+// no modifier applies.
+//
+// Termination: every prompt type is answered by a bounded strategy (see the
+// per-handler notes, esp. SELECT_UNSELECT_CARD and SELECT_SUM); the policy
+// never relies on the driver's stall guards.
+const CT = { MONSTER: 0x1, SPELL: 0x2, TRAP: 0x4, EFFECT: 0x20, FUSION: 0x40, TUNER: 0x1000,
+             SYNCHRO: 0x2000, QUICKPLAY: 0x10000, CONTINUOUS: 0x20000, FIELD: 0x80000,
+             FLIP: 0x200000, XYZ: 0x800000, LINK: 0x4000000 };
+const EXTRA_TYPES = CT.FUSION | CT.SYNCHRO | CT.XYZ | CT.LINK;
+// Key cards of the pool (codes), named once for the heuristics below.
+const CC = {
+  MUDORA: 99937011, KELDO: 63542003, KELBEK: 25926710, AGIDO: 62320425, ZOLGA: 31525442,
+  CARBON: 15079028, VERN_MORI: 36745317, VERN_HANA: 62133026, STONE: 12332865,
+  CHAOS_POD: 79106360, SILKY: 55702233, SPHINX: 46148485, KALDAN: 86605515,
+  HAND_DESTRUCTION: 16435215, TAIYOU: 38699854, MOON: 14087893, MISCHIEF: 51612489,
+  REBELLION: 71593652, REBORN: 28958464, COROLLA: 14108995, FOOLISH_GOODS: 35726888,
+  GK_TRAP: 98715423, EXCHANGE: 17484499, BLAST_HELD: 51208877, SPIRITUAL_SWORDS: 78625592,
+  TITANOCIDER: 67037924, TRANSMIGRATION: 46652477,
+  LUCE: 45409943, HORUS: 36898537, PLUTO: 37706769, BAROMETT: 62967433,
+  HYPERION: 63101468, TRILOSUKTA: 21368273, CASTEL: 82633039, MINERVA: 30100551,
+  SANGA: 25955164, HUGA: 62340868, SUIGA: 98434877, DARK_GUARDIAN: 26746975,
+  HEAVY_TANK: 35026117, SHADOW_GHOUL: 62411811, SWAMP_KING: 45223540,
+  MEDUSA_WORM: 2694423, CHAOS_HUNTER: 97940434,
+  WALL_SHADOW: 34771947, TERRAFORMING: 73628505, FUSION_DEPLOYMENT: 6498706,
+  DARK_ELEMENT: 53194323, FORCE_GUARDIAN: 96661780, DEMON_WIND: 60176682,
+  SEVENTH_SWORD: 45725480, CONCEALING: 12923641, RAIGEKI: 12580477, METAVERSE: 89208725,
+  JIRAI_TRAP: 33055499, GRAVE_HOLE: 31548215, SOLEMN_STRIKE: 40605147, LOST_WIND: 74003290,
+  GG_COMBINED: 8505920, GG_THUNDERWIND: 34904525, GG_WINDWATER: 61398234, GG_WATERTHUNDER: 97783338,
+};
+const GUARDIAN_PIECES = [CC.SANGA, CC.HUGA, CC.SUIGA];
+// Cards that PROFIT from being sent to / placed in the graveyard (mill
+// triggers, grave searches, self-reset): cheap to discard, good to mill.
+const GRAVE_PROFIT = new Set([CC.KELBEK, CC.AGIDO, CC.BLAST_HELD, CC.LOST_WIND, CC.TITANOCIDER,
+  CC.DARK_ELEMENT, CC.FORCE_GUARDIAN, CC.DEMON_WIND, CC.JIRAI_TRAP, CC.SHADOW_GHOUL, CC.REBELLION]);
+const MILL_WHEN_SENT = new Set([CC.KELBEK, CC.AGIDO]); // sent hand/deck -> GY: mill 5 each
+const NEGATION_CODES = new Set([CC.SOLEMN_STRIKE, CC.GRAVE_HOLE]);
+
+function makeBotMemory() {
+  return {
+    summonedYet: false,   // legacy field of the old policy (kept for shape compatibility)
+    oppFieldSnap: null,   // "seq:code" set of the opponent's face-up monsters at the previous bot prompt
+    pendingSummon: null,  // {code, turn} — Extra/contact summon chosen at IDLECMD, for material picks
+    pendingFusionSpell: 0,// turn on which 天至る叛逆 was activated (fusion flow in progress)
+    lastAttacker: null,   // {seq, turn} — attacker chosen at BATTLECMD, for the target SELECT_CARD
+    plannedTargetSeq: -1, // monster-zone seq the current attack was planned against
+    unselectStreak: {},   // termination guard for SELECT_UNSELECT_CARD
+    attempts: {},         // per-turn attempt counts for IDLECMD activations/summons (anti-cancel-loop)
+  };
+}
+
+// ---------------------------------------------------------------- fair view
+// Sanitized snapshot for decisions. Opponent hidden information is removed
+// structurally: hand entries become {code:null}, face-down field cards lose
+// their code and live stats, the opponent's Extra Deck is counts/face-up
+// only, deck tops are dropped entirely.
+function botView(state, me, data) {
+  const opp = 1 - me;
+  const P = state.players;
+  const cell = (c, mine) => {
+    if (!c) return null;
+    const faceUp = (c.pos & POS_FACEUP) !== 0;
+    const out = { pos: c.pos, faceUp, atkPos: (c.pos & POS_ATTACK) !== 0, materials: c.materials || 0, code: null };
+    if (mine || faceUp) {
+      out.code = c.code || null;
+      out.curAtk = c.curAtk; out.curDef = c.curDef; out.curLevel = c.curLevel;
+    }
+    return out;
+  };
+  const zones = (p, mine) => ({
+    mzone: P[p].mzone.map(c => cell(c, mine)),
+    szone: P[p].szone.map(c => cell(c, mine)),
+  });
+  const decks = state.deckLists || null;
+  return {
+    me, opp, data,
+    lp: [P[0].lp, P[1].lp],
+    deckCount: [P[0].deckCount, P[1].deckCount],
+    hand: [0, 1].map(p => P[p].hand.map(e => ({ code: p === me ? (e.code || null) : null }))),
+    extra: [0, 1].map(p => P[p].extra.map(e => (p === me || (e.pos & POS_FACEUP))
+      ? { code: e.code || null, pos: e.pos, materials: e.materials || 0 }
+      : { code: null, pos: e.pos, materials: e.materials || 0 })),
+    grave: [P[0].grave.slice(), P[1].grave.slice()],
+    removed: [P[0].removed.slice(), P[1].removed.slice()],
+    zones: [zones(0, me === 0), zones(1, me === 1)],
+    turnPlayer: state.turnPlayer, turnCount: state.turnCount,
+    phase: state.phase, phaseName: state.phaseName,
+    chain: state.chain.map(l => ({ code: l.code, con: l.con, player: l.player, loc: l.loc, tloc: l.tloc, seq: l.seq })),
+    lastAttack: state.lastAttack,
+    myDeck: decks ? decks[me] : null,
+    oppDeck: decks ? decks[opp] : null,
+  };
+}
+// Prompt candidates get the same masking as the view: an entry pointing at
+// an opponent card the bot may not see (hand, or face-down on the field)
+// loses its code before any evaluation. Reveals created by an effect itself
+// (墓穴の道連れ shows both hands) keep their codes — that knowledge is legal.
+function maskEntry(e, view, ctxCode) {
+  const me = view.me;
+  if (e.con === me || e.con == null) return e;
+  if (ctxCode === CC.HAND_DESTRUCTION) return e; // the effect itself reveals the hand
+  if (e.loc === LOC.HAND || e.loc === LOC.DECK) return Object.assign({}, e, { code: null });
+  if ((e.loc === LOC.MZONE || e.loc === LOC.SZONE) && e.pos != null && !(e.pos & POS_FACEUP))
+    return Object.assign({}, e, { code: null });
+  return e;
+}
+
+// ---------------------------------------------------------------- valuation
+function cdOf(data, code) { return code ? data.cards[code] : null; }
+function isMonsterCd(cd) { return !!cd && (cd.type & CT.MONSTER) !== 0; }
+function isExtraCd(cd) { return !!cd && (cd.type & EXTRA_TYPES) !== 0; }
+function atkOf(cell, data) {
+  if (!cell) return 0;
+  if (cell.curAtk != null) return cell.curAtk;
+  const cd = cdOf(data, cell.code);
+  return cd ? cd.atk : 0;
+}
+function defOf(cell, data) {
+  if (!cell) return 0;
+  if (cell.curDef != null) return cell.curDef;
+  const cd = cdOf(data, cell.code);
+  return cd ? cd.def : 0;
+}
+function levelOf(cell, data) {
+  if (!cell) return 0;
+  if (cell.curLevel != null) return cell.curLevel;
+  const cd = cdOf(data, cell.code);
+  return cd ? (cd.level & 0xff) : 0;
+}
+// Battle strength of a face-up monster in its current position.
+function battlePower(cell, data) { return cell.atkPos ? atkOf(cell, data) : defOf(cell, data); }
+// Presence value of a monster on the field (ours: what we lose if it goes;
+// opponent's: what we gain by removing it).
+function boardValue(cell, data) {
+  if (!cell) return 0;
+  const cd = cdOf(data, cell.code);
+  if (!cell.faceUp) return cd ? 450 + (cd.def || 0) * 0.25 : 500; // set monster: blind presence
+  let v = battlePower(cell, data);
+  if (isExtraCd(cd)) v += 150;
+  v += (cell.materials || 0) * 120;
+  if (cd && cd.code === CC.DARK_GUARDIAN) v += 500;   // battle-indestructible wall
+  if (cd && cd.code === CC.GG_COMBINED) v += 300;
+  return v;
+}
+function monList(view, p) {
+  const out = [];
+  view.zones[p].mzone.forEach((c, seq) => { if (c) out.push(Object.assign({ seq }, c)); });
+  return out;
+}
+function faceUpMons(view, p) { return monList(view, p).filter(c => c.faceUp); }
+function oppMaxPower(view, data) {
+  let m = 0;
+  for (const c of faceUpMons(view, view.opp)) m = Math.max(m, battlePower(c, data));
+  return m;
+}
+function myStrongestAtk(view, data) {
+  let m = 0;
+  for (const c of faceUpMons(view, view.me)) if (c.atkPos) m = Math.max(m, atkOf(c, data));
+  return m;
+}
+// What a card is worth in hand (keep-value). Discard decisions use
+// discardCost() instead; this is the generic "how good is this card" scale.
+function handValue(code, view, data) {
+  const cd = cdOf(data, code);
+  if (!cd) return 200;
+  if (isMonsterCd(cd)) {
+    let v = Math.max(cd.atk, cd.def * 0.72);
+    if (cd.type & CT.TUNER) v += 120;
+    if (code === CC.KELBEK || code === CC.AGIDO) v += 150;
+    if (GUARDIAN_PIECES.includes(code)) v += 180;
+    if (code === CC.VERN_MORI || code === CC.VERN_HANA) v += 220; // enablers
+    if (code === CC.MUDORA || code === CC.KELDO) v += 200;
+    if (code === CC.HEAVY_TANK) v += 250;
+    if (code === CC.CHAOS_HUNTER) v += 150;
+    return v;
+  }
+  const fixed = {
+    [CC.RAIGEKI]: 1700, [CC.SOLEMN_STRIKE]: 1600, [CC.GRAVE_HOLE]: 1500, [CC.REBORN]: 1400,
+    [CC.GK_TRAP]: 1100, [CC.FUSION_DEPLOYMENT]: 1050, [CC.DARK_ELEMENT]: 1200,
+    [CC.CONCEALING]: 1250, [CC.MOON]: 950, [CC.FOOLISH_GOODS]: 950, [CC.TERRAFORMING]: 850,
+    [CC.METAVERSE]: 850, [CC.SPIRITUAL_SWORDS]: 900, [CC.BLAST_HELD]: 1000,
+    [CC.TITANOCIDER]: 950, [CC.LOST_WIND]: 900, [CC.TRANSMIGRATION]: 700,
+    [CC.SEVENTH_SWORD]: 750, [CC.FORCE_GUARDIAN]: 800, [CC.DEMON_WIND]: 800,
+    [CC.EXCHANGE]: 650, [CC.TAIYOU]: 550, [CC.COROLLA]: 600, [CC.REBELLION]: 700,
+    [CC.HAND_DESTRUCTION]: 500, [CC.MISCHIEF]: 350, [CC.WALL_SHADOW]: 900, [CC.JIRAI_TRAP]: 700,
+  };
+  return fixed[code] != null ? fixed[code] : 500;
+}
+// Cost of giving this hand card up (discard / cost / banish from hand).
+// LOW = give it up first. Cards that profit in the graveyard are cheap;
+// duplicates and currently-dead cards are cheap; disruption is expensive.
+function discardCost(code, view, data) {
+  let v = handValue(code, view, data);
+  if (GRAVE_PROFIT.has(code)) v -= 1400;
+  if (MILL_WHEN_SENT.has(code)) v -= 250; // discarding Kelbek/Agido also mills: extra profit
+  const handCodes = view.hand[view.me].map(e => e.code);
+  if (handCodes.filter(c => c === code).length > 1) v -= 450; // duplicate
+  if (GUARDIAN_PIECES.includes(code)) {
+    const elsewhere = [...view.grave[view.me], ...view.removed[view.me],
+      ...monList(view, view.me).map(c => c.code), ...view.zones[view.me].szone.map(c => c && c.code)];
+    if (elsewhere.includes(code)) v -= 350; // this name is already secured elsewhere
+  }
+  if (code === CC.TAIYOU && !monList(view, view.me).some(c => !c.faceUp) &&
+      !monList(view, view.opp).some(c => !c.faceUp)) v -= 300; // no face-downs to flip
+  if (code === CC.COROLLA && !handCodes.some(c => c === CC.VERN_MORI || c === CC.VERN_HANA)) v -= 250;
+  if (code === CC.EXCHANGE && view.grave[view.me].length + view.grave[view.opp].length < 20) v -= 250; // far from live
+  return v;
+}
+// Value of a card sitting in a graveyard (as a resource / as a threat).
+function graveValue(code, data) {
+  const cd = cdOf(data, code);
+  if (!cd) return 100;
+  let v = isMonsterCd(cd) ? Math.max(cd.atk, cd.def * 0.6) * 0.55 : 260;
+  if (GRAVE_PROFIT.has(code)) v += 650;         // it still works from the grave
+  if (MILL_WHEN_SENT.has(code)) v += 150;
+  if (code === CC.EXCHANGE) v += 500;           // unlocks the Ishizu grave effects
+  if (isExtraCd(cd)) v += 200;                  // revival target quality
+  return v;
+}
+// Cards of `player` still possibly in their deck, computed from public
+// information: own deck = own list minus everything of ours we can see;
+// opponent deck = their list minus their PUBLIC zones (their hand cards are
+// indistinguishable — they stay "possible", which is the honest estimate).
+function remainingDeck(view, p, data) {
+  const list = p === view.me ? view.myDeck : view.oppDeck;
+  if (!list) return null;
+  const counts = new Map();
+  for (const c of list.main) counts.set(c, (counts.get(c) || 0) + 1);
+  const sub = (code) => { if (code && counts.get(code) > 0) counts.set(code, counts.get(code) - 1); };
+  if (p === view.me) {
+    for (const e of view.hand[p]) sub(e.code);
+    for (const c of monList(view, p)) sub(c.code);
+    for (const c of view.zones[p].szone) sub(c && c.code);
+  }
+  for (const c of view.grave[p]) sub(c);
+  for (const c of view.removed[p]) sub(c);
+  for (const c of faceUpMons(view, p)) sub(c.code);
+  for (const e of view.extra[p]) if (e.code && (e.pos & POS_FACEUP)) sub(e.code);
+  return counts;
+}
+function deckHas(counts, code) { return !!counts && (counts.get(code) || 0) > 0; }
+
+// ---------------------------------------------------------------- attacks
+// Evaluate one attacker (ATK a) against one opposing monster cell.
+// Returns a score (>0 worth doing) or -Infinity. Face-down targets are a
+// gamble on the pool's DEF distribution (most set monsters are weak or
+// flip monsters; the big DEF walls are 2200-3000).
+function attackScore(view, data, a, t, myValue) {
+  if (!t.faceUp) {
+    if (a >= 2400) return 1000;
+    if (a >= 2100) return 650;
+    if (a >= 1800 && faceUpMons(view, view.opp).length === 0) return 250;
+    return -Infinity;
+  }
+  const power = battlePower(t, data);
+  const threat = boardValue(t, data);
+  if (a > power) return threat + (t.atkPos ? (a - atkOf(t, data)) * 0.25 : 0);
+  if (a === power && t.atkPos) return threat - myValue * 0.65; // trade: only if clearly ahead
+  return -Infinity;
+}
+// All (attacker, target) pairs worth considering. attackers: [{seq, atk}].
+// Direct attacks (targetSeq -1) are included when the entry allows them.
+function attackPlans(view, data, attackers, directSeqs) {
+  const targets = monList(view, view.opp);
+  const plans = [];
+  for (const at of attackers) {
+    const myCell = view.zones[view.me].mzone[at.seq];
+    const myValue = boardValue(myCell, data);
+    if (directSeqs.has(at.seq)) plans.push({ seq: at.seq, atk: at.atk, targetSeq: -1, score: at.atk });
+    for (const t of targets) {
+      const s = attackScore(view, data, at.atk, t, myValue);
+      if (s > -Infinity) plans.push({ seq: at.seq, atk: at.atk, targetSeq: t.seq, score: s });
+    }
+  }
+  return plans;
+}
+// Lethal check: can the field be cleared and the remaining attackers deal
+// >= the opponent's LP directly? Returns the first clearing attack to make
+// (weakest sufficient attacker against the weakest clearable defender).
+function lethalPlan(view, data, attackers) {
+  const targets = monList(view, view.opp);
+  if (!targets.length) return null;
+  const defs = targets.map(t => ({ seq: t.seq, power: t.faceUp ? battlePower(t, data) : 1400, atkPos: t.atkPos, faceUp: t.faceUp }))
+    .sort((x, y) => x.power - y.power);
+  const atks = attackers.slice().sort((x, y) => x.atk - y.atk);
+  const used = new Set();
+  let first = null;
+  for (const d of defs) {
+    let pick = null;
+    for (const a of atks) {
+      if (used.has(a.seq)) continue;
+      if (a.atk > d.power || (d.faceUp && d.atkPos && a.atk === d.power)) { pick = a; break; }
+    }
+    if (!pick) return null; // this defender cannot be cleared
+    used.add(pick.seq);
+    if (!first) first = { seq: pick.seq, atk: pick.atk, targetSeq: d.seq, score: 5000 };
+  }
+  let directDmg = 0;
+  for (const a of attackers) if (!used.has(a.seq)) directDmg += a.atk;
+  if (directDmg >= view.lp[view.opp]) return first;
+  return null;
+}
+function hasProfitableAttack(view, data) {
+  const attackers = faceUpMons(view, view.me).filter(c => c.atkPos && atkOf(c, data) > 0)
+    .map(c => ({ seq: c.seq, atk: atkOf(c, data) }));
+  if (!attackers.length) return false;
+  const direct = new Set(monList(view, view.opp).length === 0 ? attackers.map(a => a.seq) : []);
+  if (lethalPlan(view, data, attackers)) return true;
+  return attackPlans(view, data, attackers, direct).some(p => p.score >= 240);
+}
+
+// ---------------------------------------------------------------- main phase
+// Score for firing one IDLECMD "activate" entry (0 = leave it). Entries are
+// the bot's own cards only, so codes are always visible here.
+function activationScore(e, view, data, prompt) {
+  const me = view.me, opp = view.opp;
+  const cd = cdOf(data, e.code);
+  if (!cd) return 0;
+  const myMons = monList(view, me), oppMons = monList(view, opp);
+  const oppFU = faceUpMons(view, opp);
+  const handCodes = view.hand[me].map(x => x.code);
+  const rem = remainingDeck(view, me, data);
+  const fieldUp = (() => { const f = view.zones[me].szone[5]; return !!(f && f.faceUp); })();
+  const ggOnField = faceUpMons(view, me).some(c => isExtraCd(cdOf(data, c.code)) || c.code === CC.DARK_GUARDIAN);
+  const bestGraveMonster = Math.max(0, ...view.grave[me].concat(view.grave[opp])
+    .map(c => { const d = cdOf(data, c); return isMonsterCd(d) ? d.atk : 0; }));
+  switch (e.code) {
+    case CC.RAIGEKI: {
+      if (oppMons.length >= 2) return 1600;
+      if (oppMons.length === 1 && oppFU.length === 1 &&
+          (battlePower(oppFU[0], data) >= 2200 || isExtraCd(cdOf(data, oppFU[0].code)))) return 1300;
+      return 0;
+    }
+    case CC.CONCEALING: {
+      const tot = oppFU.reduce((s, c) => s + battlePower(c, data), 0);
+      if (oppFU.length >= 2 && tot >= 3000) return 1400;
+      if (oppFU.length === 1 && battlePower(oppFU[0], data) >= 2600) return 1100;
+      return 0;
+    }
+    case CC.TERRAFORMING:
+      return (!fieldUp && deckHas(rem, CC.WALL_SHADOW)) ? 1000 : 0;
+    case CC.METAVERSE:
+      return (!fieldUp && deckHas(rem, CC.WALL_SHADOW)) ? 1000 : 0;
+    case CC.WALL_SHADOW: // activating the field spell itself from hand
+      return fieldUp ? 0 : 1050;
+    case CC.FOOLISH_GOODS: {
+      if (deckHas(rem, CC.EXCHANGE) && !view.grave[me].includes(CC.EXCHANGE)) return 1050;
+      if (deckHas(rem, CC.DARK_ELEMENT) && !handCodes.includes(CC.DARK_ELEMENT)) return 1000;
+      for (const g of [CC.FORCE_GUARDIAN, CC.DEMON_WIND, CC.JIRAI_TRAP])
+        if (deckHas(rem, g) && !handCodes.includes(g)) return 850;
+      if (deckHas(rem, CC.LOST_WIND)) return 550;
+      return 0;
+    }
+    case CC.FUSION_DEPLOYMENT:
+      return (myMons.length <= 1 || myStrongestAtk(view, data) < 2400) ? 1050 : 800;
+    case CC.DARK_ELEMENT: {
+      if (myStrongestAtk(view, data) >= 3000) return 0;
+      if (view.lp[me] >= 3200) return 1500;
+      if (view.lp[me] >= 2000 && myStrongestAtk(view, data) < 2000) return 1200;
+      return 0;
+    }
+    case CC.SEVENTH_SWORD: {
+      const lv7 = view.hand[me].filter(x => { const d = cdOf(data, x.code); return isMonsterCd(d) && (d.level & 0xff) === 7; });
+      if (lv7.length >= 2) return 900;
+      const summonable = view.hand[me].some(x => { const d = cdOf(data, x.code); return isMonsterCd(d) && (d.level & 0xff) <= 4; });
+      if (lv7.length === 1 && myMons.length === 0 && !summonable) return 950; // dead card -> 2 draws
+      if (lv7.length === 1 && view.grave[me].includes(lv7[0].code)) return 800;
+      return 0;
+    }
+    case CC.FORCE_GUARDIAN:
+      return ggOnField && myStrongestAtk(view, data) >= 2000 ? 1250 : 0;
+    case CC.DEMON_WIND: {
+      if (!ggOnField) return 0;
+      return oppFU.some(c => battlePower(c, data) >= 1800) || view.zones[opp].szone.some(c => c && c.faceUp) ? 1200 : 0;
+    }
+    case CC.HAND_DESTRUCTION: {
+      const others = handCodes.filter(c => c !== CC.HAND_DESTRUCTION);
+      const graveFriendly = others.filter(c => GRAVE_PROFIT.has(c) || MILL_WHEN_SENT.has(c)).length;
+      return others.length >= 2 && graveFriendly * 2 >= others.length ? 650 : 0;
+    }
+    case CC.REBORN:
+      if (bestGraveMonster >= 2100 && (myStrongestAtk(view, data) < bestGraveMonster || myMons.length <= 1)) return 1250;
+      return bestGraveMonster >= 2600 ? 1100 : 0;
+    case CC.EXCHANGE: {
+      if (view.lp[me] <= 1200) return 0;
+      if (view.deckCount[me] <= 16) return 1400;
+      if (view.deckCount[opp] <= 10) return 0; // don't hand them a fresh deck
+      return view.deckCount[me] <= view.deckCount[opp] ? 800 : 0;
+    }
+    case CC.GK_TRAP: {
+      const cellTrap = view.zones[me].szone[e.seq];
+      if (cellTrap && !cellTrap.faceUp) return view.grave[opp].length >= 4 ? 1100 : 950; // flip it face-up
+      // ② search: needs a spare discard and a reason to dig
+      const cheapest = Math.min(...handCodes.filter(c => c !== CC.GK_TRAP).map(c => discardCost(c, view, data)), Infinity);
+      if (cheapest > 800) return 0;
+      if (myMons.length <= 2 || myStrongestAtk(view, data) < 1800) return 1000;
+      return view.hand[me].length >= 5 ? 700 : 0;
+    }
+    case CC.MUDORA: case CC.KELDO: {
+      if (e.loc === LOC.HAND) {
+        const others = handCodes.filter(c => c !== e.code);
+        if (!others.length) return 0;
+        if (others.some(c => MILL_WHEN_SENT.has(c))) return 1250; // discard mills for free
+        const cheapest = Math.min(...others.map(c => discardCost(c, view, data)));
+        return cheapest <= 700 ? 1050 : 0;
       }
+      // ② graveyard shuffle (field/grave copy, ignition timing in main)
+      const topOpp = view.grave[opp].map(c => graveValue(c, data)).sort((a, b) => b - a);
+      return (topOpp[0] || 0) + (topOpp[1] || 0) >= 1500 ? 850 : 0;
+    }
+    case CC.VERN_MORI: case CC.VERN_HANA: {
+      const gyEarth = view.grave[me].some(c => { const d = cdOf(data, c); return isMonsterCd(d) && d.attribute === 0x01; });
+      const handEarth = handCodes.some(c => { const d = cdOf(data, c); return isMonsterCd(d) && d.attribute === 0x01 && c !== e.code; });
+      if (view.hand[me].length < 2) return 0;
+      if (e.code === CC.VERN_HANA) return gyEarth ? 1100 : 0;
+      if (gyEarth) return 1150;
+      return handEarth && deckHas(rem, CC.KELBEK) !== false ? 950 : 0; // discard becomes the revive target pool
+    }
+    case CC.CARBON: {
+      if (!prompt.summon.length) return 0; // normal summon already spent
+      const hasTarget = rem ? [...rem.keys()].some(c => { const d = cdOf(data, c); return d && d.race === 0x4 && d.attribute === 0x01 && (d.level & 0xff) === 4 && d.atk > 1400; })
+                            : true;
+      return hasTarget ? 800 : 0;
+    }
+    case CC.SPHINX:
+      return (deckHas(rem, CC.TAIYOU) || deckHas(rem, CC.MOON) ||
+              view.grave[me].includes(CC.TAIYOU) || view.grave[me].includes(CC.MOON)) ? 750 : 0;
+    case CC.COROLLA:
+      return handCodes.some(c => c === CC.VERN_MORI || c === CC.VERN_HANA) ? 800 : 0;
+    case CC.TAIYOU: {
+      const pod = myMons.find(c => !c.faceUp && c.code === CC.CHAOS_POD);
+      const worm = myMons.find(c => !c.faceUp && c.code === CC.MEDUSA_WORM);
+      const myTot = faceUpMons(view, me).reduce((s, c) => s + battlePower(c, data), 0);
+      const oppTot = oppFU.reduce((s, c) => s + battlePower(c, data), 0);
+      if (pod && oppTot - myTot >= 1800) return 1300;
+      if (worm && oppFU.length) return 1200;
+      return 0;
+    }
+    case CC.MOON: {
+      const best = myStrongestAtk(view, data);
+      const wall = oppFU.find(c => battlePower(c, data) > best && defOf(c, data) < best);
+      if (wall && best >= 1500) return 1000;
+      if (oppFU.some(c => atkOf(c, data) >= 2600)) return 650;
+      return 0;
+    }
+    case CC.MISCHIEF:
+      return monList(view, opp).some(c => !c.faceUp) && myStrongestAtk(view, data) >= 1800 ? 500 : 0;
+    case CC.REBELLION: {
+      if (e.loc === LOC.HAND) {
+        const mats = view.grave[me].filter(c => { const d = cdOf(data, c); return d && (d.race === 0x8 || d.race === 0x4); }).length;
+        const luceReady = view.extra[me].some(x => x.code === CC.LUCE);
+        return mats >= 3 && luceReady ? 1350 : 0;
+      }
+      if (e.loc === LOC.GRAVE) {
+        const mats = view.grave[me].filter(c => { const d = cdOf(data, c); return d && (d.race === 0x8 || d.race === 0x4); }).length;
+        const cheap = handCodes.some(c => { const d = cdOf(data, c); return d && (d.race === 0x8 || d.race === 0x4) && discardCost(c, view, data) <= 600; });
+        return mats >= 2 && cheap ? 600 : 0;
+      }
+      return 0;
+    }
+    case CC.JIRAI_TRAP:
+      return (myMons.length === 0 || myStrongestAtk(view, data) < 2100) ? 1000 : 400;
+    case CC.TITANOCIDER: {
+      if (oppFU.some(c => isExtraCd(cdOf(data, c.code)) && atkOf(c, data) >= 1900)) return 1050;
+      return oppFU.some(c => atkOf(c, data) >= 2300) ? 800 : 0;
+    }
+    case CC.LOST_WIND:
+      return oppFU.some(c => isExtraCd(cdOf(data, c.code)) && atkOf(c, data) >= 1700) ? 950 : 0;
+    case CC.TRANSMIGRATION: {
+      const topOpp = view.grave[opp].map(c => graveValue(c, data)).sort((a, b) => b - a);
+      return (topOpp[0] || 0) + (topOpp[1] || 0) >= 1700 ? 800 : 0;
+    }
+    case CC.CASTEL:
+      return oppFU.some(c => battlePower(c, data) >= 1800) ? 1150 : 0;
+    case CC.PLUTO:
+      return oppFU.some(c => { const d = cdOf(data, c.code); return d && (d.type & CT.EFFECT) && atkOf(c, data) >= 1800; }) ? 1000 : 0;
+    case CC.LUCE:
+      if (oppFU.some(c => battlePower(c, data) >= 1800)) return 1200;
+      return view.zones[opp].szone.some(c => c && c.faceUp) ? 800 : 0;
+    case CC.BAROMETT: {
+      const hasNormalTrap = view.grave[me].some(c => { const d = cdOf(data, c); return d && (d.type & CT.TRAP) && !(d.type & CT.CONTINUOUS) && !(d.type & 0x100000); });
+      return hasNormalTrap ? 950 : 0;
+    }
+    case CC.MINERVA:
+      return view.deckCount[me] > 10 ? 900 : (view.deckCount[me] > 6 ? 500 : 0);
+    case CC.HYPERION: // ① copy an "Agent" — only Pluto qualifies in this pool
+      return (view.grave[me].includes(CC.PLUTO) || handCodes.includes(CC.PLUTO)) ? 700 : 0;
+    case CC.HEAVY_TANK: case CC.WALL_SHADOW: {
+      if (e.loc !== LOC.SZONE && e.code === CC.WALL_SHADOW) return 0;
+      const pieceSomewhere = GUARDIAN_PIECES.some(g => deckHas(rem, g) || handCodes.includes(g) || view.removed[me].includes(g));
+      if (!pieceSomewhere) return 0;
+      return (fieldUp && oppMons.length) ? 1200 : 900;
+    }
+    case CC.SHADOW_GHOUL: {
+      if (e.loc !== LOC.HAND) return 0;
+      return (!fieldUp && !handCodes.includes(CC.WALL_SHADOW) && deckHas(rem, CC.WALL_SHADOW)) ? 950 : 0;
+    }
+    case CC.SWAMP_KING: {
+      if (e.loc !== LOC.HAND) return 0;
+      if (handCodes.some(c => GUARDIAN_PIECES.includes(c))) return 850;
+      return myMons.length === 0 ? 600 : 0;
+    }
+    case CC.GG_THUNDERWIND: // ① search a card naming all three guardians
+      return e.loc === LOC.MZONE ? 1000 : 0;
+    case CC.GG_WATERTHUNDER: // ① zero an opposing monster's ATK
+      return oppFU.some(c => atkOf(c, data) >= 2000) ? 1000 : 0;
+    case CC.MEDUSA_WORM: // flip itself face-down to re-arm the flip destruction
+      return (e.loc === LOC.MZONE && oppMaxPower(view, data) > 700) ? 650 : 0;
+    default:
+      return 0;
+  }
+}
+// Extra-Deck / procedure special summon evaluation. Returns the entry index
+// to take, or -1. Material costs are estimated from the visible board; the
+// follow-up material SELECT_CARD is answered by the material logic, which
+// re-derives the cheapest legal combination from the actual candidates.
+function pickSpsummon(prompt, view, data, mem) {
+  const me = view.me;
+  let best = -1, bestGain = 249;
+  prompt.spsummon.forEach((e, i) => {
+    const cd = cdOf(data, e.code);
+    if (!cd || !isMonsterCd(cd)) return;
+    const bonus = { [CC.CASTEL]: 650, [CC.MINERVA]: 500, [CC.BAROMETT]: 450, [CC.LUCE]: 500,
+      [CC.HYPERION]: 250, [CC.PLUTO]: 450, [CC.TRILOSUKTA]: 400, [CC.HORUS]: 150,
+      [CC.GG_COMBINED]: 350 }[e.code] || 200;
+    let cost = null;
+    if (e.loc === LOC.EXTRA && (cd.type & CT.XYZ)) {
+      const rank = cd.level & 0xff;
+      const mats = faceUpMons(view, me).concat(monList(view, me).filter(c => !c.faceUp))
+        .filter(c => levelOf(c, data) === rank).sort((a, b) => boardValue(a, data) - boardValue(b, data));
+      if (mats.length >= 2) cost = boardValue(mats[0], data) + boardValue(mats[1], data);
+    } else if (e.loc === LOC.EXTRA && (cd.type & CT.SYNCHRO)) {
+      const lvl = cd.level & 0xff;
+      const field = monList(view, me);
+      let bestCombo = Infinity;
+      const n = field.length;
+      for (let mask = 1; mask < (1 << n); mask++) {
+        let sum = 0, hasTuner = false, c = 0;
+        for (let j = 0; j < n; j++) if (mask & (1 << j)) {
+          sum += levelOf(field[j], data);
+          const d = cdOf(data, field[j].code);
+          if (d && (d.type & CT.TUNER)) hasTuner = true;
+          c += boardValue(field[j], data);
+        }
+        if (hasTuner && sum === lvl && c < bestCombo) bestCombo = c;
+      }
+      if (bestCombo < Infinity) cost = bestCombo;
+    } else if (e.loc === LOC.EXTRA && (cd.type & CT.FUSION)) {
+      // Gate Guardian contact fusions: named pieces, locations decide the cost.
+      const needs = e.code === CC.GG_COMBINED ? GUARDIAN_PIECES
+        : e.code === CC.GG_THUNDERWIND ? [CC.SANGA, CC.HUGA]
+        : e.code === CC.GG_WINDWATER ? [CC.HUGA, CC.SUIGA]
+        : e.code === CC.GG_WATERTHUNDER ? [CC.SUIGA, CC.SANGA] : null;
+      if (!needs) { cost = 600; } // unknown fusion (e.g. via substitution): modest flat cost
+      else {
+        cost = 0;
+        for (const piece of needs) {
+          const onField = monList(view, me).find(c => c.code === piece);
+          const inHand = view.hand[me].some(x => x.code === piece);
+          const inGrave = view.grave[me].includes(piece);
+          const fieldOnly = e.code !== CC.GG_COMBINED;
+          if (onField) cost += boardValue(onField, data);
+          else if (!fieldOnly && inGrave) cost += 250;
+          else if (!fieldOnly && inHand) cost += handValue(piece, view, data) * 0.35;
+          else { cost = null; break; }
+        }
+        // two-piece field fusions trade ~5000 ATK of board for ~2500: only
+        // when the pieces are already weakened (halved/zeroed effects).
+        if (cost != null && e.code !== CC.GG_COMBINED) {
+          const piecePower = needs.reduce((s, piece) => {
+            const c = monList(view, me).find(x => x.code === piece);
+            return s + (c ? battlePower(c, data) : 0);
+          }, 0);
+          if (piecePower > cd.atk + 400) cost = null;
+        }
+      }
+    } else if (e.code === CC.DARK_GUARDIAN) {
+      // procedure: return the three guardians (hand/face-up field/grave/removed) to the deck
+      cost = 0;
+      for (const piece of GUARDIAN_PIECES) {
+        const onField = monList(view, me).find(c => c.code === piece && c.faceUp);
+        if (onField) cost += boardValue(onField, data);
+        else if (view.grave[me].includes(piece) || view.removed[me].includes(piece)) cost += 250;
+        else if (view.hand[me].some(x => x.code === piece)) cost += handValue(piece, view, data) * 0.35;
+        else { cost = null; break; }
+      }
+      if (cost != null && cost > 2600) cost = null;
+    } else if (e.loc === LOC.HAND || e.loc === LOC.GRAVE) {
+      cost = cd.atk >= 1500 ? 200 : null;
+    }
+    if (cost == null) return;
+    const gain = cd.atk + bonus - cost;
+    if (gain > bestGain) { bestGain = gain; best = i; }
+  });
+  if (best >= 0) mem.pendingSummon = { code: prompt.spsummon[best].code, turn: view.turnCount };
+  return best;
+}
+// Normal summon / set decision. Returns {kind, idx} into prompt.summon /
+// prompt.mset, or null.
+function pickSummon(prompt, view, data) {
+  const me = view.me;
+  const oppPow = oppMaxPower(view, data);
+  const myField = monList(view, me);
+  const weakestField = myField.slice().sort((a, b) => boardValue(a, data) - boardValue(b, data));
+  let best = null;
+  const consider = (kind, e, i) => {
+    const cd = cdOf(data, e.code);
+    if (!cd || !isMonsterCd(cd)) return;
+    const lvl = cd.level & 0xff;
+    const isFlip = (cd.type & CT.FLIP) !== 0 || e.code === CC.CHAOS_POD || e.code === CC.MEDUSA_WORM;
+    if (kind === 'summon') {
+      if (isFlip) return; // flip monsters are set, never summoned face-up
+      let tributes = lvl <= 4 ? 0 : lvl <= 6 ? 1 : 2;
+      if (e.code === CC.HEAVY_TANK) tributes = 0;
+      if (weakestField.length < tributes) return;
+      let cost = 0;
+      for (let k = 0; k < tributes; k++) cost += boardValue(weakestField[k], data);
+      // setting instead when the wall clearly survives and the attacker wouldn't
+      if (oppPow > cd.atk && cd.def >= oppPow && prompt.mset.some(m => m.code === e.code)) return;
+      let gain = cd.atk - cost * 0.85;
+      if (e.code === CC.KALDAN && view.hand[me].concat(view.grave[me]).some(c =>
+          { const d = cdOf(data, c.code !== undefined ? c.code : c); return d && (d.type & CT.TRAP) && (d.type & CT.CONTINUOUS); })) gain += 250;
+      if (e.code === CC.HEAVY_TANK) gain += 150;
+      if (gain > 150 && (!best || gain > best.gain)) best = { kind, idx: i, gain };
+    } else { // mset
+      let gain = cd.def * 0.8;
+      if (isFlip) gain += e.code === CC.CHAOS_POD ? 500 : 750;
+      if (oppPow > cd.atk && cd.def >= oppPow) gain += 250; // safe wall
+      if (gain > 150 && (!best || gain > best.gain)) best = { kind, idx: i, gain };
+    }
+  };
+  prompt.summon.forEach((e, i) => consider('summon', e, i));
+  prompt.mset.forEach((e, i) => consider('mset', e, i));
+  return best;
+}
+
+// ---------------------------------------------------------------- chains
+// Value of firing one SELECT_CHAIN entry now (0 = pass). The core only
+// offers currently-legal activations, so an offered reactive card means its
+// timing condition is live; the judgment here is purely "is it worth it".
+function chainEntryValue(e, view, data, mem) {
+  const me = view.me, opp = view.opp;
+  const chain = view.chain;
+  const top = chain[chain.length - 1];
+  const topOpp = top && top.player === opp ? top : null;
+  const below = chain[chain.length - 2];
+  const chainWar = !!(topOpp && below && below.player === me &&
+    (NEGATION_CODES.has(top.code) || top.code === CC.HYPERION || top.code === CC.GG_WINDWATER || top.code === CC.GG_COMBINED));
+  const topCd = topOpp ? cdOf(data, topOpp.code) : null;
+  const topThreat = topCd ? (isMonsterCd(topCd) ? Math.max(topCd.atk, handValue(topOpp.code, view, data)) : handValue(topOpp.code, view, data)) : 0;
+  const isOppBattle = view.turnPlayer === opp && /BATTLE|DAMAGE/.test(view.phaseName);
+  const la = view.lastAttack;
+  const atkCell = (isOppBattle && la && la.attacker.con === opp) ? view.zones[opp].mzone[la.attacker.seq] : null;
+  // damage / destruction the current attack would inflict on us
+  let atkDmg = 0, myMonDies = false, myMonValue = 0;
+  if (atkCell) {
+    const a = atkOf(atkCell, data);
+    if (!la.target) atkDmg = a;
+    else {
+      const t = view.zones[me].mzone[la.target.seq];
+      if (t) {
+        myMonValue = boardValue(t, data);
+        if (t.atkPos) { atkDmg = Math.max(0, a - atkOf(t, data)); myMonDies = a > atkOf(t, data); }
+        else myMonDies = a > defOf(t, data);
+      }
+    }
+  }
+  const newBigOpp = (mem.newOppSeqs || []).map(s => view.zones[opp].mzone[s])
+    .filter(c => c && c.faceUp).sort((x, y) => atkOf(y, data) - atkOf(x, data))[0] || null;
+  switch (e.code) {
+    case CC.SOLEMN_STRIKE: {
+      if (view.lp[me] <= 1600) return 0;
+      if (chainWar) return 1500;
+      if (topOpp && isMonsterCd(topCd) && (topThreat >= 1800 || isExtraCd(topCd))) return view.lp[me] >= 2400 ? 1500 : 0;
+      if (!chain.length && newBigOpp) { // summon-negation window
+        const a = atkOf(newBigOpp, data);
+        if ((a >= 2200 || (isExtraCd(cdOf(data, newBigOpp.code)) && a >= 2000)) && view.lp[me] >= 2400) return 1500;
+      }
+      return 0;
+    }
+    case CC.GRAVE_HOLE: {
+      if (topOpp && isMonsterCd(topCd) && (topOpp.tloc === LOC.HAND || topOpp.tloc === LOC.GRAVE || topOpp.tloc === LOC.REMOVED))
+        return view.lp[opp] <= 2000 ? 3000 : 2000; // negate + 2000 burn
+      return 0;
+    }
+    case CC.HYPERION: { // ② banish a Fairy from hand/grave: negate-and-banish an opposing effect
+      const hasFairy = view.hand[me].some(x => { const d = cdOf(data, x.code); return d && d.race === 0x4; }) ||
+                       view.grave[me].some(c => { const d = cdOf(data, c); return d && d.race === 0x4; });
+      if (!hasFairy || !topOpp) return 0;
+      if (chainWar) return 1500;
+      if (isMonsterCd(topCd) && topThreat >= 2000) return 1400;
+      if (topOpp.code === CC.RAIGEKI || topOpp.code === CC.CONCEALING || topOpp.code === CC.DEMON_WIND) return 1400;
+      return 0;
+    }
+    case CC.GG_COMBINED: // ① negate an effect that targets our card (offered only then)
+      return topOpp ? 1350 : 0;
+    case CC.GG_WINDWATER: { // ① negate an opposing field spell/trap effect
+      if (!topOpp) return 0;
+      if ([CC.RAIGEKI, CC.CONCEALING, CC.DEMON_WIND, CC.FORCE_GUARDIAN].includes(topOpp.code)) return 1500;
+      if (topOpp.code === CC.REBORN && bestGraveAtk(view, data) >= 2200) return 1100;
+      return 0;
+    }
+    case CC.GG_WATERTHUNDER: { // ① zero an opposing monster's ATK
+      if (atkCell && atkOf(atkCell, data) >= 1800) return 1350;
+      const big = faceUpMons(view, opp).sort((x, y) => atkOf(y, data) - atkOf(x, data))[0];
+      return big && atkOf(big, data) >= 2200 ? 1100 : 0;
+    }
+    case CC.SPIRITUAL_SWORDS: {
+      if (!atkCell) return 0;
+      if (atkDmg >= view.lp[me] && view.lp[me] > 1000) return 1600; // stops lethal
+      return ((atkDmg >= 1200 || (myMonDies && myMonValue >= 1300)) && view.lp[me] > 1400) ? 1400 : 0;
+    }
+    case CC.BLAST_HELD: {
+      if (!atkCell) return 0;
+      const big = faceUpMons(view, opp).sort((x, y) => (cdOf(data, y.code) ? cdOf(data, y.code).atk : 0) - (cdOf(data, x.code) ? cdOf(data, x.code).atk : 0))[0];
+      if (!big) return 0;
+      const bigOrig = cdOf(data, big.code) ? cdOf(data, big.code).atk : 0; // burn is the ORIGINAL atk
+      const selfBurn = !view.grave[me].includes(CC.EXCHANGE);
+      if (bigOrig >= view.lp[opp] && (!selfBurn || bigOrig < view.lp[me])) return 2000; // lethal burn
+      if (bigOrig >= 2300) return 1400;
+      if (bigOrig >= 1900 && (!selfBurn || (myMonDies && myMonValue >= 1500))) return 1250;
+      return 0;
+    }
+    case CC.MOON: {
+      if (atkCell && atkOf(atkCell, data) >= 1800 && (myMonDies || atkDmg >= 1500)) return 1400; // flip the attacker: attack stops
+      if (newBigOpp && atkOf(newBigOpp, data) >= 2400) return 1050;
+      return 0;
+    }
+    case CC.LOST_WIND:
+      if (newBigOpp && isExtraCd(cdOf(data, newBigOpp.code)) && atkOf(newBigOpp, data) >= 1700) return 1150;
+      return faceUpMons(view, opp).some(c => isExtraCd(cdOf(data, c.code)) && atkOf(c, data) >= 2000) ? 1000 : 0;
+    case CC.TITANOCIDER:
+      if (newBigOpp && isExtraCd(cdOf(data, newBigOpp.code)) && atkOf(newBigOpp, data) >= 1900) return 1150;
+      return 0;
+    case CC.TRANSMIGRATION: {
+      if (topOpp && topOpp.code === CC.REBORN) return 1300; // shuffle their revival target away
+      if (topOpp && topOpp.tloc === LOC.GRAVE && graveValue(topOpp.code, data) >= 800) return 1200;
+      return 0;
+    }
+    case CC.MUDORA: case CC.KELDO: {
+      const topOppGrave = view.grave[opp].map(c => graveValue(c, data)).sort((a, b) => b - a);
+      return (topOppGrave[0] || 0) + (topOppGrave[1] || 0) >= 1700 ? 1050 : 0;
+    }
+    case CC.GK_TRAP: { // ② search during the opponent's main phase: dig for a defender
+      if (view.turnPlayer !== opp || /BATTLE|DAMAGE/.test(view.phaseName)) return 0;
+      const cheapest = Math.min(...view.hand[me].filter(x => x.code !== CC.GK_TRAP).map(x => discardCost(x.code, view, data)), Infinity);
+      return cheapest <= 700 && myStrongestAtk(view, data) < 1500 ? 1000 : 0;
+    }
+    case CC.CASTEL:
+      return faceUpMons(view, opp).some(c => battlePower(c, data) >= 2200) ? 1050 : 0;
+    case CC.LUCE:
+      return newBigOpp && atkOf(newBigOpp, data) >= 2200 ? 1100 : 0;
+    default:
+      return 0;
+  }
+}
+function bestGraveAtk(view, data) {
+  let m = 0;
+  for (const p of [0, 1]) for (const c of view.grave[p]) { const d = cdOf(data, c); if (isMonsterCd(d)) m = Math.max(m, d.atk); }
+  return m;
+}
+function chainAnswer(prompt, view, data, mem) {
+  if (!prompt.entries.length) return i32resp(-1);
+  let best = -1, bestV = 0;
+  prompt.entries.forEach((e, i) => {
+    const v = chainEntryValue(e, view, data, mem);
+    if (v > bestV) { bestV = v; best = i; }
+  });
+  if (prompt.forced) return i32resp(best >= 0 ? best : 0);
+  return i32resp(bestV >= 1000 ? best : -1);
+}
+// SELECT_EFFECTYN: the prompt names the card whose optional effect is asked.
+function effectYnAnswer(prompt, view, data, mem) {
+  const me = view.me;
+  const myDeck = view.deckCount[me], oppDeck = view.deckCount[view.opp];
+  switch (prompt.code) {
+    case CC.SANGA: case CC.HUGA: case CC.SUIGA:
+      return i32resp(1); // zero the attacker's ATK during damage calculation: free save
+    case CC.KELBEK: case CC.AGIDO: {
+      if (prompt.loc === LOC.GRAVE) { // ② mill trigger
+        if (myDeck <= 8 && oppDeck > 6) return i32resp(0); // don't mill ourselves out
+        return i32resp(1);
+      }
+      return i32resp(1); // ① special summon trigger
+    }
+    case CC.SILKY: {
+      const oppBest = Math.max(0, ...faceUpMons(view, view.opp).map(c => atkOf(c, data)));
+      const myFaceUp = faceUpMons(view, me);
+      const myWeakest = myFaceUp.length ? Math.min(...myFaceUp.map(c => atkOf(c, data))) : Infinity;
+      return i32resp((oppBest >= 1700 && myWeakest <= 1800) || oppBest >= 2600 ? 1 : 0);
+    }
+    case CC.CHAOS_HUNTER: {
+      const cheapest = Math.min(...view.hand[me].filter(x => x.code !== prompt.code).map(x => discardCost(x.code, view, data)), Infinity);
+      return i32resp(cheapest <= 900 ? 1 : 0);
+    }
+    case CC.ZOLGA: { // ② would destroy the monster tribute-summoned with Zolga — usually ours
+      const la = view.lastAttack;
+      if (la && la.attacker.con === me) return i32resp(view.lp[view.opp] <= 2000 ? 1 : 0);
+      return i32resp(1);
+    }
+    default:
+      break;
+  }
+  const ALWAYS_YES = new Set([CC.SPHINX, CC.STONE, CC.BLAST_HELD, CC.LOST_WIND, CC.TITANOCIDER,
+    CC.GG_COMBINED, CC.GG_THUNDERWIND, CC.GG_WINDWATER, CC.GG_WATERTHUNDER,
+    CC.SHADOW_GHOUL, CC.HORUS, CC.TRILOSUKTA, CC.BAROMETT, CC.MUDORA, CC.KELDO]);
+  if (ALWAYS_YES.has(prompt.code)) return i32resp(1);
+  if (prompt.con === me) {
+    if (MILL_WHEN_SENT.has(prompt.code) && myDeck <= 8) return i32resp(0);
+    return i32resp(1); // own optional trigger: this pool's are beneficial
+  }
+  return i32resp(0);
+}
+function yesNoAnswer(prompt, view, data, mem) {
+  const me = view.me;
+  const ctx = prompt.context;
+  if (ctx && ctx.code === CC.AGIDO) return i32resp(view.deckCount[me] > 12 ? 1 : 0); // optional extra mill
+  if (ctx && ctx.code === CC.KELBEK) return i32resp(1); // set a trap from the graveyard: free
+  if (ctx && (ctx.code === CC.LOST_WIND || ctx.code === CC.TITANOCIDER)) return i32resp(1); // re-set itself
+  if (ctx && ctx.code === CC.BAROMETT)
+    return i32resp(view.hand[me].some(x => { const d = cdOf(data, x.code); return isMonsterCd(d) && (d.level & 0xff) === 4; }) ? 1 : 0);
+  if (ctx && (ctx.player === me || ctx.con === me)) {
+    if (MILL_WHEN_SENT.has(ctx.code) && view.deckCount[me] <= 8) return i32resp(0);
+    return i32resp(1);
+  }
+  return i32resp(0);
+}
+
+// ---------------------------------------------------------------- IDLECMD / BATTLECMD assembly
+// Attempt gate: if an activation/summon keeps getting cancelled during its
+// selection sub-prompts, the core returns to IDLECMD and offers it again —
+// a deterministic policy would re-pick it forever. Cap attempts per turn.
+function attemptOk(mem, view, kind, e) {
+  if (!mem.attempts) mem.attempts = {};
+  if (Object.keys(mem.attempts).length > 400) mem.attempts = {};
+  const key = view.turnCount + '|' + kind + '|' + e.code + '|' + e.loc + '|' + e.seq;
+  mem.attempts[key] = (mem.attempts[key] || 0) + 1;
+  return mem.attempts[key] <= 2;
+}
+function idleAnswer(prompt, view, data, mem) {
+  const me = view.me;
+  const isMain1 = view.phaseName === 'MAIN1';
+  // Chaos Pod flip is a full board reset: only when clearly behind, and
+  // before anything else (our own plays would be shuffled away too).
+  const podIdx = prompt.repos.findIndex(e => e.code === CC.CHAOS_POD);
+  if (podIdx >= 0) {
+    const myTot = faceUpMons(view, me).reduce((s, c) => s + battlePower(c, data), 0);
+    const oppTot = faceUpMons(view, view.opp).reduce((s, c) => s + battlePower(c, data), 0);
+    if (oppTot - myTot >= 1800) return cmdResp(2, podIdx);
+  }
+  // activations, best first
+  let bestAct = -1, bestScore = 499;
+  prompt.activate.forEach((e, i) => {
+    const s = activationScore(e, view, data, prompt);
+    if (s > bestScore) { bestScore = s; bestAct = i; }
+  });
+  if (bestAct >= 0) {
+    const e = prompt.activate[bestAct];
+    if (attemptOk(mem, view, 'act', e)) {
+      if (e.code === CC.REBELLION && e.loc === LOC.HAND) mem.pendingFusionSpell = view.turnCount;
+      return cmdResp(5, bestAct);
+    }
+    bestAct = -1; // this activation keeps aborting; move on to other plays
+  }
+  // Medusa Worm flip summon: destroys the opponent's biggest monster
+  const wormIdx = prompt.repos.findIndex(e => e.code === CC.MEDUSA_WORM);
+  if (wormIdx >= 0 && faceUpMons(view, view.opp).length) return cmdResp(2, wormIdx);
+  // special summons, then normal summon / set
+  const sp = pickSpsummon(prompt, view, data, mem);
+  if (sp >= 0 && attemptOk(mem, view, 'sp', prompt.spsummon[sp])) return cmdResp(1, sp);
+  const sm = pickSummon(prompt, view, data);
+  if (sm) {
+    const e = sm.kind === 'summon' ? prompt.summon[sm.idx] : prompt.mset[sm.idx];
+    if (attemptOk(mem, view, sm.kind, e)) return cmdResp(sm.kind === 'summon' ? 0 : 3, sm.idx);
+  }
+  // repositioning: shelter outclassed attackers, ready face-up defenders
+  const oppPow = oppMaxPower(view, data);
+  for (let i = 0; i < prompt.repos.length; i++) {
+    const e = prompt.repos[i];
+    const cell = view.zones[me].mzone[e.seq];
+    if (!cell || !cell.faceUp) continue;
+    if (cell.atkPos) {
+      if (defOf(cell, data) >= oppPow && atkOf(cell, data) < oppPow && defOf(cell, data) > atkOf(cell, data)) return cmdResp(2, i);
+    } else if (isMain1 && atkOf(cell, data) >= 1600) {
+      const oppMons = monList(view, view.opp);
+      if (!oppMons.length || oppMons.some(t => !t.faceUp || battlePower(t, data) < atkOf(cell, data))) return cmdResp(2, i);
+    }
+  }
+  // set backrow: traps and quick-plays (never plain spells, never the field spell)
+  let bestSet = -1, bestSetV = -1;
+  prompt.sset.forEach((e, i) => {
+    const d = cdOf(data, e.code);
+    if (!d || e.code === CC.WALL_SHADOW) return;
+    if (!((d.type & CT.TRAP) || (d.type & CT.QUICKPLAY))) return;
+    const v = handValue(e.code, view, data);
+    if (v > bestSetV) { bestSetV = v; bestSet = i; }
+  });
+  const wantBattle = isMain1 && prompt.toBP && hasProfitableAttack(view, data);
+  if (isMain1) {
+    if (wantBattle) return cmdResp(6, 0);
+    if (bestSet >= 0) return cmdResp(4, bestSet);
+    if (prompt.toEP) return cmdResp(7, 0);
+    if (prompt.toBP) return cmdResp(6, 0);
+    return cmdResp(7, 0);
+  }
+  if (bestSet >= 0) return cmdResp(4, bestSet);
+  if (prompt.toEP) return cmdResp(7, 0);
+  return cmdResp(7, 0);
+}
+function bestAttackPlan(view, data, attackers, directSeqs) {
+  const plans = attackPlans(view, data, attackers, directSeqs);
+  let best = null;
+  for (const p of plans) {
+    if (p.score < 240) continue;
+    if (!best || p.score > best.score + 50 || (p.score >= best.score - 50 && p.atk < best.atk)) best = p;
+  }
+  return best;
+}
+function battleAnswer(prompt, view, data, mem) {
+  const me = view.me;
+  const attackers = prompt.attack.map(e => ({ seq: e.seq, atk: atkOf(view.zones[me].mzone[e.seq], data), direct: e.direct }));
+  const bestAtk = Math.max(0, ...attackers.map(a => a.atk));
+  // battle-step activations: unblock our best attacker
+  for (let i = 0; i < prompt.activate.length; i++) {
+    const e = prompt.activate[i];
+    if (e.code === CC.MOON) {
+      const wall = faceUpMons(view, view.opp).find(c => battlePower(c, data) > bestAtk && defOf(c, data) < bestAtk);
+      if (wall && bestAtk >= 1500) return cmdResp(0, i);
+    }
+    if (e.code === CC.TITANOCIDER || e.code === CC.LOST_WIND) {
+      const blocker = faceUpMons(view, view.opp).find(c => c.atkPos && isExtraCd(cdOf(data, c.code)) && atkOf(c, data) > bestAtk);
+      if (blocker) return cmdResp(0, i);
+    }
+    if (e.code === CC.GG_WATERTHUNDER) {
+      const blocker = faceUpMons(view, view.opp).find(c => c.atkPos && atkOf(c, data) > bestAtk);
+      if (blocker) return cmdResp(0, i);
+    }
+  }
+  if (prompt.attack.length) {
+    const directSeqs = new Set(prompt.attack.filter(e => e.direct).map(e => e.seq));
+    const plan = lethalPlan(view, data, attackers) || bestAttackPlan(view, data, attackers, directSeqs);
+    if (plan) {
+      mem.lastAttacker = { seq: plan.seq, turn: view.turnCount };
+      mem.plannedTargetSeq = plan.targetSeq;
+      const idx = prompt.attack.findIndex(e => e.seq === plan.seq);
+      if (idx >= 0) return cmdResp(1, idx);
+    }
+  }
+  if (prompt.toM2) return cmdResp(2, 0);
+  if (prompt.toEP) return cmdResp(3, 0);
+  return cmdResp(3, 0);
+}
+
+// ---------------------------------------------------------------- SELECT_CARD
+// Mode is inferred from the candidate composition first (robust even when
+// the prompt carries no chain context), refined by the asking card.
+function selectCardAnswer(prompt, view, data, mem) {
+  const me = view.me, opp = view.opp;
+  const ctx = prompt.context || null;
+  const ctxCode = ctx ? ctx.code : 0;
+  const entries = prompt.cards.map((e, i) => ({ e: maskEntry(e, view, ctxCode), i }));
+  if (!entries.length) return cardsResp([]);
+  const min = prompt.min, max = prompt.max;
+  const locCost = (x) => {
+    const e = x.e;
+    if (e.con === opp) return -1000; // giving up the opponent's card is free
+    if (e.loc === LOC.HAND) return discardCost(e.code, view, data);
+    if (e.loc === LOC.MZONE) { const c = view.zones[me].mzone[e.seq]; return c ? boardValue(c, data) : 600; }
+    if (e.loc === LOC.SZONE) return 500;
+    if (e.loc === LOC.GRAVE) return graveValue(e.code, data);
+    if (e.loc === LOC.REMOVED) return 400;
+    if (e.loc === LOC.DECK) return handValue(e.code, view, data) * 0.4;
+    return 500;
+  };
+  const threat = (x) => {
+    const e = x.e;
+    if (e.con === opp) {
+      if (e.loc === LOC.MZONE) { const c = view.zones[opp].mzone[e.seq]; return c ? (c.faceUp ? boardValue(c, data) : 1000) : 700; }
+      if (e.loc === LOC.SZONE) { const c = view.zones[opp].szone[e.seq]; return c && c.faceUp ? 850 : 950; }
+      if (e.loc === LOC.GRAVE) return graveValue(e.code, data);
+      return handValue(e.code, view, data);
+    }
+    return -locCost(x);
+  };
+  const take = (sorted, n) => cardsResp(sorted.slice(0, n).map(x => x.i));
+  // --- battle target selection: no chain in progress, we just declared an
+  // attacker at BATTLECMD. Candidates are the opponent's monsters; hidden
+  // ones were masked, so face-down targets are judged by position only.
+  const battlePhase = ['BATTLE', 'BATTLE_STEP', 'BATTLE_START', 'DAMAGE', 'DAMAGE_CAL'].includes(view.phaseName);
+  if (battlePhase && view.chain.length === 0 && mem.lastAttacker && mem.lastAttacker.turn === view.turnCount &&
+      entries.length && entries.every(x => x.e.con === opp && x.e.loc === LOC.MZONE)) {
+    const atkCell = view.zones[me].mzone[mem.lastAttacker.seq];
+    const A = atkOf(atkCell, data);
+    let pick = -1, bestS = -Infinity;
+    for (const x of entries) {
+      const t = view.zones[opp].mzone[x.e.seq];
+      if (!t) continue;
+      let s = attackScore(view, data, A, t, boardValue(atkCell, data));
+      if (x.e.seq === mem.plannedTargetSeq) s += 100000;
+      if (s > bestS) { bestS = s; pick = x.i; }
+    }
+    return cardsResp([pick >= 0 ? pick : entries[0].i]);
+  }
+  // --- Baromett ②: special summon a level-4 from hand — pick the best body
+  if (ctxCode === CC.BAROMETT && entries.every(x => x.e.loc === LOC.HAND)) {
+    const s = entries.slice().sort((a, b) => (cdOf(data, b.e.code) ? cdOf(data, b.e.code).atk : 0) - (cdOf(data, a.e.code) ? cdOf(data, a.e.code).atk : 0));
+    return take(s, Math.max(1, min));
+  }
+  // --- Vernusylph ② target: double our strongest Vernusylph's ATK
+  if (ctxCode === CC.VERN_MORI && entries.every(x => x.e.con === me && x.e.loc === LOC.MZONE)) {
+    const s = entries.slice().sort((a, b) => atkOf(view.zones[me].mzone[b.e.seq], data) - atkOf(view.zones[me].mzone[a.e.seq], data));
+    return take(s, Math.max(1, min));
+  }
+  // --- Book of Taiyou: flip our set flip-monster if it pays, else expose theirs
+  if (ctxCode === CC.TAIYOU) {
+    const pref = (x) => {
+      if (x.e.con === me && x.e.code === CC.CHAOS_POD) return 3000;
+      if (x.e.con === me && x.e.code === CC.MEDUSA_WORM) return 2900;
+      if (x.e.con === me) { const d = cdOf(data, x.e.code); return 1500 + (d ? d.atk : 0); }
+      return 1000;
+    };
+    return take(entries.slice().sort((a, b) => pref(b) - pref(a)), Math.max(1, min));
+  }
+  // --- Hand Destruction: the effect revealed the opponent's hand to us
+  if (ctxCode === CC.HAND_DESTRUCTION) {
+    const s = entries.slice().sort((a, b) => handValue(b.e.code, view, data) - handValue(a.e.code, view, data));
+    return take(s, Math.max(1, min));
+  }
+  // --- pick a monster from our own Extra Deck (fusion target etc.)
+  if (entries.every(x => x.e.con === me && x.e.loc === LOC.EXTRA)) {
+    const bonus = { [CC.LUCE]: 500, [CC.GG_COMBINED]: 400, [CC.HYPERION]: 250, [CC.CASTEL]: 300 };
+    const s = entries.slice().sort((a, b) => ((cdOf(data, b.e.code) ? cdOf(data, b.e.code).atk : 0) + (bonus[b.e.code] || 150)) -
+                                             ((cdOf(data, a.e.code) ? cdOf(data, a.e.code).atk : 0) + (bonus[a.e.code] || 150)));
+    return take(s, Math.max(1, min));
+  }
+  // --- fusion materials for 天至る叛逆 (returned to the deck): cheapest first
+  if ((mem.pendingFusionSpell === view.turnCount || ctxCode === CC.REBELLION) &&
+      entries.every(x => x.e.con === me && x.e.loc !== LOC.EXTRA)) {
+    return take(entries.slice().sort((a, b) => locCost(a) - locCost(b)), Math.max(1, min));
+  }
+  // --- materials for the Extra/contact summon chosen at IDLECMD
+  if (mem.pendingSummon && mem.pendingSummon.turn === view.turnCount && entries.every(x => x.e.con === me)) {
+    const target = cdOf(data, mem.pendingSummon.code);
+    if (target && (target.type & CT.XYZ)) {
+      const rank = target.level & 0xff;
+      const lv = (x) => { const c = x.e.loc === LOC.MZONE ? view.zones[me].mzone[x.e.seq] : null; return c ? levelOf(c, data) : (cdOf(data, x.e.code) ? cdOf(data, x.e.code).level & 0xff : 0); };
+      const matching = entries.filter(x => lv(x) === rank).sort((a, b) => locCost(a) - locCost(b));
+      if (matching.length >= Math.max(2, min)) return take(matching, Math.max(2, min));
+    }
+    if (target && (target.type & CT.SYNCHRO)) {
+      const lvl = target.level & 0xff;
+      const combos = [];
+      const n = Math.min(entries.length, 8);
+      const sub = entries.slice(0, n);
+      for (let mask = 1; mask < (1 << n); mask++) {
+        let sum = 0, hasTuner = false, cost = 0; const picks = [];
+        for (let j = 0; j < n; j++) if (mask & (1 << j)) {
+          const x = sub[j]; const d = cdOf(data, x.e.code);
+          sum += d ? (d.level & 0xff) : 0;
+          if (d && (d.type & CT.TUNER)) hasTuner = true;
+          cost += locCost(x); picks.push(x.i);
+        }
+        if (hasTuner && sum === lvl) combos.push({ cost, picks });
+      }
+      combos.sort((a, b) => a.cost - b.cost);
+      if (combos.length) return cardsResp(combos[Math.min(prompt.retryCount || 0, combos.length - 1)].picks);
+    }
+    // contact fusion / other: location tier (grave < removed < hand < field), then cheapest
+    const tier = (x) => x.e.loc === LOC.GRAVE ? 0 : x.e.loc === LOC.REMOVED ? 1 : x.e.loc === LOC.HAND ? 2 : 3;
+    return take(entries.slice().sort((a, b) => (tier(a) - tier(b)) || (locCost(a) - locCost(b))), Math.max(1, min));
+  }
+  // --- return cards from the graveyards to the decks: theirs first (their
+  // grave resources are the threat), ours only to fill the required count
+  if (ctxCode === CC.TRANSMIGRATION || ctxCode === CC.MUDORA || ctxCode === CC.KELDO) {
+    const scored = entries.map(x => ({ x, v: x.e.con === opp ? graveValue(x.e.code, data) : -graveValue(x.e.code, data) }))
+      .sort((a, b) => b.v - a.v);
+    const picks = [];
+    for (const s of scored) { if (picks.length >= min) break; picks.push(s.x.i); }
+    for (const s of scored) { if (picks.length >= max) break; if (s.v >= 700 && !picks.includes(s.x.i)) picks.push(s.x.i); }
+    return cardsResp(picks);
+  }
+  // --- search / send from our own deck
+  if (entries.every(x => x.e.loc === LOC.DECK)) {
+    const pieceCount = (code) => (view.hand[me].some(y => y.code === code) ? 1 : 0) +
+      (view.grave[me].includes(code) ? 1 : 0) + (view.removed[me].includes(code) ? 1 : 0) +
+      (monList(view, me).some(c => c.code === code) ? 1 : 0);
+    const score = (x) => {
+      const e = x.e, d = cdOf(data, e.code);
+      if (ctxCode === CC.FOOLISH_GOODS) {
+        if (e.code === CC.EXCHANGE) return 2000;
+        if (e.code === CC.DARK_ELEMENT) return 1500;
+        return GRAVE_PROFIT.has(e.code) ? 1000 + graveValue(e.code, data) : handValue(e.code, view, data) * 0.3;
+      }
+      if ([CC.DARK_ELEMENT, CC.FORCE_GUARDIAN, CC.DEMON_WIND, CC.JIRAI_TRAP, CC.SHADOW_GHOUL].includes(ctxCode)) {
+        if (e.code === CC.WALL_SHADOW) return 1800;
+        if (GUARDIAN_PIECES.includes(e.code)) return 1500 - pieceCount(e.code) * 300 + (d ? d.atk * 0.1 : 0);
+        return handValue(e.code, view, data) * 0.5;
+      }
+      if (ctxCode === CC.GK_TRAP) {
+        let v = isMonsterCd(d) ? d.atk : 0;
+        if (e.code === CC.KELBEK && faceUpMons(view, opp).some(c => isExtraCd(cdOf(data, c.code)))) v += 350;
+        if (e.code === CC.KELDO && !view.grave[me].includes(CC.EXCHANGE)) v += 300;
+        if (e.code === CC.MUDORA) v += 150;
+        if (e.code === CC.ZOLGA) v += 100;
+        return v;
+      }
+      if (ctxCode === CC.CARBON) return isMonsterCd(d) ? d.atk : 0;
+      if (ctxCode === CC.GG_THUNDERWIND) {
+        const pref = [CC.DARK_ELEMENT, CC.DEMON_WIND, CC.FORCE_GUARDIAN, CC.JIRAI_TRAP].indexOf(e.code);
+        return pref >= 0 ? 2000 - pref * 100 : 100;
+      }
+      if (ctxCode === CC.SPHINX) return e.code === CC.MOON ? 1000 : e.code === CC.TAIYOU ? 900 : 0;
+      return isMonsterCd(d) ? d.atk + handValue(e.code, view, data) * 0.2 : handValue(e.code, view, data);
+    };
+    const s = entries.slice().sort((a, b) => score(b) - score(a));
+    if (min === 0 && prompt.cancelable) return score(s[0]) >= 400 ? take(s, 1) : cardsResp([]);
+    return take(s, Math.max(1, min));
+  }
+  // --- discard / cost from our hand: cheapest first
+  if (entries.every(x => x.e.con === me && x.e.loc === LOC.HAND)) {
+    const s = entries.slice().sort((a, b) => discardCost(a.e.code, view, data) - discardCost(b.e.code, view, data));
+    if (min === 0 && prompt.cancelable) {
+      return s.length && discardCost(s[0].e.code, view, data) < -300 ? take(s, 1) : cardsResp([]);
+    }
+    return take(s, Math.max(1, min));
+  }
+  // --- picks from graveyards / banished (revive, salvage, recycle):
+  // biggest body for revival, otherwise the most valuable resource
+  if (entries.every(x => x.e.loc === LOC.GRAVE || x.e.loc === LOC.REMOVED)) {
+    const s = entries.slice().sort((a, b) => {
+      const da = cdOf(data, a.e.code), db = cdOf(data, b.e.code);
+      const va = isMonsterCd(da) ? da.atk + graveValue(a.e.code, data) * 0.3 : graveValue(a.e.code, data);
+      const vb = isMonsterCd(db) ? db.atk + graveValue(b.e.code, data) * 0.3 : graveValue(b.e.code, data);
+      return vb - va;
+    });
+    return take(s, Math.max(1, min));
+  }
+  // --- field targets (removal, bounce, flip): biggest threat first.
+  // Book of Moon prefers high ATK / low DEF; face-down targets are judged
+  // by position only (their codes were masked).
+  if (entries.some(x => x.e.loc === LOC.MZONE || x.e.loc === LOC.SZONE)) {
+    const s = entries.slice().sort((a, b) => {
+      if (ctxCode === CC.MOON) {
+        const ta = a.e.con === opp && a.e.loc === LOC.MZONE ? (() => { const c = view.zones[opp].mzone[a.e.seq]; return c && c.faceUp ? atkOf(c, data) * 2 - defOf(c, data) : -500; })() : -1000;
+        const tb = b.e.con === opp && b.e.loc === LOC.MZONE ? (() => { const c = view.zones[opp].mzone[b.e.seq]; return c && c.faceUp ? atkOf(c, data) * 2 - defOf(c, data) : -500; })() : -1000;
+        return tb - ta;
+      }
+      return threat(b) - threat(a);
+    });
+    return take(s, Math.max(1, min));
+  }
+  // --- anything else of ours (mixed costs): cheapest first
+  if (entries.every(x => x.e.con === me)) {
+    return take(entries.slice().sort((a, b) => locCost(a) - locCost(b)), Math.max(1, min));
+  }
+  return take(entries, Math.max(1, min));
+}
+// SELECT_TRIBUTE: weakest loss per release point until the value is met.
+function tributeAnswer(prompt, view, data) {
+  const me = view.me;
+  const scored = prompt.cards.map((e, i) => {
+    let loss;
+    if (e.con === view.opp) loss = -1000;
+    else if (e.loc === LOC.MZONE) { const c = view.zones[me].mzone[e.seq]; loss = c ? boardValue(c, data) : 600; }
+    else if (e.loc === LOC.HAND) loss = handValue(e.code, view, data);
+    else loss = 600;
+    return { i, loss, rp: e.releaseParam || 1 };
+  }).sort((a, b) => (a.loss / a.rp) - (b.loss / b.rp));
+  const picks = [];
+  let sum = 0;
+  for (const s of scored) {
+    if (sum >= prompt.min || picks.length >= prompt.max) break;
+    picks.push(s.i); sum += s.rp;
+  }
+  return cardsResp(picks);
+}
+// SELECT_UNSELECT_CARD — termination-critical. Core semantics (playerop.cpp
+// + operations.cpp): a toggle moves one card between the pools; the parent
+// process finishes when the selection reaches max, or when -1 is sent while
+// finishable (with >= min selected) / cancelable. When NEITHER flag is set,
+// -1 is rejected — the only way out is toggling up to max. Strategy:
+//   - finishable and the current selection already equals the desired set
+//     (and size >= min): finish.
+//   - neither flag: only ever toggle ON (selection size strictly grows, so
+//     at most max toggles remain) — desired cards first.
+//   - otherwise move monotonically toward the desired set (each toggle cuts
+//     the symmetric difference by one), then finish.
+// A per-signature streak in mem force-progresses if anything unexpected
+// repeats, so the handler is bounded independent of heuristic correctness.
+function unselectAnswer(prompt, view, data, mem) {
+  const me = view.me, opp = view.opp;
+  const ctxCode = prompt.context ? prompt.context.code : 0;
+  const pool = prompt.select.map((e, i) => ({ e: maskEntry(e, view, ctxCode), idx: i }));
+  const chosen = prompt.unselect.map((e, j) => ({ e: maskEntry(e, view, ctxCode), idx: prompt.select.length + j }));
+  const all = pool.concat(chosen);
+  const keyOf = (x) => x.e.con + '|' + x.e.loc + '|' + x.e.seq + '|' + (x.e.code || 0);
+  const giveUp = (x) => {
+    if (x.e.con === opp) return -1000;
+    if (x.e.loc === LOC.MZONE) { const c = view.zones[me].mzone[x.e.seq]; return c ? boardValue(c, data) : 600; }
+    if (x.e.loc === LOC.HAND) return discardCost(x.e.code, view, data);
+    if (x.e.loc === LOC.GRAVE) return graveValue(x.e.code, data);
+    return 500;
+  };
+  const threatOf = (x) => x.e.con === opp
+    ? (x.e.loc === LOC.MZONE ? (() => { const c = view.zones[opp].mzone[x.e.seq]; return c ? (c.faceUp ? boardValue(c, data) : 1000) : 700; })() : 800)
+    : -giveUp(x);
+  const targetMode = all.every(x => x.e.con === opp) ||
+    [CC.CASTEL, CC.LUCE, CC.DEMON_WIND, CC.RAIGEKI].includes(ctxCode);
+  let desired;
+  if (targetMode) {
+    const s = all.slice().sort((a, b) => threatOf(b) - threatOf(a));
+    const want = Math.max(prompt.min, s.filter(x => threatOf(x) >= 800).length);
+    desired = new Set(s.slice(0, Math.min(Math.max(want, 0), prompt.max)).map(keyOf));
+  } else {
+    const s = all.slice().sort((a, b) => giveUp(a) - giveUp(b));
+    desired = new Set(s.slice(0, Math.min(Math.max(prompt.min, 0), prompt.max)).map(keyOf));
+  }
+  const chosenKeys = new Set(chosen.map(keyOf));
+  const eqDesired = chosen.length === desired.size && [...chosenKeys].every(k => desired.has(k));
+  // streak guard (paranoia): same prompt signature answered too many times
+  const sig = prompt.name + '|' + all.map(keyOf).sort().join(',') + '|' + prompt.min + '/' + prompt.max;
+  mem.unselectStreak[sig] = (mem.unselectStreak[sig] || 0) + 1;
+  if (mem.unselectStreak[sig] > all.length + prompt.max + 3) {
+    if (pool.length) return unselectToggleResp(pool[0].idx);
+    return cancelResp();
+  }
+  if (prompt.finishable && eqDesired && chosen.length >= prompt.min) return cancelResp();
+  if (!prompt.finishable && !prompt.cancelable) {
+    const inD = pool.filter(x => desired.has(keyOf(x)));
+    const pick = inD[0] || pool.slice().sort((a, b) => targetMode ? threatOf(b) - threatOf(a) : giveUp(a) - giveUp(b))[0];
+    if (pick) return unselectToggleResp(pick.idx);
+    return cancelResp();
+  }
+  const missing = pool.filter(x => desired.has(keyOf(x)));
+  if (missing.length) return unselectToggleResp(missing[0].idx);
+  const extra = chosen.filter(x => !desired.has(keyOf(x)));
+  if (extra.length && prompt.finishable) return unselectToggleResp(extra[0].idx);
+  if (prompt.finishable && chosen.length >= prompt.min) return cancelResp();
+  if (pool.length) {
+    const pick = pool.slice().sort((a, b) => targetMode ? threatOf(b) - threatOf(a) : giveUp(a) - giveUp(b))[0];
+    return unselectToggleResp(pick.idx);
+  }
+  return cancelResp();
+}
+// SELECT_SUM: exhaustive subset search (candidate counts are tiny here),
+// ordered so valid sets surface early; the start offset rotates with the
+// driver's retry count so a rejected answer is never repeated identically.
+function sumAnswer(prompt, view, data) {
+  const n = prompt.cards.length;
+  const base = prompt.cards.map((c, i) => i).sort((a, b) => prompt.cards[b].sumParam - prompt.cards[a].sumParam);
+  const rot = n > 0 ? (prompt.retryCount || 0) % n : 0;
+  const order = base.slice(rot).concat(base.slice(0, rot));
+  const chosen = [];
+  let nodes = 0;
+  const dfs = (k) => {
+    if (sumSelectionValid(prompt, chosen)) return true;
+    if (++nodes > 60000) return false;
+    for (let j = k; j < order.length; j++) {
+      chosen.push(order[j]);
+      if (dfs(j + 1)) return true;
+      chosen.pop();
+    }
+    return false;
+  };
+  dfs(0);
+  return cardsResp(chosen);
+}
+function counterAnswer(prompt) {
+  const amounts = prompt.cards.map(() => 0);
+  let remaining = prompt.count;
+  const order = prompt.cards.map((c, i) => i).sort((a, b) => prompt.cards[b].count - prompt.cards[a].count);
+  for (const i of order) {
+    if (remaining <= 0) break;
+    const takeN = Math.min(remaining, prompt.cards[i].count);
+    amounts[i] = takeN; remaining -= takeN;
+  }
+  return counterResp(amounts);
+}
+// SELECT_PLACE: own zones, center-out; the trap monster 地雷蜘蛛の餌食 prefers
+// the column opposite the opponent's biggest monster (its effect destroys
+// the monster in its column). SELECT_DISFIELD disables the least useful
+// zones (opponent's empty zones first).
+function placeAnswer(prompt, view, data) {
+  const avail = (~prompt.flag) >>> 0;
+  const me = view.me, opp = view.opp;
+  const zones = [];
+  const seen = new Set();
+  const push = (con, loc, seq) => {
+    const k = con + '|' + loc + '|' + seq;
+    if (!seen.has(k)) { seen.add(k); zones.push({ con, loc, seq }); }
+  };
+  if (prompt.name === 'SELECT_DISFIELD') {
+    for (let s = 0; s < 5; s++) if ((avail & (0x10000 << s)) && !view.zones[opp].mzone[s]) push(opp, LOC.MZONE, s);
+    for (let s = 0; s < 5; s++) if ((avail & (0x1000000 << s)) && !view.zones[opp].szone[s]) push(opp, LOC.SZONE, s);
+    for (let s = 0; s < 5; s++) if ((avail & (0x100 << s)) && !view.zones[me].szone[s]) push(me, LOC.SZONE, s);
+    for (let s = 0; s < 7; s++) if ((avail & (1 << s)) && !view.zones[me].mzone[s]) push(me, LOC.MZONE, s);
+    for (let s = 0; s < 7; s++) if (avail & (1 << s)) push(me, LOC.MZONE, s);
+    for (let s = 0; s < 7; s++) if (avail & (0x10000 << s)) push(opp, LOC.MZONE, s);
+    for (let s = 0; s < 5; s++) if (avail & (0x1000000 << s)) push(opp, LOC.SZONE, s);
+    return placeResp(zones.slice(0, prompt.count));
+  }
+  const ctx = prompt.context;
+  const mOrder = [2, 1, 3, 0, 4, 5, 6], sOrder = [2, 1, 3, 0, 4];
+  if (ctx && ctx.code === CC.JIRAI_TRAP) {
+    const big = faceUpMons(view, opp).sort((a, b) => atkOf(b, data) - atkOf(a, data))[0];
+    if (big && (avail & (1 << big.seq))) push(me, LOC.MZONE, big.seq);
+  }
+  for (const s of mOrder) if (avail & (1 << s)) push(me, LOC.MZONE, s);
+  for (const s of sOrder) if (avail & (0x100 << s)) push(me, LOC.SZONE, s);
+  if (avail & 0x2000) push(me, LOC.SZONE, 5);
+  if (avail & 0x4000) push(me, LOC.SZONE, 6);
+  if (avail & 0x8000) push(me, LOC.SZONE, 7);
+  for (const s of mOrder) if (avail & (0x10000 << s)) push(opp, LOC.MZONE, s);
+  for (const s of sOrder) if (avail & (0x1000000 << s)) push(opp, LOC.SZONE, s);
+  if (avail & 0x40000000) push(opp, LOC.SZONE, 6);
+  if (avail & 0x80000000) push(opp, LOC.SZONE, 7);
+  return placeResp(zones.slice(0, prompt.count));
+}
+function positionAnswer(prompt, view, data) {
+  const cd = cdOf(data, prompt.code);
+  const has = (p) => (prompt.mask & p) !== 0;
+  if (cd && ((cd.type & CT.FLIP) || prompt.code === CC.CHAOS_POD || prompt.code === CC.MEDUSA_WORM)) {
+    if (has(POS.FD_DEF)) return i32resp(POS.FD_DEF);
+  }
+  if (cd && isMonsterCd(cd)) {
+    const oppPow = oppMaxPower(view, data);
+    if (cd.atk >= cd.def) {
+      if (has(POS.FU_ATK) && !(oppPow > cd.atk && cd.def >= oppPow)) return i32resp(POS.FU_ATK);
+      if (has(POS.FU_DEF)) return i32resp(POS.FU_DEF);
+      if (has(POS.FU_ATK)) return i32resp(POS.FU_ATK);
+    } else {
+      if (has(POS.FU_DEF) && (cd.def >= 1500 || oppPow > cd.atk)) return i32resp(POS.FU_DEF);
+      if (has(POS.FU_ATK)) return i32resp(POS.FU_ATK);
+      if (has(POS.FU_DEF)) return i32resp(POS.FU_DEF);
+    }
+  }
+  for (const p of [POS.FU_ATK, POS.FU_DEF, POS.FD_DEF, POS.FD_ATK]) if (has(p)) return i32resp(p);
+  return i32resp(prompt.mask);
+}
+function announceCardAnswer(prompt, view, data) {
+  const rem = remainingDeck(view, view.opp, data);
+  let best = 0, bestV = -1;
+  for (const key of Object.keys(data.cards)) {
+    const cd = data.cards[key];
+    if (!isDeclarable(cd, prompt.opcodes)) continue;
+    if (rem && !deckHas(rem, cd.code)) continue; // publicly accounted for elsewhere
+    let v = isMonsterCd(cd) ? cd.atk : handValue(cd.code, view, data) * 1.4;
+    if (cd.code === CC.RAIGEKI) v = 3400;
+    if (cd.code === CC.DARK_GUARDIAN) v = 3900;
+    if (v > bestV) { bestV = v; best = cd.code; }
+  }
+  if (best) return i32resp(best);
+  for (const key of Object.keys(data.cards)) if (isDeclarable(data.cards[key], prompt.opcodes)) return i32resp(+key);
+  return i32resp(data.decks.ishizu.main[0]);
+}
+function announceRaceAnswer(prompt, view, data) {
+  const mine = monList(view, view.me).concat(view.hand[view.me].map(x => ({ code: x.code })));
+  const bits = [];
+  for (let b = 0; b < 32; b++) if ((prompt.availLo >>> b) & 1) bits.push({ b, w: 0, n: 0 });
+  for (let b = 0; b < 32; b++) if ((prompt.availHi >>> b) & 1) bits.push({ b: b + 32, w: 1, n: 0 });
+  for (const bit of bits) {
+    if (bit.b >= 32) continue;
+    for (const c of mine) { const d = cdOf(data, c.code); if (d && ((d.race >>> bit.b) & 1)) bit.n++; }
+  }
+  bits.sort((a, b) => b.n - a.n);
+  let lo = 0, hi = 0;
+  bits.slice(0, prompt.count).forEach(bit => { if (bit.w) hi |= (1 << (bit.b - 32)); else lo |= (1 << bit.b); });
+  return u64resp(lo >>> 0, hi >>> 0);
+}
+function announceAttribAnswer(prompt, view, data) {
+  const mine = monList(view, view.me).concat(view.hand[view.me].map(x => ({ code: x.code })));
+  const bits = [];
+  for (let b = 0; b < 32; b++) if ((prompt.avail >>> b) & 1) {
+    let n = 0;
+    for (const c of mine) { const d = cdOf(data, c.code); if (d && d.attribute === (1 << b)) n++; }
+    bits.push({ b, n });
+  }
+  bits.sort((a, b) => b.n - a.n);
+  let mask = 0;
+  bits.slice(0, prompt.count).forEach(bit => { mask |= (1 << bit.b); });
+  return i32resp(mask);
+}
+// CPU policy entry point (internal). Signature unchanged from the old
+// policy: botAnswer(prompt, state, data, mem) -> Uint8Array response.
+function botAnswerInternal(prompt, state, data, mem) {
+  mem = mem || makeBotMemory();
+  const view = botView(state, prompt.player, data);
+  // Snapshot-diff the opponent's face-up monsters: a monster that appeared
+  // since our last prompt marks a summon-response window (used for summon
+  // negation and on-summon reactions). Public information only.
+  const snap = new Set(faceUpMons(view, view.opp).map(c => c.seq + ':' + c.code));
+  mem.newOppSeqs = mem.oppFieldSnap ? [...snap].filter(k => !mem.oppFieldSnap.has(k)).map(k => parseInt(k, 10)) : [];
+  mem.oppFieldSnap = snap;
+  if (view.turnPlayer === view.me) mem.summonedYet = false; // legacy field upkeep
+  switch (prompt.name) {
+    case 'SELECT_IDLECMD': return idleAnswer(prompt, view, data, mem);
+    case 'SELECT_BATTLECMD': return battleAnswer(prompt, view, data, mem);
+    case 'SELECT_CHAIN': return chainAnswer(prompt, view, data, mem);
+    case 'SELECT_EFFECTYN': return effectYnAnswer(prompt, view, data, mem);
+    case 'SELECT_YESNO': return yesNoAnswer(prompt, view, data, mem);
+    case 'SELECT_CARD': return selectCardAnswer(prompt, view, data, mem);
+    case 'SELECT_TRIBUTE': return tributeAnswer(prompt, view, data);
+    case 'SELECT_UNSELECT_CARD': return unselectAnswer(prompt, view, data, mem);
+    case 'SELECT_SUM': return sumAnswer(prompt, view, data);
+    case 'SELECT_COUNTER': return counterAnswer(prompt);
+    case 'SELECT_PLACE': case 'SELECT_DISFIELD': return placeAnswer(prompt, view, data);
+    case 'SELECT_POSITION': return positionAnswer(prompt, view, data);
+    case 'SELECT_OPTION': return i32resp(0); // no pool effect needs a smarter default (see NOTES)
+    case 'SORT_CARD': {
+      const mine = prompt.cards.every(c => c.con === view.me);
+      if (mine && prompt.cards.some(c => c.loc === LOC.DECK)) {
+        const order = prompt.cards.map((c, i) => i)
+          .sort((a, b) => handValue(prompt.cards[b].code, view, data) - handValue(prompt.cards[a].code, view, data));
+        return sortResp(order);
+      }
+      return sortResp(prompt.cards.map((_, i) => i));
+    }
+    case 'SORT_CHAIN': return cancelResp();
+    case 'ROCK_PAPER_SCISSORS': return i32resp(1);
+    case 'ANNOUNCE_RACE': return announceRaceAnswer(prompt, view, data);
+    case 'ANNOUNCE_ATTRIB': return announceAttribAnswer(prompt, view, data);
+    case 'ANNOUNCE_CARD': return announceCardAnswer(prompt, view, data);
+    case 'ANNOUNCE_NUMBER': {
+      let best = 0;
+      prompt.options.forEach((v, i) => { if (v <= 8 && v >= (prompt.options[best] || 0)) best = i; });
+      return i32resp(best);
+    }
+  }
+  return i32resp(0);
+}
+
+// ---------------------------------------------------------------- safety net
+// The policy must never throw into Duel.run (a throw stalls the duel), so
+// every answer goes through this wrapper: any internal error degrades to a
+// minimal legal completion for that prompt type.
+function botFallback(prompt, data) {
+  switch (prompt.name) {
+    case 'SELECT_CHAIN': return i32resp(prompt.forced && prompt.entries && prompt.entries.length ? 0 : -1);
+    case 'SELECT_EFFECTYN': case 'SELECT_YESNO': return i32resp(0);
+    case 'SELECT_IDLECMD':
       if (prompt.toEP) return cmdResp(7, 0);
       if (prompt.toBP) return cmdResp(6, 0);
       return cmdResp(7, 0);
-    }
-    case 'SELECT_BATTLECMD': {
-      if (prompt.attack.length) return cmdResp(1, 0);
-      if (prompt.toEP) return cmdResp(3, 0);
+    case 'SELECT_BATTLECMD':
       if (prompt.toM2) return cmdResp(2, 0);
       return cmdResp(3, 0);
-    }
-    case 'SELECT_POSITION': {
-      for (const p of [POS.FU_ATK, POS.FU_DEF, POS.FD_ATK, POS.FD_DEF]) if (prompt.mask & p) return i32resp(p);
-      return i32resp(prompt.mask);
-    }
-    case 'SELECT_CARD': case 'SELECT_TRIBUTE': {
-      if (prompt.cancelable && prompt.min === 0) return cardsResp([]);
-      let picks = [];
-      if (prompt.name === 'SELECT_TRIBUTE') {
-        const order = prompt.cards.map((c, i) => i).sort((a, b) => prompt.cards[a].releaseParam - prompt.cards[b].releaseParam);
-        let sum = 0;
-        for (const i of order) { if (sum >= prompt.min) break; picks.push(i); sum += prompt.cards[i].releaseParam; }
-      } else {
-        for (let i = 0; i < Math.min(prompt.min, prompt.cards.length); i++) picks.push(i);
-      }
+    case 'SELECT_CARD': return cardsResp(prompt.cards.slice(0, Math.max(1, prompt.min)).map((_, i) => i));
+    case 'SELECT_TRIBUTE': {
+      const order = prompt.cards.map((c, i) => i).sort((a, b) => (prompt.cards[a].releaseParam || 1) - (prompt.cards[b].releaseParam || 1));
+      const picks = []; let sum = 0;
+      for (const i of order) { if (sum >= prompt.min || picks.length >= prompt.max) break; picks.push(i); sum += prompt.cards[i].releaseParam || 1; }
       return cardsResp(picks);
     }
-    case 'SELECT_UNSELECT_CARD': {
+    case 'SELECT_UNSELECT_CARD':
       if (prompt.finishable || prompt.cancelable) return cancelResp();
-      return unselectToggleResp(0);
-    }
-    case 'SELECT_SUM': {
-      // greedy DFS for a valid subset (small n in practice)
-      const n = prompt.cards.length;
-      const chosen = [];
-      const dfs = (start) => {
-        if (sumSelectionValid(prompt, chosen)) return true;
-        if (chosen.length >= Math.min(prompt.max || n, n) && prompt.mode === 'exact') return false;
-        for (let i = start; i < n; i++) {
-          chosen.push(i);
-          if (dfs(i + 1)) return true;
-          chosen.pop();
-        }
-        return false;
-      };
-      dfs(0);
-      return cardsResp(chosen);
-    }
+      return prompt.select.length ? unselectToggleResp(0) : cancelResp();
+    case 'SELECT_SUM': return cardsResp([]);
     case 'SELECT_COUNTER': {
       const amounts = prompt.cards.map(() => 0);
-      let remaining = prompt.count;
-      prompt.cards.forEach((c, i) => { const take = Math.min(remaining, c.count); amounts[i] = take; remaining -= take; });
+      let rem = prompt.count;
+      prompt.cards.forEach((c, i) => { const t = Math.min(rem, c.count); amounts[i] = t; rem -= t; });
       return counterResp(amounts);
     }
     case 'SELECT_PLACE': case 'SELECT_DISFIELD': {
       const avail = (~prompt.flag) >>> 0;
+      const me = prompt.player, op = 1 - me;
       const zones = [];
-      const order = [2, 3, 1, 4, 0, 5, 6];
-      for (const s of order) { if (zones.length >= prompt.count) break; if (avail & (1 << s)) zones.push({ con: prompt.player, loc: LOC.MZONE, seq: s }); }
-      for (let s = 0; zones.length < prompt.count && s < 5; s++) if (avail & (0x100 << s)) zones.push({ con: prompt.player, loc: LOC.SZONE, seq: s });
-      for (const s of order) { if (zones.length >= prompt.count) break; if (avail & (0x10000 << s)) zones.push({ con: 1 - prompt.player, loc: LOC.MZONE, seq: s }); }
-      for (let s = 0; zones.length < prompt.count && s < 5; s++) if (avail & (0x1000000 << s)) zones.push({ con: 1 - prompt.player, loc: LOC.SZONE, seq: s });
-      // pendulum-zone bits (own 14/15 -> szone 6/7, opp 30/31)
-      if (zones.length < prompt.count && (avail & 0x4000)) zones.push({ con: prompt.player, loc: LOC.SZONE, seq: 6 });
-      if (zones.length < prompt.count && (avail & 0x8000)) zones.push({ con: prompt.player, loc: LOC.SZONE, seq: 7 });
-      if (zones.length < prompt.count && (avail & 0x40000000)) zones.push({ con: 1 - prompt.player, loc: LOC.SZONE, seq: 6 });
-      if (zones.length < prompt.count && (avail & 0x80000000)) zones.push({ con: 1 - prompt.player, loc: LOC.SZONE, seq: 7 });
-      return placeResp(zones.slice(0, prompt.count));
+      const push = (con, loc, seq) => { if (zones.length < prompt.count) zones.push({ con, loc, seq }); };
+      for (let s = 0; s < 7 && zones.length < prompt.count; s++) if (avail & (1 << s)) push(me, LOC.MZONE, s);
+      for (let s = 0; s < 5 && zones.length < prompt.count; s++) if (avail & (0x100 << s)) push(me, LOC.SZONE, s);
+      if (avail & 0x2000) push(me, LOC.SZONE, 5);
+      if (avail & 0x4000) push(me, LOC.SZONE, 6);
+      if (avail & 0x8000) push(me, LOC.SZONE, 7);
+      for (let s = 0; s < 7 && zones.length < prompt.count; s++) if (avail & (0x10000 << s)) push(op, LOC.MZONE, s);
+      for (let s = 0; s < 5 && zones.length < prompt.count; s++) if (avail & (0x1000000 << s)) push(op, LOC.SZONE, s);
+      if (avail & 0x40000000) push(op, LOC.SZONE, 6);
+      if (avail & 0x80000000) push(op, LOC.SZONE, 7);
+      return placeResp(zones);
     }
-    case 'SELECT_YESNO': case 'SELECT_EFFECTYN': return i32resp(0);
-    case 'SELECT_OPTION': return i32resp(0);
+    case 'SELECT_POSITION': {
+      for (const p of [POS.FU_ATK, POS.FU_DEF, POS.FD_DEF, POS.FD_ATK]) if (prompt.mask & p) return i32resp(p);
+      return i32resp(prompt.mask);
+    }
     case 'SORT_CARD': return sortResp(prompt.cards.map((_, i) => i));
     case 'SORT_CHAIN': return cancelResp();
     case 'ROCK_PAPER_SCISSORS': return i32resp(1);
     case 'ANNOUNCE_RACE': {
-      let lo = 0, hi = 0, need = prompt.count;
-      for (let b = 0; b < 32 && need > 0; b++) if (prompt.availLo & (1 << b)) { lo |= (1 << b); need--; }
-      for (let b = 0; b < 32 && need > 0; b++) if (prompt.availHi & (1 << b)) { hi |= (1 << b); need--; }
-      return u64resp(lo, hi);
+      let lo = 0;
+      for (let k = 0; k < prompt.count; k++) {
+        for (let b = 0; b < 32; b++) if (((prompt.availLo >>> b) & 1) && !(lo & (1 << b))) { lo |= (1 << b); break; }
+      }
+      return u64resp(lo >>> 0, 0);
     }
     case 'ANNOUNCE_ATTRIB': {
-      let mask = 0, need = prompt.count;
-      for (let b = 0; b < 32 && need > 0; b++) if (prompt.avail & (1 << b)) { mask |= (1 << b); need--; }
+      let mask = 0;
+      for (let k = 0; k < prompt.count; k++) {
+        for (let b = 0; b < 32; b++) if (((prompt.avail >>> b) & 1) && !(mask & (1 << b))) { mask |= (1 << b); break; }
+      }
       return i32resp(mask);
     }
-    case 'ANNOUNCE_CARD': return i32resp(data.decks.ishizu.main[0]);
+    case 'ANNOUNCE_CARD': {
+      for (const key of Object.keys(data.cards)) if (isDeclarable(data.cards[key], prompt.opcodes)) return i32resp(+key);
+      return i32resp(data.decks.ishizu.main[0]);
+    }
     case 'ANNOUNCE_NUMBER': return i32resp(0);
+    default: return i32resp(0);
   }
-  return i32resp(0);
+}
+function botAnswer(prompt, state, data, mem) {
+  try {
+    return botAnswerInternal(prompt, state, data, mem);
+  } catch (e) {
+    if (globalThis.__CPU_DEBUG) console.error('bot policy error on', prompt.name, e);
+    try { return botFallback(prompt, data); } catch (e2) { return i32resp(0); }
+  }
 }
 
 // ---------------------------------------------------------------- duel driver
@@ -971,6 +2408,10 @@ class Duel {
           this.stats.botPrompts++;
           const wait = prompt.name === 'SELECT_CHAIN' ? pace.botChain : pace.bot;
           if (wait) await sleep(wait);
+          // The CPU policy values monsters by their CURRENT atk/def; keep the
+          // mirror's live stats fresh for the bot seat (the human path already
+          // refreshes from client.js before answering).
+          try { this.refreshFieldStats(); } catch (e) {}
           bytes = (opts.botAnswerer || botAnswer)(prompt, this.state, this.data, this.botMem);
         }
         if (!bytes) { this.stats.stopReason = 'answerer returned nothing for ' + prompt.name; break; }
@@ -1054,7 +2495,7 @@ const Engine = { MSG, SELECT_TYPES, PHASES, LOC, POS, POS_FACEUP, POS_ATTACK, PO
   ATTRIBUTES, RACES, Reader, splitMessages, i32resp, cancelResp, cardsResp, cmdResp, placeResp,
   counterResp, sortResp, unselectToggleResp, u64resp, parsePrompt, sumSelectionValid, isDeclarable,
   shuffledCopy, randBelow,
-  GameState, botAnswer, makeBotMemory, Duel };
+  GameState, botAnswer, makeBotMemory, botView, Duel };
 if (typeof module !== 'undefined') module.exports = Engine;
 else global.Engine = Engine;
 })(typeof window !== 'undefined' ? window : globalThis);

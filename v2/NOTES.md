@@ -874,12 +874,155 @@ entirely out of the preview slack; the tile unit (59) never moved.
   stubbed-measurement case (LAY-f); a real-device visual pass remains
   the parent's browser check.
 
+## CPU phase: a competent baseline bot (branch client-cpu)
+
+The legality-only PoC bot is replaced by a heuristic policy in
+`v2/engine.js` (`botAnswer` / `makeBotMemory` + helpers), written fresh
+for this client in the spirit of the ygopro AI: it only ever chooses
+among the current prompt's legal options and never touches legality.
+Driver integration is unchanged for the human seat; the only driver
+change is that `Duel.run` now refreshes live field stats
+(`refreshFieldStats`) right before a bot-seat answer, so the policy
+values monsters by their CURRENT atk/def (the human path already did
+this from client.js). `GameState` now also retains the two decklists
+(`state.deckLists`) for the policy's remaining-deck estimates.
+
+### Fair information (structural, not by discipline)
+
+The core's local message stream leaks hidden identities: playerop.cpp
+writes `pcard->data.code` into MSG_SELECT_CARD unconditionally
+(including opponent hand and face-down candidates), and MSG_DRAW /
+MSG_MOVE feed real codes for face-down cards into the shared mirror.
+So the policy never reads the raw state. Every decision goes through
+`botView(state, me, data)`, which contains: own hand/extra in full;
+opponent hand as count only (codes null); opponent field cells with
+code null while face-down; graves/removed (public) verbatim; LP, deck
+counts, phase/turn, the chain (codes of links are public once
+activated) and live ATK/DEF from the core query. Prompt candidates are
+masked the same way (`maskEntry`) before evaluation. The one exception
+is principled: when an effect itself reveals a hand (Hand Destruction),
+the candidates of THAT selection are the revealed cards. Decklist
+knowledge used: the bot's own full list (a player knows their deck),
+and for the opponent only public-zone accounting (what a human who
+knows the fixed opposing decklist could infer) — used by
+ANNOUNCE_CARD to name a feared card that can still be in the
+opponent's deck. `test-cpu.js` asserts the masking on a captured live
+state (6 checks).
+
+### Behaviour summary
+
+- Valuation: printed stats corrected by live query values; board value
+  weighs battle power, Extra-Deck type, overlay units and boss
+  monsters; hand value is a per-card table for the 63-card pool on top
+  of a stat-based monster formula; discard cost discounts cards that
+  profit from the graveyard (Kelbek/Agido mills, grave-trigger spells)
+  and duplicates.
+- Main phase order: board-reset flip (Chaos Pod) when clearly behind →
+  best-scored activation (search/revival/removal/draw per-card gates,
+  threshold-scored) → Medusa flip → special summons whose result beats
+  their material cost (Xyz/Synchro material costing, contact-fusion
+  piece accounting, Dark Guardian's three pieces; never trade a
+  stronger board for a weaker result) → normal summon strongest
+  sensible monster (set flip cards; set instead of summoning only when
+  clearly outclassed AND the set is a real wall) → repositioning →
+  set traps/quick-plays → battle only with a profitable or lethal
+  attack plan.
+- Battle: attack plans are scored per attacker/target pair (no suicide
+  unless a full lethal line exists; weakest sufficient attacker first;
+  face-down targets only for strong attackers); the chosen target is
+  remembered and honoured at the follow-up target SELECT_CARD.
+- Chains: pass by default. Respond at value ≥ threshold only:
+  negations vs big monster effects / summon-negation windows / chain
+  wars, Grave Hole vs hand/grave/banished monster effects, battle
+  traps (Spiritual Swords / Blast Held / Moon) when the computed
+  damage or monster loss justifies the cost and the LP cost is
+  survivable, targeted protection (Gate Guardian fusions, Hyperion).
+  Newly appeared opposing face-up monsters are detected by
+  snapshot-diffing the public field between prompts.
+- Selections: discards/costs cheapest-first by discard cost; targets
+  biggest threat (face-down = judged by position only); tributes
+  weakest loss per release point; searches are context-keyed (guardian
+  pieces complete the trio, Foolish Burial Goods prefers Exchange of
+  the Spirit / grave-profit spells, etc.); graveyard-return effects
+  prioritise the opponent's grave resources; positions follow the same
+  attack/defense logic; EFFECTYN/YESNO accept net-positive effects
+  with deck-out guards on self-mills.
+
+### Termination safety
+
+Every prompt type has a bounded strategy: SELECT_UNSELECT_CARD moves
+monotonically toward a desired set (toggle-on only when neither
+finishable nor cancelable, so the selection size strictly grows to
+max; symmetric difference strictly shrinks otherwise), plus a
+per-signature streak guard in bot memory. SELECT_SUM runs a
+node-capped DFS whose candidate order rotates with the driver's retry
+count. IDLECMD activations/summons pass an attempt gate (max 2 per
+turn per card) so a play whose selection sub-prompt gets cancelled
+cannot be re-picked forever. The whole policy is wrapped: any internal
+error degrades to a minimal legal completion for that prompt type
+instead of throwing into Duel.run.
+
+Two real defects were found and fixed during verification:
+1. `discardCost` called `.includes` on a `Set` (GRAVE_PROFIT) and
+   threw on EVERY discard/cost selection; the error fallback answered
+   "first min cards" instead, and for Dark Guardian's cancelable
+   material UNSELECT it answered -1 = "cancel the summon", which
+   looped IDLECMD↔UNSELECT indefinitely. Fixed the call (`.has`); the
+   attempt gate above is the structural backstop for that loop class.
+2. The mirror-match harness initially gated final conservation
+   per-seat; a control-changed card (Monster Reborn) legitimately
+   ends some duels in the other seat's zones, so the gate is now the
+   combined total (per-seat exactness reported: 38/40).
+
+### Measured (test-cpu.js, deterministic seeded shuffles)
+
+- Mirror matches, NEW vs OLD policy, 40 duels ({new seat 0/1} ×
+  {decks normal/swapped}, 10 each): **NEW wins 37–3 (92.5%)**.
+  Blocks: seat0/normal 10–0, seat0/swapped 8–2, seat1/normal 9–1,
+  seat1/swapped 10–0. Average turns 16.7 (new-policy wins 13.0;
+  the 3 old-policy wins are 62-turn marathons — the new GG seat
+  losing long games is the known residual weakness).
+- Activity per duel: NEW summons 9.00, attacks declared 4.80,
+  activations 6.33 — OLD: 0.88 / 0.00 / 0.00 (the old policy summons
+  at most one level≤4 per duel and takes toEP before battle).
+- Max prompts in any duel: 672 (harness budget 6000; no stalls),
+  MSG_RETRY 0 across all 40 duels, combined card conservation exact
+  in 40/40.
+- Full regression: test-node, test-explore, test-genesis,
+  test-facedown, test-layout, test-ui, test-cpu all pass. Two
+  documented exceptions: (a) test-overlay's HUNTER exercise
+  thresholds were recalibrated (see the comment in that file: the
+  GG deck has no Xyz and no level-4 monster, so all Xyz production
+  is the hunter's, and a competent seat-1 policy contests it —
+  measured 4 summons / 8 attaches, deterministic; the ACTIVATOR
+  batch still exercises 10 Xyz / 20 attaches / 10 detaches and all
+  correctness gates are unchanged); (b) test-phase2 has a
+  pre-existing flake (B4/C/A2 depend on trajectories from the
+  unseeded client shuffle): 4/20 runs fail on unmodified main a28cf9d
+  with the same signatures.
+
+### Known limits / fallbacks (not faked)
+
+- SELECT_OPTION: answered with index 0. The prompts carry no usable
+  context to rank options for the pool's option effects (the client
+  has the same gap for the human UI — options are unlabelled there
+  too until a strings table exists).
+- ANNOUNCE_NUMBER: picks the largest offered value ≤ 8 (the response
+  is an index into the options; no pool card's outcome hinges on it).
+- Battle-target SELECT_CARD is recognised by phase + empty chain +
+  the remembered attacker; if that signature misses (e.g. an attack
+  declared during a chain-heavy battle step), it falls back to the
+  generic biggest-threat target pick.
+- The synchro material search enumerates subsets of the first 8
+  candidates; larger candidate sets fall back to cheapest-first
+  materials.
+
 ## Known gaps for later phases
-- CPU intelligence: player 1 is the PoC's minimal legal bot (summon a
-  level ≤4, otherwise advance phases; always passes chains unless forced).
-  In Main 1 it takes the direct-to-End-Phase option whenever the core offers
-  it, so it rarely enters battle; when it does, it attacks with the first
-  available attacker. No tactics of any kind.
+- CPU intelligence: DONE in the CPU phase (see "CPU phase" above) —
+  player 1 is now a heuristic policy (fair-view masked, per-card
+  gates for the 63-card pool). It is a baseline, not an expert:
+  long-game resource races with the Gate Guardian seat are its
+  measured weak spot.
 - Effects/presentation polish: no summon/attack animations, no target lines,
   no damage numbers; chain links are text chips. (Printed-only ATK/DEF was
   fixed in Phase 2 — board values are live from the core query.)
