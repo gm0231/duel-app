@@ -9,19 +9,20 @@
        0x200000/0x400000)
      - every appearance of an Extra-Deck monster on the field, with its zone
        sequence (must be a main monster zone 0-4 under Genesis rules)
-     - MSG_RETRY count (must be 0) and card conservation. The state mirror
-       has a known pre-existing accounting dip during Xyz summons, present
-       under MR5 flags too and unrelated to the format flags: materials move
-       to OVERLAY of a host still in the Extra Deck (wire loc 0xc0, seq =
-       host's Extra-Deck index), and engine.js _insertAt only credits overlay
-       units to a host already on the field, so the materials go uncounted
-       until they detach (wire loc 0x84/0x90), which restores the count. If a
-       duel ends while an Xyz monster still holds materials, the mirror's
-       final total stays dipped by that count. The core state itself is
-       always consistent (duels complete, retries 0). Mid-duel dips and
-       end-of-duel dips are therefore counted and reported as metrics, not
-       failures; the project's strict per-prompt conservation gate is
-       test-node.js (bot policy, no Xyz summons), run separately.
+     - MSG_RETRY count (must be 0) and card conservation. Conservation is
+       gated on the COMBINED total at every prompt (must equal the pool)
+       plus final totals exact-or-explained-by-a-control-changed card —
+       the rule established by the mirror-totals investigation (see
+       NOTES.md): the mirror counts by controller, so per-seat totals
+       legitimately deviate while a control change lasts; those per-seat
+       deviations are still counted below as the 'violations' metric. Two
+       real mirror defects found by that investigation are fixed in
+       engine.js and regression-tested in test-swap.js: MSG_SWAP_GRAVE_DECK
+       was ignored (deck/grave split wrong after Exchange of the Spirit,
+       totals inflated as the deck drained), and overlay units in flight
+       to an entry-less pile dipped batch-level totals (now transit[]).
+       The strict per-prompt gate with the control-adjusted per-seat rule
+       is test-node.js, run separately.
    Set GENESIS_BASELINE=1 to only measure (pre-change baseline): EMZ-related
    assertions are then reported but do not fail the run. */
 const fs = require('fs');
@@ -159,7 +160,7 @@ async function runDuel(M, data, seed) {
                     data.decks.gg.main.length + data.decks.gg.extra.length];
   const extraCodes = [new Set(data.decks.ishizu.extra), new Set(data.decks.gg.extra)];
   const m = {
-    seed, violations: 0, cleanAfterViolation: false, sawViolation: false,
+    seed, violations: 0, combinedViolations: 0, cleanAfterViolation: false, sawViolation: false,
     firstPromptHands: null,        // both players' hand sizes at the first prompt of the duel
     starter: null, starterFirstMain1Hand: null, starterHandTurn1Max: 0,
     placePrompts: 0, placeEmzOffers: 0,
@@ -168,6 +169,7 @@ async function runDuel(M, data, seed) {
   };
   const observe = (prompt, state) => {
     let anyViolation = false;
+    if (state.totalCards(0) + state.totalCards(1) !== expected[0] + expected[1]) m.combinedViolations++;
     for (let p = 0; p < 2; p++) {
       const t = state.totalCards(p);
       if (t !== expected[p]) {
@@ -232,6 +234,27 @@ async function runDuel(M, data, seed) {
   const stats = await duel.run();
   m.finalTotals = [duel.state.totalCards(0), duel.state.totalCards(1)];
   m.expectedTotals = expected;
+  // Final per-seat deviations are acceptable only when fully explained by
+  // control-changed cards still in a player's zones (pools are disjoint).
+  {
+    const poolsFull = [new Set(data.decks.ishizu.main.concat(data.decks.ishizu.extra)),
+                       new Set(data.decks.gg.main.concat(data.decks.gg.extra))];
+    const foreign = [0, 0];
+    for (let p = 0; p < 2; p++) {
+      const P = duel.state.players[p];
+      const scan = (entries, withMats) => {
+        for (const e of entries) {
+          if (!e) continue;
+          const code = typeof e === 'object' ? e.code : e;
+          if (code && poolsFull[1 - p].has(code)) { foreign[p]++; if (withMats) foreign[p] += (e.materials || 0); }
+        }
+      };
+      scan(P.hand, false); scan(P.grave, false); scan(P.removed, false);
+      scan(P.extra, true); scan(P.mzone, true); scan(P.szone, false);
+    }
+    m.finalForeign = foreign;
+    m.finalExplained = [0, 1].every(p => m.finalTotals[p] - expected[p] === foreign[p] - foreign[1 - p]);
+  }
   return { m, stats, over: duel.over };
 }
 
@@ -245,7 +268,7 @@ async function runDuel(M, data, seed) {
     totals.exAppearances += m.exAppearances; totals.exInEmz += m.exInEmz;
     totals.placeEmzOffers += m.placeEmzOffers; totals.placePrompts += m.placePrompts;
     console.log('seed ' + seed + ': over=' + over + ' turns=' + stats.turns + ' prompts=' + stats.prompts +
-      ' retries=' + stats.retries + ' violations=' + m.violations +
+      ' retries=' + stats.retries + ' violations=' + m.violations + ' combinedViolations=' + m.combinedViolations +
       ' firstPromptHands=' + JSON.stringify(m.firstPromptHands) +
       ' starter=P' + m.starter + ' starterFirstMain1Hand=' + m.starterFirstMain1Hand +
       ' starterHandTurn1Max=' + m.starterHandTurn1Max +
@@ -255,7 +278,10 @@ async function runDuel(M, data, seed) {
       ' midDuelDips=' + m.violations + ' dipRecovered=' + m.cleanAfterViolation +
       ' finalTotals=' + JSON.stringify(m.finalTotals) + '/' + JSON.stringify(m.expectedTotals));
     if (!over || stats.retries !== 0) fail = true;
-    if (JSON.stringify(m.finalTotals) !== JSON.stringify(m.expectedTotals)) totals.endDippedDuels++; // mirror overlay artifact (see header)
+    if (m.combinedViolations !== 0) { console.log('FAIL: combined total deviated from the pool at ' + m.combinedViolations + ' prompts (seed ' + seed + ')'); fail = true; }
+    if (m.finalTotals[0] + m.finalTotals[1] !== m.expectedTotals[0] + m.expectedTotals[1]) { console.log('FAIL: final combined total != pool (seed ' + seed + ')'); fail = true; }
+    if (!m.finalExplained) { console.log('FAIL: final per-seat totals not explained by control changes (seed ' + seed + ', foreign=' + JSON.stringify(m.finalForeign) + ')'); fail = true; }
+    if (JSON.stringify(m.finalTotals) !== JSON.stringify(m.expectedTotals)) totals.endDippedDuels++; // per-seat skew at end (control change; see header)
     if (m.starterFirstMain1Hand !== 5) fail = true; // turn-1 draw must NOT happen
   }
   console.log('TOTALS: placePrompts=' + totals.placePrompts + ' placeEmzOffers=' + totals.placeEmzOffers +

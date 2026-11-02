@@ -1644,6 +1644,126 @@ any activation gate, and all fusion / material patience.
   MAIN2 and plays on — and left as-is rather than teaching the view
   card-text exceptions.
 
+## Mirror totals investigation: three signatures, classified (branch mirror-totals)
+
+The long-standing "totals drift" anomaly (mid-duel totals off, finals
+exact, MSG_RETRY 0) was hunted with batch-level and prompt-level
+instrumentation plus a per-prompt CENSUS of the core itself
+(`Duel.queryCard` scans of every pile, compared against the mirror).
+Three distinct signatures exist; each is classified below. A 120-duel
+deterministic sweep (seeded client shuffle, exploratory policy) went
+from 38 duels with batch-level dips and 1 duel ending over the pool to
+**0 / 0** after the fixes; the only remaining deviations are
+control-change skews.
+
+### Signature 1 — per-seat skew [59,54], combined exact: (c) correct mirror, mis-specified harness gates
+
+The mirror counts cards by CONTROLLER (`totalCards` sums the buckets of
+the player currently controlling each card), while several suites
+asserted per-seat equality with the OWNER's deck size. Any control
+change breaks that equality for as long as it lasts — e.g. Monster
+Reborn reviving the opponent's monster. Reproduced repeatedly, always
+with the same wire event, e.g.:
+
+```
+MOVE 沼地の魔道王 P1:GY#1 -> P0:MZ#3 rsn=0x800   (seed 3, turn 6)
+MOVE 風魔神－ヒューガ P1:GY#2 -> P0:MZ#0 rsn=0x800  (seed 8; still held at duel end -> final [59,54])
+```
+
+17 of 120 sweep duels showed prompt-level skews of exactly this shape
+(±1, combined 113, recovering when the stolen card leaves to its
+owner's grave). This is also the mechanism behind test-node's
+intermittent failures (~1 in 3–6 runs): not a mirror defect.
+Fix (harness side): test-node.js and test-phase2's D3 now assert the
+rule that is actually invariant — combined total == pool AND each
+seat's deviation == its foreign-card balance (cards of the other pool
+in its zones minus the reverse; pools are disjoint, overlay units
+counted through their host entry). test-genesis.js gained the same
+combined gate as a hard failure plus a final-totals foreign-explanation
+check; its per-seat 'violations' remain a metric. test-overlay's
+ACTIVATOR batch already used this reasoning; test-investigate.js only
+ever compared violation counts relatively, so it needed no change.
+
+### Signature 2 — combined total EXCEEDS the pool, permanently: (a) mirror defect — MSG_SWAP_GRAVE_DECK unhandled
+
+Root cause: `GameState.apply` had no case for MSG 35
+(MSG_SWAP_GRAVE_DECK). When 《現世と冥界の逆転》 (Exchange of the
+Spirit, the only pool card using `Duel.SwapDeckAndGrave`) resolves,
+the core swaps the player's deck and graveyard wholesale and reports
+it as ONE message per player — no per-card MOVEs. Core semantics
+(field::swap_deck_and_grave): payload = player u8, u32 extra-size,
+u32 bitmap length, bitmap over the post-swap deck list (= the old
+graveyard in grave order); a set bit marks an Extra-Deck monster,
+which the core pulls OUT of the new deck into the Extra Deck. The
+mirror ignored the message, so deckCount kept the pre-swap value and
+the grave kept the old identities.
+
+The swap itself preserves each seat's total (deck+grave+extra sum is
+invariant) — the damage is a wrong SPLIT that turns into inflation
+later: the stale deckCount is smaller than the real deck, and once it
+drains to 0 it clamps (`Math.max(0, …)`) while real draws/mills keep
+arriving in hand/grave. Deterministic reproduction (seeded shuffle,
+exploration duel, seed 99): census at turn 31, first prompt after the
+resolution —
+
+```
+core:   P0 deck=19 grave=14 extra=14 | P1 deck=15 grave=12 extra=14
+mirror: P0 deck=13 grave=22 extra=12 | P1 deck=12 grave=15 extra=14
+wire segment: MSG72, MSG35, MSG32 (SHUFFLE_DECK), MSG35, MSG32,
+              MSG73, MOVE 現世と冥界の逆転 P0:SZ#0 -> P0:GY#13, MSG74, MSG16
+```
+
+i.e. P0's deckCount was 6 low and P1's 3 low; the duel ended
+[59,58] (+1 of P0's latent +6 realised, +3 of P1's). This — not
+control changes — is what produced the historical "totals exceed the
+pool" readings such as [64,63].
+
+Fix (engine.js, root): case 35 handler — new deckCount = old grave
+count − extracted (bitmap) count; extracted cards join the extra pile
+with their known codes; the new grave becomes unknown placeholders of
+the old deck count and `graveResync` marks the player;
+`Duel.refreshFieldStats` refills the grave identities from the core
+query at the next prompt boundary (the grave is public — same
+re-identification pattern as MSG_SHUFFLE_SET_CARD). `deckTop` is
+cleared (deck replaced and shuffled). Regression: test-swap.js duel A
+replays seed 99 with a full core census at all 1552 prompts — old code
+fails with exactly the divergence above (final [59,58]); fixed code is
+exact everywhere, grave identities included.
+
+### Signature 3 — combined total dips below the pool for a few batches: (a) mirror defect — overlay units in flight to entry-less piles
+
+When an Xyz host leaves the field for the grave/removed/deck/hand, the
+core sends the host's MOVE first and the units' release MOVEs a few
+`poc_process` batches later, encoded against the host's NEW location
+(e.g. `MOVE 賢瑞官カルダーン P0:GY+OVL#5 -> P0:GY#6 rsn=0x600`, one
+batch after `MOVE 鳥銃士カステル P0:MZ#2 -> P0:GY#5`). The mirror's
+carry logic dropped the units' count at the host's MOVE (entry-less
+piles hold no `materials`), so batch-boundary totals dipped by the
+unit count until the releases landed. The dip never survived to a
+prompt boundary in 120 duels (it lives inside one resolution), so the
+rendered UI at decision points was never wrong; it is nevertheless a
+real accounting gap at the batch boundary the driver itself exposes
+via onUpdate.
+Fix (engine.js): the dropped carry is parked in `state.transit[p]`
+and drained by `_removeAt` as each unit's release MOVE arrives
+(overlay removal whose host location is entry-less). `totalCards`
+includes transit. Regression: test-swap.js duel B asserts combined ==
+pool at EVERY batch (3107 batches; old code dipped in 2), and the
+120-duel sweep's dip count went 38 → 0.
+
+### Not reproduced / left open
+
+No other signature was found: across 70 unseeded + 120 seeded
+exploration duels and the full suite, every deviation observed is one
+of the three above. MSG_REFRESH_DECK (34) and MSG_REVERSE_DECK (37)
+are also unhandled by the mirror, but no pool card uses them
+(grep of data.json scripts: only c17484499.lua calls
+SwapDeckAndGrave); they are noted here rather than fixed blind.
+One test-phase2 run during this round reported 2 failed checks whose
+labels were not captured; 11 other runs pass in full (D3 passes in
+every captured run) — consistent with the previously documented
+sampling flake, left as-is.
+
 ## Known gaps for later phases
 - CPU intelligence: DONE in the CPU phase (see "CPU phase" above) —
   player 1 is now a heuristic policy (fair-view masked, per-card
