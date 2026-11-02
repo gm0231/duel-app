@@ -310,7 +310,10 @@ function fxPortal(key, method, delay) {
   const spawn = () => {
     const d = fxNode('fx-portal ' + method, r.cx, r.cy, size, size); if (!d) return;
     d.innerHTML = '<div class="ring"></div>';
-    fxAnim(d, [{ opacity: 0 }, { opacity: 1, offset: 0.2 }, { opacity: 1, offset: 0.75 }, { opacity: 0 }], { duration: 780, easing: 'ease-out' });
+    fxAnim(d, [
+      { opacity: 0, transform: 'scale(.55)' }, { opacity: 1, transform: 'scale(1.04)', offset: 0.25 },
+      { opacity: 1, transform: 'scale(1)', offset: 0.75 }, { opacity: 0, transform: 'scale(1)' },
+    ], { duration: 780, easing: 'ease-out' });
     fxKill(d, 820);
   };
   if (delay) setTimeout(spawn, delay); else spawn();
