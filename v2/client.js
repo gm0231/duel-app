@@ -794,7 +794,8 @@ $('menubtn').addEventListener('click', () => {
 // reserved, so nothing can resize or shift the board mid-duel.
 //
 // Vertical budget (px, mirrors index.html exactly — every bar has an
-// explicit height there):
+// explicit height there; re-derived element by element in the layout-fix
+// round and confirmed exact):
 //   topbar 44 + opp field (pad 5 + pilebar 23 + 2 zone rows) + midbar 78
 //   (chainbar 21 reserved + logline 15 + phasebar 34 + padding/borders 8)
 //   + my field (2 zone rows + pilebar 23 + pad 5) + handbar extras 23
@@ -802,7 +803,25 @@ $('menubtn').addEventListener('click', () => {
 //   plus 4 × slotH + handH + previewH.
 // Slot: width W, image height round(W×1.22), +15 stats strip = slotH.
 // Hand: width round(W×56/47), image round(handW×1.22), +14 stats strip.
+//
+// LAYOUT FIX (real-browser defect): the formula targets an EXACT fill —
+// whenever the preview is shown, the distribution consumes every leftover
+// px and contentH == the height read from window.innerHeight, i.e. the
+// dead band is 0 by construction. But window.innerHeight is NOT always
+// the visible height (browser chrome states, app webview bands, 100dvh
+// divergence): when the visible region is even a few tens of px shorter,
+// exactly that much is clipped off the bottom of the stack and the page
+// does not scroll — the hand's ATK/DEF strip went first. The constants
+// were not the cause (217 is exact; margin collapsing inside .field can
+// only make the real stack a few px SHORTER than the model).
+// Fix: (1) budget against the VISUAL viewport height (visualViewport
+// when available) minus a safety margin; (2) after applying, MEASURE the
+// real stack bottom from the rendered boxes and step the budget down
+// until it fits — all still inside the duel-start click, so the mid-duel
+// freeze is untouched. Where measurement is unavailable (jsdom: all
+// offsets are 0), the formula result stands as-is.
 const LAYOUT_FIXED = 217;
+const LAYOUT_SAFETY = 4; // px kept free below the stack, always
 let layoutInfo = null;
 function layoutParts(W) {
   const imgH = Math.round(W * 1.22);
@@ -830,10 +849,12 @@ function computeLayout(vwIn, vh) {
   const contentH = LAYOUT_FIXED + 4 * p.slotH + handH + pvShown;
   return { vw, vh, tileW: W, imgH: p.imgH, slotH: p.slotH, handW: p.handW, handH, pv, pvShown, contentH, dead: vh - contentH };
 }
-function applyLayout() {
-  const info = computeLayout(window.innerWidth, window.innerHeight);
-  layoutInfo = info;
-  window.__layout = info; // measurement hook for tests (jsdom has no layout engine)
+function visibleViewportH() {
+  const vv = window.visualViewport;
+  const h = vv && vv.height ? vv.height : window.innerHeight;
+  return Math.max(0, Math.floor(h || 0));
+}
+function applyLayoutVars(info) {
   const rs = document.documentElement.style;
   rs.setProperty('--sw', info.tileW + 'px');
   rs.setProperty('--sh', info.slotH + 'px');
@@ -842,6 +863,59 @@ function applyLayout() {
   rs.setProperty('--pv', info.pvShown + 'px');
   $('preview').className = info.pvShown > 0 ? (info.pvShown < 56 ? 'on compact' : 'on') : '';
   if (previewState) renderPreview();
+}
+// Real rendered bottom of the in-flow stack (document px), from the boxes
+// themselves — ground truth that includes margin collapsing, font metrics
+// and any environment quirk the formula cannot model. Absolutely
+// positioned children (dock/sheet/overlays) are excluded by construction:
+// only the six in-flow sections are read. Returns 0 when layout
+// measurement does not exist (jsdom), which disables the step-down.
+function measureStackBottom() {
+  const app = $('app');
+  const base = app && app.offsetTop ? app.offsetTop : 0;
+  let bottom = 0;
+  for (const id of ['topbar', 'oppField', 'midbar', 'myField', 'preview', 'handbar']) {
+    const el = $(id);
+    if (!el || !el.offsetHeight) continue; // display:none (preview off) reads 0
+    const b = base + el.offsetTop + el.offsetHeight;
+    if (b > bottom) bottom = b;
+  }
+  return bottom;
+}
+function applyLayout() {
+  const visH = visibleViewportH();
+  const allowed = Math.max(0, visH - LAYOUT_SAFETY);
+  let budget = allowed;
+  let info = computeLayout(window.innerWidth, budget);
+  info.vh = visH; info.budget = budget; info.dead = visH - info.contentH;
+  layoutInfo = info;
+  window.__layout = info; // measurement hook for tests (jsdom has no layout engine)
+  applyLayoutVars(info);
+  // Fit guarantee: measure the real stack and step the budget down by the
+  // measured excess until it fits. Shrinking the budget first eats the
+  // preview, then the hand growth, then the tile unit (computeLayout's
+  // own order), so the board shrinks only as much as reality demands.
+  // Bounded: at most 16 steps, and the loop stops as soon as a step can
+  // no longer shrink contentH (minimum layout reached — W floor 40 and
+  // no preview; if a viewport is shorter than even that stack, the
+  // minimum layout is kept and info.fit reports false).
+  let measured = measureStackBottom();
+  let steps = 0;
+  while (measured > allowed && steps < 16) {
+    budget = Math.max(0, budget - (measured - allowed));
+    const next = computeLayout(window.innerWidth, budget);
+    if (next.contentH >= info.contentH) break; // cannot shrink further
+    next.vh = visH; next.budget = budget; next.dead = visH - next.contentH;
+    info = next;
+    layoutInfo = info;
+    window.__layout = info;
+    applyLayoutVars(info);
+    measured = measureStackBottom();
+    steps++;
+  }
+  info.measured = measured;
+  info.fitSteps = steps;
+  info.fit = measured === 0 || measured <= allowed; // 0 = unmeasurable here; formula stands
 }
 // ---------------------------------------------------------------- preview
 // Persistent card-detail strip in the leftover space (never overlays or
