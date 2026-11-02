@@ -1387,6 +1387,159 @@ Worth a separate engine-side investigation.
   promises to the core as responses and every duel stalls at the first
   SELECT_CHAIN.
 
+## CPU tuning round 2 (branch client-cpu-tune2)
+
+Trigger: a second real-browser game (human Ishizu vs CPU Gate
+Guardian) on the round-1 build. Progress there was real (turn 2:
+Swamp King face-up, Wall Shadow placed, one backrow set), but across
+CPU turns 2/4/6/8/10 the CPU never attacked — on turn 10 the human
+field was completely empty and it still did not declare a direct
+attack with its face-up ATK-500 monster — and turns 4/6/8 were
+draw-only while its hand grew 4 → 5 → 6. Round 1's harness (both
+seats = shipped policy) could not reproduce this: its Ishizu seat
+plays real lines, while the browser human played a passive shape.
+
+Method: `v2/test-cpu-tune2.js` — seat 0 is a SCRIPTED PASSIVE HUMAN
+(summon the strongest monster face-up in attack position, attack the
+CPU's monster, pass every chain, never activate, never set; only
+mechanical sub-selections are delegated to the shipped answerer),
+seat 1 is the shipped GG policy going second. Every GG IDLECMD /
+BATTLECMD / POSITION prompt of the first 6 bot turns is traced with
+the bot's own hand (diagnostic harness only — decisions still go
+through the fair masked view), the offers, and each offer's score
+from the policy's own scorers, exposed read-only as `Engine.debug`
+(additive, inert; also used to run the identical yardstick against
+the pre-fix engine for before/after counts). Scan: 120 seeded duels,
+560 traced bot turns. NOTE: this branch is based on main 72f86b6,
+which predates the engine-gg-fusion fix (Extra Deck registered
+face-down, contact fusions offered). All numbers below are measured
+on that base; the fusion fix lands separately and the suites should
+be re-run on the merged tree.
+
+### Classification of the 202 no-attack bot turns (before fixes)
+
+- CANNOT_ATTACK_THIS_TURN 57 — named legal restrictions, not
+  defects: 迷宮の重魔戦車 cannot attack on its summon turn (its own
+  text), and — found by tracing seed 70195 turn 5 down to the core —
+  the bot's OWN face-up 《ラビリンス・ウォール・シャドウ》 ① bars any
+  monster of printed level ≤ 4 from attacking on the turn it is
+  summoned / flip summoned / special summoned. A flip-summoned
+  メデューサ・ワーム (lv 3) was flipped by the new stand-up line,
+  entered the battle phase, and the core correctly offered it no
+  attack entry that turn (it attacked from the next turn). The same
+  ① is what killed the browser human's attackers (③ destroys an
+  opposing monster with ATK < 1600 at the start of their battle
+  phase — Straton/Kelbek/Kerudo/Karbon all qualify).
+- NO_ATKPOS_MONSTER 141 — the deck's thin early game (no monster /
+  set-only) plus the actual defect below.
+- DECLINED_UNPROFITABLE 3, PLAN_BELOW_240 1 — judgment calls into
+  opposing monsters by the unchanged attackScore / 240-bar rules.
+
+The defect, isolated with strict event definitions (monster already
+on the field at turn start, repositioning actually offered, and
+standing it up profitable by the policy's own attackPlans measure):
+
+- DEF_LOCK 10 turns, FREE_DIRECT_DECLINED_DEFONLY 8 turns (all
+  沼地の魔道王, face-up DEF 500/1100, opposing field empty): the bot
+  summons Swamp King in face-up DEFENSE (positionAnswer: DEF 1100 >
+  ATK 500, and the opposing 1500 attacker made ATK position wrong at
+  summon time). After that, `idleAnswer`'s reposition branch only
+  ever stood a face-up defender up when its ATK was ≥ 1600 — a
+  500-ATK defender therefore stayed in defense for the whole game,
+  `hasProfitableAttack` only counts attack-position monsters, the
+  battle phase was never entered (the MAIN1 tail checks toEP before
+  the toBP fallback), and the free direct attack never happened.
+  FREE_DIRECT_DECLINED_ATKPOS was 0 throughout: with a ready
+  attack-position attacker the planner already always attacked.
+
+### Draw-only turns: 24 of 560 (4.3%), every card gate-attributed
+
+- WAITING_FOR_TRIO 38 card-instances: guardian pieces and
+  ダーク・エレメント held for the trio payoffs. In seed 70130 the
+  trio was complete across hand + placed S/T pieces yet the core
+  offered no payoff — on this base that is the (separately fixed)
+  Extra-Deck registration issue, not policy passivity; the policy's
+  patience is correct once the offers exist, so it is kept.
+- NOT_OFFERED_BY_CORE 72 card-instances: core legality, not policy —
+  テラ・フォーミング with no field spell left in deck to search;
+  闇の護封剣 with no face-up opposing monster to flip; traps not in
+  the sset offers because the S/T zone was full (placed guardian
+  pieces occupy it — the cost of the placement line itself).
+- ACT_SCORE_LT_500 20 card-instances, all correct declines:
+  シャドウ・グール's hand effect scored 0 with Wall Shadow already
+  face-up (×13; it also was not summon-offered in those turns — no
+  tribute on the field), and a duplicate Wall Shadow scored 0 with
+  the field spell already up (×7). No activation gate was changed.
+
+### Fixes (v2/engine.js, bot policy only; fair view unchanged)
+
+1. `profitableAttackIfStood()` (new): would standing / flipping a
+   given monster up create an attack worth making, judged by the
+   same attackPlans / lethalPlan evaluation the battle phase uses
+   (any ATK > 0 against an empty opposing field; the usual 240 bar
+   into monsters)?
+2. `idleAnswer` reposition loop: a face-up DEF monster below the
+   old 1600 line is now stood up in MAIN1 when (1) says yes — except
+   a working wall (its DEF currently holds the opponent's strongest
+   attacker: DEF ≥ oppPow > ATK). A face-down monster (never Chaos
+   Pod — its flip is a board reset with its own branch) is flip
+   summoned to attack under the same test and guard, with one named
+   exception: under our own face-up Wall Shadow, a printed-level ≤ 4
+   monster cannot attack on its flip-summon turn anyway (① above),
+   so the flip-for-attack is skipped (its flip effect is still
+   judged by the dedicated branches).
+3. `hasProfitableAttack`: an empty opposing field plus any ready
+   attack-position attacker (ATK > 0) now counts as profitable — a
+   direct attack can only gain, the attacker survives it by
+   definition — so the battle phase is entered.
+4. `battleAnswer`: with an empty opposing field and no plan above
+   the 240 bar, the weakest direct attacker is sent anyway (same
+   reasoning), instead of ending the phase.
+
+Not changed: attackScore and the 240 bar for attacks INTO monsters,
+positionAnswer (the summon-time DEF choice was correct when made),
+any activation gate, and all fusion / material patience.
+
+### Measured (same 120 seeds / yardstick, before → after)
+
+- DEF_LOCK 10 → **0**; FREE_DIRECT_DECLINED_DEFONLY 8 → **0**;
+  FREE_DIRECT_DECLINED_ATKPOS 0 → 0.
+- Empty-opposing-field MAIN1 situations attacked that turn:
+  241/303 → **251/303** (the remainder are turns whose only monsters
+  sat under the named summon-turn restrictions, or no monster at
+  all). Duels with a GG attack by bot turn 5: 107/120 → 108/120;
+  average first-attack turn 2.73 → 2.60.
+- Draw-only turns: 24 → 24, same gate composition (no activation
+  gate moved; the residue is core legality + trio waiting).
+- test-cpu.js mirror suite: **40–0** vs the old policy (unchanged
+  from round 1), MSG_RETRY 0, activity 6.55 summons / 5.42 attacks /
+  6.65 activations per duel (round 1: 6.40 / 5.33 / 6.78).
+- test-cpu-tune.js matchup: attack by bot turn 5 10/12 → 9/12,
+  average first-attack turn 3.25 → 2.91, total GG attacks in the
+  sample 56 → 57. The one duel that stopped attacking (seed 91007)
+  was starved in both versions — first face-up body on bot turn 7
+  either way; the old policy landed a single attack on turn 8 of a
+  19-turn loss, the new-policy Ishizu seat closes the same duel in
+  17. Not a new passivity: no body, no attack, in both.
+- Stall hunt: 20 fresh-seed passive-shape duels (41500+i·37), 20/20
+  completed, 0 retries, 0 failure events; attacks in 19/20 duels,
+  18/20 by bot turn 5, average first-attack turn 1.95.
+- Regression: test-node / test-explore / test-genesis / test-overlay
+  / test-facedown / test-layout / test-ui all pass, MSG_RETRY 0.
+
+### Could not fix / left as-is
+
+- The GG bot still cannot attack with what it does not have: with
+  only 4 level ≤ 4 monsters in the deck and the trio payoffs needing
+  all three pieces, starved openings (no face-up body until turn 7,
+  seed 91007 in both versions) are the deck, not the policy.
+- hasProfitableAttack still cannot see summon-turn attack
+  restrictions (they are not in the fair view), so the bot
+  occasionally enters a battle phase the core then offers no attack
+  in (Heavy Tank / Wall Shadow ① cases). Harmless — it proceeds to
+  MAIN2 and plays on — and left as-is rather than teaching the view
+  card-text exceptions.
+
 ## Known gaps for later phases
 - CPU intelligence: DONE in the CPU phase (see "CPU phase" above) —
   player 1 is now a heuristic policy (fair-view masked, per-card

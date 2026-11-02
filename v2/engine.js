@@ -1072,9 +1072,33 @@ function hasProfitableAttack(view, data) {
   const attackers = faceUpMons(view, view.me).filter(c => c.atkPos && atkOf(c, data) > 0)
     .map(c => ({ seq: c.seq, atk: atkOf(c, data) }));
   if (!attackers.length) return false;
-  const direct = new Set(monList(view, view.opp).length === 0 ? attackers.map(a => a.seq) : []);
+  // Empty opposing field: a direct attack can only gain LP differential —
+  // the attacker survives it by definition — so ANY ready attacker makes
+  // the battle phase worth entering, even below the 240 plan bar that
+  // gates attacks into monsters. (Tuning round 2: the bar previously
+  // kept the bot out of the battle phase entirely in exactly this spot.)
+  if (monList(view, view.opp).length === 0) return true;
+  const direct = new Set();
   if (lethalPlan(view, data, attackers)) return true;
   return attackPlans(view, data, attackers, direct).some(p => p.score >= 240);
+}
+// Would flipping / standing THIS monster up (it is currently face-down or
+// in face-up defense position) create an attack worth making, judged by
+// the same plan evaluation the battle phase itself uses? Against an
+// empty opposing field any ATK > 0 qualifies (free direct damage, see
+// hasProfitableAttack); otherwise the plan involving this monster must
+// clear the usual 240 bar, or complete a lethal line.
+function profitableAttackIfStood(view, data, cell) {
+  const atk = atkOf(cell, data);
+  if (atk <= 0) return false;
+  const attackers = faceUpMons(view, view.me).filter(c => c.atkPos && atkOf(c, data) > 0)
+    .map(c => ({ seq: c.seq, atk: atkOf(c, data) }));
+  if (!attackers.some(a => a.seq === cell.seq)) attackers.push({ seq: cell.seq, atk });
+  const oppEmpty = monList(view, view.opp).length === 0;
+  if (lethalPlan(view, data, attackers)) return true;
+  const direct = new Set(oppEmpty ? attackers.map(a => a.seq) : []);
+  const bar = oppEmpty ? 1 : 240;
+  return attackPlans(view, data, attackers, direct).some(p => p.seq === cell.seq && p.score >= bar);
 }
 
 // ---------------------------------------------------------------- main phase
@@ -1682,17 +1706,48 @@ function idleAnswer(prompt, view, data, mem) {
     const e = sm.kind === 'summon' ? prompt.summon[sm.idx] : prompt.mset[sm.idx];
     if (attemptOk(mem, view, sm.kind, e)) return cmdResp(sm.kind === 'summon' ? 0 : 3, sm.idx);
   }
-  // repositioning: shelter outclassed attackers, ready face-up defenders
+  // repositioning: shelter outclassed attackers, ready defenders and
+  // set monsters for a profitable attack
   const oppPow = oppMaxPower(view, data);
   for (let i = 0; i < prompt.repos.length; i++) {
     const e = prompt.repos[i];
     const cell = view.zones[me].mzone[e.seq];
-    if (!cell || !cell.faceUp) continue;
+    if (!cell) continue;
+    if (!cell.faceUp) {
+      // Flip summon purely to attack: only in MAIN1, never Chaos Pod
+      // (its flip is a board reset, judged by its own branch above), and
+      // only when the flipped monster's attack clears the same bar the
+      // battle planner uses — including a free direct attack into an
+      // empty opposing field. A set wall currently holding back the
+      // opponent's best attacker stays set (working-wall guard). Named
+      // exception: our own face-up Labyrinth Wall Shadow forbids a
+      // monster of printed level 4 or lower from attacking on the turn
+      // it is summoned / flip summoned, so flipping such a monster "to
+      // attack" this turn buys nothing and only exposes it — its flip
+      // effect, when wanted, is judged by the dedicated branches.
+      const wallShadowUp = (() => { const f = view.zones[me].szone[5]; return !!(f && f.faceUp && f.code === CC.WALL_SHADOW); })();
+      const cdCell = cdOf(data, cell.code);
+      const summonTurnLocked = wallShadowUp && cdCell && (cdCell.level & 0xff) <= 4;
+      if (isMain1 && cell.code !== CC.CHAOS_POD && !summonTurnLocked &&
+          !(defOf(cell, data) >= oppPow && oppPow > atkOf(cell, data)) &&
+          profitableAttackIfStood(view, data, cell)) return cmdResp(2, i);
+      continue;
+    }
     if (cell.atkPos) {
       if (defOf(cell, data) >= oppPow && atkOf(cell, data) < oppPow && defOf(cell, data) > atkOf(cell, data)) return cmdResp(2, i);
     } else if (isMain1 && atkOf(cell, data) >= 1600) {
       const oppMons = monList(view, view.opp);
       if (!oppMons.length || oppMons.some(t => !t.faceUp || battlePower(t, data) < atkOf(cell, data))) return cmdResp(2, i);
+    } else if (isMain1 && atkOf(cell, data) > 0) {
+      // Below the 1600 stand-up line: stand the defender up when its own
+      // attack is worth making by the battle planner's measure (the
+      // measured DEF_LOCK defect: a 500-ATK defender sat in defense for
+      // whole games, even facing an empty field, because only ATK >=
+      // 1600 monsters were ever stood up). Same working-wall guard: a
+      // defender whose DEF is currently holding the opponent's best
+      // attacker stays down.
+      if (!(defOf(cell, data) >= oppPow && oppPow > atkOf(cell, data)) &&
+          profitableAttackIfStood(view, data, cell)) return cmdResp(2, i);
     }
   }
   // set backrow: traps and quick-plays (never plain spells, never the field spell)
@@ -1753,6 +1808,20 @@ function battleAnswer(prompt, view, data, mem) {
       mem.plannedTargetSeq = plan.targetSeq;
       const idx = prompt.attack.findIndex(e => e.seq === plan.seq);
       if (idx >= 0) return cmdResp(1, idx);
+    }
+    // Empty opposing field, nothing above the 240 bar: a direct attack
+    // still can only gain (the attacker cannot be battled back), so take
+    // it anyway — weakest direct attacker first, saving the bigger ones
+    // for later battle steps. Declining here was the tuning-round-2
+    // browser defect: a face-up monster idling in front of an open field.
+    if (monList(view, view.opp).length === 0 && directSeqs.size) {
+      const cands = attackers.filter(a => directSeqs.has(a.seq) && a.atk > 0).sort((x, y) => x.atk - y.atk);
+      if (cands.length) {
+        mem.lastAttacker = { seq: cands[0].seq, turn: view.turnCount };
+        mem.plannedTargetSeq = -1;
+        const idx = prompt.attack.findIndex(e => e.seq === cands[0].seq);
+        if (idx >= 0) return cmdResp(1, idx);
+      }
     }
   }
   if (prompt.toM2) return cmdResp(2, 0);
@@ -2566,6 +2635,14 @@ const Engine = { MSG, SELECT_TYPES, PHASES, LOC, POS, POS_FACEUP, POS_ATTACK, PO
   counterResp, sortResp, unselectToggleResp, u64resp, parsePrompt, sumSelectionValid, isDeclarable,
   shuffledCopy, randBelow,
   GameState, botAnswer, makeBotMemory, botView, Duel };
+// Diagnostic-only surface for the tuning harnesses (test-cpu-tune*.js):
+// the policy's internal scorers, exposed read-only so a trace can name
+// the exact gate/score that declined an offered play. Not used by the
+// client or by any decision path.
+Engine.debug = { activationScore, pickSummon, pickSpsummon, hasProfitableAttack,
+  profitableAttackIfStood, attackPlans, attackScore, lethalPlan, bestAttackPlan, handValue, discardCost,
+  boardValue, atkOf, defOf, battlePower, monList, faceUpMons, oppMaxPower,
+  myStrongestAtk, levelOf, CC };
 if (typeof module !== 'undefined') module.exports = Engine;
 else global.Engine = Engine;
 })(typeof window !== 'undefined' ? window : globalThis);
