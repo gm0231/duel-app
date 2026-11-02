@@ -1278,6 +1278,114 @@ this file only), so neither can be an effect of this round:
 Both are flagged for a future fix round; neither is addressed
 here (out of this round's layout-only scope). The remaining
 suites above are deterministic in this environment and pass.
+## CPU tuning round (branch client-cpu-tune)
+
+Trigger: a real-browser game (human Ishizu vs CPU Gate Guardian) in which
+the CPU set one face-down monster on turn 2 and then never summoned
+face-up and never attacked in 5 turns, while its deck fell 40→24.
+Question posed: (a) hand composition, (b) policy thresholds, or
+(c) defect? Answer: all three occur, but the dominant cause was (c) —
+four defects, each measured at the wire/score level — on top of a deck
+whose early game is genuinely thin (a).
+
+Method: `v2/test-cpu-tune.js` — 12 seeded duels of this exact matchup
+(GG = seat 1 with the shipped policy, Ishizu = seat 0 with the shipped
+policy), per-turn logging of the GG bot's own hand (diagnostic harness
+only; the shipped policy still decides from the fair masked view), its
+IDLECMD offers and choices, and a classification of every bot turn 1–5
+that produced neither a face-up body nor an attack.
+
+Deck facts (v2/data.json, recipe_gg.txt): the GG main deck has 18
+monsters, of which only 4 are level ≤4 (メデューサ・ワーム ×1,
+沼地の魔道王 ×3 — all ATK 500), 3 are level 5 (シャドウ・グール) and 11
+are level 7+ needing two tributes or a cheat-out. Its real early game
+is: 迷宮の重魔戦車 (no-tribute summon, cannot attack the turn it is
+summoned), 融合派兵, Wall Shadow ② / Heavy Tank ③ piece placement, and
+シャドウ・グール. A no-monster opening hand is common (seed 91035's
+opener was six spells/traps); turns with literally nothing summonable
+offered are the deck, not the bot.
+
+Classification (bot turns 1–5, 12 duels), before → after fixes:
+OFFERED_BUT_NO_BODY 17 → 9, NOTHING_OFFERED 4 → 8. The residual
+no-body turns after the fixes are mostly placement turns (the deck's
+setup line) or genuinely empty offers.
+
+### Defects found and fixed (all in v2/engine.js, bot policy only)
+
+1. **Wall Shadow ② never fired.** `activationScore`'s first
+   `case CC.WALL_SHADOW` matched every activation entry for the card —
+   including the face-up field spell's own piece-placement effect —
+   and returned `fieldUp ? 0 : 1050`, so the placement scored 0 at
+   every traced prompt. A second, correct case existed later in the
+   switch but was unreachable (first match wins). Fix: SZONE entries
+   route to a new `guardianPlaceScore()`; hand entries keep the
+   field-activation score; the HEAVY_TANK case uses the same helper.
+2. **Tribute sets liquidated the board (largest effect).**
+   `pickSummon`'s set branch compared only the set card's own value
+   while the core charges SELECT_TRIBUTE for level 5+ sets. Measured:
+   Suijin set tributing a face-up 2400 Tank plus Swamp King; Sanga set
+   tributing Tank plus a face-down Kazejin — the bot repeatedly
+   destroyed its only attackers to set a wall. Fix: the set branch now
+   charges tributes exactly like the summon branch (Heavy Tank = 0
+   tributes) before comparing gains.
+3. **SELECT_CARD retry-loop stall (shared policy code, Ishizu seat).**
+   After Castel's Xyz summon, the same-turn detach prompt (OVERLAY
+   candidates, min = max = 1) matched the pendingSummon Xyz-material
+   branch, which answered 2 picks → rejected → deterministic retry
+   loop → driver abort (seed 91063: 13 retries, duel lost). Fix: that
+   branch now requires min ≥ 2 and all-MZONE candidates, and clamps
+   the pick count to the prompt's max.
+4. **Placement picks duplicated pieces.** The deck-search selection
+   branch (which captures all-DECK candidate lists before any later
+   branch) ranked placement candidates by hand value, so Wall Shadow
+   placed Sanga, then Sanga again, while Kazejin/Suijin sat in the
+   deck. Fix: a dedicated placement branch for the WALL_SHADOW /
+   HEAVY_TANK contexts, placed *before* the deck-search branch,
+   prefers a piece name not already face-up on our field, deck copies
+   before hand copies.
+   Also in `pickSpsummon`: face-up S/T-zone pieces now count as field
+   materials in the fusion valuation (previously monster-zone only).
+
+### Finding: contact fusions are never offered in this build
+
+With all three distinct pieces face-up in the S/T zone, across dozens
+of MAIN1 IDLECMDs the core offered no special summon at all; a control
+rig with two distinct pieces face-up in the *monster* zone was
+likewise never offered the two-piece fusion. The shipped card scripts
+are byte-identical to the edo repo's, so this is core/script-stack
+behaviour, outside the bot policy: the bot cannot take a summon the
+core never offers. Consequences: fix (4)'s S/T-zone material
+accounting is correct-by-text but currently inert for the two-piece
+fusions, and the deck's working boss routes in this build are
+ダーク・エレメント and 闇の守護神－ダーク・ガーディアン's procedure.
+Worth a separate engine-side investigation.
+
+### Measured (test-cpu-tune.js, same 12 seeds, before → after)
+
+- Duels completed: 11/12 (seed 91063 aborted on defect 3) → **12/12**,
+  MSG_RETRY 0.
+- GG attack by bot turn 5: 9/12 (75%) → **10/12 (83%)**.
+- Attacked at all during the duel: → **12/12**; average first-attack
+  bot turn 4.64 → **3.25**.
+- Face-up summon at all: 12/12 → 12/12; average first-face-up turn
+  1.42 → 2.08 (slightly later on average: the bot now builds the
+  placement line and no longer throws bodies away as set fodder —
+  attacks, the metric that matters, start earlier).
+- GG wins in the sample: 7/12 after the fixes.
+
+### Re-verification
+
+- test-cpu.js mirror suite: new policy **40–0** vs the old policy
+  (CPU-phase baseline was 37–3), MSG_RETRY 0, activity per duel
+  6.40 summons / 5.33 attacks / 6.78 activations.
+- Stall hunt: 20 fresh-seed matchup duels (seeds 31000+i·13), 20/20
+  completed, 0 retries.
+- Regression: test-node / test-explore / test-genesis / test-overlay /
+  test-facedown / test-layout / test-ui all pass, MSG_RETRY 0.
+- Harness note (not policy): the Duel driver's `botAnswerer` must be
+  synchronous, as in every shipped harness — an async one feeds
+  promises to the core as responses and every duel stalls at the first
+  SELECT_CHAIN.
 
 ## Known gaps for later phases
 - CPU intelligence: DONE in the CPU phase (see "CPU phase" above) —
