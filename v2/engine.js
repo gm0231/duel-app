@@ -40,6 +40,35 @@ const RACES = [[0x1,'戦士'],[0x2,'魔法使い'],[0x4,'天使'],[0x8,'悪魔']
   [0x10000,'恐竜'],[0x20000,'魚'],[0x40000,'海竜'],[0x80000,'爬虫類'],[0x100000,'サイキック'],[0x200000,'幻神獣'],
   [0x400000,'創造神'],[0x800000,'幻竜'],[0x1000000,'サイバース'],[0x2000000,'幻想魔族']];
 
+// ---------------------------------------------------------------- shuffling
+// The core deals each deck in the EXACT order the cards were registered
+// (last registered = top of the deck); shuffling before registration is the
+// client's job, as in the ygopro family. The data bundle stores deck lists
+// grouped by card type (monsters first, then spells, then traps), so without
+// a shuffle every duel would deal the same spell/trap-heavy opening hand and
+// the monsters only near deck-out (verified empirically: identical draw
+// sequences across seeds before this was added).
+function randBelow(n) {
+  const c = (typeof globalThis !== 'undefined' && globalThis.crypto &&
+             typeof globalThis.crypto.getRandomValues === 'function') ? globalThis.crypto : null;
+  if (c) { // unbiased via rejection sampling on a u32
+    const limit = Math.floor(4294967296 / n) * n;
+    const buf = new Uint32Array(1);
+    let x;
+    do { c.getRandomValues(buf); x = buf[0]; } while (x >= limit);
+    return x % n;
+  }
+  return Math.floor(Math.random() * n);
+}
+function shuffledCopy(arr) { // Fisher-Yates on a copy; the input is not mutated
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = randBelow(i + 1);
+    const t = a[i]; a[i] = a[j]; a[j] = t;
+  }
+  return a;
+}
+
 // ---------------------------------------------------------------- byte IO
 class Reader {
   constructor(buf, off) { this.b = buf; this.o = off || 0; }
@@ -756,8 +785,12 @@ class Duel {
     }
     log('global scripts: ' + (GLOBALS_ORDER.length - globalFails) + '/' + GLOBALS_ORDER.length + ' ok');
     const addDeck = (team, deck) => {
-      deck.main.forEach((code, i) => ccall('poc_new_card', null, ['number','number','number','number','number','number','number','number'], [duel, team, 0, code, team, LOC.DECK, i, 1]));
-      deck.extra.forEach((code, i) => ccall('poc_new_card', null, ['number','number','number','number','number','number','number','number'], [duel, team, 0, code, team, LOC.EXTRA, i, 1]));
+      // Shuffle fresh copies per duel (see "shuffling" note above): the core
+      // deals the registered order verbatim, so registration order must
+      // already be random. Copies keep data.decks pristine for rematches.
+      const main = shuffledCopy(deck.main), extra = shuffledCopy(deck.extra);
+      main.forEach((code, i) => ccall('poc_new_card', null, ['number','number','number','number','number','number','number','number'], [duel, team, 0, code, team, LOC.DECK, i, 1]));
+      extra.forEach((code, i) => ccall('poc_new_card', null, ['number','number','number','number','number','number','number','number'], [duel, team, 0, code, team, LOC.EXTRA, i, 1]));
     };
     addDeck(0, this.deckP0);
     addDeck(1, this.deckP1);
@@ -885,6 +918,7 @@ class Duel {
 const Engine = { MSG, SELECT_TYPES, PHASES, LOC, POS, POS_FACEUP, POS_ATTACK, POS_DEFENSE, FLAGS_MR5,
   ATTRIBUTES, RACES, Reader, splitMessages, i32resp, cancelResp, cardsResp, cmdResp, placeResp,
   counterResp, sortResp, unselectToggleResp, u64resp, parsePrompt, sumSelectionValid, isDeclarable,
+  shuffledCopy, randBelow,
   GameState, botAnswer, makeBotMemory, Duel };
 if (typeof module !== 'undefined') module.exports = Engine;
 else global.Engine = Engine;

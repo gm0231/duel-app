@@ -231,6 +231,24 @@ function phaseJa(n) {
   return { DRAW: 'ドロー', STANDBY: 'スタンバイ', MAIN1: 'メイン1', BATTLE_START: 'バトル開始', BATTLE_STEP: 'バトルステップ',
     DAMAGE: 'ダメージ計算前', DAMAGE_CAL: 'ダメージ計算時', BATTLE: 'バトル', MAIN2: 'メイン2', END: 'エンド' }[n] || n;
 }
+// Confirmation prompts (chain / effect-yes-no) recur at MANY timings with
+// the same candidate set — a set quick-play spell is re-offered at every
+// phase boundary of the opponent's turn (measured in Node: 170+ prompts in
+// one duel, nearly all with identical candidates). Each one IS a new
+// timing: passing (SELECT_CHAIN i32 -1 / EFFECTYN i32 0) is always accepted
+// (0 MSG_RETRY) and really advances the game — but a byte-identical dock
+// made it look stuck. So every shown confirmation now carries the turn
+// owner + phase and a per-turn sequence number that increments per prompt.
+let confirmTurn = -1, confirmSeq = 0;
+function timingText(state) {
+  const ph = state.phaseName ? '・' + phaseJa(state.phaseName) : '';
+  return (state.turnPlayer === HP ? '自分のターン' : '相手のターン') + ph;
+}
+function confirmTag(state) { // call ONCE per shown prompt, never per redraw
+  if (state.turnCount !== confirmTurn) { confirmTurn = state.turnCount; confirmSeq = 0; }
+  confirmSeq++;
+  return '（このターン' + confirmSeq + '回目の確認）';
+}
 
 // ---------------------------------------------------------------- prompt UI
 function sheetOpen(html) { $('sheet').innerHTML = html; $('sheetwrap').className = 'on'; }
@@ -417,11 +435,13 @@ function uiChain(prompt, state) {
   if (!prompt.forced && visibleIdx().length === 0) { // nothing chainable (or all chain-dismissed): auto-pass, no dock
     const cp = currentPrompt; currentPrompt = null; cp.resolve(E.i32resp(-1)); return;
   }
+  const tag = confirmTag(state); // this prompt's sequence label (see timing note)
+  let firstDraw = true;
   const draw = () => {
     const top = state.chain[state.chain.length - 1];
     $('dock').innerHTML =
       '<div class="ttl">チェーン応答</div>' +
-      '<div class="ctx">' + (top ? 'チェーン' + state.chain.length + '：' + cardName(top.code) + ' への応答' : '効果への応答') + (prompt.forced ? '（発動必須）' : '') + '</div>' +
+      '<div class="ctx">' + timingText(state) + '｜' + (top ? 'チェーン' + state.chain.length + '：' + cardName(top.code) + ' への応答' : '効果への応答') + (prompt.forced ? '（発動必須）' : '') + tag + '</div>' +
       retryWarn(prompt) +
       '<div class="cands">' + prompt.entries.map((e, i) => {
         if (dismissedDuel.has(chainKey(e))) return ''; // duel-dismissed: hidden here, managed in the section below
@@ -438,7 +458,11 @@ function uiChain(prompt, state) {
           dd.map(e => '<button data-undismiss="' + chainKey(e) + '">' + cardName(e.code) + ' を解除</button>').join('') + '</div>';
       })() +
       '<div class="row">' + (prompt.forced ? '' : '<button class="bigbtn" id="chain-pass">パス</button>') + '</div>';
-    $('dock').className = 'on';
+    $('dock').className = 'on'; // exact class is a contract (tests/tools match on it) — do not append state classes here
+    if (firstDraw && $('dock').animate) { // a NEW prompt visibly arrives, even if its text matches the previous one
+      try { $('dock').animate([{ transform: 'translateY(14px)', opacity: .25 }, { transform: 'none', opacity: 1 }], { duration: 300, easing: 'ease-out' }); } catch (e) {}
+    }
+    firstDraw = false;
     $('dock').querySelectorAll('[data-chain]').forEach(c => c.addEventListener('click', (ev) => {
       if (ev.target.dataset.dismiss != null || ev.target.dataset.dueldismiss != null) return;
       if (dismissedChains.has(chainKey(prompt.entries[+c.dataset.chain]))) return; // chain-dismissed: un-dismiss via × first
@@ -619,6 +643,7 @@ function uiSort(prompt, state) {
 function uiYesNo(prompt, state) {
   const isEff = prompt.name === 'SELECT_EFFECTYN';
   sheetOpen('<div class="ttl">' + (isEff ? cardName(prompt.code) + ' の効果' : '確認') + '</div>' +
+    '<div class="ctx">' + timingText(state) + confirmTag(state) + '</div>' +
     '<div class="sub">' + (isEff ? locLabel(prompt) + ' の効果を発動しますか？' : '選択してください') + '</div>' + (isEff ? '' : contextLineHTML(prompt)) + retryWarn(prompt) +
     '<button class="optbtn" id="yn-yes">' + (isEff ? '発動する' : 'はい') + '</button>' +
     '<button class="optbtn" id="yn-no">' + (isEff ? '発動しない' : 'いいえ') + '</button>');
@@ -766,6 +791,7 @@ function wireSeg(id, apply) {
     const deckP1 = DATA.decks[humanFirst ? opDeckKey : myDeckKey];
     dismissedChains = new Set();
     dismissedDuel = new Map();
+    confirmTurn = -1; confirmSeq = 0; // per-turn confirmation counter restarts with the duel
     updateAutoPassChip();
     setBgmScene('neutral', true);
     $('start').style.display = 'none';
