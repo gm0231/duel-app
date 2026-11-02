@@ -2023,15 +2023,114 @@ test-layout, test-genesis, test-overlay, test-facedown, test-ggfusion,
 test-swap, test-investigate, test-cpu, test-cpu-tune, test-cpu-tune2,
 test-bgm.
 
+## FX round A — presentation grammar foundation (branch feat/fx-round-a, 2026-11-03)
+
+Implements part 1 of the approved presentation
+(goals/simple-phone-duel-app/files/v2_presentation_effects.md +
+supplement A/B) as a READ-ONLY overlay layer. Nothing here touches
+the engine, prompts, sounds, or layout: all effects live in #fxlayer
+(absolutely positioned over #app, pointer-events:none, out of the
+in-flow stack, so the frozen applyLayout board cannot move and zone
+re-renders — slot DOM is rebuilt per batch — cannot kill an
+in-flight overlay). client.js onUpdate copies state.events BEFORE
+drainSeEvents consumes them, captures own-hand geometry pre-render
+(FLIP), renders, then fxProcess diffs consecutive state snapshots
+(zones / grave / removed / extra / deck counts / hand / phase
+family) and spawns overlays from painted rects — the same rect
+discipline as the layout fit loop. The processor is try/catch
+wrapped; window.__fx.error must stay null (a presentation bug can
+never break a duel) and window.__fx.log records every spawn for
+tests.
+
+Grammar as implemented:
+- Summon portals (3-1): the destination zone glows first, then a
+  method portal — fusion = segmented blue-violet conic vortex with
+  a counter-rotating inner ring; Xyz = cyan galaxy ring with star
+  dots; Synchro = green ring that converges (scale 1.7 -> 1);
+  ritual/other special summons = soft gold portal over the zone
+  glow. (The task brief grouped "other special summons" as zone
+  light; presentation 3-1 names the synchro ring explicitly, so
+  synchro keeps its ring.) Fusion/Xyz materials glow red, shrink
+  and converge into the summon point before the portal peaks.
+  Normal summons and sets get only a 430ms placement puff — the
+  pace never stops for them.
+- Xyz materials (3-2): tiles with materials gain stacked inset
+  edges (.mats1/.mats2) on top of the existing xN badge. A detach
+  (material count drops in place) peels one layer off the tile;
+  an attach pulses the zone glow.
+- Movement grammar (3-5 + supplement A): the DESTINATION is what
+  reads. Field/hand -> grave, removed, extra deck: a card ghost
+  flies there and the pile flashes on landing (pile counts tick
+  with a flash too). Revival / return from grave or banished: NO
+  flight — the zone lights and the card appears inside a gold
+  revive portal. Deck returns vanish in place (no flight, no
+  shuffle show). Control changes slide across the board, swelling
+  slightly mid-way. Draws/searches fly deck-or-pile -> hand;
+  opponent draws fly as card backs. Own-hand gains/losses settle
+  with a FLIP slide (survivors glide to their new spots, 280ms).
+- Phase banner (3-8): family changes (draw/standby/main1/battle/
+  main2/end) sweep a translucent band across mid-field for ~0.8s;
+  the battle family is red-tinted. Damage-step sub-phases fold
+  into the battle family so the banner cannot strobe.
+- Stat changes (3-7): when a standing monster's live ATK/DEF
+  moves, its outside strip flashes once. In the detail preview,
+  values differing from the printed ones are tinted light blue
+  (.pv-stats .mod) — only the changed value.
+- Counters (3-7): tileHTML renders one icon+number badge (.ctrs)
+  when a mirror entry carries counters. STATED GAP: the 63-card
+  pool has NO counter-using card and the mirror does not track
+  counters, so this is a render hook with no live case today; it
+  activates unchanged if such a card joins the pool.
+- Result screen (part 1 item 5): the existing overlay (winner,
+  win reason in words, turns, final LP, もう一度) already matched
+  the grammar; left as-is here, round B adds the finisher wash.
+
+Screenshot review caught a real bug the rect math could not: the
+first 390x620 fusion capture showed the portal half a size
+up-left of the summoned monster and reading as a soft disc —
+.fx-portal carried a CSS translate(-50%,-50%) on top of fxNode's
+rect centering (double centering), and the fusion ring's mask
+ramp (32%->68%) was too soft to read as a vortex. Fixed (portal
+scale-in + segmented vortex blades + counter-rotating inner
+ring; duplicate fxspinrev keyframes removed) and re-shot: the
+vortex now sits exactly on the summoned Gate Guardian at both
+390x620 and 390x700, ATK/DEF strips fully readable everywhere.
+
+Verification: test-fx.js (new) — Part 1 drives __fx.process with
+synthetic state pairs and asserts every grammar deterministically
+(fusion/xyz/synchro portals, convergence x2, peel, grave flight,
+destroy flash, revive-without-flight, phase banner, stat flash,
+control slide, deck-return vanish, draw flight, normal-summon
+puff, fxError null); Part 2 plays two full clicked duels (live
+tallies: flights 34, phase banners 84, placements 18, portals 7
+across the pair) and asserts duels complete with fxError null.
+Full suite green on the merged tree (test-phase2's known sampling
+flake failed once inside the batch run and passed twice
+standalone, same as on main). Screenshots (agent-viewed):
+~/workspace/duel-app-fx/shots/h620-mix/ and .../h700-mix/
+(fx-portal-fusion.png, fx-phase-banner.png, fx-flight.png,
+fx-portal-generic.png, 99-end.png).
+
+Known limits after round A: overlays are timed to the batch that
+commits the state; when a summon and its materials' departure
+share one batch the converge->portal sequence is staged with
+delays to stay readable. Revival portals and Xyz/Synchro portals
+are covered synthetically; the two live clicker duels happened to
+produce fusion + generic portals only. Attack lines, chain pops,
+ace cut-ins, defense rotation, set-flip presentation and the
+settings toggles are round B.
+
 ## Known gaps for later phases
 - CPU intelligence: DONE in the CPU phase (see "CPU phase" above) —
   player 1 is now a heuristic policy (fair-view masked, per-card
   gates for the 63-card pool). It is a baseline, not an expert:
   long-game resource races with the Gate Guardian seat are its
   measured weak spot.
-- Effects/presentation polish: no summon/attack animations, no target lines,
-  no damage numbers; chain links are text chips. (Printed-only ATK/DEF was
-  fixed in Phase 2 — board values are live from the core query.)
+- Effects/presentation polish: summon/movement/phase presentation landed
+  in FX round A (see "FX round A" above); attack lines, chain pops and
+  ace cut-ins are FX round B. No damage numbers (deliberate — MD-style
+  grammar shows no formula). (Printed-only ATK/DEF was fixed in Phase 2
+  — board values are live from the core query.)
 - SELECT_OPTION buttons are numbered placeholders — the core sends string
   table IDs (descriptions); a strings table is needed to label them.
 - Genesis point limits: NOT applied — the format restrictions (no
