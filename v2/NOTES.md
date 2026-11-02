@@ -1924,25 +1924,37 @@ substituted.
   OFF pauses and ON resumes the current scene/track, switching is the
   same src-swap on a single Audio element.
 
-### Key cards (KEYCARD_CODES in client.js)
+### Key cards (KEYCARD_CODES / KEYCARD_ACTIVATE_CODES in client.js)
 Derived from v2/data.json deck lists; criterion = each deck's boss
-class (its highest-level / highest-ATK monsters, the ones MD's
-"key card" BGM stage exists for):
+class (the cards MD's "key card" BGM stage exists for). FINAL FORM
+(user revision 2026-11-03, branch feat/bgm-keycards-2): 10 cards,
+five per deck.
+Summon trigger (KEYCARD_CODES):
 - GG deck, extra: 8505920 合体魔神－ゲート・ガーディアン (Lv12/3750),
   97783338 水雷魔神－ゲート・ガーディアン (Lv9/2550),
   34904525 雷風魔神－ゲート・ガーディアン (Lv9/2500),
   61398234 風水魔神－ゲート・ガーディアン (Lv9/2450)
 - GG deck, main: 26746975 闇の守護神－ダーク・ガーディアン (Lv12/3800,
   the main deck's top monster)
-- Ishizu deck, extra: 45409943 宵闇のルーチェ (Lv8/3500),
-  63101468 マスターフレア・ヒュペリオン (Lv10/3200)
-Borderline candidates deliberately NOT included (left as a decision
-for the parent/user, not silently decided here): 46148485 転輪の
-スフィンクス (Ishizu main, Lv8/2500 — the main deck's biggest monster
-but a tier below the rest), the Gate Guardian pieces 25955164 サンガ /
-62340868 ヒューガ / 98434877 スーガ (Lv7 parts, not the combined
-bosses), 99551425 迷宮の魔戦車 (Lv7 fusion), 37706769 冥府の執行者
-プルート (Lv5). Adding any of them is a one-line Set change.
+- Ishizu deck: 45409943 宵闇のルーチェ (Lv8/3500, extra),
+  46148485 転輪のスフィンクス (Lv8/2500, main — first kept as a
+  borderline candidate, then INCLUDED by the user's revision),
+  36898537 メタファイズ・ホルス・ドラゴン (Lv10/2800, extra — the
+  "ホルス" the Ishizu extra runs two of)
+Activation trigger (KEYCARD_ACTIVATE_CODES) — traps have no summon,
+so these latch when ACTIVATED (user decision 2026-11-03, "イシズ
+少なすぎない？" — the first list had only two Ishizu cards):
+- Ishizu deck: 98715423 墓守の罠 (permanent trap; stays face-up once
+  flipped), 17484499 現世と冥界の逆転 (the deck's signature reversal)
+REMOVED by the user's decision (2026-11-03): 63101468 マスター
+フレア・ヒュペリオン (Lv10/3200) was in the first list and was taken
+OUT — it must not trigger the stage (asserted in test-bgm BGM-21).
+Borderline candidates still NOT included (the remaining three, left
+as a decision for the parent/user): the Gate Guardian pieces
+25955164 サンガ / 62340868 ヒューガ / 98434877 スーガ (Lv7 parts, not
+the combined bosses), 99551425 迷宮の魔戦車 (Lv7 fusion), 37706769
+冥府の執行者プルート (Lv5). Adding any of them is a one-line Set
+change.
 
 ### Trigger implementation
 Two paths, both feeding the per-duel latch `bgmWantedRank`:
@@ -1952,11 +1964,20 @@ Two paths, both feeding the per-duel latch `bgmWantedRank`:
    before draining the queue, so `noteBgmEvent` latches a key card the
    moment it is summoned, even if it leaves the field before the next
    render. Either player counts (con is not filtered).
+   The two key TRAPS ride the same path on a different event kind:
+   MSG_CHAINING pushes `{kind: 'activate', code, con, loc}` (engine.js
+   case 70, line ~735), so an activation carries its code the same
+   way, and `noteBgmEvent` latches on `activate` for
+   KEYCARD_ACTIVATE_CODES. (Grounds for choosing the event route over
+   a state diff: the code IS on the event.)
 2. Field scan — updateBgm (called on every onUpdate) checks both
    players' LP (Climax) and scans both mzones for key-card codes not
    yet seen this duel (Keycard). This covers a key card that reaches
    the field without a summon event passing the queue (revival edge
-   cases, control changes).
+   cases, control changes). The scan also covers the key traps: a
+   trap FACE-UP in either szone has been activated (the permanent
+   墓守の罠 stays face-up after its flip), while a merely SET
+   (face-down) trap has not and is excluded by the face-up test.
 The actual track switch happens only in updateBgm, after the
 currentPrompt guard, from the latched rank — so a stage-up demanded
 during a prompt is deferred, never dropped.
@@ -1982,6 +2003,25 @@ test-genesis, test-overlay, test-facedown, test-ggfusion, test-swap,
 test-investigate, test-cpu, test-cpu-tune, test-cpu-tune2, test-bgm.
 NOT verified: how any of this SOUNDS — jsdom/Node cannot play audio;
 stage timing and track feel are for the user's ears on the real app.
+
+Revision (branch feat/bgm-keycards-2, 2026-11-03): the key list was
+revised to the final 10 above — two Ishizu traps added on the
+ACTIVATION trigger, スフィンクス and メタファイズ・ホルス・ドラゴン
+added on the summon trigger, ヒュペリオン removed (all user
+decisions). test-bgm grew from 17 to 26 checks (BGM-17..25): human
+activation of 墓守の罠 latches then applies at the next update; a
+non-key trap activation (40605147 神の通告) is ignored; opponent
+activation of 現世と冥界の逆転 climbs; ヒュペリオン no longer
+triggers; ホルス and スフィンクス climb from the field scan; a SET
+(face-down) 墓守の罠 does not trigger while the same trap face-up
+does. ALL BGM CHECKS PASSED. The __bgm test surface gained a
+`note(ev)` driver (the same noteBgmEvent the drain loop calls) so the
+event path is exercised directly, not only via field scans.
+Regression on this branch (all PASS, exit 0, no FAIL lines):
+test-node, test-explore, test-phase2 (first run again), test-ui,
+test-layout, test-genesis, test-overlay, test-facedown, test-ggfusion,
+test-swap, test-investigate, test-cpu, test-cpu-tune, test-cpu-tune2,
+test-bgm.
 
 ## Known gaps for later phases
 - CPU intelligence: DONE in the CPU phase (see "CPU phase" above) —

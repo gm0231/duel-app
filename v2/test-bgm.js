@@ -5,8 +5,13 @@
    and never comes back down. Each stage owns a 2-track pool, picked at
    random; stage tracks do not loop — on 'ended' the next pick from the
    same stage excludes the track that just finished. Keycard trigger =
-   either player summons a key card; Climax trigger = either LP <= 2000.
+   either player summons a key card, or activates a key TRAP (traps
+   fire on activation, not summon); Climax trigger = either LP <= 2000.
    Result: win = pyramid track, loss = a Climax-pool draw.
+   The key list was revised by the user on 2026-11-03 (10 cards, five
+   per deck): two Ishizu traps added on the activation trigger, Sphinx
+   and Metaphys Horus added on the summon trigger, and Masterflare
+   Hyperion REMOVED — its non-triggering is asserted below.
 
    Randomness is made deterministic by replacing window.Math.random with
    a seeded LCG before any interaction. Assertions therefore check pool
@@ -88,9 +93,12 @@ async function boot() {
 }
 
 const EMPTY = () => [null, null, null, null, null];
-const mkState = (lp0, lp1, mz0, mz1) => ({
+const mkState = (lp0, lp1, mz0, mz1, sz0, sz1) => ({
   winner: null,
-  players: [{ lp: lp0, mzone: mz0 || EMPTY() }, { lp: lp1, mzone: mz1 || EMPTY() }],
+  players: [
+    { lp: lp0, mzone: mz0 || EMPTY(), szone: sz0 || EMPTY() },
+    { lp: lp1, mzone: mz1 || EMPTY(), szone: sz1 || EMPTY() },
+  ],
 });
 
 (async () => {
@@ -163,6 +171,89 @@ const mkState = (lp0, lp1, mz0, mz1) => ({
     B.sceneTo('lose');
     ok(B.scene === 'climax' && inPool('climax', B.file) && bgmEl().loop === false,
       'BGM-16: a loss draws from the Climax pool (' + B.file + ')');
+    window.close();
+  }
+
+  // -------- boot 3: key-trap activation events (human side) --------
+  {
+    const { window } = await boot();
+    const B = window.__bgm;
+    const plain = mkState(8000, 8000);
+    B.sceneTo('normal');
+    // 98715423 = 墓守の罠 (Gravekeeper's Trap). A trap has no summon;
+    // its ACTIVATION is the trigger. __bgm.note is the same
+    // noteBgmEvent the drain loop calls for every engine event.
+    B.note({ kind: 'activate', code: 98715423, con: 0 });
+    ok(B.wantedRank === 1 && B.scene === 'normal',
+      'BGM-17: activating Gravekeeper Trap (98715423) latches Keycard without switching mid-beat (wanted=' + B.wantedRank + ')');
+    B.update(plain);
+    ok(B.scene === 'keycard' && inPool('keycard', B.file),
+      'BGM-18: the next update applies the activation latch -> Keycard (' + B.file + ')');
+    window.close();
+  }
+
+  // -------- boot 4: non-key trap ignored; key trap 2 (opponent) ----
+  {
+    const { window } = await boot();
+    const B = window.__bgm;
+    const plain = mkState(8000, 8000);
+    B.sceneTo('normal');
+    // 40605147 = 神の通告 — a strong trap, but NOT a key card.
+    B.note({ kind: 'activate', code: 40605147, con: 1 });
+    B.update(plain);
+    ok(B.scene === 'normal' && B.wantedRank === -1,
+      'BGM-19: a non-key trap activation (40605147) changes nothing');
+    // 17484499 = 現世と冥界の逆転 (Exchange of the Spirit), opponent's.
+    B.note({ kind: 'activate', code: 17484499, con: 1 });
+    B.update(plain);
+    ok(B.scene === 'keycard' && B.wantedRank === 1 && inPool('keycard', B.file),
+      'BGM-20: the opponent activating Exchange of the Spirit climbs to Keycard (' + B.file + ')');
+    window.close();
+  }
+
+  // ------- boot 5: list revision — Hyperion out, Horus in ----------
+  {
+    const { window } = await boot();
+    const B = window.__bgm;
+    B.sceneTo('normal');
+    // 63101468 = マスターフレア・ヒュペリオン was in the first key
+    // list and was REMOVED by the user's decision (2026-11-03).
+    B.update(mkState(8000, 8000, [{ code: 63101468 }, null, null, null, null]));
+    ok(B.scene === 'normal' && B.wantedRank === -1,
+      'BGM-21: Masterflare Hyperion (63101468, removed by user decision) no longer triggers Keycard');
+    // 36898537 = メタファイズ・ホルス・ドラゴン (Ishizu extra) is in.
+    B.update(mkState(8000, 8000, EMPTY(), [{ code: 36898537 }, null, null, null, null]));
+    ok(B.scene === 'keycard' && B.wantedRank === 1,
+      'BGM-22: Metaphys Horus Dragon (36898537) on the opponent field climbs to Keycard');
+    window.close();
+  }
+
+  // ------- boot 6: list revision — Sphinx in (field scan) ----------
+  {
+    const { window } = await boot();
+    const B = window.__bgm;
+    B.sceneTo('normal');
+    // 46148485 = 転輪のスフィンクス (Ishizu main) is in.
+    B.update(mkState(8000, 8000, [{ code: 46148485 }, null, null, null, null]));
+    ok(B.scene === 'keycard' && B.wantedRank === 1,
+      'BGM-23: Tenrin no Sphinx (46148485) on the field climbs to Keycard');
+    window.close();
+  }
+
+  // ------- boot 7: field scan of traps — set is not activation -----
+  {
+    const { window } = await boot();
+    const B = window.__bgm;
+    B.sceneTo('normal');
+    // pos 0x8 = face-down defense (a set trap), 0x4 = face-up defense.
+    B.update(mkState(8000, 8000, EMPTY(), EMPTY(),
+      EMPTY(), [{ code: 98715423, pos: 0x8 }, null, null, null, null]));
+    ok(B.scene === 'normal' && B.wantedRank === -1,
+      'BGM-24: a merely SET Gravekeeper Trap (face-down) does not trigger Keycard');
+    B.update(mkState(8000, 8000, EMPTY(), EMPTY(),
+      EMPTY(), [{ code: 98715423, pos: 0x4 }, null, null, null, null]));
+    ok(B.scene === 'keycard' && B.wantedRank === 1,
+      'BGM-25: the same trap FACE-UP in the opponent spell/trap zone climbs to Keycard');
     window.close();
   }
 
