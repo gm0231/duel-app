@@ -422,9 +422,10 @@ as a flag on its Synchro materials (an optional bonus effect if a
 Pendulum monster was used as material — impossible in this pool, and the
 card functions fully without it).
 
-Pre-existing issue found during verification (NOT caused by, and NOT
-fixed by, this change — flagged for a later fix round): the state
-mirror's Xyz-material accounting dips during inherent Xyz summons. Wire
+Pre-existing issue found during verification (NOT caused by this
+change; FIXED later in fix round 2 — see the "Fix round 2" section):
+the state mirror's Xyz-material accounting dips during inherent Xyz
+summons. Wire
 evidence: materials move to loc 0xc0 (EXTRA|OVERLAY) with seq = the
 host's Extra-Deck index while the host is still in the Extra Deck;
 `engine.js` `_insertAt` credits OVERLAY units only to a host already in
@@ -447,6 +448,108 @@ pass except the pre-existing intermittent B2 above, `test-ui.js`
 CHECKS PASSED (both runs reached the result screen; run 2 seat-swapped
 72 turns, deck-out; retry warning never shown, no stalls).
 
+## Fix round 2: Xyz overlay-material mirror accounting (branch client-fixes-2)
+
+The pre-existing issue flagged in the Genesis section is FIXED. Root
+cause, in two layers:
+
+1. Overlay units have no location of their own on the wire. A unit's
+   loc_info is (controller, host_location | LOCATION_OVERLAY, host_seq)
+   — it always names its host's CURRENT location, and when the host
+   changes location the core sends only the host's own MOVE (verified:
+   zero per-unit follow-up MOVEs across 40+ Xyz summons). The mirror
+   credited units only to a host already in `mzone[seq]`, so units
+   attached during an inherent Xyz summon (host still in the Extra
+   Deck) were dropped from all counts.
+2. The mirror's Extra-Deck order is deck-list order; the shuffle before
+   registration is never reported to the client, so the entry sitting
+   at the core's host index may carry a different code. Crediting by
+   index (correct) but removing the host by code (also correct) split
+   the count across two entries: the host left with 0 and the phantom
+   count stayed behind on an unrelated entry (observed: a Synchro
+   monster's Extra entry holding `materials: 2`, final total 60/58).
+
+Wire evidence (deterministic duels — seeded shuffle via a fake
+`crypto.getRandomValues`, fixed core seed; message indices from one
+such duel):
+- attach: `#73 MOVE material MZONE[3] -> EXTRA|OVL[4] reason=0x200008`
+  (seq = host's Extra-Deck index), one per material
+- host:   `#78 MOVE host EXTRA[4] -> MZONE[2] reason=0x800`, followed
+  by SPSUMMONING/SPSUMMONED; NO unit re-emission (0xc0 -> 0x84 count 0)
+- detach from a live field host: `MOVE unit MZONE|OVL[3] -> GRAVE
+  reason=0x80` (seq = host's zone)
+- host destroyed: `MOVE host MZONE[2] -> GRAVE reason=0x1a`, then each
+  unit `MOVE GRAVE|OVL[0] -> GRAVE reason=0x600` (seq = the host's
+  index in the graveyard — the unit encoding follows the host even
+  there)
+
+Fix (mirror layer only, `engine.js`; answers to the core untouched):
+- Extra-Deck entries now carry `materials`, and `_hostEntry()` resolves
+  an overlay loc_info against mzone OR extra by stripped base location
+  (other bases — grave/removed hosts — hold no count; the core releases
+  those units with their own MOVEs, counted at their destination).
+- A host's own MOVE carries its count to the destination entry
+  (mzone/extra). For Extra-Deck departures the count is claimed BY
+  INDEX from the entry at the core's seq before the host's entry is
+  removed by code — this is what keeps the count attached to the host
+  despite the unknowable Extra-Deck order.
+- `SHUFFLE_EXTRA` rebuilds preserve per-copy counts (matched by code);
+  `totalCards` counts units held by Extra-Deck hosts too.
+
+Verification — new `test-overlay.js` (deterministic; an independent
+per-host wire model rebuilt from MSG_MOVE alone is cross-checked
+against the mirror's per-entry `materials` at every prompt):
+- HUNTER batch (seat 0 forces Xyz lines, no spell activations): 8
+  duels, 15 Xyz summons, 30 attaches, 2 grave-releases — per-prompt
+  conservation EXACT per seat (0 violations; before the fix these same
+  duels produced 70–402 violations each and finals as low as 54/58),
+  wire model == mirror at every prompt, final totals 58/55 in all 8,
+  MSG_RETRY 0.
+- ACTIVATOR batch (Xyz effects activated; exploratory opponent): 6
+  duels, 10 summons, 10 detaches from live hosts, 10 grave-releases —
+  wire model == mirror at every prompt, combined conservation exact at
+  every prompt, final per-seat totals exact in all 6, MSG_RETRY 0.
+  Per-seat zone counts deviate mid-duel (1014 prompt observations) only
+  while a control-changing effect (Monster Reborn on the opponent's
+  graveyard, etc.) holds a card in the other seat's zones — a property
+  of the metric, not a miscount; the cards settle back to their
+  owner's piles and the finals are exact.
+- Full regression: `test-node.js` PASS (570 checks, 0 violations),
+  `test-explore.js` PASS, `test-overlay.js` ALL PASS, `test-genesis.js`
+  PASS (its metric counters still show deviations in some explore
+  duels — control changes per above, plus final-total anomalies that
+  reproduce identically on unmodified main; pre-existing, unrelated),
+  `test-phase2.js` — B2 result below, `test-ui.js` ALL UI CHECKS
+  PASSED (run 1: 62 turns, deck-out win; run 2 seat-swapped: 72 turns,
+  deck-out; retry warning never shown, no stalls).
+
+B2 determination (was suspected to share this root cause — it does
+NOT): B2 still fails intermittently after this fix, with an unchanged
+signature — mirror code exactly 0 on a main-deck monster, materials 0,
+no Xyz involved. Deterministic trace (seeded duel): the monster's
+MOVE into its zone carries the true code and the mirror records it;
+the following MSG_SPSUMMONING carries code 0 (the core zeroes the
+code for a face-down special summon) and `GameState.apply` case 62
+unconditionally overwrites the known code with 0; MSG_POS_CHANGE
+later carries the true code again but case 53 only fills the code
+when it is `null`, so 0 sticks. Two independent live signatures
+(Medusa Worm, Keldo the Sacred Statue; both `mirror=0, mats=0`).
+This is a separate mirror defect in the summoning/pos-change paths;
+it is NOT fixed by this branch (out of scope) and is recorded here
+for a later fix round.
+
+Adjacent findings from the reproduction work (not fixed here):
+- `botAnswer`'s SELECT_UNSELECT_CARD fallback toggles index 0
+  unconditionally; when the prompt is neither finishable nor
+  cancelable this ping-pongs forever (the stock bot never Xyz
+  summons, but an effect-driven unselect prompt to the bot seat
+  would hang a real duel). `test-overlay.js` uses a terminating
+  handler (finish once min are toggled on).
+- `test-genesis.js` explore duels occasionally end with combined
+  mirror totals ABOVE 113 (e.g. [64,63]) on unmodified main as well;
+  mechanism not identified — recorded as a pre-existing anomaly of
+  long exploratory duels, separate from the overlay accounting.
+
 ## Known gaps for later phases
 - CPU intelligence: player 1 is the PoC's minimal legal bot (summon a
   level ≤4, otherwise advance phases; always passes chains unless forced).
@@ -462,10 +565,11 @@ CHECKS PASSED (both runs reached the result screen; run 2 seat-swapped
   EMZ/PZONE, no first-turn draw, pool excludes Link/Pendulum) are in
   (see the Genesis section above), but per-card Genesis point costs and
   the 100-point deck budget are not enforced anywhere.
-- Xyz materials mirror accounting: overlay units attached during an
-  inherent Xyz summon are uncounted by the state mirror until they
-  detach (see the Genesis section for wire-level evidence). Display-side
-  only; core state is unaffected.
+- Xyz materials mirror accounting: FIXED in fix round 2 (see the
+  "Fix round 2" section above) — overlay units are tracked against
+  their host in the Extra Deck and on the field, through detach and
+  the host leaving the field. A separate code-0 SPSUMMONING mirror
+  defect (test-phase2 B2) remains open; see the same section.
 - Save/resume: none. Reloading restarts from the start screen.
 - Turn timer, surrender, side decking: none. (Deck and first/second choice
   were added in Phase 2.)

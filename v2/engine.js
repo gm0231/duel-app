@@ -406,7 +406,7 @@ class GameState {
       lp: 8000,
       hand: [],                       // [{code|null}]
       deckCount: deck.main.length,
-      extra: deck.extra.map(code => ({ code, pos: POS.FD_DEF })), // [{code, pos}]
+      extra: deck.extra.map(code => ({ code, pos: POS.FD_DEF, materials: 0 })), // [{code, pos, materials}]
       grave: [],                      // [code]
       removed: [],                    // [code]
       mzone: Array(7).fill(null),     // {code|null, pos, materials, curAtk?, curDef?}
@@ -449,11 +449,26 @@ class GameState {
   _pileInsert(arr, seq, entry) {
     if (seq >= 0 && seq <= arr.length) arr.splice(seq, 0, entry); else arr.push(entry);
   }
+  // Overlay units have no location of their own in the core's wire format:
+  // a unit's loc_info is (controller, host_location | OVERLAY, host_sequence)
+  // — it always names its HOST's current location, and when the host changes
+  // location the core sends only the host's own MOVE (no per-unit updates).
+  // The mirror therefore counts units on the host's entry: hosts live in
+  // mzone or extra entries (both carry a `materials` count). Hosts in piles
+  // without entries (grave/removed) hold no count: the core releases their
+  // units with separate MOVEs encoded against the host's new location, and
+  // those units are counted at their destination instead.
+  _hostEntry(p, li) {
+    const base = li.loc & ~LOC.OVERLAY;
+    if (base === LOC.MZONE) return p.mzone[li.seq] || null;
+    if (base === LOC.EXTRA) return p.extra[li.seq] || null;
+    return null;
+  }
   _removeAt(li, code) {
     const p = this.players[li.con]; if (!p) return;
     if (li.loc & LOC.OVERLAY) {
-      const host = p.mzone[li.seq];
-      if (host) host.materials = Math.max(0, host.materials - 1);
+      const host = this._hostEntry(p, li);
+      if (host) host.materials = Math.max(0, (host.materials || 0) - 1);
       return;
     }
     switch (li.loc) {
@@ -469,8 +484,8 @@ class GameState {
   _insertAt(li, code) {
     const p = this.players[li.con]; if (!p) return;
     if (li.loc & LOC.OVERLAY) {
-      const host = p.mzone[li.seq];
-      if (host) host.materials++;
+      const host = this._hostEntry(p, li);
+      if (host) host.materials = (host.materials || 0) + 1;
       return;
     }
     switch (li.loc) {
@@ -479,7 +494,7 @@ class GameState {
       case LOC.HAND: this._pileInsert(p.hand, li.seq, { code }); break;
       case LOC.GRAVE: this._pileInsert(p.grave, li.seq, code); break;
       case LOC.REMOVED: this._pileInsert(p.removed, li.seq, code); break;
-      case LOC.EXTRA: this._pileInsert(p.extra, li.seq, { code, pos: li.pos }); break;
+      case LOC.EXTRA: this._pileInsert(p.extra, li.seq, { code, pos: li.pos, materials: 0 }); break;
       case LOC.DECK: p.deckCount++; break;
     }
   }
@@ -496,8 +511,35 @@ class GameState {
       case 50: { // MOVE: code, from loc_info, to loc_info, reason
         const code = r.u32(); const from = r.locInfo(); const to = r.locInfo(); const reason = r.u32();
         if (code !== 0) { // code 0 = deck-internal reorder noise
+          // If the moving card is itself an Xyz host, its overlay count rides
+          // on its mirror entry and must follow it to the new location: the
+          // core sends no per-unit MOVEs when a host changes location (unit
+          // loc_infos silently re-encode against the host's new location).
+          // Hosts landing in entry-less piles (grave/removed) drop the count
+          // here; the core then releases each unit with its own MOVE, which
+          // counts it at its destination.
+          let carry = 0;
+          const fp = this.players[from.con];
+          if (fp && !(from.loc & LOC.OVERLAY)) {
+            if (from.loc === LOC.MZONE && fp.mzone[from.seq]) carry = fp.mzone[from.seq].materials || 0;
+            else if (from.loc === LOC.EXTRA && fp.extra[from.seq]) {
+              // The core's seq is authoritative for where the host sat. The
+              // mirror's extra order is deck-list order (the pre-registration
+              // shuffle is never reported to the client), so the entry at seq
+              // may show a different code — but any units credited to that
+              // index were credited for this host, so claim them here;
+              // _removeAt below removes the host's own entry by code.
+              carry = fp.extra[from.seq].materials || 0;
+              fp.extra[from.seq].materials = 0;
+            }
+          }
           this._removeAt(from, code);
           if (to.loc !== 0) this._insertAt(to, code);
+          if (carry && !(to.loc & LOC.OVERLAY)) {
+            const tp = this.players[to.con];
+            if (tp && to.loc === LOC.MZONE && tp.mzone[to.seq]) tp.mzone[to.seq].materials = carry;
+            else if (tp && to.loc === LOC.EXTRA) { const e = tp.extra[to.seq]; if (e && e.code === code) e.materials = carry; }
+          }
           const nm = this.nameOf(code);
           // Every change to a hand must be explained in the log (Phase 2 requirement).
           if (from.loc === LOC.HAND && to.loc !== LOC.HAND && to.loc !== LOC.MZONE && to.loc !== LOC.SZONE) {
@@ -535,7 +577,17 @@ class GameState {
       }
       case 39: { // SHUFFLE_EXTRA: player, count u32, codes
         const p = r.u8(); const n = r.u32(); const extra = [];
-        for (let i = 0; i < n; i++) extra.push({ code: r.u32(), pos: POS.FD_DEF });
+        const prev = this.players[p].extra;
+        const used = new Array(prev.length).fill(false);
+        for (let i = 0; i < n; i++) {
+          const code = r.u32();
+          // Preserve per-copy overlay counts across the reorder (matched by
+          // code, first unused copy first); counts are 0 except for a host
+          // holding units, which only exists mid-summon-procedure.
+          let mats = 0;
+          for (let j = 0; j < prev.length; j++) if (!used[j] && prev[j].code === code) { used[j] = true; mats = prev[j].materials || 0; break; }
+          extra.push({ code, pos: POS.FD_DEF, materials: mats });
+        }
         if (n) this.players[p].extra = extra;
         break;
       }
@@ -632,7 +684,9 @@ class GameState {
   }
   totalCards(p) {
     const P = this.players[p];
-    return P.deckCount + P.hand.length + P.extra.length + P.grave.length + P.removed.length +
+    return P.deckCount + P.hand.length +
+      P.extra.reduce((a, c) => a + 1 + (c.materials || 0), 0) +
+      P.grave.length + P.removed.length +
       P.mzone.reduce((a, c) => a + (c ? 1 + (c.materials || 0) : 0), 0) +
       P.szone.reduce((a, c) => a + (c ? 1 : 0), 0);
   }
