@@ -4,7 +4,7 @@
    cap), starts a duel (defaults: イシズ vs ゲート・ガーディアン, 先攻) and
    checks:
      (a) the computed stack fits the viewport WITH the safety margin:
-         contentH <= vh - 4 and the dead band vh - contentH is in [4, 24)
+         contentH <= vh - 6 and the dead band vh - contentH is in [6, 24)
          at every size (layout-fix accounting: the fixed part 217 was
          re-derived element by element against the CSS and is exact; the
          old exact-fill formula left a dead band of exactly 0 whenever the
@@ -19,15 +19,21 @@
          tapping a hand card updates its content to that card;
      (e) visualViewport is honoured: with innerHeight 800 but a visual
          viewport of 760, the layout budgets against 760, not 800;
-     (f) measure-and-step-down: with the hand bar's rendered height
-         stubbed to report the formula stack + 28px (a phantom overshoot
-         of the kind the real browser showed), applyLayout() steps the
-         budget down until the measured stack fits, shrinking the preview
-         before the tiles.
+     (g) rect-based visible fit (round 2): with a visual viewport that is
+         shorter AND offset (innerHeight 800, vv.height 740,
+         vv.offsetTop 30 — visible bottom in rect coords 770) and the
+         painted stack bottom stubbed to overshoot (rect bottom starts
+         at 812), applyLayout() steps the budget down until the RECT
+         bottom clears 770 - 6 = 764, recording every step in
+         __layout.fitLog. Round 1 steered this loop with document
+         coordinates (offsetTop+offsetHeight), which cannot see a
+         painted overshoot at all.
    jsdom has no layout engine, so sizes are measured through the exact
    inputs that determine them in a real browser: applyLayout() computes
    every box height in px (all bars carry explicit heights in index.html)
-   and publishes them as CSS vars + window.__layout. */
+   and publishes them as CSS vars + window.__layout. getBoundingClientRect
+   is all-zero in jsdom, so unstubbed cases report fit 'unmeasurable'
+   (the formula stands) — exactly what the client must say there. */
 const fs = require('fs');
 const path = require('path');
 let JSDOM;
@@ -47,7 +53,8 @@ async function boot(vw, vh, opts) {
   // at the start-button click)
   Object.defineProperty(window, 'innerWidth', { value: vw, configurable: true, writable: true });
   Object.defineProperty(window, 'innerHeight', { value: vh, configurable: true, writable: true });
-  if (opts.visualH) Object.defineProperty(window, 'visualViewport', { value: { height: opts.visualH, width: vw }, configurable: true });
+  if (opts.vv) Object.defineProperty(window, 'visualViewport', { value: { height: opts.vv.height, width: vw, offsetTop: opts.vv.offsetTop || 0 }, configurable: true });
+  else if (opts.visualH) Object.defineProperty(window, 'visualViewport', { value: { height: opts.visualH, width: vw, offsetTop: 0 }, configurable: true });
   window.Audio = class { constructor(src) { this.src = src; this.volume = 1; } play() { return Promise.resolve(); } pause() {} };
   const wasmBuf = wasmBinary.buffer.slice(wasmBinary.byteOffset, wasmBinary.byteOffset + wasmBinary.byteLength);
   window.fetch = async (url) => {
@@ -66,16 +73,21 @@ async function boot(vw, vh, opts) {
   inject('client.js');
   for (let i = 0; i < 100 && !window.document.getElementById('loadmsg').textContent.includes('準備完了'); i++)
     await new Promise(r => setTimeout(r, 50));
-  if (opts.phantom) {
-    // Simulate a browser whose rendered stack overshoots the formula by
-    // opts.phantom px: the hand bar (last in-flow section) reports a
-    // height of (current formula stack + phantom). It tracks __layout,
-    // so as applyLayout steps the budget down the reported height follows.
+  if (opts.rectPhantom != null) {
+    // Simulate a browser whose PAINTED stack overshoots the formula by
+    // opts.rectPhantom px in rect coordinates: the hand bar (last
+    // in-flow section) reports a getBoundingClientRect whose bottom is
+    // (visual-viewport offsetTop) + (current formula stack) + phantom.
+    // It tracks __layout, so as applyLayout steps the budget down the
+    // reported bottom follows — the same relation round 1's real
+    // browser exhibited between its modeled and painted heights.
     const hb = window.document.getElementById('handbar');
-    Object.defineProperty(hb, 'offsetHeight', {
-      configurable: true,
-      get() { const L = window.__layout; return (L ? L.contentH : 0) + opts.phantom; },
-    });
+    const anchor = (opts.vv && opts.vv.offsetTop) || 0;
+    hb.getBoundingClientRect = () => {
+      const L = window.__layout;
+      const bottom = anchor + (L ? L.contentH : 0) + opts.rectPhantom;
+      return { top: anchor, bottom, height: bottom - anchor, left: 0, right: vw, width: vw, x: 0, y: anchor, toJSON() { return {}; } };
+    };
   }
   return window;
 }
@@ -168,9 +180,10 @@ async function clickUntilDock(window, timeoutMs) {
     const L = window.__layout;
     console.log('  ' + vw + 'x' + vh + ':', JSON.stringify(L));
     ok(!!L && L.vh === vh && L.vw === Math.min(vw, 430), 'LAY-a0 ' + vw + 'x' + vh + ': layout computed for the requested viewport (column cap ' + Math.min(vw, 430) + ')');
-    ok(L.contentH <= vh - 4 && L.dead >= 4 && L.dead < 24, 'LAY-a ' + vw + 'x' + vh + ': stack fits with the 4px safety margin, dead band ' + L.dead + 'px (in [4, 24), no scroll, no clip)');
+    ok(L.contentH <= vh - 6 && L.dead >= 6 && L.dead < 24, 'LAY-a ' + vw + 'x' + vh + ': stack fits with the 6px safety margin, dead band ' + L.dead + 'px (in [6, 24), no scroll, no clip)');
     ok(L.tileW >= 47 && L.slotH >= 60, 'LAY-a2 ' + vw + 'x' + vh + ': board never below the old fixed baseline 47x60 (tile ' + L.tileW + 'x' + L.slotH + ')');
-    ok(L.fit === true && L.fitSteps === 0, 'LAY-a3 ' + vw + 'x' + vh + ': no step-down needed where measurement is unavailable (jsdom), formula stands');
+    ok(L.fit === 'unmeasurable' && L.fitVisible === null && L.fitSteps === 0, 'LAY-a3 ' + vw + 'x' + vh + ': rect measurement unavailable in jsdom — fit honestly reported as unmeasurable, formula stands');
+    ok(L.innerHeight === vh && L.vvHeight === null && L.vvOffsetTop === 0 && L.visibleBottom === vh && Array.isArray(L.fitLog) && L.fitLog.length === 1 && L.fitLog[0].rectBottom === null, 'LAY-a4 ' + vw + 'x' + vh + ': __layout records the height signals + step log (innerHeight ' + L.innerHeight + ', clientHeight ' + L.clientHeight + ', visibleBottom ' + L.visibleBottom + ')');
     handH[vh] = L.handH;
     pvShownAt[vh] = L.pvShown;
     const snap0 = sizeSnapshot(window);
@@ -226,33 +239,41 @@ async function clickUntilDock(window, timeoutMs) {
   // (e) visualViewport honoured: innerHeight says 800 but only 760 is
   // actually visible — the layout must budget against the visible 760.
   {
-    const window = await boot(390, 800, { visualH: 760 });
+    const window = await boot(390, 800, { vv: { height: 760, offsetTop: 0 } });
     const doc = window.document;
     doc.getElementById('startbtn').click();
     await waitFor(() => doc.querySelectorAll('#hand .hcard').length >= 5, 60000, 'opening hand (visualViewport case)');
     const L = window.__layout;
     console.log('  visualViewport case:', JSON.stringify(L));
-    ok(L.vh === 760, 'LAY-e0: layout used the visual viewport height 760, not innerHeight 800');
-    ok(L.contentH <= 760 - 4, 'LAY-e1: stack fits the visible 760 with margin (contentH ' + L.contentH + ')');
+    ok(L.vh === 760 && L.vvHeight === 760, 'LAY-e0: layout used the visual viewport height 760, not innerHeight 800');
+    ok(L.contentH <= 760 - 6 && L.dead >= 6, 'LAY-e1: stack fits the visible 760 with the 6px margin (contentH ' + L.contentH + ')');
     ok(L.pvShown < pvShownAt[800], 'LAY-e2: preview shrank vs the full-800 layout (' + L.pvShown + ' < ' + pvShownAt[800] + ') — the shortfall came out of the slack, not the tiles');
     ok(L.tileW === 59, 'LAY-e3: tile unit unchanged by a 40px visible shortfall (tileW ' + L.tileW + ')');
     window.close();
   }
 
-  // (f) measure-and-step-down against a phantom +28px rendered overshoot:
-  // the budget must step down by the measured excess (preview absorbs it),
-  // ending with the measured stack inside the allowed height.
+  // (g) rect-based visible fit against a shorter, OFFSET visual
+  // viewport plus a painted overshoot: innerHeight 800, vv.height 740,
+  // vv.offsetTop 30 → the visible bottom in rect coordinates is 770 and
+  // the stack must clear 770 − 6 = 764 by RECT measurement. The stubbed
+  // painted bottom starts at 812 (30 + formula 734 + phantom 48) — a
+  // document-coordinate loop (round 1) would have seen contentH 734 ≤
+  // 740 − 4 and certified a fit while 48px of stack painted below the
+  // visible edge. The budget base must be min(740, 800) = 740 (jsdom's
+  // clientHeight 0 is "no signal" and must not zero the budget).
   {
-    const window = await boot(390, 800, { phantom: 28 });
+    const window = await boot(390, 800, { vv: { height: 740, offsetTop: 30 }, rectPhantom: 48 });
     const doc = window.document;
     doc.getElementById('startbtn').click();
-    await waitFor(() => doc.querySelectorAll('#hand .hcard').length >= 5, 60000, 'opening hand (phantom overshoot case)');
+    await waitFor(() => doc.querySelectorAll('#hand .hcard').length >= 5, 60000, 'opening hand (rect phantom case)');
     const L = window.__layout;
-    console.log('  phantom case:', JSON.stringify(L));
-    ok(L.fit === true && L.fitSteps >= 1, 'LAY-f0: step-down engaged and converged (steps=' + L.fitSteps + ', fit=' + L.fit + ')');
-    ok(L.measured <= 800 - 4, 'LAY-f1: measured stack bottom ' + L.measured + ' fits the allowed ' + (800 - 4));
-    ok(L.contentH === 800 - 4 - 28, 'LAY-f2: budget stepped down by exactly the 28px excess (contentH ' + L.contentH + ')');
-    ok(L.tileW === 59, 'LAY-f3: tile unit unchanged — the overshoot came out of the preview slack (tileW ' + L.tileW + ')');
+    console.log('  rect phantom case:', JSON.stringify(L));
+    ok(L.vh === 740 && L.vvHeight === 740 && L.vvOffsetTop === 30 && L.visibleBottom === 770 && L.innerHeight === 800, 'LAY-g0: budget height is the visual 740 (clientHeight 0 ignored), visible bottom recorded as 30 + 740 = 770');
+    ok(L.fitLog.length >= 2 && L.fitLog[0].rectBottom === 812, 'LAY-g1: first painted measurement was 812 (30 + 734 + 48) — the overshoot is on record');
+    ok(L.fit === true && L.fitVisible === true && L.fitSteps >= 1, 'LAY-g2: step-down engaged and converged on rect evidence (steps=' + L.fitSteps + ', fit=' + L.fit + ')');
+    ok(L.rectBottom !== null && L.rectBottom <= 764, 'LAY-g3: final painted bottom ' + L.rectBottom + ' clears the visible ceiling 764 (770 − 6)');
+    ok(L.budget === 686 && L.contentH <= 686, 'LAY-g4: budget stepped down by exactly the 48px rect excess (budget ' + L.budget + ', contentH ' + L.contentH + ')');
+    ok(L.measured === 0, 'LAY-g5: document-coordinate record stays 0 here (jsdom offsets) — the loop no longer steers by it');
     window.close();
   }
 

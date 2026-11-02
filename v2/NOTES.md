@@ -874,6 +874,125 @@ entirely out of the preview slack; the tile unit (59) never moved.
   stubbed-measurement case (LAY-f); a real-device visual pass remains
   the parent's browser check.
 
+## Layout fix round 2 (branch client-layout-fix2)
+
+Real-browser verification AFTER the layout fix round STILL showed the
+hand cards' bottom ATK/DEF strip clipped at the screen's bottom edge —
+the strip's upper half faintly visible, cards flush against the edge,
+no dead band — while round 1's measurement had reported a fit. So the
+round-1 step-down converged to a target the painted screen disagreed
+with. This round re-does the measurement, not the distribution
+(slack order, preview rules, freeze invariants and the card spec are
+unchanged from the layout phase / fix round).
+
+### Diagnosis: round 1 steered by document coordinates
+Round 1's `measureStackBottom()` accumulated
+`app.offsetTop + el.offsetTop + el.offsetHeight` over the six in-flow
+sections. That sum is a **document-coordinate** bottom: the distance
+from the document's top edge to the stack's bottom edge. It does not
+move with scroll, and it knows nothing about where the visual
+viewport sits. Round 1 compared it against a **viewport-coordinate**
+budget, `visualViewport.height − 4`. The comparison is only sound
+when the visible region in document coordinates is exactly
+`[0, vv.height]` — i.e. when `scrollY == 0`,
+`visualViewport.offsetTop == 0`, and `vv.height == innerHeight ==
+documentElement.clientHeight`. Round 1 never read `offsetTop`,
+`scrollY` or `clientHeight`, so it had no way to notice the identity
+failing. The visible bottom in document coordinates is
+`scrollY + vv.offsetTop + vv.height`; round 1 silently used
+`vv.height` in its place.
+
+Contributing structure on the CSS side: `#app` carries
+`min-height:100dvh`, and 100dvh is the dynamic (largest,
+chrome-hidden) viewport height in several webviews, so the document
+box is routinely TALLER than the painted visible region while the
+page does not scroll — document coordinates extend below the visible
+bottom by construction, and a loop keyed to them certifies where the
+stack ends *in the document*, never where it *paints*. Symptom
+match: the formula content sat within `vv.height − 4` (fit, 4px
+margin on paper) while the painted strip was still clipped by more
+than that margin, flush at the edge. The delta between the modeled
+target and the painted visible bottom is exactly what a
+document-space loop cannot observe. (Which single environment quirk
+supplied the delta in the verification browser — offset visual
+viewport, a height signal disagreeing with the others, an overlay
+band — cannot be separated from here; the point is that round 1's
+loop was blind to all of them by construction.)
+
+### Fix: steer by the painted rect, budget by the most conservative height
+Still entirely inside the duel-start click — the mid-duel freeze is
+untouched, there are no listeners and no re-fit.
+- `viewportHeights()` collects every height signal once:
+  `innerHeight`, `documentElement.clientHeight`,
+  `visualViewport.height` / `visualViewport.offsetTop`. The formula
+  budget starts from `baseH` = the SMALLEST positive signal (a 0
+  reading means "no signal" — jsdom reports clientHeight 0 — and is
+  ignored, never allowed to zero the budget). The safety margin is
+  raised 4 → 6px (`LAYOUT_SAFETY`).
+- The step-down now measures the stack's real bottom with
+  `getBoundingClientRect()` over the same six in-flow sections
+  (`measureStackRectBottom()`; a display:none section reads an
+  all-zero rect and drops out of the max) and steps the budget down
+  by the rect excess until
+  `rect.bottom ≤ vv.offsetTop + vv.height − 6` (without a visual
+  viewport, `innerHeight − 6`). Rect coordinates are the system the
+  browser paints in, so the loop's target and its measurement now
+  live in the same frame: any offset/overlay/accounting delta is
+  inside the loop instead of outside it. Same bounds as round 1
+  (≤16 steps, stop when a step can no longer shrink contentH; the
+  minimum layout is then kept and the fit reports false).
+- `measureStackBottom()` (document coordinates) is still computed,
+  but as a record only — nothing steers by it anymore.
+
+### What `window.__layout` now reports
+So a real-browser check can read the numbers directly instead of
+inferring them from a screenshot: the three height signals
+(`innerHeight`, `clientHeight`, `vvHeight`), `vvOffsetTop`,
+`visibleBottom` (rect-coordinate visible bottom,
+`vv.offsetTop + vv.height`), the `budget` used, BOTH measured
+bottoms (`measured` = document-coordinate, `rectBottom` = painted
+rect-coordinate, null when unmeasurable), `fitLog` — one entry per
+step with `{step, budget, contentH, measured, rectBottom}` — and
+`fitSteps`. Fit semantics changed: `fitVisible` is true/false on
+rect evidence (null when unmeasurable) and `fit` is now `true` ONLY
+on a rect-verified visible fit, `false` on a measured non-fit, and
+the string `'unmeasurable'` where no rect layout exists (jsdom) —
+round 1 reported `fit: true` there on the formula's say-so.
+
+### Verification
+- `test-layout.js`: ALL LAYOUT CHECKS PASSED. The harness model was
+  rebuilt on rect accounting: jsdom's all-zero rects make the plain
+  cases assert the new honest semantics (LAY-a3: `fit ===
+  'unmeasurable'`, `fitVisible === null`, formula stands; LAY-a4: the
+  recorded signals + step log). Dead band is 6px at 390×660/720/800
+  and 500×900 (margin raised to 6). Freeze checks (sheet open/close,
+  mid-duel resize, chain dock via click-play), preview tap-update,
+  hand scaling and LAY-e (visual 760 vs inner 800: pv 100 → 60, tile
+  unit 59 unmoved) all still pass. New LAY-g simulates the round-1
+  failure shape: innerHeight 800, vv.height 740, vv.offsetTop 30
+  (visible bottom 770), painted bottom stubbed at
+  `offsetTop + contentH + 48` — the first measurement reads 812,
+  which a document-coordinate loop would have certified as fitting
+  (contentH 734 ≤ 740 − 4) while 48px painted below the visible
+  edge; the rect loop steps the budget 734 → 686 in 1 step and the
+  painted bottom lands at 742 ≤ 764, `fit: true`, every step on
+  record in `fitLog`.
+- `test-ui.js`: ALL UI CHECKS PASSED — run 1: 62 turns, deck-out
+  win, dismissal + autopass chip exercised; run 2 (seat swap, 後攻）:
+  72 turns, deck-out; retry warning never shown in either run
+  (MSG_RETRY proxy 0), 0 stalls.
+- `test-node.js`: PASS (594 conservation checks, 0 violations).
+- `test-genesis.js`: PASS (all seeds retries 0, EMZ offers 0,
+  EX-in-EMZ 0). Its end-dipped-duel counter is a harness metric over
+  crypto-shuffled decks and fluctuates between runs on unmodified
+  main as well (0 in the baseline run taken alongside this round);
+  the suite does not load client.js and its pass criteria are met.
+- Not claimed: real-device success. jsdom cannot paint, so the rect
+  loop's browser behaviour is proven by the stubbed-rect case (LAY-g)
+  plus construction; the parent's real-browser pass reads
+  `__layout`'s recorded numbers (fitLog / rectBottom /
+  visibleBottom) and eyeballs the hand strip.
+
 ## Known gaps for later phases
 - CPU intelligence: player 1 is the PoC's minimal legal bot (summon a
   level ≤4, otherwise advance phases; always passes chains unless forced).
