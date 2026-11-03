@@ -5096,6 +5096,78 @@ ATK 2300／DEF 1600, at 390x620/700. The post-summon field
 tile is fixture-pinned (CA11ad), as the deck-scoped
 deliveries pinned their non-Ishizu surfaces by fixture.
 
+## Opponent card info (user request, 2026-11-04): tap an opponent's card, see its public info
+
+The user asked to tap an opponent's monster (or any field
+card) and read its info — "face-up public info only". Audit
+of what already stood: in neutral board states the zone tap
+already fed the resident preview for opponent face-up cards,
+and the preview tap opened the full detail. The gaps were
+contextual: (1) while a selection sheet is up, the sheet
+wrap covers the board, so even peeking （盤面を見る) was
+look-only — no card could be tapped for its detail; (2)
+during SELECT_PLACE/DISFIELD placement, a tap on any zone
+the placement does not target was swallowed silently, so
+the opponent's board could not be checked mid-placement.
+
+What shipped, all behind ONE visibility guard:
+
+- boardCardAt(key) is now the single resolution point for
+  board info: a field card resolves iff it is face-up, or
+  it is the player's own card (own face-down cards ghost
+  through by design). An opponent's face-down card NEVER
+  resolves — the same rule the tile art and the stat strip
+  already obey, now shared by every info path. The neutral
+  zone tap was refactored onto it with no behaviour change.
+- Peek info taps (R-SEL-2 extension): while a prompt sheet
+  is peeked down, the wrap still covers the board, so a
+  backdrop tap on the wrap is forwarded by coordinates
+  (elementsFromPoint -> peekBoardTap -> peekInfoTap) to the
+  card under the point, and its read-only detail floats
+  over the board via openInfoPop (its close reads 選択に
+  戻る while a prompt is live). Only card surfaces answer
+  (zones, the preview strip, hand cards); phase/menu
+  buttons under the wrap stay unreachable, and the tap
+  never answers, toggles or cancels the pending selection.
+  A tap on an opponent face-down card is refused by the
+  guard and changes nothing.
+- Placement info taps: during placeCtx, a tap on a zone
+  the placement does not target now feeds the resident
+  preview through the same guard instead of being
+  swallowed; available-zone taps place exactly as before,
+  and the placement state (chosen set) is untouched by
+  looking.
+
+Operation design (why these shapes): candidates inside a
+selection stay selectable (grid tap / 詳細 button as
+before); non-candidate board cards are info-only, reached
+through the existing peek convention rather than a new
+mode — the same "look without committing" grammar as
+R-SEL-1/R-SEL-2. Own cards' taps and sheets are unchanged.
+
+Tests: test-oppinfo.js (new, 23 checks) pins the guard
+(face-up resolves / face-down refuses, both zones),
+preview + detail from real click dispatches, the
+mid-SELECT_CARD peek flow (select -> peek -> info on a
+NON-candidate opponent card -> selection intact, prompt
+still pending -> close -> confirm still works), and the
+placement info tap. Affected suites re-run green:
+cardart / facedown / setvis / layout / overlay /
+typecolor / purpose / logdetail-ui / ui / fx / strot /
+phase2.
+
+Real-browser frames (cap-oppinfo.js, shots-oppinfo/,
+genuine mouse hit-testing, 390x620/700): a real duel with
+a fabricated opponent board — tapping 雷魔神－サンガ's
+tile puts it in the resident preview (ATK 2600/DEF 2200,
+its text); mid-SELECT_CARD, peeking and tapping the
+opponent's face-up 《ラビリンス・ウォール・シャドウ》
+through the wrap floats its full detail over the board
+with the selection sheet still parked below （現在 1 枚
+selected, unanswered). Capture note: uiAnswer refreshes
+the board from the worker's real snapshot, so the rig
+fabricates the board AFTER the sheet opens (in real play
+the state is simply the real state).
 ## Cannot-attack reasons (2026-11-04, user report: バロメットが召喚したターンに攻撃できなかった)
 
 Investigation (~/workspace/duel-app-baromett-investigation/) proved
@@ -5292,3 +5364,55 @@ lives ONLY on the v2 title screen. It is deliberately NOT folded
 into the `<title>` tags, the v1 page, or the README heading — those
 carry the plain proper name; the subtitle is a title-screen design
 element, not part of the name itself.
+## Deck-select page (2026-11-04, user request: デッキ選択は別ページで)
+
+The start flow is two pages again. Before: the title overlay
+carried everything (title, both deck picks, first/second, the
+settings rows, the start button). Now:
+
+- Title page (#start): title, tagline, 「デッキを選ぶ」 (new
+  #todeck) and the load message. Nothing else — no deck, turn or
+  settings controls remain there (test-deckpage DP2).
+- Deck page (#deckpage, new overlay): header (「← タイトルへ」
+  back button + デッキ選択), then in one fixed column — own-deck
+  section, opponent-deck section, 先攻・後攻, the settings rows
+  (チェーン確認 / 召喚カットイン / 音, ids unchanged) — and a
+  footer with the live selection summary (#decksum: own deck /
+  opponent deck / turn choice, refreshed by every seg handler and
+  at boot) above the start button.
+
+Layout law kept: the deck page is a one-screen fixed column that
+never scrolls (overflow hidden); each deck list is a vertical
+list that scrolls inside its own region (.decklist,
+overflow-y:auto, inside a flex .dp-sec), so a growing roster of
+character decks stays fully reachable — proven in the capture
+rig by cloning both lists to 10 decks (list scrolls internally,
+last entry reachable, page still fits the screen). Deck rows are
+the same .deck cards as before, full-width now; the selected
+state (gold frame + check dot) is unchanged, and own/opponent
+remain separate labelled lists.
+
+Unchanged on purpose: every control id (seg-mydeck / seg-opdeck /
+seg-first / seg-resp / seg-cutin / soundbtn / startbtn), so all
+existing suites drive the flow exactly as before. The start
+button still IS the load state (A-03: disabled 読み込み中… ->
+デュエル開始, failure -> 再読み込み), now on the deck page;
+navigation is wired before the data load so the failure path's
+retry button stays reachable. Art preload still fires at boot
+and on every deck change (deck-select-time preload, no blank/'?'
+surfaces). The VS curtain moved to #app level (z 65, above both
+pre-duel pages) — it still has no button and advances on its own;
+starting hides both pages. Rematch restore （同じ設定でもう1戦）
+clicks the start button directly and is unaffected. A pre-duel
+deck-recipe viewer does not exist in the current build and was
+NOT added here (out of scope, noted for the record).
+
+Tests: new test-deckpage (DP1-DP13) — structure, navigation,
+defaults, summary updates, stylesheet scroll contract, and the
+deck-page start (VS curtain plays, both pages hidden, board up).
+test-ui (both runs), test-layout and test-bgm pass unchanged.
+Real frames: cap-deckpage.js in shots-deckpage/ — title and deck
+page at 390x620 / 390x700, swapped-selection state, plus the
+10-deck scroll stress at 700; the summary wraps to two lines
+rather than truncating the turn choice (fixed after the first
+capture round).
