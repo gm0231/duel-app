@@ -5334,3 +5334,55 @@ lives ONLY on the v2 title screen. It is deliberately NOT folded
 into the `<title>` tags, the v1 page, or the README heading — those
 carry the plain proper name; the subtitle is a title-screen design
 element, not part of the name itself.
+## Deck-select page (2026-11-04, user request: デッキ選択は別ページで)
+
+The start flow is two pages again. Before: the title overlay
+carried everything (title, both deck picks, first/second, the
+settings rows, the start button). Now:
+
+- Title page (#start): title, tagline, 「デッキを選ぶ」 (new
+  #todeck) and the load message. Nothing else — no deck, turn or
+  settings controls remain there (test-deckpage DP2).
+- Deck page (#deckpage, new overlay): header (「← タイトルへ」
+  back button + デッキ選択), then in one fixed column — own-deck
+  section, opponent-deck section, 先攻・後攻, the settings rows
+  (チェーン確認 / 召喚カットイン / 音, ids unchanged) — and a
+  footer with the live selection summary (#decksum: own deck /
+  opponent deck / turn choice, refreshed by every seg handler and
+  at boot) above the start button.
+
+Layout law kept: the deck page is a one-screen fixed column that
+never scrolls (overflow hidden); each deck list is a vertical
+list that scrolls inside its own region (.decklist,
+overflow-y:auto, inside a flex .dp-sec), so a growing roster of
+character decks stays fully reachable — proven in the capture
+rig by cloning both lists to 10 decks (list scrolls internally,
+last entry reachable, page still fits the screen). Deck rows are
+the same .deck cards as before, full-width now; the selected
+state (gold frame + check dot) is unchanged, and own/opponent
+remain separate labelled lists.
+
+Unchanged on purpose: every control id (seg-mydeck / seg-opdeck /
+seg-first / seg-resp / seg-cutin / soundbtn / startbtn), so all
+existing suites drive the flow exactly as before. The start
+button still IS the load state (A-03: disabled 読み込み中… ->
+デュエル開始, failure -> 再読み込み), now on the deck page;
+navigation is wired before the data load so the failure path's
+retry button stays reachable. Art preload still fires at boot
+and on every deck change (deck-select-time preload, no blank/'?'
+surfaces). The VS curtain moved to #app level (z 65, above both
+pre-duel pages) — it still has no button and advances on its own;
+starting hides both pages. Rematch restore （同じ設定でもう1戦）
+clicks the start button directly and is unaffected. A pre-duel
+deck-recipe viewer does not exist in the current build and was
+NOT added here (out of scope, noted for the record).
+
+Tests: new test-deckpage (DP1-DP13) — structure, navigation,
+defaults, summary updates, stylesheet scroll contract, and the
+deck-page start (VS curtain plays, both pages hidden, board up).
+test-ui (both runs), test-layout and test-bgm pass unchanged.
+Real frames: cap-deckpage.js in shots-deckpage/ — title and deck
+page at 390x620 / 390x700, swapped-selection state, plus the
+10-deck scroll stress at 700; the summary wraps to two lines
+rather than truncating the turn choice (fixed after the first
+capture round).
