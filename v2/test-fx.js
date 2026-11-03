@@ -691,6 +691,85 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     window.close();
   }
 
+  // ================= Part 1H: redesign D — opponent-turn presentation (p4a/p4b) =================
+  {
+    const window = await boot();
+    const doc = window.document;
+    const E = window.Engine;
+    const fx = window.__fx;
+    const step = (st, evs) => { const before = fx.log.length; fx.process(evs || [], st); return fx.log.slice(before); };
+    const render = (st) => window.render(st); // production order: render() first, then fx.process()
+    const has = (recs, kind, pred) => recs.some(r => r.kind === kind && (!pred || pred(r)));
+    const tag = () => doc.querySelector('#fxlayer .fx-oppnametag');
+    const fresh = () => { fx.reset(); step(fakeState()); }; // reset + silent baseline snapshot
+    const NAME = data.names[NORMAL], NAME2 = data.names[NORMAL2];
+    ok(!!NAME && !!NAME2 && NAME !== NAME2, 'FXD0: redesign-D fixtures resolve to two distinct card names');
+
+    // --- opponent normal summon: the tag names the card
+    fresh();
+    let st = fakeState(s => { s.players[1].mzone[0] = mon(NORMAL); });
+    let recs = step(st, [{ kind: 'summon', code: NORMAL, con: 1 }]);
+    ok(has(recs, 'oppnametag', r => r.how === 'summon' && r.code === NORMAL), 'FXD1: an opponent normal summon records a name tag for the card');
+    ok(!!tag() && tag().textContent === '相手：《' + NAME + '》を召喚', 'FXD1b: the tag reads 相手：《' + NAME + '》を召喚 (got ' + (tag() ? tag().textContent : 'none') + ')');
+    ok(fx.oppTagText() === '相手：《' + NAME + '》を召喚', 'FXD1c: __fx.oppTagText exposes the live tag wording');
+
+    // --- opponent special summon: named, with the special-summon verb
+    fresh();
+    st = fakeState(s => { s.players[1].mzone[1] = mon(NORMAL2); });
+    recs = step(st, [{ kind: 'spsummon', code: NORMAL2, con: 1 }]);
+    ok(!!tag() && tag().textContent === '相手：《' + NAME2 + '》を特殊召喚', 'FXD2: an opponent special summon tag names the card (got ' + (tag() ? tag().textContent : 'none') + ')');
+
+    // --- opponent flip summon: named, with the flip-summon verb
+    fresh();
+    st = fakeState(s => { s.players[1].mzone[0] = { code: NORMAL, pos: 8, materials: 0, curAtk: data.cards[NORMAL].atk, curDef: data.cards[NORMAL].def }; });
+    step(st);
+    st = fakeState(s => { s.players[1].mzone[0] = mon(NORMAL); });
+    recs = step(st, [{ kind: 'flipsummon', code: NORMAL, con: 1 }]);
+    ok(!!tag() && tag().textContent === '相手：《' + NAME + '》を反転召喚', 'FXD3: an opponent flip summon tag names the card (got ' + (tag() ? tag().textContent : 'none') + ')');
+
+    // --- opponent monster SET: a tag may appear, but the hidden
+    // card's name must NOT — generic wording only (the set event
+    // itself carries the real code; leaking it here is the bug
+    // this item exists to prevent)
+    fresh();
+    st = fakeState(s => { s.players[1].mzone[0] = { code: NORMAL, pos: 8, materials: 0, curAtk: data.cards[NORMAL].atk, curDef: data.cards[NORMAL].def }; });
+    recs = step(st, [{ kind: 'set', code: NORMAL, con: 1, loc: E.LOC.MZONE }]);
+    ok(!!tag() && tag().textContent === '相手：モンスターをセット', 'FXD4: an opponent monster set is announced generically (got ' + (tag() ? tag().textContent : 'none') + ')');
+    ok(!!tag() && !tag().textContent.includes(NAME), 'FXD4b: the set tag does NOT contain the face-down card name');
+    ok(!has(recs, 'oppnametag', r => r.code === NORMAL), 'FXD4c: the set tag record carries no card code either');
+
+    // --- opponent S/T set: generic too, still no name
+    fresh();
+    st = fakeState(s => { s.players[1].szone[0] = { code: NORMAL, pos: 10 }; });
+    recs = step(st, [{ kind: 'set', code: NORMAL, con: 1, loc: E.LOC.SZONE }]);
+    ok(!!tag() && tag().textContent === '相手：カードをセット' && !tag().textContent.includes(NAME), 'FXD4d: an opponent S/T set is generic and nameless (got ' + (tag() ? tag().textContent : 'none') + ')');
+
+    // --- the human's OWN summon: no tag at all
+    fresh();
+    st = fakeState(s => { s.players[0].mzone[0] = mon(NORMAL); });
+    recs = step(st, [{ kind: 'summon', code: NORMAL, con: 0 }]);
+    ok(!tag(), 'FXD5: my own normal summon raises NO opponent name tag');
+    ok(!has(recs, 'oppnametag'), 'FXD5b: no oppnametag record for my own summon');
+
+    // --- opponent chain activation: no tag (the chain pop owns it)
+    fresh();
+    step(fakeState(s => { s.players[1].mzone[0] = mon(NORMAL2); }));
+    recs = step(fakeState(s => { s.players[1].mzone[0] = mon(NORMAL2); }), [{ kind: 'activate', code: NORMAL2, con: 1, loc: E.LOC.HAND }]);
+    ok(!tag() && !has(recs, 'oppnametag'), 'FXD5c: an opponent chain activation raises NO name tag');
+
+    // --- breathing air (p4a): render() stands the class on the
+    // opponent's turn and drops it on mine; both preset layers
+    // exist inside their fields (board dimensions untouched)
+    ok(!!doc.querySelector('#oppField .turnbreathe'), 'FXD6: the breathing rim layer is preset inside #oppField');
+    ok(!!doc.querySelector('#myField .turndim'), 'FXD6b: the dim layer is preset inside #myField');
+    render(fakeState(s => { s.log = []; s.turnPlayer = 1; }));
+    ok(doc.getElementById('app').classList.contains('opp-turn'), 'FXD6c: the opp-turn class stands during the opponent turn');
+    render(fakeState(s => { s.log = []; s.turnPlayer = 0; }));
+    ok(!doc.getElementById('app').classList.contains('opp-turn'), 'FXD6d: the opp-turn class is gone on my turn');
+    ok(fx.error === null, 'FXD7: fxError stayed null through every redesign-D step (got: ' + fx.error + ')');
+    window.close();
+  }
+
   // ================= Part 2: live duels =================
   if (process.env.FX_SYNTH_ONLY) { console.log(failures === 0 ? 'ALL FX SYNTHETIC CHECKS PASSED' : failures + ' FAILED'); process.exit(failures ? 1 : 0); }
   const tally = {};

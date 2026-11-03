@@ -2530,6 +2530,72 @@ function fxAtkBanner() {
   fxAnim(d, [{ opacity: 0 }, { opacity: 1, offset: 0.2 }, { opacity: 1, offset: 0.75 }, { opacity: 0 }], { duration: 900, easing: 'ease-out' });
   fxKill(d, 940);
 }
+// ---- redesign D (p4b): the opponent's action name tag. A thin
+// lapis strip at the top of the screen that names ONE public
+// opponent action and is gone in ~1.6 s. INFORMATION DISCIPLINE
+// (strict): a card name is shown ONLY for the opponent's public
+// summon events — normal / special / flip summon, whose identity
+// the summon itself reveals. A SET is announced with generic
+// wording only («モンスターをセット» / «カードをセット»): the
+// set event stream carries the real code locally, and it must
+// never reach this tag's text or record. Attacks (the attack
+// scene names them), chain activations (the chain pop names
+// them), draws and phase changes get NO tag, and neither do the
+// human's own actions. One tag at a time: a newer action replaces
+// the tag that is still up. Animation is WAAPI opacity/transform
+// only, on the shared kill-timer discipline of the other tags.
+let fxOppTagEl = null, fxOppTagTimer = null;
+function fxOppNameTag(text, detail) {
+  fxRecord('oppnametag', detail);
+  const layer = fxLayerEl(); if (!layer) return;
+  if (fxOppTagTimer) { clearTimeout(fxOppTagTimer); fxOppTagTimer = null; }
+  if (fxOppTagEl) { try { fxOppTagEl.remove(); } catch (e) {} fxOppTagEl = null; }
+  const d = document.createElement('div');
+  d.className = 'fx-oppnametag';
+  d.dataset.how = detail.how || '';
+  d.textContent = text;
+  layer.appendChild(d);
+  fxOppTagEl = d;
+  fxAnim(d, [
+    { opacity: 0, transform: 'translateX(-6px)' },
+    { opacity: 1, transform: 'translateX(0px)', offset: 0.12 },
+    { opacity: 1, transform: 'translateX(0px)', offset: 0.82 },
+    { opacity: 0, transform: 'translateX(0px)' },
+  ], { duration: 1600, easing: 'ease-out' });
+  fxOppTagTimer = setTimeout(() => {
+    fxOppTagTimer = null;
+    if (fxOppTagEl === d) fxOppTagEl = null;
+    try { d.remove(); } catch (e) {}
+  }, 1640);
+}
+function fxOppTagsFromEvents(evs, state) {
+  const opp = 1 - HP;
+  const VERB = { summon: '召喚', spsummon: '特殊召喚', flipsummon: '反転召喚' };
+  for (const ev of evs) {
+    if (ev.con !== opp) continue; // the human's own actions get no tag
+    if (ev.kind === 'set') {
+      // generic wording ONLY — ev.code is deliberately never read
+      // here, so a face-down card's identity cannot leak (above)
+      const text = ev.loc === E.LOC.MZONE ? '相手：モンスターをセット' : '相手：カードをセット';
+      fxOppNameTag(text, { how: 'set', text });
+      continue;
+    }
+    const verb = VERB[ev.kind];
+    if (!verb) continue; // attack / activate / draw / damage ...: other grammar owns them
+    if (ev.code == null || ev.code === 0) continue; // a code-less announcement (face-down special summon on the wire) names nothing — silence over a guess
+    // a special summon that landed FACE-DOWN is not public either:
+    // when the standing state shows this card face-down on the
+    // opponent's field, keep the name out and announce the act
+    // generically, exactly like a set
+    let faceDown = false;
+    if (state && state.players && state.players[opp]) {
+      const z = state.players[opp].mzone.find(c => c && c.code === ev.code);
+      if (z && z.pos != null && (z.pos & E.POS_FACEUP) === 0) faceDown = true;
+    }
+    if (faceDown) fxOppNameTag('相手：モンスターを' + verb, { how: ev.kind, text: '相手：モンスターを' + verb });
+    else fxOppNameTag('相手：《' + cardName(ev.code) + '》を' + verb, { how: ev.kind, code: ev.code });
+  }
+}
 // ---- V3 stage 3: the finisher scene (proposal 1.3). Lives INSIDE
 // the layer table (#fxcutin, z35); the result display is separated
 // from it by TIME (a gate at scene-local 2300 ms, see the start
@@ -3320,6 +3386,10 @@ function fxRoundBChanged(ch, evs, prev, cur) {
 }
 function fxRoundBEvents(evs, prev, cur, diff) {
   const st = diff.state;
+  // redesign D (p4b): the opponent's action name tag reads the
+  // same event batch (see fxOppTagsFromEvents for its strict
+  // public-events-only scope)
+  fxOppTagsFromEvents(evs, st);
   // ---- ace cut-in (B6; V3 stage 3: arrivals the ace scene took
   // over are skipped here — the scene already presented them)
   if (fxSettings.cutin) {
@@ -3510,6 +3580,10 @@ window.__fx = {
   settings: fxSettings, // round B (B11): the same object the prompt UI reads
   cutinOn: () => { const h = $('fxcutin'); return !!h && h.className === 'on'; },
   lpShown: (con) => fxLpShown[con],
+  // redesign D (p4b): the live opponent-action name tag's text, or
+  // null when no tag is up — harnesses assert its wording (and, for
+  // sets, the ABSENCE of the hidden card's name) against this
+  oppTagText: () => { const el = document.querySelector('#fxlayer .fx-oppnametag'); return el ? el.textContent : null; },
   // redesign B (p2b): the landed-link flags behind the chain bar's
   // gold absorption — read them, or stand a link as landed, so
   // harnesses verify the render() output against the flag itself
@@ -3642,6 +3716,11 @@ function render(state) {
   if (!fxLpBusy(1 - HP)) $('oppLp').textContent = op.lp;
   if (!fxLpBusy(HP)) $('myLp').textContent = me.lp;
   $('turninfo').textContent = 'ターン' + Math.max(1, state.turnCount) + '／' + (state.turnPlayer === HP ? '自分' : '相手');
+  // redesign D (p4a): opponent-turn air — render() only toggles
+  // the class; the lapis rim preset inside #oppField breathes by
+  // CSS animation (opacity 0.55<->1.0, 2.6 s) and the dim preset
+  // inside #myField fades in. No layout is touched either way.
+  { const appEl = $('app'); if (appEl) appEl.classList.toggle('opp-turn', state.turnPlayer !== HP && state.winner == null); }
   // B-08: the phase readout shows the phase name only — whose
   // turn it is already lives in the topbar, and the long form
   // wrapped into a 5-line collapse whenever a button appeared.
