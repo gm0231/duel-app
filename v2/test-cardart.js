@@ -22,10 +22,11 @@
      maps deck id -> passcode -> slug and wins over CARD_ART when
      a surface supplies the deck context of the card instance
      (the seat that owns it — seatDeckKeys, set at duel start).
-     Entries: Mori (36745317) is 'mori-ishizu' and Hana (62133026)
-     is 'hana-ishizu' inside the Ishizu deck only; in any other
-     deck context they resolve to their plain art. The opponent
-     face-down rule binds the overrides exactly like the base art.
+     Entries: Mori (36745317) is 'mori-ishizu', Hana (62133026)
+     is 'hana-ishizu' and Oka (9350312) is 'oka-ishizu' inside
+     the Ishizu deck only; in any other deck context they resolve
+     to their plain art. The opponent face-down rule binds the
+     overrides exactly like the base art.
    Method: boot the real client in jsdom (harness as test-setvis),
    paint a fabricated board through the client's own render() and
    assert the DOM contract in one synchronous eval. */
@@ -66,7 +67,8 @@ for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.
                          ['card-art-hana-s.jpg', 320, 320], ['card-art-hana.jpg', 640, 882],
                          ['card-art-mori-s.jpg', 320, 320], ['card-art-mori.jpg', 640, 882],
                          ['card-art-mori-ishizu-s.jpg', 320, 320], ['card-art-mori-ishizu.jpg', 640, 882],
-                         ['card-art-hana-ishizu-s.jpg', 320, 320], ['card-art-hana-ishizu.jpg', 640, 882]]) {
+                         ['card-art-hana-ishizu-s.jpg', 320, 320], ['card-art-hana-ishizu.jpg', 640, 882],
+                         ['card-art-oka-ishizu-s.jpg', 320, 320], ['card-art-oka-ishizu.jpg', 640, 882]]) {
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
@@ -164,6 +166,10 @@ async function boot() {
     hanaIshizuSmall: cardArtFile(${HANA}, false, 'ishizu'),
     hanaIshizuBig: cardArtFile(${HANA}, true, 'ishizu'),
     hanaGg: cardArtFile(${HANA}, false, 'gg'),
+    deckArtOka: DECK_ART.ishizu && DECK_ART.ishizu[${OKA}],
+    okaIshizuSmall: cardArtFile(${OKA}, false, 'ishizu'),
+    okaIshizuBig: cardArtFile(${OKA}, true, 'ishizu'),
+    okaGg: cardArtFile(${OKA}, false, 'gg'),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.kelbekSlug === 'kelbek' && helpers.kelbekInline.includes('card-art-kelbek-s.jpg') && helpers.kelbekInline.includes('background-position:center top'), 'CA7d: Kelbek maps and stamps like the others');
@@ -205,6 +211,10 @@ async function boot() {
   ok(helpers.hanaIshizuSmall === '../assets/card-art-hana-ishizu-s.jpg' && helpers.hanaIshizuBig === '../assets/card-art-hana-ishizu.jpg', 'CA7z8: Ishizu context resolves Hana to the Egyptian art (small + big)');
   ok(helpers.hanaGg === '../assets/card-art-hana-s.jpg', 'CA7z9: GG context resolves Hana to the plain art');
   ok(helpers.preloaded.includes('../assets/card-art-hana-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-hana-ishizu.jpg'), 'CA7z10: boot preloads the deck-scoped Hana art too');
+  ok(helpers.deckArtOka === 'oka-ishizu', 'CA7z11: DECK_ART registers Oka -> oka-ishizu for the Ishizu deck (3rd entry — the sisters are complete)');
+  ok(helpers.okaIshizuSmall === '../assets/card-art-oka-ishizu-s.jpg' && helpers.okaIshizuBig === '../assets/card-art-oka-ishizu.jpg', 'CA7z12: Ishizu context resolves Oka to the Egyptian art (small + big)');
+  ok(helpers.okaGg === '../assets/card-art-oka-s.jpg', 'CA7z13: GG context resolves Oka to the plain art');
+  ok(helpers.preloaded.includes('../assets/card-art-oka-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-oka-ishizu.jpg'), 'CA7z14: boot preloads the deck-scoped Oka art too');
 
   doc.getElementById('startbtn').click();
   for (let i = 0; i < 120 && doc.querySelectorAll('.slot').length < 10; i++)
@@ -395,17 +405,17 @@ async function boot() {
     })()
   `);
   ok(res4.ownOka !== null && res4.ownHana !== null && res4.ownMori !== null && res4.oppDownMori !== null, 'CA22: non-vacuity — Vernusylph board rendered');
-  ok(res4.ownOka.includes('card-art-oka-s.jpg'), 'CA11k: Oka tile shows its own art');
+  ok(res4.ownOka.includes('card-art-oka-ishizu-s.jpg'), 'CA11k: Oka tile in the Ishizu deck (seat 0) shows the DECK-SCOPED Egyptian art');
   ok(res4.ownHana.includes('card-art-hana-ishizu-s.jpg'), 'CA11l: Hana tile in the Ishizu deck (seat 0) shows the DECK-SCOPED Egyptian art');
   ok(res4.ownMori.includes('card-art-mori-ishizu-s.jpg'), 'CA11m: Mori tile in the Ishizu deck (seat 0) shows the DECK-SCOPED Egyptian art');
   ok(res4.oppDownMori === '' && !String(res4.oppDownMori).includes('mori'), 'CA13d: opponent FACE-DOWN Mori gets NO art (asymmetry / no leak)');
   const hOka = res4.handImgs.find(h => h.code === String(OKA));
   const hHana = res4.handImgs.find(h => h.code === String(HANA));
   const hMori = res4.handImgs.find(h => h.code === String(MORI));
-  ok(!!hOka && hOka.style.includes('card-art-oka-s.jpg'), 'CA14i: hand Oka shows the art');
+  ok(!!hOka && hOka.style.includes('card-art-oka-ishizu-s.jpg'), 'CA14i: hand Oka (Ishizu deck) shows the deck-scoped art');
   ok(!!hHana && hHana.style.includes('card-art-hana-ishizu-s.jpg'), 'CA14j: hand Hana (Ishizu deck) shows the deck-scoped art');
   ok(!!hMori && hMori.style.includes('card-art-mori-ishizu-s.jpg'), 'CA14k: hand Mori (Ishizu deck) shows the deck-scoped art');
-  ok(res4.pvOka.includes('card-art-oka-s.jpg'), 'CA16g: resident preview shows the art for Oka');
+  ok(res4.pvOka.includes('card-art-oka-ishizu-s.jpg'), 'CA16g: resident preview shows the deck-scoped art for Oka (unique deck membership: Ishizu)');
   ok(res4.pvHana.includes('card-art-hana-ishizu-s.jpg'), 'CA16h: resident preview shows the deck-scoped art for Hana (unique deck membership: Ishizu)');
   ok(res4.pvMori.includes('card-art-mori-ishizu-s.jpg'), 'CA16i: resident preview shows the deck-scoped art for Mori (unique deck membership: Ishizu)');
 
@@ -429,7 +439,9 @@ async function boot() {
       b.players[0].mzone[1] = mon(${HANA}, 0x1);  // Hana under a GG deck context (fixture)
       b.players[1].mzone[2] = mon(${HANA}, 0x1);  // Hana in the Ishizu deck (seat 1)
       b.players[1].mzone[3] = mon(${HANA}, 0x8);  // opp face-down Hana, Ishizu context (MUST stay hidden)
-      b.players[0].hand = [{ code: ${MORI} }, { code: ${HANA} }];
+      b.players[0].mzone[2] = mon(${OKA}, 0x1);   // Oka under a GG deck context (fixture)
+      b.players[1].mzone[4] = mon(${OKA}, 0x1);   // Oka in the Ishizu deck (seat 1)
+      b.players[0].hand = [{ code: ${MORI} }, { code: ${HANA} }, { code: ${OKA} }];
       render(b);
       const artOf = (zone) => {
         const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
@@ -438,6 +450,7 @@ async function boot() {
       };
       const h = document.querySelector('#hand .hcard[data-code="${MORI}"] .himg');
       const hHana = document.querySelector('#hand .hcard[data-code="${HANA}"] .himg');
+      const hOka = document.querySelector('#hand .hcard[data-code="${OKA}"] .himg');
       setPreview(${MORI}, { con: 0, loc: E.LOC.MZONE, seq: 0 });
       const pvSeat0 = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
       setPreview(${MORI}, { con: 1, loc: E.LOC.MZONE, seq: 0 });
@@ -446,9 +459,14 @@ async function boot() {
       const pvHanaSeat0 = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
       setPreview(${HANA}, { con: 1, loc: E.LOC.MZONE, seq: 2 });
       const pvHanaSeat1 = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      setPreview(${OKA}, { con: 0, loc: E.LOC.MZONE, seq: 2 });
+      const pvOkaSeat0 = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      setPreview(${OKA}, { con: 1, loc: E.LOC.MZONE, seq: 4 });
+      const pvOkaSeat1 = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
       seatDeckKeys = saved;
       return { ggTile: artOf('0:4:0'), ishizuTile: artOf('1:4:0'), ishizuDown: artOf('1:4:1'), hand: h ? (h.getAttribute('style') || '') : null, pvSeat0, pvSeat1,
-               ggHanaTile: artOf('0:4:1'), ishizuHanaTile: artOf('1:4:2'), ishizuHanaDown: artOf('1:4:3'), handHana: hHana ? (hHana.getAttribute('style') || '') : null, pvHanaSeat0, pvHanaSeat1 };
+               ggHanaTile: artOf('0:4:1'), ishizuHanaTile: artOf('1:4:2'), ishizuHanaDown: artOf('1:4:3'), handHana: hHana ? (hHana.getAttribute('style') || '') : null, pvHanaSeat0, pvHanaSeat1,
+               ggOkaTile: artOf('0:4:2'), ishizuOkaTile: artOf('1:4:4'), handOka: hOka ? (hOka.getAttribute('style') || '') : null, pvOkaSeat0, pvOkaSeat1 };
     })()
   `);
   ok(res5.ggTile !== null && res5.ishizuTile !== null && res5.ishizuDown !== null, 'CA23: non-vacuity — flipped-seat Mori board rendered');
@@ -464,6 +482,32 @@ async function boot() {
   ok(res5.handHana !== null && res5.handHana.includes('card-art-hana-s.jpg') && !res5.handHana.includes('hana-ishizu'), 'CA14m: hand Hana under a non-Ishizu deck context falls back to the plain art');
   ok(res5.pvHanaSeat0.includes('card-art-hana-s.jpg') && !res5.pvHanaSeat0.includes('hana-ishizu'), 'CA16l: preview of a GG-context Hana (instance ref) shows the plain art');
   ok(res5.pvHanaSeat1.includes('card-art-hana-ishizu-s.jpg'), 'CA16m: preview of an Ishizu-context Hana (instance ref) shows the Egyptian art');
+  ok(res5.ggOkaTile !== null && res5.ggOkaTile.includes('card-art-oka-s.jpg') && !res5.ggOkaTile.includes('oka-ishizu'), 'CA11r: Oka under a non-Ishizu deck context falls back to the plain art (tile)');
+  ok(res5.ishizuOkaTile !== null && res5.ishizuOkaTile.includes('card-art-oka-ishizu-s.jpg'), 'CA11s: Oka in the Ishizu deck shows the Egyptian art on the opponent’s seat too');
+  ok(res5.handOka !== null && res5.handOka.includes('card-art-oka-s.jpg') && !res5.handOka.includes('oka-ishizu'), 'CA14n: hand Oka under a non-Ishizu deck context falls back to the plain art');
+  ok(res5.pvOkaSeat0.includes('card-art-oka-s.jpg') && !res5.pvOkaSeat0.includes('oka-ishizu'), 'CA16n: preview of a GG-context Oka (instance ref) shows the plain art');
+  ok(res5.pvOkaSeat1.includes('card-art-oka-ishizu-s.jpg'), 'CA16o: preview of an Ishizu-context Oka (instance ref) shows the Egyptian art');
+
+  // Oka face-down on the Ishizu seat (the flipped board above is
+  // out of rendered monster slots, so she gets a minimal board):
+  // the asymmetry binds the 3rd override exactly like the others.
+  const res5b = window.eval(`
+    (() => {
+      const saved = seatDeckKeys;
+      seatDeckKeys = ['gg', 'ishizu'];
+      const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
+      const P = () => ({ mzone: [null,null,null,null,null,null,null], szone: [null,null,null,null,null,null], grave: [], removed: [], extra: [], hand: [], deckCount: 38, lp: 8000 });
+      const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
+      b.players[1].mzone[0] = mon(${OKA}, 0x8);  // opp face-down Oka, Ishizu context (MUST stay hidden)
+      render(b);
+      const slot = document.querySelector('.slot[data-zone="1:4:0"]');
+      const a = slot && slot.querySelector('.tile .art');
+      const out = a ? (a.getAttribute('style') || '') : null;
+      seatDeckKeys = saved;
+      return out;
+    })()
+  `);
+  ok(res5b === '' && !String(res5b).includes('oka'), 'CA13g: opponent FACE-DOWN Oka gets NO art even in Ishizu context (asymmetry binds the 3rd override too)');
 
   window.close();
   console.log(failures === 0 ? 'ALL CARDART CHECKS PASSED' : failures + ' CARDART CHECK(S) FAILED');

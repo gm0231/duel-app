@@ -11,6 +11,12 @@
     "background-image:url(../assets/card-art-hana-ishizu-s.jpg);background-position:center top"
    ],
    "pvStyle": "background-image:url(../assets/card-art-hana-ishizu-s.jpg);background-position:center top"
+  },
+  "oka": {
+   "fieldArts": [
+    "background-image:url(../assets/card-art-oka-ishizu-s.jpg);background-position:center top"
+   ],
+   "pvStyle": "background-image:url(../assets/card-art-oka-ishizu-s.jpg);background-position:center top"
   }
  },
  "700": {
@@ -25,6 +31,12 @@
     "background-image:url(../assets/card-art-hana-ishizu-s.jpg);background-position:center top"
    ],
    "pvStyle": "background-image:url(../assets/card-art-hana-ishizu-s.jpg);background-position:center top"
+  },
+  "oka": {
+   "fieldArts": [
+    "background-image:url(../assets/card-art-oka-ishizu-s.jpg);background-position:center top"
+   ],
+   "pvStyle": "background-image:url(../assets/card-art-oka-ishizu-s.jpg);background-position:center top"
   }
  }
 }

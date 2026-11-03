@@ -5,6 +5,7 @@
    their Egyptian art on every surface:
      36745317 Mori 《森と目覚の春化精》 -> card-art-mori-ishizu
      62133026 Hana 《花と野原の春化精》 -> card-art-hana-ishizu
+     9350312  Oka  《丘と芽吹の春化精》 -> card-art-oka-ishizu
    One real-play flow per card per height: draw her, tap her
    (resident preview), normal-summon her face-up through the
    real action sheet (board tile = small art).
@@ -32,6 +33,7 @@ const server = http.createServer((req, res) => {
 const SISTERS = [
   { slug: 'mori', code: 36745317 },
   { slug: 'hana', code: 62133026 },
+  { slug: 'oka', code: 9350312 },
 ];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 

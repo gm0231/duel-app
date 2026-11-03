@@ -4685,3 +4685,19 @@ drawn, previewed and normal-summoned in a real Ishizu-deck
 duel at 390x620/700 — tile and preview styles pin
 card-art-mori-ishizu-s.jpg / card-art-hana-ishizu-s.jpg,
 and the frames were eyeballed (names and stats match).
+
+Third entry (same day): 《丘と芽吹の春化精》 9350312 ->
+'oka-ishizu' — the Vernusylph trio's Ishizu-scoped set is
+complete. Source ~/workspace/duel-assets/
+oka-ishizu-user-20261103.jpg (1024x1536 — the pink-haired
+fairy with a lotus basket before an Egyptian temple).
+Standard top-anchored crops, no start adjustment (small
+46KB / big 220KB; her face is upper-centre and whole in the
+tile simulation). One more value in the same DECK_ART map —
+no code path changed. test-cardart gained CA0 file entries,
+CA7z11-CA7z14, the scoped expectations on the Ishizu seat
+(CA11k/CA14i/CA16g), the flipped-seat fallbacks (CA11r/
+CA14n/CA16n plain, CA11s/CA16o scoped) and the face-down
+pin CA13g. cap-deckart.js now runs all three sisters;
+shots-deckart/ holds the trio's real-play frames at
+390x620/700 (tile + preview styles pin the scoped files).

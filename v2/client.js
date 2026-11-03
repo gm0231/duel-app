@@ -44,12 +44,12 @@ const CARD_ART = { 99937011: 'mudora', 62320425: 'agido', 25926710: 'kelbek', 63
 // deck. DECK_ART maps deck id (the data.json decks key) -> passcode
 // -> slug, and resolution prefers it over CARD_ART whenever the
 // caller supplies the deck context of the card instance. First
-// entries: Mori and Hana wear their Egyptian illustrations only
-// inside the Ishizu deck; in any other deck — a future Neuron-
-// imported deck among them — they fall back to their plain art
-// on their own. Generic by design: new decks and cards are
-// data, not branches.
-const DECK_ART = { ishizu: { 36745317: 'mori-ishizu', 62133026: 'hana-ishizu' } }; // 森と目覚の春化精 / 花と野原の春化精 (Egyptian art, Ishizu deck only)
+// entries: the three Vernusylph sisters (Mori, Hana, Oka) wear
+// their Egyptian illustrations only inside the Ishizu deck; in
+// any other deck — a future Neuron-imported deck among them —
+// they fall back to their plain art on their own. Generic by
+// design: new decks and cards are data, not branches.
+const DECK_ART = { ishizu: { 36745317: 'mori-ishizu', 62133026: 'hana-ishizu', 9350312: 'oka-ishizu' } }; // 森と目覚の春化精 / 花と野原の春化精 / 丘と芽吹の春化精 (Egyptian art, Ishizu deck only)
 // Which deck each core seat is playing this duel ([seat0, seat1]),
 // set at duel start; nulls outside a duel. Every art surface
 // derives its deck context from the seat that owns the card
