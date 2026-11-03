@@ -4596,3 +4596,92 @@ face-up through the real sheet at 390x620/700 — tile,
 preview and hand all carry her own art, and the name/stat
 lines confirm the corrected mapping (Oka 200/2000 = pink
 fairy, Hana 600/1600 = rabbit, Mori 900/1800 = forest boy).
+
+## Deck-scoped illustrations (user decision, 2026-11-03)
+
+A card can now carry a different illustration while it belongs
+to a specific deck — the mechanism the future Neuron-ID deck
+import will build on. The user's shape: 《森と目覚の春化精》
+wears an Egyptian illustration ONLY inside the Ishizu deck;
+anywhere else she uses the regular forest art. A second entry
+arrived the same day (《花と野原の春化精》, same rule).
+
+### The map and the resolution order
+`DECK_ART` in client.js, next to CARD_ART:
+deck id (the data.json `decks` key) -> passcode -> slug.
+```
+DECK_ART = { ishizu: { 36745317: 'mori-ishizu', 62133026: 'hana-ishizu' } }
+```
+`cardArtFile(code, big, deckKey)` resolves: DECK_ART[deckKey]
+[code] when a deck context is supplied, else CARD_ART[code],
+else null (shared placeholder). No per-card branches anywhere:
+new decks/cards are data. Delivered files keep the standard
+shape and the user's crop rule (keep the top, cut the bottom):
+assets/card-art-mori-ishizu{-s}.jpg and
+assets/card-art-hana-ishizu{-s}.jpg, standard top-anchored
+crops with NO start adjustment (small = y0-1024 -> 320x320,
+47KB / 42KB; big = full width x y0-1411 -> 640x882, 223KB /
+201KB; both faces sit upper-centre and read whole in the
+tile simulation).
+
+### Where the deck context comes from
+Judged by the deck the card belongs to, never by the viewing
+seat (user decision): `seatDeckKeys = [seat0's key, seat1's
+key]` is recorded at duel start, and every surface derives
+its context from the seat that owns the instance:
+- board tiles: the zone's seat (con); hand: the human's seat;
+  selection grids / unselect grid: the candidate entry's con;
+- resident preview: captured into previewState at setPreview
+  time (the ref's con; a bare code falls back to
+  deckKeyOfCode — the deck key when exactly one of the two
+  duel decks contains the code, else base art);
+- the name-declaration catalogue: deckKeyOfCode (code-only
+  surface, same rule as a ref-less preview);
+- FX ghosts and cut-ins ride the same resolution: flights
+  take the departing seat, vanish/slide derive it from the
+  zone key, attack ghosts from the target's key, chain and
+  set-activation pops from the link/event con, the ace scene
+  from the summoner's con (materials from their own keys),
+  the finisher big card from the attacker's key.
+Attribution follows the client's state model (cards live in
+a player's zones/piles); there is no separate owner field,
+and control changes slide with the zone they occupy.
+
+### Preload
+preloadCardArt warms, for each selected deck, BOTH the base
+file and that deck's scoped variant for every listed card —
+so the Ishizu Mori/Hana paint their Egyptian art from the
+first frame, and the base files stay warm for surfaces whose
+context resolves the other way. The deck-select screen
+itself has no per-card art surface (both deck buttons carry
+the shared placeholder thumbnail), so nothing changes there.
+
+### Neuron-imported decks (future)
+An imported deck gets its own deck id; unless DECK_ART gains
+an entry under that id, every card in it resolves to the
+base CARD_ART art automatically. Mori in an imported deck
+shows the plain forest art — the Egyptian variant cannot
+leak into a deck it was not granted to.
+
+### Information asymmetry (unchanged)
+An opponent's face-down card receives NO art of either kind:
+tile art is only stamped when the face is visible, and FX
+face-down ghosts stay bare. The override binds exactly like
+the base art (pinned by CA13d/CA13e/CA13f).
+
+### Tests + frames
+test-cardart extended: delivered-file entries for both
+scoped pairs; CA7z1-CA7z10 (map, resolution both ways,
+preload); the Vernusylph board now expects the scoped art
+on the Ishizu seat (CA11l/CA11m/CA14j/CA14k/CA16h/CA16i);
+a flipped-seat fixture (seat keys swapped) pins the other
+direction — GG-context Mori/Hana fall back to the plain art
+on tile/hand/preview (CA11n/CA11p/CA14l/CA14m/CA16j/CA16l),
+Ishizu-context copies on the opponent's seat show the
+Egyptian art (CA11o/CA11q/CA16k/CA16m), and face-down
+Ishizu-context copies stay bare (CA13e/CA13f). Real-play
+frames (cap-deckart.js, shots-deckart/): Mori and Hana
+drawn, previewed and normal-summoned in a real Ishizu-deck
+duel at 390x620/700 — tile and preview styles pin
+card-art-mori-ishizu-s.jpg / card-art-hana-ishizu-s.jpg,
+and the frames were eyeballed (names and stats match).

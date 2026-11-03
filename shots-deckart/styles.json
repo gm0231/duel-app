@@ -1,0 +1,30 @@
+{
+ "620": {
+  "mori": {
+   "fieldArts": [
+    "background-image:url(../assets/card-art-mori-ishizu-s.jpg);background-position:center top"
+   ],
+   "pvStyle": "background-image:url(../assets/card-art-mori-ishizu-s.jpg);background-position:center top"
+  },
+  "hana": {
+   "fieldArts": [
+    "background-image:url(../assets/card-art-hana-ishizu-s.jpg);background-position:center top"
+   ],
+   "pvStyle": "background-image:url(../assets/card-art-hana-ishizu-s.jpg);background-position:center top"
+  }
+ },
+ "700": {
+  "mori": {
+   "fieldArts": [
+    "background-image:url(../assets/card-art-mori-ishizu-s.jpg);background-position:center top"
+   ],
+   "pvStyle": "background-image:url(../assets/card-art-mori-ishizu-s.jpg);background-position:center top"
+  },
+  "hana": {
+   "fieldArts": [
+    "background-image:url(../assets/card-art-hana-ishizu-s.jpg);background-position:center top"
+   ],
+   "pvStyle": "background-image:url(../assets/card-art-hana-ishizu-s.jpg);background-position:center top"
+  }
+ }
+}
