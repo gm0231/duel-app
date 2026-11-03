@@ -4186,3 +4186,22 @@ Zolga drawn and normal-summoned through the real sheet at
 size), a fabricated five-arts board at 390x620 (all five
 deliveries on field and in hand), cut-in via fxCutinShow as
 before.
+
+Sixth delivery: 《賢瑞官カルダーン》 86605515 (x3 in the Ishizu
+deck). Source: ~/workspace/duel-assets/cardan-user-20261103.jpg
+(1024x1536 — ibis-headed priest with purple magic in one hand
+and a serpent staff topped by a glowing orb, temple hall).
+Small file = top-anchored full-width square crop x0-1024 /
+y0-1024 -> 320x320 (41KB): the golden ibis head sits at top
+centre-left with the purple magic hand and the staff orb both
+inside the window; only the robe's lower half is cut, per the
+rule. Big file = full width x y0-1411 -> 640x882 (158KB).
+One line in CARD_ART; test-cardart gained CA0g/CA7j/CA7k/
+CA11f/CA14d (55 checks). Real-play frames (cap-cardan.js,
+shots-cardan/): Cardan drawn and normal-summoned through the
+real sheet at 390x700 (the tile and the resident preview read
+clearly at tile size; his ① is an on-summon optional effect,
+so the capture answers 発動しない / パス through the real UI
+before shooting the field), a fabricated six-arts board at
+390x620 (all six deliveries on field and in hand), cut-in via
+fxCutinShow as before.
