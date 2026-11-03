@@ -38,7 +38,7 @@ function cardData(code) { return (DATA && DATA.cards[code]) || null; }
 // bottom — never crop the head. That is why artInline pins
 // background-position to top; the delivered files are themselves
 // top-anchored crops.
-const CARD_ART = { 99937011: 'mudora', 62320425: 'agido', 25926710: 'kelbek', 63542003: 'keldo', 31525442: 'zolga', 86605515: 'cardan' }; // 剣神官ムドラ / 古衛兵アギド / 古尖兵ケルベク / 宿神像ケルドウ / 予見者ゾルガ / 賢瑞官カルダーン (user art 2026-11-03)
+const CARD_ART = { 99937011: 'mudora', 62320425: 'agido', 25926710: 'kelbek', 63542003: 'keldo', 31525442: 'zolga', 86605515: 'cardan', 46148485: 'sphinx', 38699854: 'taiyou', 14087893: 'tsuki', 79106360: 'chaospod' }; // 剣神官ムドラ / 古衛兵アギド / 古尖兵ケルベク / 宿神像ケルドウ / 予見者ゾルガ / 賢瑞官カルダーン / 転輪のスフィンクス / 太陽の書 / 月の書 / カオスポッド (user art 2026-11-03)
 function cardArtFile(code, big) {
   const s = code != null ? CARD_ART[code] : null;
   return s ? '../assets/card-art-' + s + (big ? '.jpg' : '-s.jpg') : null;
@@ -226,14 +226,21 @@ function resolveYesNo(code, desc) {
 // A follow-up question whose desc belongs to a shared helper's
 // string table rather than to the asking card (the Vernusylph
 // family's resolution asks its optional special summon with
-// Stringid(9350312, 1)): the desc decodes to nothing in this
-// pool, but the RESOLVING link pins the parent effect, and the
-// parent's own text carries the 「その後、…できる」 step — the
-// only optional step a mid-resolution yes/no can ask about
-// inside that effect in this pool.
+// Stringid(9350312, 1)): the RESOLVING link pins the parent
+// effect, and the parent's own text carries the 「その後、…できる」
+// step — the only optional step a mid-resolution yes/no can ask
+// about inside that effect in this pool. Since the v11 recipe
+// swap the string-base card (9350312) is itself in the pool, so
+// its descs now DECODE — they are still foreign when a DIFFERENT
+// Vernusylph card is the one resolving; a desc of the asking
+// card itself stands or falls on its own merits, as does a desc
+// decoding to any unrelated card.
+const VERN_STRING_BASE = 9350312; // 丘と芽吹の春化精 (helper string table owner)
 function foreignFollowFx(ctx, prompt) {
   if (!prompt.desc) return null;
-  if (descEffect(prompt.desc)) return null; // decodable descs stand or fall on their own merits
+  const de = descEffect(prompt.desc);
+  if (de && de.code === ctx.code) return null; // the asking card's own desc: not foreign
+  if (de && de.code !== VERN_STRING_BASE) return null; // decodable elsewhere: not the shared-helper case
   const parent = resolveEffect(ctx.code, ctx.desc);
   if (!parent || !parent.n) return null;
   if (!stepClause(ctx.code, parent.n)) return null;
@@ -683,8 +690,24 @@ function optUsedReason(code) {
   const spent = cov.shared ? cands.some(n => rec.n.has(n)) : cands.every(n => rec.n.has(n));
   return spent ? 'このターン既に使用済みです' : null;
 }
-const REVIVE_CODE = 28958464; // マジックカード「死者蘇生」
-let monsterRevived = null; // {seq, code, turnCount} — the human's monster 死者蘇生 brought back this turn
+// The revive rider («この効果で特殊召喚したモンスターは攻撃できず、
+// その効果は発動できない») is DERIVED from the pool's texts, like
+// the lock / name-limit sets — not hardcoded to one card. No card
+// in the current pool carries the rider (《マジックカード「死者
+// 蘇生」》 left with the v11 recipe swap, and the classic 《死者
+// 蘇生》 that replaced it has no rider), so the latch below never
+// arms today; it stays correct for any future pool card whose
+// text carries the rider. Deliberately uncached: tests swap DATA.
+const REVIVE_RIDER_RE = /この効果で特殊召喚したモンスターは攻撃できず、その効果は発動できない/;
+function reviveRiderCode() {
+  if (!DATA || !DATA.texts) return null;
+  for (const code of Object.keys(DATA.texts)) {
+    const t = DATA.texts[code];
+    if (t && t.text && REVIVE_RIDER_RE.test(t.text)) return +code;
+  }
+  return null;
+}
+let monsterRevived = null; // {seq, code, turnCount, rider} — the human's monster the rider card brought back this turn
 // Attribution rule (documented boundary): presentation events
 // arrive in per-process batches, and 死者蘇生's activation and
 // its summon NEVER share one (chain windows intervene) — so the
@@ -705,8 +728,9 @@ function noteReviveFromEvents(evs, state) {
   reviveBatch++;
   const chainLen = state.chain ? state.chain.length : 0;
   const ownAct = evs.filter(e => e.kind === 'activate' && e.con === HP);
-  if (ownAct.some(e => e.code === REVIVE_CODE)) {
-    reviveArm = { turnCount: state.turnCount, batch: reviveBatch };
+  const rider = reviveRiderCode();
+  if (rider != null && ownAct.some(e => e.code === rider)) {
+    reviveArm = { turnCount: state.turnCount, batch: reviveBatch, code: rider };
   } else if (reviveArm && reviveArm.batch < reviveBatch && ownAct.length) {
     reviveArm = null;
   }
@@ -715,7 +739,7 @@ function noteReviveFromEvents(evs, state) {
     if (sums.length === 1) {
       const P = state.players && state.players[HP];
       const seq = P ? P.mzone.findIndex(c => c && c.code === sums[0].code) : -1;
-      if (seq >= 0) monsterRevived = { seq, code: sums[0].code, turnCount: state.turnCount };
+      if (seq >= 0) monsterRevived = { seq, code: sums[0].code, turnCount: state.turnCount, rider: reviveArm.code };
       reviveArm = null;
     } else if (sums.length > 1) reviveArm = null;
   }
@@ -731,7 +755,7 @@ function monsterRevivedReason(code, loc, seq, turnCount) {
   const tc = turnCount != null ? turnCount : (duelState ? duelState.turnCount : null);
   if (tc == null || tc !== monsterRevived.turnCount) return null;
   if (monsterRevived.code !== code || monsterRevived.seq !== seq) return null;
-  return '《' + cardName(REVIVE_CODE) + '》の効果で特殊召喚されたため、このターンは効果を発動できません';
+  return '《' + cardName(monsterRevived.rider) + '》の効果で特殊召喚されたため、このターンは効果を発動できません';
 }
 // ---- brushup round 2: cannot-activate reasons on the OTHER surfaces ----
 // The pool-coverage round stated reasons on the FIELD sheet and
@@ -4131,8 +4155,8 @@ function uiSort(prompt, state) {
 }
 // ---- yes/no, option ----
 const OPTION_LABELS = {
-  '62320425|4': '自分のデッキの上から5枚を墓地へ送る', // 古衛兵アギド
-  '62320425|5': '相手のデッキの上から5枚を墓地へ送る',
+  // (古衛兵アギド's two mill-target options left with the card in
+  // the v11 recipe swap; no current pool card needs a label here.)
 };
 function optionLabelText(desc) {
   if (typeof desc !== 'number' || !isFinite(desc)) return null;
@@ -5004,7 +5028,7 @@ function wireSeg(id, apply) {
     // covers the engine-start wait, so the tap is never followed
     // by dead time (audit C-33).
     {
-      const dn = (k) => k === 'gg' ? 'ゲート・ガーディアン' : 'イシズ';
+      const dn = (k) => k === 'gg' ? 'ゲート・ガーディアン' : 'MILLENNIUM PROPHECY';
       $('vssub').innerHTML = dn(myDeckKey) + ' vs ' + dn(opDeckKey) + '<br>あなたは' + (humanFirst ? '先攻' : '後攻') + 'です';
       const vs = $('vsoverlay'); vs.classList.add('on');
       try {

@@ -1043,11 +1043,11 @@ const CT = { MONSTER: 0x1, SPELL: 0x2, TRAP: 0x4, EFFECT: 0x20, FUSION: 0x40, TU
 const EXTRA_TYPES = CT.FUSION | CT.SYNCHRO | CT.XYZ | CT.LINK;
 // Key cards of the pool (codes), named once for the heuristics below.
 const CC = {
-  MUDORA: 99937011, KELDO: 63542003, KELBEK: 25926710, AGIDO: 62320425, ZOLGA: 31525442,
-  CARBON: 15079028, VERN_MORI: 36745317, VERN_HANA: 62133026, STONE: 12332865,
+  MUDORA: 99937011, KELDO: 63542003, KELBEK: 25926710, AGIDO: 16135253, ZOLGA: 31525442,
+  CARBON: 15079028, VERN_MORI: 36745317, VERN_HANA: 62133026, VERN_OKA: 9350312,
   CHAOS_POD: 79106360, SILKY: 55702233, SPHINX: 46148485, KALDAN: 86605515,
   HAND_DESTRUCTION: 16435215, TAIYOU: 38699854, MOON: 14087893, MISCHIEF: 51612489,
-  REBELLION: 71593652, REBORN: 28958464, COROLLA: 14108995, FOOLISH_GOODS: 35726888,
+  REBELLION: 71593652, REBORN: 83764718, COROLLA: 14108995, FOOLISH_GOODS: 35726888,
   GK_TRAP: 98715423, EXCHANGE: 17484499, BLAST_HELD: 51208877, SPIRITUAL_SWORDS: 78625592,
   TITANOCIDER: 67037924, TRANSMIGRATION: 46652477,
   LUCE: 45409943, HORUS: 36898537, PLUTO: 37706769, BAROMETT: 62967433,
@@ -1064,9 +1064,11 @@ const CC = {
 const GUARDIAN_PIECES = [CC.SANGA, CC.HUGA, CC.SUIGA];
 // Cards that PROFIT from being sent to / placed in the graveyard (mill
 // triggers, grave searches, self-reset): cheap to discard, good to mill.
-const GRAVE_PROFIT = new Set([CC.KELBEK, CC.AGIDO, CC.BLAST_HELD, CC.LOST_WIND, CC.TITANOCIDER,
+const GRAVE_PROFIT = new Set([CC.KELBEK, CC.BLAST_HELD, CC.LOST_WIND, CC.TITANOCIDER,
   CC.DARK_ELEMENT, CC.FORCE_GUARDIAN, CC.DEMON_WIND, CC.JIRAI_TRAP, CC.SHADOW_GHOUL, CC.REBELLION]);
-const MILL_WHEN_SENT = new Set([CC.KELBEK, CC.AGIDO]); // sent hand/deck -> GY: mill 5 each
+const MILL_WHEN_SENT = new Set([CC.KELBEK]); // sent hand/deck -> GY: mill 5
+// (v11 recipe swap: AGIDO is now the classic 《アギド》 — it has no
+// mill/grave-profit effects; only its battle-destruction trigger.)
 const NEGATION_CODES = new Set([CC.SOLEMN_STRIKE, CC.GRAVE_HOLE]);
 
 function makeBotMemory() {
@@ -1199,9 +1201,9 @@ function handValue(code, view, data) {
   if (isMonsterCd(cd)) {
     let v = Math.max(cd.atk, cd.def * 0.72);
     if (cd.type & CT.TUNER) v += 120;
-    if (code === CC.KELBEK || code === CC.AGIDO) v += 150;
+    if (code === CC.KELBEK) v += 150;
     if (GUARDIAN_PIECES.includes(code)) v += 180;
-    if (code === CC.VERN_MORI || code === CC.VERN_HANA) v += 220; // enablers
+    if (code === CC.VERN_MORI || code === CC.VERN_HANA || code === CC.VERN_OKA) v += 220; // enablers
     if (code === CC.MUDORA || code === CC.KELDO) v += 200;
     if (code === CC.HEAVY_TANK) v += 250;
     if (code === CC.CHAOS_HUNTER) v += 150;
@@ -1235,7 +1237,7 @@ function discardCost(code, view, data) {
   }
   if (code === CC.TAIYOU && !monList(view, view.me).some(c => !c.faceUp) &&
       !monList(view, view.opp).some(c => !c.faceUp)) v -= 300; // no face-downs to flip
-  if (code === CC.COROLLA && !handCodes.some(c => c === CC.VERN_MORI || c === CC.VERN_HANA)) v -= 250;
+  if (code === CC.COROLLA && !handCodes.some(c => c === CC.VERN_MORI || c === CC.VERN_HANA || c === CC.VERN_OKA)) v -= 250;
   if (code === CC.EXCHANGE && view.grave[view.me].length + view.grave[view.opp].length < 20) v -= 250; // far from live
   return v;
 }
@@ -1484,11 +1486,17 @@ function activationScore(e, view, data, prompt) {
       const topOpp = view.grave[opp].map(c => graveValue(c, data)).sort((a, b) => b - a);
       return (topOpp[0] || 0) + (topOpp[1] || 0) >= 1500 ? 850 : 0;
     }
-    case CC.VERN_MORI: case CC.VERN_HANA: {
+    case CC.VERN_MORI: case CC.VERN_HANA: case CC.VERN_OKA: {
       const gyEarth = view.grave[me].some(c => { const d = cdOf(data, c); return isMonsterCd(d) && d.attribute === 0x01; });
       const handEarth = handCodes.some(c => { const d = cdOf(data, c); return isMonsterCd(d) && d.attribute === 0x01 && c !== e.code; });
       if (view.hand[me].length < 2) return 0;
       if (e.code === CC.VERN_HANA) return gyEarth ? 1100 : 0;
+      if (e.code === CC.VERN_OKA) {
+        // unique part is a deck search for any Vernusylph card:
+        // worth firing for the search alone, better with a revive.
+        if (gyEarth) return 1100;
+        return handEarth ? 900 : 700;
+      }
       if (gyEarth) return 1150;
       return handEarth && deckHas(rem, CC.KELBEK) !== false ? 950 : 0; // discard becomes the revive target pool
     }
@@ -1502,7 +1510,7 @@ function activationScore(e, view, data, prompt) {
       return (deckHas(rem, CC.TAIYOU) || deckHas(rem, CC.MOON) ||
               view.grave[me].includes(CC.TAIYOU) || view.grave[me].includes(CC.MOON)) ? 750 : 0;
     case CC.COROLLA:
-      return handCodes.some(c => c === CC.VERN_MORI || c === CC.VERN_HANA) ? 800 : 0;
+      return handCodes.some(c => c === CC.VERN_MORI || c === CC.VERN_HANA || c === CC.VERN_OKA) ? 800 : 0;
     case CC.TAIYOU: {
       const pod = myMons.find(c => !c.faceUp && c.code === CC.CHAOS_POD);
       const worm = myMons.find(c => !c.faceUp && c.code === CC.MEDUSA_WORM);
@@ -1874,7 +1882,7 @@ function effectYnAnswer(prompt, view, data, mem) {
   switch (prompt.code) {
     case CC.SANGA: case CC.HUGA: case CC.SUIGA:
       return i32resp(1); // zero the attacker's ATK during damage calculation: free save
-    case CC.KELBEK: case CC.AGIDO: {
+    case CC.KELBEK: {
       if (prompt.loc === LOC.GRAVE) { // ② mill trigger
         if (myDeck <= 8 && oppDeck > 6) return i32resp(0); // don't mill ourselves out
         return i32resp(1);
@@ -1899,7 +1907,7 @@ function effectYnAnswer(prompt, view, data, mem) {
     default:
       break;
   }
-  const ALWAYS_YES = new Set([CC.SPHINX, CC.STONE, CC.BLAST_HELD, CC.LOST_WIND, CC.TITANOCIDER,
+  const ALWAYS_YES = new Set([CC.SPHINX, CC.BLAST_HELD, CC.LOST_WIND, CC.TITANOCIDER,
     CC.GG_COMBINED, CC.GG_THUNDERWIND, CC.GG_WINDWATER, CC.GG_WATERTHUNDER,
     CC.SHADOW_GHOUL, CC.HORUS, CC.TRILOSUKTA, CC.BAROMETT, CC.MUDORA, CC.KELDO]);
   if (ALWAYS_YES.has(prompt.code)) return i32resp(1);
@@ -1912,7 +1920,7 @@ function effectYnAnswer(prompt, view, data, mem) {
 function yesNoAnswer(prompt, view, data, mem) {
   const me = view.me;
   const ctx = prompt.context;
-  if (ctx && ctx.code === CC.AGIDO) return i32resp(view.deckCount[me] > 12 ? 1 : 0); // optional extra mill
+  if (ctx && ctx.code === CC.AGIDO) return i32resp(1); // classic Agido: the post-dice revival is free value
   if (ctx && ctx.code === CC.KELBEK) return i32resp(1); // set a trap from the graveyard: free
   if (ctx && (ctx.code === CC.LOST_WIND || ctx.code === CC.TITANOCIDER)) return i32resp(1); // re-set itself
   if (ctx && ctx.code === CC.BAROMETT)

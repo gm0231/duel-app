@@ -138,6 +138,7 @@ const EXCEPTIONS = {
   '2694423|0': '公式テキストに効果番号が存在しない（旧書式）',
   '2694423|1': '公式テキストに効果番号が存在しない（旧書式）',
   '79106360|0': '公式テキストに効果番号が存在しない（リバース書式）',
+  '16135253|0': '公式テキストに効果番号が存在しない（旧書式）',
 };
 // ---------- C: undescribed blocks knowingly not prompt-bearing ----------
 const NON_PROMPT = {
@@ -147,6 +148,7 @@ const NON_PROMPT = {
   '35026117': '召喚成功時の登録処理（②攻撃制限の付与）。発動ではない',
   '45409943': '①持続（破壊耐性）。発動エントリにならない',
   '62133026': '②持続（対象耐性）。①はヘルパー経由で記述あり',
+  '9350312': '②持続（春化精モンスターの効果破壊耐性）。①はヘルパー経由で記述あり',
   '86605515': '②の適用効果（罠の破壊耐性フィールド）。発動ではない',
   '98715423': '①のロック機構（ドローイベント処理）。発動ではない',
   '34771947': 'フィールド魔法の持続処理。発動ではない',
@@ -224,26 +226,27 @@ for (const code of Object.keys(data.texts)) {
 }
 const EXPECTED_RESTRICTIONS = [
   '36745317:属性ロック（モンスター効果）', '62133026:属性ロック（モンスター効果）',
-  '21368273:EX召喚種別制限', '28958464:蘇生モンスターへの制約',
+  '9350312:属性ロック（モンスター効果）',
+  '21368273:EX召喚種別制限',
   '36898537:攻撃制限（相手モンスター）', '78625592:攻撃制限（相手全体）',
   '67037924:墓地発動のタイミング制限',
   '17484499:カード名発動制限（デュエル中1枚）',
-  '28958464:カード名発動制限（1ターン1枚）', '35726888:カード名発動制限（1ターン1枚）', '45725480:カード名発動制限（1ターン1枚）',
+  '35726888:カード名発動制限（1ターン1枚）', '45725480:カード名発動制限（1ターン1枚）',
 ];
 ok(JSON.stringify([...found].sort()) === JSON.stringify([...EXPECTED_RESTRICTIONS].sort()),
   'D: restriction scan finds exactly the enumerated set (found: ' + found.join(' / ') + ')');
 
 // ---------- E: attribute-lock derivation ----------
 const lockSet = ML.cards().map(c => c.code).sort((a, b) => a - b);
-ok(JSON.stringify(lockSet) === JSON.stringify([36745317, 62133026]),
-  'E: lock derivation = {森と目覚の春化精, 花と野原の春化精} (' + lockSet.join(',') + ')');
+ok(JSON.stringify(lockSet) === JSON.stringify([9350312, 36745317, 62133026]),
+  'E: lock derivation = {丘と芽吹の春化精, 森と目覚の春化精, 花と野原の春化精} (' + lockSet.join(',') + ')');
 
 // ---------- F: behaviour spot-checks ----------
 // yn follow-ups
 ok(T.resolveYesNo(30100551, SID(30100551, 0)).n === 2, 'F1: Minerva YESNO idx0 = follow-up of ②');
 ok(T.resolveYesNo(35026117, SID(35026117, 2)).n === 3, 'F2: Heavy Tank YESNO idx2 = follow-up of ③');
-ok(T.resolveYesNo(62320425, SID(62320425, 3)).n === 2, 'F3: Agido YESNO idx3 = follow-up of ②');
-ok(T.resolveEffect(62320425, SID(62320425, 2)).follow === true, 'F4: Agido YESNO idx2 = count-rule follow-up');
+ok(T.resolveEffect(9350312, SID(9350312, 0)).n === 1, 'F3: Hills idx0 = printed ① (hand ignition via the Vernusylph helper)');
+ok(T.resolveEffect(9350312, SID(9350312, 1)).follow === true, 'F4: Hills idx1 (the shared string-base yes/no, asked by Hills itself) = count-rule follow-up of ①');
 // pmap scopes
 ok(T.scopedEffect(63101468, SID(63101468, 0), 4, 'idle').n === 1 && T.scopedEffect(63101468, SID(63101468, 0), 4, 'chain').n === 2,
   'F5: Hyperion idx0 = ① idle / ② chain');
@@ -259,6 +262,8 @@ ok(T.entryEffect({ code: 31525442, desc: 0, loc: 2 }, 'idle').n === 1 && T.entry
 const vernCtx = { code: 36745317, desc: SID(36745317, 1), loc: 2 };
 ok(!!T.foreignFollowFx(vernCtx, { desc: SID(9350312, 1) }), 'F10: Vernusylph follow-up (foreign desc 9350312) recognised via the resolving link');
 ok(T.foreignFollowFx(vernCtx, { desc: SID(36745317, 0) }) === null, 'F11: a decodable own desc is NOT forced into the follow-up form');
+ok(T.foreignFollowFx({ code: 9350312, desc: SID(9350312, 0), loc: 2 }, { desc: SID(9350312, 1) }) === null,
+  'F11b: Hills resolving itself — its own string-base desc is NOT foreign (the base card joined the pool in v11; F10 guards the other side)');
 // OPT parsing + candidates
 ok(JSON.stringify([...PC.optCovered(82633039)].sort()) === '[1,2]', 'F12: Castel OPT clause covers ①②');
 ok(JSON.stringify([...PC.optCovered(37706769)]) === '[2]', 'F13: Pluto OPT clause covers ② only');
@@ -283,7 +288,15 @@ PC.reset();
 PC.trackUsedFx({ turnCount: 1, chain: [{ code: 99937011, con: 1, loc: 2, seq: 0, desc: SID(99937011, 0) }, { code: 63101468, con: 0, loc: 4, seq: 0, desc: SID(63101468, 0) }] });
 ok(JSON.stringify(PC.usedFx().find(u => u.code === 63101468).n) === '[2]' && PC.optUsedReason(63101468) === null,
   'F18d: Hyperion responding link attributes to ② (pmap chain); OPT reason stays silent (① unspent)');
-// 死者蘇生 latch
+// 死者蘇生 latch — the rider card itself left the pool in the v11
+// recipe swap (the classic 《死者蘇生》 carries no rider), so the
+// latch is exercised against a fixture DATA whose texts carry the
+// rider under the old code; the mechanism derives the code from
+// the text, exactly as in production. Real DATA returns after F25.
+const fixtureData = JSON.parse(JSON.stringify(data));
+fixtureData.names['28958464'] = 'マジックカード「死者蘇生」';
+fixtureData.texts['28958464'] = { name: 'マジックカード「死者蘇生」', text: 'このカード名のカードは１ターンに１枚しか発動できない。\n①：自分か相手の墓地のモンスター１体を対象として発動できる。そのモンスターを自分フィールドに特殊召喚する。このターン、この効果で特殊召喚したモンスターは攻撃できず、その効果は発動できない。' };
+T.setDATA(fixtureData);
 PC.reset();
 const fakeState = { turnCount: 3, players: [{ mzone: [null, { code: 82633039 }, null, null, null] }, { mzone: [] }] };
 PC.noteRevive([{ kind: 'activate', code: 28958464, con: 0 }, { kind: 'spsummon', code: 82633039, con: 0 }], fakeState);
@@ -313,18 +326,19 @@ PC.noteRevive([{ kind: 'activate', code: 28958464, con: 0 }], stChain);
 PC.noteRevive([{ kind: 'activate', code: 99937011, con: 0 }], stChain);
 PC.noteRevive([{ kind: 'spsummon', code: 82633039, con: 0 }], { turnCount: 3, chain: [], players: fakeState.players });
 ok(PC.revivedReason(82633039, 4, 1, 3) === null, 'F25: an intervening own activation disarms (conservative miss, never a false claim)');
+T.setDATA(data); // restore the real pool for the sections below
 
 // ---------- G: card-name activation limits (brushup round 2) ----------
 ok(JSON.stringify(PC.nameLimitCards().map(x => x.code + ':' + x.scope).sort()) === JSON.stringify([
-  '17484499:duel', '28958464:turn', '35726888:turn', '45725480:turn',
-]), 'G1: card-name limit derivation = {現世と冥界の逆転:duel, 死者蘇生/おろかな副葬/七星の宝刀:turn}');
+  '17484499:duel', '35726888:turn', '45725480:turn',
+]), 'G1: card-name limit derivation = {現世と冥界の逆転:duel, おろかな副葬/七星の宝刀:turn} (マジックカード「死者蘇生」 left the pool in v11; the classic has no name limit)');
 PC.reset();
-ok(PC.nameLimitReason(28958464) === null, 'G2: 死者蘇生 unspent -> silent');
-PC.trackUsedFx({ turnCount: 1, chain: [{ code: 28958464, con: 0, loc: 2, seq: 0, desc: SID(28958464, 0) }] });
-ok(PC.nameLimitReason(28958464) === 'このカード名のカードは１ターンに１枚しか発動できません',
-  'G3: after activating 死者蘇生, its name limit states the reason');
+ok(PC.nameLimitReason(35726888) === null, 'G2: おろかな副葬 unspent -> silent');
+PC.trackUsedFx({ turnCount: 1, chain: [{ code: 35726888, con: 0, loc: 2, seq: 0, desc: SID(35726888, 0) }] });
+ok(PC.nameLimitReason(35726888) === 'このカード名のカードは１ターンに１枚しか発動できません',
+  'G3: after activating おろかな副葬, its name limit states the reason');
 PC.trackUsedFx({ turnCount: 2, chain: [] });
-ok(PC.nameLimitReason(28958464) === null, 'G4: the turn-scope limit expires with the turn');
+ok(PC.nameLimitReason(35726888) === null, 'G4: the turn-scope limit expires with the turn');
 PC.reset();
 PC.trackUsedFx({ turnCount: 1, chain: [{ code: 17484499, con: 0, loc: 2, seq: 0, desc: SID(17484499, 0) }] });
 PC.trackUsedFx({ turnCount: 7, chain: [] });

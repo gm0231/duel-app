@@ -117,6 +117,12 @@ function allDescIdxs(code) {
 //   Vernusylph.AddSpSummonEffect(c,id,1)=①.
 // 花と野原の春化精: idx0=hand ignition via Vernusylph.AddSpSummonEffect(c,id,0)=①
 //   (its only described effect; ② is an undescribed continuous).
+// 丘と芽吹の春化精: idx0=hand ignition via Vernusylph.AddSpSummonEffect(c,id,0)=①
+//   (its only described effect; ② is an undescribed continuous — the
+//   Vernusylph monsters' effect-destruction protection). Joined the
+//   pool with the v11 recipe swap (2026-11-03); note its code is ALSO
+//   the Vernusylph helper's shared string base (see client.js
+//   foreignFollowFx).
 // カオスハンター: idx0=EVENT_SPSUMMON trigger (hand special summon)=① (①'s
 //   remaining blocks are the continuous ②, undescribed).
 // 沼地の魔道王: idx0=HAND IGNITION=① (idx1 is the SINGLE name-substitute
@@ -132,6 +138,7 @@ const OVERRIDES = {
   14108995: { 0: 2 },
   36745317: { 0: 2, 1: 1 },
   62133026: { 0: 1 },
+  9350312: { 0: 1 },
   97940434: { 0: 1 },
   45223540: { 0: 1 },
 };
@@ -148,12 +155,13 @@ const PMAP = {
 //   optional destruction after the mill) — her ONLY SelectYesNo.
 // 重魔戦車: SelectYesNo Stringid(id,2) sits in ③'s operation (the
 //   optional destruction when a Labyrinth Wall card is present).
-// アギド: idx2 is ①'s follow-up (already caught by the idx==n
-//   rule); idx3 sits in ②'s operation (the optional second mill).
+// (古衛兵アギド's yn {3:2} left the table with the card itself in
+//   the v11 recipe swap; the classic 《アギド》 that replaced it has
+//   an unnumbered text, so its resolution yes/no stays unpinned and
+//   shows the full text, like the other unnumbered cards.)
 const YN = {
   30100551: { 0: 2 },
   35026117: { 2: 3 },
-  62320425: { 3: 2 },
 };
 // Desc-less entry pinning (see header): {loc, scope, n}.
 // ミネルバ: her only IGNITION is ① (MZONE); her only chain-scope
