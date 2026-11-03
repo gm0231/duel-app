@@ -5000,6 +5000,55 @@ stat lines read 生きる偲びのシルキィ 800/0; the plain
 'silky' remains what any non-Ishizu context sees
 (fixture-pinned, as with Kakan / Carbon before her).
 
+## Per-card illustrations, 17th delivery (2026-11-04): 《メタファイズ・ホルス・ドラゴン》 — the first EXTRA-deck monster
+
+User art for 《メタファイズ・ホルス・ドラゴン》 36898537
+(Ishizu EXTRA deck x2, Synchro, Lv6, ATK 2300 / DEF 1600) —
+source ~/workspace/duel-assets/horus-user-20261103.jpg
+(1024x1536, the silver mechanical dragon with three heads
+and spread wings, hovering over the moonlit Nile). Plain
+registration 'horus' in CARD_ART; NO DECK_ART entry.
+
+Standard top-anchored crops, no start adjustment: small =
+y0-1024 -> 320x320 (43.2KB), big = full width x y0-1411 ->
+640x882 (191.9KB) — the same numbers as Carbon's delivery
+(identical source dimensions). The tile simulation
+(62x88, cover / centre top) keeps the central head whole at
+mid-frame with both wings spanning the width and the moon
+in the top corner; the two side heads sit at the frame
+edges and are cover-cropped on the narrow tile, as with
+any wide subject. NO crop adjustment: the user's rule
+(keep the top, cut the bottom) is followed as-is and the
+head at ~30% height is never at risk.
+
+test-cardart: CA0u/CA0v pin the deck membership (Ishizu
+EXTRA x2, GG none); CA7z31-CA7z34 pin the map, both
+resolutions, the boot preload (EXTRA-deck membership warms
+the art from deck-select time) and the absence of a
+deck-scoped override; a fabricated post-summon board
+(CA30 / CA11ad / CA11ae / CA13n / CA16y) pins the new art
+on an own face-up tile, on an opponent FACE-UP tile
+(public), on the resident preview — and NO art on an
+opponent FACE-DOWN Horus (asymmetry binds EX monsters
+too). 243 checks in total, ALL PASSED. Affected suites:
+setvis / facedown / layout / overlay / poolcov / fx /
+swap / phase2 / ui / typecolor all green (strot dropped
+one sampling check on the first run and passed cleanly
+on two re-runs — the known duel-flow flake, not this
+change; the delivery touches only the art map and the
+two new asset files).
+
+Real-play frames (cap-horus.js, shots-horus/): a real
+duel as the Ishizu deck — the own EXデッキ pile sheet
+lists Horus x2 among the 15; tapping a Horus row opens
+the card info (メタファイズ・ホルス・ドラゴン, 光属性／
+幻竜族／レベル6／攻2300／守1600, full official text) and
+sets the resident preview, whose strip shows the dragon
+painting with the silver Synchro name band and
+ATK 2300／DEF 1600, at 390x620/700. The post-summon field
+tile is fixture-pinned (CA11ad), as the deck-scoped
+deliveries pinned their non-Ishizu surfaces by fixture.
+
 ## Cannot-attack reasons (2026-11-04, user report: バロメットが召喚したターンに攻撃できなかった)
 
 Investigation (~/workspace/duel-app-baromett-investigation/) proved
