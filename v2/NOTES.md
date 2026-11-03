@@ -4377,3 +4377,77 @@ then clicked the dead button forever and the duel never advanced
 選択に戻る — not a product bug). The new deck's longer, Mudora-
 heavier trajectories made the wedge likely instead of rare. All
 four clickers now skip `.optbtn.disabled`. No assertion changed.
+Seventh delivery: 《転輪のスフィンクス》 46148485 (x1 in the
+Ishizu deck; also a KEYCARD_CODES member — her summon raises
+the BGM to the Keycard tier and fires the ace cut-in). Source:
+~/workspace/duel-assets/sphinx-user-20261103.jpg (1024x1536 —
+gold-and-purple sphinx with two floating stone tablets over a
+sunset desert). Small file = the standard top-anchored
+full-width square crop x0-1024 / y0-1024 -> 320x320 (42KB),
+no start-position adjustment: her face sits small near the
+top, but a tile-aspect simulation (center/cover, ~55px wide)
+still reads unmistakably — gold headdress, purple torso,
+rainbow shield and both tablets fill the centre column, a
+combination no other pool card has. Big file = full width x
+y0-1411 -> 640x882 (191KB). One line in CARD_ART;
+test-cardart gained CA0h/CA7l/CA7m/CA11g/CA13b/CA14e/CA16c/
+CA20 (66 checks). NOTE: Sphinx was the test suite's unlisted
+exemplar (fallback checks CA6/CA11/CA15/CA17); that role
+moved to 《森と目覚の春化精》 36745317 (UNLISTED, x3 in the
+Ishizu main deck), so the fallback contract stays pinned on a
+real pool card. Real-play frames (cap-sphinx.js,
+shots-sphinx/): Sphinx drawn in a real opening hand and
+tapped to the resident preview at 390x620/700 (the art reads
+in the hand card). Declared substitutions: the field tile is
+painted via render() inside the real session (she is level
+10 and cannot be tribute-summoned from an opening hand) on a
+fabricated seven-arts board, and the cut-in is shot via
+fxCutinShow(46148485) — the exact function the real
+keycard-summon path calls — rather than staging a full
+tribute summon; the big card shows the full illustration
+with both tablets and the shield.
+
+Eighth + ninth deliveries (the first SPELLS with individual
+art): 《太陽の書》 38699854 and 《月の書》 14087893 (x1 each in
+the Ishizu deck). Sources: ~/workspace/duel-assets/
+taiyou-user-20261103.jpg (1024x1536 — golden book on an
+altar, Anubis statue behind) and tsuki-user-20261103.jpg
+(1024x1536 — blue book in a night temple, crescent moon and
+Eye of Horus on the cover). Both books sit in the lower half
+of their frames, but the standard top-anchored full-width
+square crop x0-1024 / y0-1024 -> 320x320 (44KB / 37KB) needs
+NO start-position adjustment and does NOT break the crop
+rule: each cover's signature — the winged eye and the
+sun-wheel (Taiyou) / the crescent-and-eye medallion (Tsuki)
+— sits inside the top square, and tile-aspect simulations
+read instantly (warm gold vs deep blue tell the two apart
+at a glance). Big files = full width x y0-1411 -> 640x882
+(216KB / 170KB). Two lines in CARD_ART; test-cardart gained
+CA0i/CA0j/CA7n/CA7o/CA7p/CA7q/CA11h/CA11i/CA13c/CA14f/
+CA14g/CA16d/CA16e/CA21. Spell surfaces pinned by a dedicated
+fabricated board: own face-up S/T tile shows the art, own
+SET S/T carries the art UNDER the setown veil (CA11i), and
+opponent set S/T gets no art and no veil (CA13c). Real-play
+frames (cap-books.js, shots-books/): each book drawn in a
+real opening hand, tapped to the preview, then set through
+the real action sheet at 390x620/700 — the set tile ghosts
+the book's face under the breathing veil (styles.json pins
+the art URL + veil at both heights), plus a fabricated
+both-books board (face-up pair + set Taiyou + both in hand).
+
+Tenth delivery: 《カオスポッド》 79106360 (x2 in the Ishizu
+deck). Source: ~/workspace/duel-assets/
+chaospod-user-20261103.jpg (1024x1536 — the grinning pod
+among canopic jars). The face is large at centre frame, so
+the standard top-anchored full-width square crop x0-1024 /
+y0-1024 -> 320x320 (34KB) puts the green eye and the teeth
+squarely in the tile's centre column — the tile simulation
+reads instantly. Big file = full width x y0-1411 -> 640x882
+(136KB). One line in CARD_ART; test-cardart gained CA0k/
+CA7r/CA7s/CA11j/CA14h/CA16f (92 checks in total). Real-play
+frames (cap-chaospod.js, shots-chaospod/): the Pod drawn
+and normal-summoned face-up through the real sheet (tile +
+resident preview, eye and grin unmistakable at tile size),
+and — the surface a FLIP monster actually shows — drawn and
+set face-down through the real sheet, its face ghosting
+under the breathing setown veil, rotated with the tile.

@@ -1,0 +1,22 @@
+{
+ "620": {
+  "taiyou": {
+   "setTileArt": "background-image:url(../assets/card-art-taiyou-s.jpg);background-position:center top",
+   "setTileVeil": true
+  },
+  "tsuki": {
+   "setTileArt": "background-image:url(../assets/card-art-tsuki-s.jpg);background-position:center top",
+   "setTileVeil": true
+  }
+ },
+ "700": {
+  "taiyou": {
+   "setTileArt": "background-image:url(../assets/card-art-taiyou-s.jpg);background-position:center top",
+   "setTileVeil": true
+  },
+  "tsuki": {
+   "setTileArt": "background-image:url(../assets/card-art-tsuki-s.jpg);background-position:center top",
+   "setTileVeil": true
+  }
+ }
+}
