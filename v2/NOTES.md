@@ -3666,4 +3666,9 @@ Frame evidence (real Chromium, real taps): shots-logfix/ —
 repro-700-* (before fix: tap, nothing), fixed-700-* /
 fixed-620-* (after fix), deep2-700-* (11 rows, sheet eyeballed:
 title, 直近 11 件, turn-tagged rows newest-first, 盤面に戻る).
+Scroll proof at 620 (probe-scroll.js): 17 rows held at
+SELECT_IDLECMD, sheet scrollHeight 553 > clientHeight 382,
+scrollTop reaches the 171 max and the oldest row (自分：5枚
+ドロー) is reachable — scroll620-top.png / scroll620-bottom.png,
+both eyeballed.
 Still unmeasured: real-device WKWebView tap behaviour.
