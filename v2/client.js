@@ -3515,6 +3515,52 @@ function openInfoPop(code, ref, fx) {
   $('infopop-close').addEventListener('click', () => { playClick(); closeInfoPop(); });
 }
 function closeInfoPop() { const p = $('infopop'); if (p && p.className) { p.className = ''; p.innerHTML = ''; } }
+// The one visibility rule for board info (opponent-info round):
+// a field card's public info may be shown iff it is face-up, or
+// it is the player's own card (own face-down cards ghost through
+// by design). An opponent's face-down card NEVER resolves here —
+// its code stays hidden behind this single guard, the same rule
+// the tile art and the stat strip already obey.
+function boardCardAt(key) {
+  if (!duelState || !key) return null;
+  const [con, loc, seq] = key.split(':').map(Number);
+  if (loc !== E.LOC.MZONE && loc !== E.LOC.SZONE) return null;
+  const P = duelState.players[con];
+  if (!P) return null;
+  const card = loc === E.LOC.MZONE ? P.mzone[seq] : P.szone[seq];
+  if (!card || card.code == null) return null;
+  if ((card.pos & E.POS_FACEUP) === 0 && con !== HP) return null;
+  return { code: card.code, ref: { con, loc, seq } };
+}
+// R-SEL-2 extension (opponent-info round): while a selection
+// sheet is peeked down, a tap on a board card is an INFO tap —
+// the read-only detail floats over the board, and closing it
+// returns to the peeked sheet with the selection untouched.
+// The prompt is never answered, toggled or cancelled from here.
+function peekInfoTap(key) {
+  const hit = boardCardAt(key);
+  if (!hit) return false;
+  playClick();
+  openInfoPop(hit.code, hit.ref);
+  return true;
+}
+function peekBoardTap(x, y) {
+  if (!document.elementsFromPoint) return false;
+  const els = document.elementsFromPoint(x, y);
+  for (const el of els) {
+    if (!el || !el.closest) continue;
+    const zoneEl = el.closest('[data-zone]');
+    if (zoneEl) return peekInfoTap(zoneEl.dataset.zone);
+    if (el.closest('#preview') && previewState) {
+      playClick();
+      openInfoPop(previewState.code, previewState.con != null && previewState.loc != null ? { con: previewState.con, loc: previewState.loc, seq: previewState.seq } : null);
+      return true;
+    }
+    const handEl = el.closest('#hand .hcard');
+    if (handEl && handEl.dataset.code) { setPreview(+handEl.dataset.code, null); return true; }
+  }
+  return false;
+}
 function dockClose() { $('dock').className = ''; $('dock').innerHTML = ''; }
 function clearInteraction() {
   sheetClose(); dockClose();
@@ -4257,6 +4303,11 @@ window.__purpose = { infer: inferSelectPurpose, phaseCtx: phaseJaContext };
 // Test surface: render the SELECT_UNSELECT_CARD sheet for a synthetic
 // prompt so its button states can be asserted without a live duel.
 window.__unselect = { open: (prompt) => uiUnselect(prompt, null) };
+// Test surface (opponent-info round): the board info-tap guard
+// and the peek info tap, so test-oppinfo.js can pin the
+// visibility rule and the selection-untouched contract without
+// hit-testing (jsdom has no elementsFromPoint).
+window.__oppinfo = { boardCardAt, peekInfoTap };
 function uiYesNo(prompt, state) {
   const isEff = prompt.name === 'SELECT_EFFECTYN';
   // WHICH card and WHICH effect is being asked must be readable on
@@ -4477,16 +4528,19 @@ document.addEventListener('click', (ev) => {
       }
       renderPlaceHint();
       if (duelState) render(duelState);
+      return;
     }
+    // a zone the placement does not target is an INFO tap, not a
+    // placement: show the card's public info in the resident
+    // preview and leave the placement exactly as it was
+    // (opponent-info round; boardCardAt hides opponent face-down).
+    const hit = boardCardAt(key);
+    if (hit) setPreview(hit.code, hit.ref);
     return;
   }
   if (zoneEl && !placeCtx && duelState) {
-    const [zcon, zloc, zseq] = zoneEl.dataset.zone.split(':').map(Number);
-    if (zloc === E.LOC.MZONE || zloc === E.LOC.SZONE) {
-      const P = duelState.players[zcon];
-      const card = zloc === E.LOC.MZONE ? P.mzone[zseq] : P.szone[zseq];
-      if (card && card.code != null && ((card.pos & E.POS_FACEUP) !== 0 || zcon === HP)) setPreview(card.code, { con: zcon, loc: zloc, seq: zseq });
-    }
+    const hit = boardCardAt(zoneEl.dataset.zone);
+    if (hit) setPreview(hit.code, hit.ref);
   }
   const actEl = ev.target.closest('[data-act]');
   // triage-#2: a tap that lands while no IDLE/BATTLE prompt is
@@ -5079,6 +5133,12 @@ function wireSeg(id, apply) {
   $('sheetx').addEventListener('click', () => { playClick(); sheetClose(); });
   $('sheetwrap').addEventListener('click', (ev) => {
     if (ev.target === $('sheetwrap') && sheetKind === 'view') { playClick(); sheetClose(); }
+    // opponent-info round: while a prompt sheet is peeked down,
+    // the wrap still covers the board, so a backdrop tap is
+    // forwarded to the card under the point as a read-only info
+    // tap (peekBoardTap). It never reaches the phase/menu buttons
+    // beneath — only card surfaces answer, and only with info.
+    else if (ev.target === $('sheetwrap') && $('sheetwrap').classList.contains('peek')) peekBoardTap(ev.clientX, ev.clientY);
   });
   $('peekbtn').addEventListener('click', () => {
     playClick();
