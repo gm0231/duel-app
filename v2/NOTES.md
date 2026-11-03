@@ -4999,3 +4999,51 @@ resolve to card-art-silky-ishizu in the Ishizu deck, name /
 stat lines read 生きる偲びのシルキィ 800/0; the plain
 'silky' remains what any non-Ishizu context sees
 (fixture-pinned, as with Kakan / Carbon before her).
+
+## Zero-option chain prompts auto-pass (2026-11-04, user report: 何も発動できるものなくても聞いてくるのは不毛)
+
+Measured first (probe, bot duels, both deck assignments): the core
+sends MSG_SELECT_CHAIN at every timing window unconditionally
+(playerop.cpp writes the message even when select_chains is
+empty), and **983 of 1692 chain prompts to the human seat carried
+0 entries (58%)** — passing is the only legal answer there.
+Prompts whose every candidate is dismissed (per-chain or duel)
+are the same shape after the client's own presentation filter.
+
+The decision now lives at the uiAnswer choke point, next to the
+response-mode 'off' auto-pass, as `chainPassDecision(prompt,
+state)`:
+- 'pass' — zero live options (no entries at all, or every
+  candidate chain-dismissed / mixed chain+duel dismissed):
+  uiAnswer resolves i32 -1 immediately. No prompt cycle at all:
+  currentPrompt is never set, no stats refresh round-trip, no
+  dock. (uiChain already auto-passed these deep in its own flow;
+  the guarantee is now structural and tested, and on the Worker
+  path the zero-option majority no longer pays a prompt cycle.)
+- 'flash' — every candidate duel-dismissed: unchanged, uiChain's
+  visible auto-pass owns it (自動パス flash + 450 ms), so the
+  player sees their dismissal setting fire.
+- 'show' — at least one live candidate, and ALL forced prompts
+  (passing is illegal there; mandatory responses, including the
+  spe_count/0x7f flows, are always shown). Response mode 'on'
+  （毎回） keeps ignoring dismissals exactly as before; mode 'off'
+  still passes every non-forced prompt earlier in uiAnswer.
+
+Answers are byte-identical to the old flow in every case (pass
+where pass was already the answer), so game progression cannot
+change; uiChain's internal guards remain as a backstop.
+
+Pinned by test-chainpass.js: Part A unit-tests the decision
+matrix (14 checks: zero entries / forced / live / each dismissal
+kind / mixed / resp 'on' / the per-chain dismissal reset).
+Part B runs 5 real engine duels with the REAL uiAnswer/uiChain
+answering every SELECT_CHAIN (bot plays the rest): 510 prompts,
+222 'pass' / 288 'show', decision-vs-display agreement for every
+prompt, 0 MSG_RETRY, all duels completed. Frames
+(cap-chainpass.js, shots-chainpass/, declared fabrication through
+the real code paths over a live board): dock with a live
+candidate + パス at 390x700/620; the 自動パス chip flash for a
+duel-dismissed candidate; a zero-entry prompt leaving the board
+untouched. test-logdetail-ui keeps its known load-flake on the
+pristine base too (0–9 failing checks across runs there, same
+failure modes; not this change).

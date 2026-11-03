@@ -3541,6 +3541,13 @@ function uiAnswer(prompt, state) {
     // choice only — passing (i32 -1) is always a legal SELECT_CHAIN
     // answer, and forced prompts are still shown in every mode.
     if (fxSettings.resp === 'off' && prompt.name === 'SELECT_CHAIN' && !prompt.forced) { resolve(E.i32resp(-1)); return; }
+    // Zero-option chain prompts (user report 2026-11-04): the core
+    // sends MSG_SELECT_CHAIN at every timing window even when the
+    // player has nothing chainable (measured: 58% of chain prompts
+    // in bot duels carry 0 entries) — passing is then the ONLY legal
+    // answer, so asking is pure friction. Resolve immediately, before
+    // any prompt cycle (no currentPrompt, no stats refresh, no dock).
+    if (prompt.name === 'SELECT_CHAIN' && chainPassDecision(prompt, state) === 'pass') { resolve(E.i32resp(-1)); return; }
     if (prompt.name === 'SELECT_EFFECTYN' && duelNoConfirm.has(effectYnKey(prompt))) { flashAutoPass(cardName(prompt.code)); resolve(E.i32resp(0)); return; }
     // An arriving prompt takes the sheet back from the FX settings
     // sheet (round B) — the settings sheet must never sit over a dock
@@ -3825,6 +3832,37 @@ function openCardInfo(code) {
 }
 // ---- chain dock (EDOPro-style; numbered links live in the mid bar) ----
 function chainKey(e) { return e.code + '|' + e.con + '|' + e.loc + '|' + e.seq + '|' + e.desc; }
+// Does this SELECT_CHAIN prompt have any option worth asking about?
+// Returns:
+//   'pass'  — no live candidate: answer pass (-1) at once, show
+//             nothing. Covers BOTH the core's zero-entry prompts
+//             and prompts whose every candidate is dismissed for
+//             this chain (mixed with duel dismissals).
+//   'flash' — every candidate is duel-dismissed: uiChain owns this
+//             case (visible 自動パス flash + short delay), so the
+//             player can see their setting fire.
+//   'show'  — at least one live candidate, or the prompt is forced
+//             (mandatory responses are always shown; passing is not
+//             even legal there).
+// Dismissals never apply in response mode 'on' （毎回）, exactly as
+// in uiChain. The per-chain dismissal reset mirrors uiChain's own
+// (a finished chain's dismissals must not leak into an open-state
+// activation window), and stays idempotent when uiChain repeats it.
+function chainPassDecision(prompt, state) {
+  if (prompt.forced) return 'show';
+  const entries = prompt.entries || [];
+  if (!entries.length) return 'pass';
+  if (fxSettings.resp === 'on') return 'show';
+  if (state && !state.chain.length) dismissedChains = new Set();
+  let allDuel = true, allAny = true;
+  for (const e of entries) {
+    const k = chainKey(e);
+    if (!dismissedDuel.has(k)) allDuel = false;
+    if (!dismissedDuel.has(k) && !dismissedChains.has(k)) allAny = false;
+  }
+  if (allDuel) return 'flash';
+  return allAny ? 'pass' : 'show';
+}
 function updateAutoPassChip() {
   const el = $('autopass'); if (!el) return;
   if (Date.now() < autoPassFlashUntil) return; // flash text still showing
