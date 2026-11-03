@@ -39,7 +39,7 @@ let failures = 0;
 const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (!cond) failures++; };
 
 const MUDORA = 99937011, KELBEK = 25926710, MORI = 36745317, HORUS = 36898537;
-const UNLISTED = 16135253;      // classic Agido — Ishizu main, no individual art (see test-cardart)
+const UNLISTED = 17484499;      // Gensei to Meikai no Gyakuten — Ishizu main, no individual art (see test-cardart; classic Agido gained the agido alias by the 2026-11-04 user ruling)
 const LUCE = 45409943;          // 宵闇のルーチェ — Ishizu EX, no individual art
 
 async function boot() {

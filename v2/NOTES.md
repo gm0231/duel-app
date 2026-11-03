@@ -5751,3 +5751,7 @@ Frames: cap-cardview.js (grave / detail / keyact at 390x620
 and 390x700) in ~/workspace/duel-app-cardview-shots/.
 Unmeasured, as ever: real-device WKWebView look and feel, SE
 timing by ear.
+
+## 2026-11-04: classic Agido aliases the Ancient Guard art (user ruling)
+- The user ruled that the art delivered for 《古衛兵アギド》 (62320425) is also used for the deck's classic 《アギド》 (16135253): CARD_ART gains `16135253: 'agido'` (same two files, no new assets). The entry for 62320425 stays for when that card returns to a deck.
+- test-cardart / test-cardview: the unlisted-fallback exemplar moves from 16135253 to 《現世と冥界の逆転》 (17484499) — with the alias, no Ishizu main-deck monster remains unlisted. CA7c inverts (the agido art is now preloaded via the classic card's deck membership); CA7b2 pins the alias itself.

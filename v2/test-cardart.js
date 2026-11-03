@@ -73,14 +73,15 @@ const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, 
 // Mori (after the 7th) -> Carbon (after the 13th) -> Shilkey
 // (after the 15th), and Shilkey gained art in the 16th
 // delivery, so the role now sits with the deck's CLASSIC
-// 《アギド》 16135253: a real Ishizu main-deck monster (x1)
-// with no individual art — the dormant CARD_ART 'agido' entry
-// is keyed to Ancient Guard Agido (62320425), a different
-// card — and, after the 16th delivery, the ONLY unlisted
-// monster left in the deck. Usable on every fallback surface
-// (tile / hand / preview / ghost), like every exemplar
-// before it.
-const UNLISTED = 16135253;
+// 《現世と冥界の逆転》 17484499: a real Ishizu main-deck card
+// (x1) with no individual art. The previous exemplar, the
+// deck's CLASSIC 《アギド》 16135253, gained the 'agido' art
+// by the user's ruling of 2026-11-04 (the Ancient Guard
+// Agido art is used for the classic card too), leaving no
+// unlisted monster in the deck; the role passes to this
+// card. Usable on every fallback surface (tile / hand /
+// preview / ghost), like every exemplar before it.
+const UNLISTED = 17484499;
 
 // ---- delivered art files (existence + top-anchored dimensions) ----
 for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.jpg', 640, 882],
@@ -113,7 +114,7 @@ for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.
 ok(data.decks.ishizu.main.filter(c => c === MUDORA).length === 3, 'CA0b: the Ishizu deck runs 3 copies of Mudora');
 ok(data.decks.ishizu.main.filter(c => c === AGIDO).length === 0 &&
    data.decks.ishizu.main.filter(c => c === 16135253).length === 1,
-  'CA0c: recipe v11 — the deck runs the CLASSIC Agido (16135253) x1; the user art keyed to Ancient Guard Agido (62320425) no longer matches a deck card and stays dormant in CARD_ART until the user rules on it');
+  'CA0c: recipe v11 — the deck runs the CLASSIC Agido (16135253) x1; per the user ruling of 2026-11-04 the classic card aliases the Ancient Guard Agido art (see CA7b2/CA7c)');
 ok(data.decks.ishizu.main.filter(c => c === KELBEK).length === 1, 'CA0d: the Ishizu deck runs 1 copy of Kelbek');
 ok(data.decks.ishizu.main.filter(c => c === KELDO).length === 3, 'CA0e: the Ishizu deck runs 3 copies of Keldo');
 ok(data.decks.ishizu.main.filter(c => c === ZOLGA).length === 1, 'CA0f: the Ishizu deck runs 1 copy of Zolga');
@@ -125,7 +126,7 @@ ok(data.decks.ishizu.main.filter(c => c === CHAOSPOD).length === 2, 'CA0k: the I
 ok(data.decks.ishizu.main.filter(c => c === OKA).length === 1, 'CA0l: the Ishizu deck runs 1 copy of Oka');
 ok(data.decks.ishizu.main.filter(c => c === HANA).length === 2, 'CA0m: the Ishizu deck runs 2 copies of Hana');
 ok(data.decks.ishizu.main.filter(c => c === MORI).length === 3, 'CA0n: the Ishizu deck runs 3 copies of Mori');
-ok(data.decks.ishizu.main.filter(c => c === UNLISTED).length === 1, 'CA0o: the Ishizu deck runs 1 copy of the unlisted exemplar (classic Agido)');
+ok(data.decks.ishizu.main.filter(c => c === UNLISTED).length === 1, 'CA0o: the Ishizu deck runs 1 copy of the unlisted exemplar (Gensei to Meikai no Gyakuten)');
 ok(data.decks.ishizu.main.filter(c => c === CARBON).length === 3, 'CA0p: the Ishizu deck runs 3 copies of Carbon');
 ok(data.decks.ishizu.main.filter(c => c === KAKAN).length === 1, 'CA0q: the Ishizu deck runs 1 copy of Kakan (Vernusylph Flower Crown)');
 ok(!data.decks.gg.main.includes(KAKAN) && !data.decks.gg.extra.includes(KAKAN), 'CA0r: the GG deck does NOT run Kakan (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
@@ -181,6 +182,8 @@ async function boot() {
     preloaded: [...artPreloaded],
     agidoSlug: CARD_ART[${AGIDO}],
     agidoInline: artInline(${AGIDO}),
+    classicAgidoSlug: CARD_ART[16135253],
+    classicAgidoInline: artInline(16135253),
     kelbekSlug: CARD_ART[${KELBEK}],
     kelbekInline: artInline(${KELBEK}),
     keldoSlug: CARD_ART[${KELDO}],
@@ -253,6 +256,7 @@ async function boot() {
     hakamoriIshizu: cardArtFile(${HAKAMORI}, false, 'ishizu'),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
+  ok(helpers.classicAgidoSlug === 'agido' && helpers.classicAgidoInline.includes('card-art-agido-s.jpg'), 'CA7b2: user ruling 2026-11-04 — the CLASSIC Agido (16135253) aliases the same agido art');
   ok(helpers.kelbekSlug === 'kelbek' && helpers.kelbekInline.includes('card-art-kelbek-s.jpg') && helpers.kelbekInline.includes('background-position:center top'), 'CA7d: Kelbek maps and stamps like the others');
   ok(helpers.keldoSlug === 'keldo' && helpers.keldoInline.includes('card-art-keldo-s.jpg') && helpers.keldoInline.includes('background-position:center top'), 'CA7f: Keldo maps and stamps like the others');
   ok(helpers.zolgaSlug === 'zolga' && helpers.zolgaInline.includes('card-art-zolga-s.jpg') && helpers.zolgaInline.includes('background-position:center top'), 'CA7h: Zolga maps and stamps like the others');
@@ -270,8 +274,8 @@ async function boot() {
   ok(helpers.inlineBig.includes('card-art-mudora.jpg') && !helpers.inlineBig.includes('-s.jpg'), 'CA5: big surface uses the big file');
   ok(helpers.unlistedInline === '' && helpers.unlistedFile === null && helpers.nullInline === '', 'CA6: unlisted/null codes fall back (empty = placeholder CSS untouched)');
   ok(helpers.preloaded.includes('../assets/card-art-mudora-s.jpg') && helpers.preloaded.includes('../assets/card-art-mudora.jpg'), 'CA7: boot preloads both sizes for the default decks');
-  ok(!helpers.preloaded.includes('../assets/card-art-agido-s.jpg') && !helpers.preloaded.includes('../assets/card-art-agido.jpg'),
-    'CA7c: recipe v11 — Agido (62320425) left the decks, so its art is NOT preloaded (dormant entry; preload follows deck membership)');
+  ok(helpers.preloaded.includes('../assets/card-art-agido-s.jpg') && helpers.preloaded.includes('../assets/card-art-agido.jpg'),
+    'CA7c: user ruling 2026-11-04 — classic Agido (16135253) is deck membership for the agido art via the alias, so both sizes ARE preloaded');
   ok(helpers.preloaded.includes('../assets/card-art-kelbek-s.jpg') && helpers.preloaded.includes('../assets/card-art-kelbek.jpg'), 'CA7e: boot preloads Kelbek too (same deck)');
   ok(helpers.preloaded.includes('../assets/card-art-keldo-s.jpg') && helpers.preloaded.includes('../assets/card-art-keldo.jpg'), 'CA7g: boot preloads Keldo too (same deck)');
   ok(helpers.preloaded.includes('../assets/card-art-zolga-s.jpg') && helpers.preloaded.includes('../assets/card-art-zolga.jpg'), 'CA7i: boot preloads Zolga too (same deck)');
