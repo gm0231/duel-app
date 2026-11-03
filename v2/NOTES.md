@@ -4879,3 +4879,55 @@ pinned by the flipped-seat fixture, and it will surface for
 real the day a Neuron-imported deck runs the card.
 WKWebView on a real device remains unmeasured, as ever
 (capture environment is Chromium-class).
+
+## Board-tile kind frame (user decision 2026-11-04, variant 1 shipped)
+
+Follow-up to the variant-A band colors: the user also wanted the
+kind color ON THE BOARD ("盤面の方にも欲しい"), where the name band
+is covered by the art and cannot carry it. Two placements were
+prototyped on branch proto/tile-color (tilecolor-report.md):
+variant 1 frames the whole tile edge; variant 2 put a small chip
+on the tile's bottom edge. The user picked variant 1 (2026-11-04);
+variant 2 was NOT shipped and no trace of it (body-class gating,
+.kchip element) remains in the tree.
+
+Implementation: tileHTML adds kindCls(code) to the .tile class
+list, gated on the faceUp position bit specifically. Face-down
+tiles get no kind class at all — an opponent's set card obviously,
+and the owner's own set card too (its owner-visible name band
+keeps the variant-A band color; the tile itself stays frameless
+under the veil, exactly as prototyped). The stylesheet draws the
+frame as .tile::after — a 2px border just inside the tile edge,
+colored with the full-strength frame color var(--kc), NOT the
+bands' deepened --kcd: the frame is a thin mark with no text on
+it, so it keeps the original frame hue. Two structural facts keep
+it robust: the class sits on .tile, which never rotates, so a
+defense tile's 90-degree .inner rotation leaves the frame
+upright; and the corner badges (.mats/.ctrs, z-index 2) paint
+above the ::after, as measured in the prototype. Opponent face-up
+tiles are framed too (public information, same as their bands).
+
+Pinned by test-typecolor.js (extended to 45 checks: TC0g/TC0h
+stylesheet contract — frame rule present, no prototype gating or
+chip remnants; TC22–TC31 fabricated-board tile classes — face-up
+tiles of every represented kind carry the class on .tile, the
+class never rides on .inner, own set and opponent face-down
+tiles carry no kind class). Impact suites green on the branch:
+cardart, setvis, facedown, layout, strot.
+
+Capture: cap-tileframe.js -> shots-tileframe/ — REAL play at
+390x620/700 (human seat driven through the real UI: hand tap ->
+action sheet -> zone tap; position change through the action
+sheet on turn 2; CPU plays its own turns). Frames: board-atk
+(face-up monster framed right after the summon), board-mixed
+(first live moment with >= 2 kinds face-up at once, when it
+occurs), board-def (face-up DEFENSE monster — rotated art inside
+an upright kind frame — next to an opponent face-down card with
+no frame); styles.json records the computed ::after border for
+own face-up / own defense / opponent face-down tiles plus the
+defense .inner transform. Normal and ritual monsters do not
+exist in the current pool (0 cards), so those two frame colors
+are verified on tiles only via the fabricated-board class
+contract and the band legend, not in real play. WKWebView on a
+real device remains unmeasured, as ever (capture environment is
+Chromium-class).

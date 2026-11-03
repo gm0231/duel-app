@@ -3117,7 +3117,16 @@ function tileHTML(card, con, actKey, loc) {
   const ownSet = con === HP && !faceUp && card.code != null;
   const nm = showFace && card.code != null ? cardName(card.code) : '';
   const ctrTotal = card.counters ? (Array.isArray(card.counters) ? card.counters.reduce((a, c) => a + (c.count || 0), 0) : card.counters) : 0;
-  return '<div class="tile' + (isDef ? ' def' : '') + (showFace ? '' : ' back') + (ownSet ? ' setown' : '') +
+  // board-tile kind frame (user decision 2026-11-04, variant 1): on
+  // the board the name band is covered by the art, so a face-up tile
+  // carries the kind class on .tile itself and the stylesheet draws a
+  // 2px frame in the card-kind frame color. Gated on faceUp
+  // specifically — an opponent's face-down card AND the owner's own
+  // set card get no kind class at all (information asymmetry). The
+  // class sits on .tile, which never rotates, so a defense tile's
+  // 90-degree inner rotation cannot disturb the upright frame.
+  const kindTile = faceUp && card.code != null ? kindCls(card.code) : '';
+  return '<div class="tile' + kindTile + (isDef ? ' def' : '') + (showFace ? '' : ' back') + (ownSet ? ' setown' : '') +
     (card.materials >= 2 ? ' mats2' : card.materials === 1 ? ' mats1' : '') +
     (actKey && actionMap.has(actKey) ? ' actionable' : '') + '"' +
     (actKey ? ' data-act="' + actKey + '"' : '') + '>' +

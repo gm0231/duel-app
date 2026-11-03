@@ -14,6 +14,14 @@
      never leak a kind color (information asymmetry unchanged).
    - Variant A is always on (no body-class gating, no variant B
      remnants in the stylesheet).
+   - Board tiles (user decision 2026-11-04, variant 1): a FACE-UP
+     tile carries the kind class on .tile itself and the stylesheet
+     frames it with a 2px border in the full-strength frame color
+     (--kc). The class is gated on faceUp — an opponent's face-down
+     card and the owner's own set card carry NO kind class on .tile
+     (their bands follow the pre-existing visibility rules), and the
+     class never rides on .inner, so a defense tile's 90-degree
+     rotation leaves the frame upright.
    Method: boot the real client in jsdom (harness as test-cardart),
    paint a fabricated board through the client's own render() and
    assert the DOM contract; rendered colors are verified separately
@@ -63,6 +71,8 @@ ok(!html.includes('tc-full') && !html.includes('tc-accent'), 'TC0c: no prototype
 ok(/\.nm:is\(\.k-spell/.test(html) && html.includes('background:var(--kcd)'), 'TC0d: name bands take the deep kind color (variant A rule present)');
 ok(html.includes('.nm.k-synchro{color:#211d14;}'), 'TC0e: synchro band uses dark text on the silver frame color');
 ok(html.includes('--k-spell-d:#0d4a34') && html.includes('--k-trap-d:#6d2150') && html.includes('--k-fusion-d:#452a63'), 'TC0f: deep kind palette present');
+ok(/\.tile:is\(\.k-spell[^{]*\)::after\{[^}]*border:2px solid var\(--kc\)/.test(html), 'TC0g: board-tile frame rule present (2px frame in the full-strength --kc on kind-classed tiles)');
+ok(!html.includes('tc-tile') && !html.includes('kchip'), 'TC0h: no tile-prototype gating / chip remnants (variant 2 not shipped)');
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -132,6 +142,16 @@ async function boot() {
         const nm = slot && slot.querySelector('.tile .nm');
         return nm ? nm.className : null;
       };
+      const tileCls = (zone) => {
+        const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
+        const t = slot && slot.querySelector('.tile');
+        return t ? t.className : null;
+      };
+      const innerCls = (zone) => {
+        const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
+        const t = slot && slot.querySelector('.tile .inner');
+        return t ? t.className : null;
+      };
       const handNms = [...document.querySelectorAll('#hand .hcard')].map(h => ({ code: h.dataset.code, cls: (h.querySelector('.nm') || {}).className || null }));
       setPreview(${FUSION}, null);
       const pvFusion = (document.querySelector('#preview .pv-name') || {}).className || null;
@@ -148,6 +168,10 @@ async function boot() {
         handNms, pvFusion, pvSynchro, gridNms,
         ghostUpNm: ghostUp.querySelector('.nm') ? ghostUp.querySelector('.nm').className : null,
         ghostDownNm: ghostDown.querySelector('.nm') ? ghostDown.querySelector('.nm').className : 'ABSENT',
+        tOwnFusion: tileCls('0:4:0'), tOwnSynchro: tileCls('0:4:1'), tOwnXyz: tileCls('0:4:2'), tOwnEffect: tileCls('0:4:3'),
+        tOwnTrapUp: tileCls('0:8:0'), tOwnTrapSet: tileCls('0:8:1'),
+        tOppDownFusion: tileCls('1:4:0'), tOppSpellUp: tileCls('1:8:0'),
+        iOwnEffect: innerCls('0:4:3'),
       };
     })()
   `);
@@ -172,6 +196,19 @@ async function boot() {
   ok(res.gridNms.length === 3 && has(res.gridNms[0], 'spell') && has(res.gridNms[1], 'trap') && has(res.gridNms[2], 'fusion'), 'TC19: selection-grid bands carry their kind classes');
   ok(has(res.ghostUpNm, 'fusion'), 'TC20: face-up FX ghost band carries k-fusion');
   ok(res.ghostDownNm === 'ABSENT' || res.ghostDownNm === null, 'TC21: face-down FX ghost has no name band (no color, no leak)');
+
+  // ---- board-tile kind frame (variant 1, user decision 2026-11-04) ----
+  const anyKind = (cls) => cls != null && /(^|\s)k-(spell|trap|normal|effect|ritual|fusion|synchro|xyz)(\s|$)/.test(cls);
+  ok(res.tOwnFusion !== null && res.tOppSpellUp !== null, 'TC22: non-vacuity — fabricated .tile elements rendered');
+  ok(has(res.tOwnFusion, 'fusion'), 'TC23: own face-up Fusion TILE carries k-fusion (frame target)');
+  ok(has(res.tOwnSynchro, 'synchro'), 'TC24: own face-up Synchro TILE carries k-synchro');
+  ok(has(res.tOwnXyz, 'xyz'), 'TC25: own face-up Xyz TILE carries k-xyz');
+  ok(has(res.tOwnEffect, 'effect') && res.tOwnEffect.split(/\s+/).includes('def'), 'TC26: own face-up DEF Effect TILE carries k-effect (and keeps its def class)');
+  ok(!anyKind(res.iOwnEffect), 'TC27: the kind class does NOT ride on .inner (the rotating layer) — the frame stays upright in defense');
+  ok(has(res.tOwnTrapUp, 'trap'), 'TC28: own face-up Trap TILE carries k-trap');
+  ok(!anyKind(res.tOwnTrapSet), 'TC29: own SET Trap TILE carries NO kind class (face-down gets no frame, owner band rules unchanged)');
+  ok(!anyKind(res.tOppDownFusion), 'TC30: opponent FACE-DOWN TILE carries NO kind class (no frame, no leak)');
+  ok(has(res.tOppSpellUp, 'spell'), 'TC31: opponent face-up Spell TILE carries k-spell (public information)');
 
   window.close();
   console.log(failures === 0 ? 'ALL TYPECOLOR CHECKS PASSED' : failures + ' TYPECOLOR CHECK(S) FAILED');

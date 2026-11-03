@@ -541,6 +541,17 @@
   .nm.k-synchro{color:#211d14;}
   #fxcutin .bigcard .nm:is(.k-spell,.k-trap,.k-normal,.k-effect,.k-ritual,.k-fusion,.k-synchro,.k-xyz){background:var(--kcd);}
   #preview .pv-name:is(.k-spell,.k-trap,.k-normal,.k-effect,.k-ritual,.k-fusion,.k-synchro,.k-xyz){background:var(--kcd);color:var(--txt);padding:1px 7px;border-radius:8px;}
+  /* ---- board-tile kind frame (user decision 2026-11-04, variant 1:
+     the whole tile edge takes the frame color). On the board the name
+     band is covered by the art, so a face-up tile carries the kind
+     class on .tile itself (set in tileHTML, face-up only — face-down
+     tiles of either side never carry it) and gets a 2px frame just
+     inside its edge. The frame uses the full-strength frame color
+     --kc, not the bands' deep --kcd: it is a thin mark with no text
+     on it. ::after sits above the art; the corner badges (.mats /
+     .ctrs, z-index 2) still paint above it. .tile never rotates, so
+     defense tiles keep an upright frame around the rotated art. */
+  .tile:is(.k-spell,.k-trap,.k-normal,.k-effect,.k-ritual,.k-fusion,.k-synchro,.k-xyz)::after{content:'';position:absolute;inset:0;border:2px solid var(--kc);border-radius:4px;pointer-events:none;}
   #preview .pv-name.k-synchro{color:#211d14;}
 </style>
 </head>
