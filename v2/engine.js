@@ -689,7 +689,12 @@ class GameState {
         for (let i = 0; i < n; i++) codes.push(r.u32());
         this.players[p].hand = codes.map(code => ({ code }));
         this.pushLog(this.who(p) + 'の手札をシャッフル（' + n + ' 枚）');
-        this.pushDLog({ k: 'info', s: this.who(p) + '：手札をシャッフル（' + n + ' 枚）' });
+        // cid/sol stamped: a search effect shuffles the hand in
+        // the middle of its own resolution — without the stamp the
+        // line would split the chain episode's run in the sheet
+        // (frame check: the searched spell's grave-send landed in
+        // an orphan box behind the unstamped shuffle line).
+        this.pushDLog({ k: 'info', cid: this.chainCid(), sol: this.solvingLink, s: this.who(p) + '：手札をシャッフル（' + n + ' 枚）' });
         break;
       }
       case 39: { // SHUFFLE_EXTRA: player, count u32, codes
@@ -741,7 +746,7 @@ class GameState {
         this.deckTop[p] = null;
         this.graveResync.add(p);
         this.pushLog(this.who(p) + '：デッキと墓地が入れ替わった');
-        this.pushDLog({ k: 'info', s: this.who(p) + '：デッキと墓地が入れ替わった（デッキ ' + P.deckCount + ' 枚／墓地 ' + P.grave.length + ' 枚）' });
+        this.pushDLog({ k: 'info', cid: this.chainCid(), sol: this.solvingLink, s: this.who(p) + '：デッキと墓地が入れ替わった（デッキ ' + P.deckCount + ' 枚／墓地 ' + P.grave.length + ' 枚）' });
         break;
       }
       case 36: { // SHUFFLE_SET_CARD: loc u8, count u8, count from-loc_infos, count to-loc_infos
@@ -779,7 +784,7 @@ class GameState {
         for (let i = 0; i < ct; i++) {
           if (tos[i] && tos[i].loc !== 0 && before[i]) zoneOf(tos[i])[tos[i].seq] = before[i];
         }
-        if (ct > 0) this.pushDLog({ k: 'info', s: 'セットカード ' + ct + ' 枚がシャッフルされた' });
+        if (ct > 0) this.pushDLog({ k: 'info', cid: this.chainCid(), sol: this.solvingLink, s: 'セットカード ' + ct + ' 枚がシャッフルされた' });
         break;
       }
       case 32: break; // SHUFFLE_DECK: player only
@@ -848,7 +853,7 @@ class GameState {
         // the wire means "hidden", never an identity to overwrite with.
         if (z1[i1.seq] && c2) z1[i1.seq].code = c2;
         if (z2[i2.seq] && c1) z2[i2.seq].code = c1;
-        this.pushDLog({ k: 'info', s: c1 && c2
+        this.pushDLog({ k: 'info', cid: this.chainCid(), sol: this.solvingLink, s: c1 && c2
           ? this.nameOf(c1) + ' と ' + this.nameOf(c2) + ' のコントロールが入れ替わった'
           : 'モンスターのコントロールが入れ替わった' });
         break;

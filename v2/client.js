@@ -3083,7 +3083,11 @@ function captureDLog(state) {
     const idx = cur.lastIndexOf(dlogPrev[dlogPrev.length - 1]);
     fresh = idx >= 0 ? cur.slice(idx + 1) : cur.slice();
   }
-  for (const e of fresh) histEntries.push({ turn: e.turn, tp: e.tp, ph: e.ph, k: e.k, cid: e.cid, sol: e.sol, text: dlogText(e) });
+  // Setup entries are stamped turn 0 by the engine (the opening
+  // draws); the sheet groups them under turn 1 like the headline
+  // log's T-numbering does (frame check: a raw 0/1 split printed
+  // the ターン1 heading twice).
+  for (const e of fresh) histEntries.push({ turn: Math.max(1, e.turn), tp: e.tp, ph: e.ph, k: e.k, cid: e.cid, sol: e.sol, text: dlogText(e) });
   if (histEntries.length > 500) histEntries = histEntries.slice(-500);
   dlogPrev = cur.slice();
 }
