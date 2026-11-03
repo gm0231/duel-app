@@ -2820,6 +2820,18 @@ class Duel {
         }
         if (!bytes) { this.stats.stopReason = 'answerer returned nothing for ' + prompt.name; break; }
         respond(bytes);
+        // BU-12 (brushup round 3): one task boundary between the
+        // answer and the next poc_process(). The core call that
+        // completes a chain resolution and advances to the next
+        // command prompt is a single synchronous WASM call
+        // (isolated measurement: <= ~56 ms Node / ~37 ms page);
+        // it cannot be split from JS — but the player's tap
+        // feedback and the closing sheet get a paint first.
+        // Uses the harness-provided sleep, so stubbed test sleeps
+        // keep test timing unchanged. Nothing runs between
+        // respond and process except this yield: processing
+        // order and results are untouched.
+        await sleep(0);
       } else if (pace.batch) {
         await sleep(pace.batch);
       }
