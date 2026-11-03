@@ -435,13 +435,16 @@ class GameState {
   // The card whose effect is currently asking something: the link being solved,
   // else the newest chain link. Used to give every prompt a visible source.
   chainContext() {
+    // desc rides along (MSG_CHAINING carries the link's effect
+    // description) so confirmation UIs can name WHICH effect of the
+    // asking card is behind a sub-prompt, not just the card.
     if (this.solvingLink > 0 && this.chain[this.solvingLink - 1]) {
       const l = this.chain[this.solvingLink - 1];
-      return { code: l.code, con: l.con, loc: l.loc, seq: l.seq, player: l.player, link: this.solvingLink };
+      return { code: l.code, con: l.con, loc: l.loc, seq: l.seq, player: l.player, link: this.solvingLink, desc: l.desc };
     }
     if (this.chain.length) {
       const l = this.chain[this.chain.length - 1];
-      return { code: l.code, con: l.con, loc: l.loc, seq: l.seq, player: l.player, link: this.chain.length };
+      return { code: l.code, con: l.con, loc: l.loc, seq: l.seq, player: l.player, link: this.chain.length, desc: l.desc };
     }
     return null;
   }
