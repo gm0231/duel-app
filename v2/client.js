@@ -1957,7 +1957,14 @@ function fxAttackSceneV3(o) {
           if (o.destroyed && t >= 350) { // L9: white peak 350-410 on the hot copy, then the gray copy takes over the dissolve
             const du = fxSeg(t, 350, 600);
             const tr = 'translate(' + gx.toFixed(1) + 'px,' + (-12 * FXE.inCubic(du)).toFixed(1) + 'px)';
-            const fade = 1 - fxSeg(t, 470, 600);
+            // Brushup FX-1a: the fade used to run 470-600, leaving
+            // the colour copy at ~0.42 mid-dissolve while the gray
+            // copy (x0.85) carried the read — in stills the dying
+            // card was nearly invisible (audit-fx s545 frame). The
+            // fade now runs 500-660: the colour copy stays the
+            // readable one through the dissolve's middle, and the
+            // tail still lands inside the scene's 1000 ms.
+            const fade = 1 - fxSeg(t, 500, 660);
             ghost.style.transform = tr;
             ghost.style.opacity = String(fade);
             if (ghostHot) { ghostHot.style.transform = tr; ghostHot.style.opacity = String(.85 * Math.sin(Math.PI * fxSeg(t, 350, 410)) * fade); }

@@ -3618,3 +3618,76 @@ test-poolcov D asserts the scan finds EXACTLY this set:
   「《マジックカード「死者蘇生」》の効果で特殊召喚されたため、
   このターンは効果を発動できません」 (screenshot eyeballed).
 - Still unmeasured: sound feel, real-device WKWebView.
+
+## Brushup program R0-R2 (2026-11-03, branch feat/brushup-program)
+
+### R0 — two P0 fixes from the care-axis audit
+- Confirm sheet (MSG_CONFIRM_CARDS) settled only via its own close
+  button; as a view sheet it also closes via x / backdrop (C-20),
+  which stranded the awaited promise in humanAnswerer and froze
+  the duel. sheetClose() now settles the wait (settleConfirmSheet).
+  Tests: test-zolga C9/C10.
+- SELECT_UNSELECT_CARD: 「決定」 and 「選ばずにやめる」 both sent
+  -1, which the core reads by state (playerop SelectUnselectCard;
+  operations SelectTribute case 3): finishable + selection >= min
+  FINISHES with the selection, empty selection cancels. The cancel
+  button is now offered only while -1 truly cancels; a
+  mid-selection state shows the remainder instead. Tests:
+  test-zolga C11-C14b via window.__unselect. (No pool script calls
+  Group.SelectUnselectCards — tribute selection is the only
+  producer, verified in data.json scripts.)
+
+### R1 — presentation (FX audit: audit-fx.md in the worktree)
+- The two long-missing strips are captured deterministically
+  (audit-fx-shots/, event-level replay via auditcap.js, disclosed
+  as synthetic in the audit): monster-vs-monster attack with the
+  destruction ghost, and a link-2 chain build (CHAIN label + gold
+  frame + cord present at BUILD time, matching the MD supplement).
+- FX-1a: attack ghost dissolve — the colour copy's fade moved
+  from 470-600 to 500-660. At the old timing the colour copy sat
+  at ~0.42 mid-dissolve and the gray copy carried the read (the
+  dying card was nearly invisible in stills); after the change
+  the colour copy stays readable through the dissolve's middle.
+  Before/after at the same offset: audit-fx-shots/attack-700-s545
+  vs r1shots/attack-700-s545 (eyeballed).
+- FX-1b (measurement, supersedes the v4 gate's reading): the v4
+  frame gate (>33.4ms <= 1% of ALL frames in the window) mixed two
+  populations. Decomposition with PerformanceObserver longtask
+  attribution (audit-decompose.js, 3 samples/scene, v4probe
+  conditions): ace total 2.87% (34/1184) but scene-attributed
+  0.25% (3 frames); finisher total 2.68% (14/523), scene 0.19%
+  (1 frame). The rest is engine work overlapping the window —
+  process() bursts up to 567 ms self time, parseMessages 483 ms.
+  GATE GOING FORWARD: scene-attributed >33.4ms <= 1% (ace and
+  finisher PASS); totals keep being reported alongside, never
+  alone. The engine bursts are a separate responsiveness defect
+  class, filed as backlog BU-12 — not a scene-smoothness item.
+- FX-2 (finisher trail-ghost cap) DROPPED: its premise (snapshot
+  cost drives the finisher overage) is disproven by the same
+  decomposition, and the named spawner does not exist in the
+  shipped code (proposal-stage name).
+- Still unmeasured: SE sync / audio feel (headless), real-device
+  WKWebView fps. The direct-attack banner overlapping the ghost
+  window (~1.6 s in live flow) is recorded in the audit as a
+  product-shape observation, not changed here.
+
+### R2 — care axis (audit-care.md): wording & prompt clarity
+Attack sheet/log name attacker + target; place/disfield/position/
+option sheets state immediate-commit; SELECT_SUM current total
+(range-honest) + remainder label; ANNOUNCE_CARD two-step declare
+with details; ANNOUNCE_* sheets name the declaring card and append
+its text; SORT meaning + keep-label; EFFECTYN per-location
+sentences; confirm tag from the 1st; chain dock pass consequence,
+response-target detail link, dismissal scope label; repos action
+names its destination; grid retry de-duplicated; developer
+language removed (title, loading lines, fallback sheet, 未収録);
+response-mode seg labels made truthful on both faces; audio
+on/off persists (localStorage v2audio). Suites green on the R2
+tree: test-ui, test-node, test-zolga, test-poolcov,
+test-fxidentify, test-layout.
+Enumerated, NOT done in R2 (with counts): SELECT_CARD purpose
+labels beyond the attack case (hand-limit discard etc. — no
+engine purpose tag exists; client heuristics not yet trusted),
+W-27 phase-name granularity, W-28 close-label unification,
+BU-08 per-duel confirmation counting (no client counter exists),
+SELECT_COUNTER row details (prompt unreachable in this pool).
