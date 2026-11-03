@@ -446,6 +446,7 @@ function fxSnap(state) {
     myHand: state.players[HP].hand.map(c => c.code),
     phaseFam: fxPhaseFamily(state.phaseName), turn: state.turnCount,
     chainLen: state.chain.length, solving: state.solvingLink,
+    links: state.chain.map(l => ({ code: l.code, con: l.con, solved: !!l.solved, neg: !!(l.negated || l.disabled) })),
     lp: state.players.map(P => P.lp), winner: state.winner,
   };
 }
@@ -548,6 +549,8 @@ function fxProcessInner(evs, state) {
     const fromRemoved = code != null && remD[con].removed.includes(code);
     const method = fxMethodOf(code);
     const isSp = evSp.length > 0, isNormal = evSummon.length > 0 && !isSp;
+    const isSetMon = !isSp && !isNormal && code != null &&
+      evs.some(e => e.kind === 'set' && e.loc === E.LOC.MZONE && e.con === con && e.code === code);
     if (fromGrave || fromRemoved) { // revival / return: NO flight — the zone lights and it appears
       fxZoneGlow(ar.key, 700); fxPortal(ar.key, 'revive', 90);
       fxRecord('portal', { method: 'revive', code });
@@ -563,7 +566,21 @@ function fxProcessInner(evs, state) {
       consumedArr.add(ar.key);
       continue;
     }
-    if (isNormal) { fxPuff(ar.key); fxRecord('place', { how: 'summon', code }); consumedArr.add(ar.key); continue; }
+    if (isNormal || isSetMon) {
+      fxPuff(ar.key); fxRecord('place', { how: isNormal ? 'summon' : 'set', code });
+      // Round B (B10): an advance (tribute) summon's tributes leave the
+      // way fusion/Xyz materials do — they glow and converge into the
+      // summon point instead of flying to the graveyard — and the
+      // arrival light is a touch stronger. No seniority ceremony.
+      const lv = code != null && cardData(code) ? cardData(code).level : 0;
+      if (lv >= 5) {
+        const mats = matDepsOf(con);
+        for (const m of mats) { consumedDep.add(m.key); fxConverge(m.key, ar.key); fxRecord('converge', { code: m.entry.code, how: 'tribute' }); }
+        fxZoneGlow(ar.key, 850);
+        fxRecord('advance', { code, level: lv });
+      }
+      consumedArr.add(ar.key); continue;
+    }
     // other special summons (from hand / deck / extra): zone glows first
     fxZoneGlow(ar.key, 600); fxPortal(ar.key, method, 80);
     fxRecord('portal', { method, code });
@@ -672,14 +689,339 @@ function fxProcessInner(evs, state) {
       }
     });
   }
-  fxRoundBEvents(evs, prev, cur, { arrived, departed, changed });
+  fxRoundBEvents(evs, prev, cur, { arrived, departed, changed, state });
 }
-// Round B hooks — fxRoundBChanged / fxRoundBEvents are defined in the
-// round-B section below (function declarations hoist; in round A they
-// were no-ops). Kept as calls so the diff pipeline stays single-pass.
-function fxRoundBChanged(ch, evs, prev, cur) {}
-function fxRoundBEvents(evs, prev, cur, diff) {}
-function fxResetRoundB() {}
+// ------------------------------------------------------------ FX round B
+// Settings (B11): presentation toggles, persisted best-effort. They
+// only ever change how prompts/effects are PRESENTED — never the
+// legal answers the core offers: chain 'off' answers pass (i32 -1),
+// which SELECT_CHAIN always accepts; chain 'on' merely un-hides
+// candidates the player had dismissed earlier in the duel.
+const fxSettings = { cutin: true, resp: 'auto' }; // resp: 'auto' | 'on' | 'off'
+try {
+  const savedFx = JSON.parse(localStorage.getItem('v2fx') || 'null');
+  if (savedFx) {
+    if (typeof savedFx.cutin === 'boolean') fxSettings.cutin = savedFx.cutin;
+    if (savedFx.resp === 'auto' || savedFx.resp === 'on' || savedFx.resp === 'off') fxSettings.resp = savedFx.resp;
+  }
+} catch (e) {}
+function fxSaveSettings() { try { localStorage.setItem('v2fx', JSON.stringify(fxSettings)); } catch (e) {} }
+// Ace cut-in roster (B6): the same boss class as the BGM key-card list
+// (NOTES "BGM 3-stage") — the eight SUMMON-trigger key cards. The two
+// key TRAPS (墓守の罠 / 現世と冥界の逆転) latch the BGM stage on
+// ACTIVATION; a cut-in is a summon presentation with an ATK/DEF
+// banner, and a trap has neither a summon nor ATK/DEF, so trap
+// activations keep the chain/showcase presentation (see NOTES).
+const FX_CUTIN_CODES = KEYCARD_CODES;
+function fxPtOfKey(key) { const el = fxSlotEl(key); return el ? fxRel(el) : null; }
+// ---- LP counter (B7): damage/recovery counts on the counter itself;
+// a heal additionally floats a blue number (MD shows floats only there)
+const fxLpShown = [null, null];   // per seat: the value the counter currently shows
+const fxLpTimers = [null, null];  // per seat: active count interval (render defers to it)
+function fxLpBusy(con) { return fxLpTimers[con] != null; }
+function fxLpEl(con) { return con === HP ? $('myLp') : $('oppLp'); }
+function fxLpCount(con, to) {
+  const el = fxLpEl(con); if (!el) return;
+  if (fxLpTimers[con]) { clearInterval(fxLpTimers[con]); fxLpTimers[con] = null; }
+  const start = fxLpShown[con];
+  if (start == null || start === to) { fxLpShown[con] = to; el.textContent = to; return; }
+  const diff = to - start;
+  const dur = Math.max(220, Math.min(850, Math.abs(diff) * 0.28));
+  const t0 = performance.now();
+  fxLpTimers[con] = setInterval(() => {
+    try {
+      const t = Math.min(1, (performance.now() - t0) / dur);
+      const eased = 1 - (1 - t) * (1 - t);
+      const v = Math.round(start + diff * eased);
+      fxLpShown[con] = v; el.textContent = v;
+      if (t >= 1) { clearInterval(fxLpTimers[con]); fxLpTimers[con] = null; fxLpShown[con] = to; el.textContent = to; }
+    } catch (e) { if (fxLpTimers[con]) { clearInterval(fxLpTimers[con]); fxLpTimers[con] = null; } }
+  }, 30);
+}
+function fxHealFloat(con, amount) {
+  const el = fxLpEl(con); if (!el) return;
+  const r = fxRel(el);
+  const layer = fxLayerEl(); if (!layer) return;
+  const d = document.createElement('div');
+  d.className = 'fx fx-healfloat';
+  d.textContent = '+' + amount;
+  d.style.left = r.cx + 'px'; d.style.top = r.y + 'px';
+  layer.appendChild(d);
+  fxAnim(d, [
+    { transform: 'translate(-50%,0)', opacity: 0 },
+    { transform: 'translate(-50%,-10px)', opacity: 1, offset: 0.25 },
+    { transform: 'translate(-50%,-26px)', opacity: 0 },
+  ], { duration: 950, easing: 'ease-out' });
+  fxKill(d, 990);
+}
+// ---- battle (B7): attacker glows, a thin cyan line reaches the
+// target, the attribute-coloured impact lands there. The attacking
+// card itself never leaves its zone; no formula is ever shown.
+const FX_ATTR_COLORS = { 1: '#d29a55', 2: '#4aa3ff', 4: '#ff6a3d', 8: '#7fe08a', 16: '#ffe98a', 32: '#9a6aff', 64: '#ffd94d' };
+const FX_ATTR_WASH = { 1: 'rgba(170,115,60,.50)', 2: 'rgba(40,110,255,.42)', 4: 'rgba(255,90,30,.48)', 8: 'rgba(90,230,140,.38)', 16: 'rgba(255,250,225,.88)', 32: 'rgba(16,4,38,.85)', 64: 'rgba(255,215,80,.55)' };
+function fxAttackLine(fromPt, toPt) {
+  const layer = fxLayerEl(); if (!layer) return;
+  const dx = toPt.cx - fromPt.cx, dy = toPt.cy - fromPt.cy;
+  const len = Math.hypot(dx, dy); if (len < 8) return;
+  const ang = Math.atan2(dy, dx) * 180 / Math.PI;
+  const d = document.createElement('div');
+  d.className = 'fx fx-line';
+  d.style.left = fromPt.cx + 'px'; d.style.top = (fromPt.cy - 1) + 'px'; d.style.width = len + 'px';
+  layer.appendChild(d);
+  fxAnim(d, [
+    { transform: 'rotate(' + ang + 'deg) scaleX(0)', opacity: 1 },
+    { transform: 'rotate(' + ang + 'deg) scaleX(1)', opacity: 1, offset: 0.35 },
+    { transform: 'rotate(' + ang + 'deg) scaleX(1)', opacity: 0 },
+  ], { duration: 560, easing: 'ease-out' });
+  fxKill(d, 600);
+}
+function fxImpact(pt, attr) {
+  const layer = fxLayerEl(); if (!layer) return;
+  const color = FX_ATTR_COLORS[attr] || '#ffe9a8';
+  const d = document.createElement('div');
+  d.className = 'fx fx-impact';
+  d.style.left = pt.cx + 'px'; d.style.top = pt.cy + 'px'; d.style.width = '64px'; d.style.height = '64px';
+  d.style.background = 'radial-gradient(circle,' + color + 'ee 0%,' + color + '88 45%,transparent 72%)';
+  layer.appendChild(d);
+  fxAnim(d, [
+    { transform: 'translate(-50%,-50%) scale(.5)', opacity: 1 },
+    { transform: 'translate(-50%,-50%) scale(1.3)', opacity: 0 },
+  ], { duration: 460, easing: 'ease-out', delay: 240 });
+  fxKill(d, 760);
+}
+function fxAtkBanner() {
+  const layer = fxLayerEl(); if (!layer) return;
+  const d = document.createElement('div');
+  d.className = 'fx-atkbanner';
+  d.textContent = 'DIRECT ATTACK';
+  layer.appendChild(d);
+  fxAnim(d, [{ opacity: 0 }, { opacity: 1, offset: 0.2 }, { opacity: 1, offset: 0.75 }, { opacity: 0 }], { duration: 900, easing: 'ease-out' });
+  fxKill(d, 940);
+}
+function fxFinisher(attr) {
+  // The wash rides ABOVE the result overlay: the driver hands the
+  // win to the client in the same task that spawns the wash, so
+  // inside #fxlayer (z 25, under the z-60 result) it would never be
+  // seen at all. It is a body-level fixed overlay, pointer-events
+  // none, gone in 1.3 s — the result reads through it as it fades.
+  const d = document.createElement('div');
+  d.className = 'fx-finishwash';
+  d.style.background = FX_ATTR_WASH[attr] || 'rgba(255,233,168,.5)';
+  document.body.appendChild(d);
+  fxAnim(d, [{ opacity: 0 }, { opacity: 1, offset: 0.16 }, { opacity: 1, offset: 0.55 }, { opacity: 0 }], { duration: 1300, easing: 'ease-out' });
+  fxKill(d, 1360);
+}
+// The core often delivers MSG_WIN in its own trailing batch, one
+// process step AFTER the lethal damage batch — so the winner
+// transition alone cannot require the blow in the same event list.
+// The finisher instead keys on a recent hit (attack/damage event
+// within the last few seconds of duel time); a deck-out win has no
+// recent hit and correctly gets no wash.
+let fxLastHitAt = 0, fxLastHitAttr = null;
+// ---- chain pop (B8): the newest link appears large in the
+// foreground, then shrinks toward the chain bar. Bar-side states
+// (CHAIN label / newest / solving glow / done dim) live in render().
+function fxChainPop(n, code) {
+  const layer = fxLayerEl(); if (!layer) return;
+  const d = document.createElement('div');
+  d.className = 'fx-chainpop';
+  // the big cyan link number rides the card's lower edge (supplement A)
+  d.innerHTML = '<div class="cn2">' + (code != null ? cardName(code) : '') + '</div><span class="no">' + n + '</span>';
+  layer.appendChild(d);
+  let dx = 0, dy = 0;
+  const bar = $('chainbar'), app = $('app');
+  if (bar && app && bar.getBoundingClientRect && app.getBoundingClientRect) {
+    const ar = app.getBoundingClientRect(), br = bar.getBoundingClientRect();
+    if (br.width > 0 && ar.width > 0) {
+      dx = (br.left - ar.left + br.width / 2) - ar.width / 2;
+      dy = (br.top - ar.top + br.height / 2) - ar.height * 0.34;
+    }
+  }
+  fxAnim(d, [
+    { transform: 'translate(-50%,-50%) scale(1.06)', opacity: 1 },
+    { transform: 'translate(-50%,-50%) scale(1)', opacity: 1, offset: 0.55 },
+    { transform: 'translate(calc(-50% + ' + dx + 'px), calc(-50% + ' + dy + 'px)) scale(.38)', opacity: 0 },
+  ], { duration: 820, easing: 'ease-in-out' });
+  fxKill(d, 860);
+}
+// ---- set S/T activation (B9): the card tips into the chain
+// presentation — tilted, white-rimmed — it never flips inside its zone
+function fxSetActivate(code, linkNo) {
+  const layer = fxLayerEl(); if (!layer) return;
+  const app = $('app'); if (!app) return;
+  const ar = fxRel(app);
+  const d = fxPlaceGhost(code, false, { cx: ar.cx, cy: ar.y + ar.h * 0.36 }, 74, 96); if (!d) return;
+  // when this activation IS the chain's new link, the tilted card is
+  // the foreground pop (B8) and carries the big link number itself —
+  // a separate pop panel on top of it would just bury both
+  if (linkNo) d.innerHTML += '<div class="setno">' + linkNo + '</div>';
+  d.style.transform = 'rotate(-14deg)';
+  d.style.boxShadow = '0 0 0 2px #ffffff, 0 0 20px #ffffffaa';
+  d.style.zIndex = 5;
+  fxAnim(d, [{ opacity: 0 }, { opacity: 1, offset: 0.18 }, { opacity: 1, offset: 0.8 }, { opacity: 0 }], { duration: 780, easing: 'ease-out' });
+  fxKill(d, 820);
+}
+// ---- ace cut-in (B6): portal flash on the zone (round A) -> the
+// scrim dims the field -> the card, large, with a name/ATK/DEF
+// banner. HUD stays readable through the translucent scrim and the
+// layer sits below the dock/sheet, so a prompt is never covered.
+// ~4.7 s; any tap skips it (the tap itself is never consumed) and
+// the duel never waits for it.
+let fxCutinTimer = null, fxCutinGen = 0;
+function fxCutinShow(code) {
+  const host = $('fxcutin'); if (!host) return;
+  ++fxCutinGen;
+  const d = cardData(code);
+  const vw = Math.min(window.innerWidth || 390, 430);
+  const w = Math.round(Math.min(250, vw * 0.62)), h = Math.round(w * 1.38);
+  host.innerHTML = '<div class="scrim"></div>' +
+    '<div class="bigcard" style="width:' + w + 'px;height:' + h + 'px"><div class="nm">' + cardName(code) + '</div></div>' +
+    '<div class="banner"><div class="cn">' + cardName(code) + '</div>' +
+    '<div class="cs">' + (d && (d.type & 0x1) ? 'ATK ' + d.atk + ' ／ DEF ' + d.def : '') + '</div></div>';
+  host.className = 'on';
+  const sc = host.querySelector('.scrim'); fxAnim(sc, [{ opacity: 0 }, { opacity: 1 }], { duration: 320, easing: 'ease-out' });
+  const bc = host.querySelector('.bigcard');
+  fxAnim(bc, [
+    { transform: 'translate(-50%,-50%) scale(.68)', opacity: 0 },
+    { transform: 'translate(-50%,-50%) scale(1)', opacity: 1 },
+  ], { duration: 400, easing: 'ease-out' });
+  const bn = host.querySelector('.banner'); fxAnim(bn, [{ opacity: 0 }, { opacity: 1 }], { duration: 380, delay: 160, easing: 'ease-out' });
+  if (fxCutinTimer) clearTimeout(fxCutinTimer);
+  fxCutinTimer = setTimeout(() => fxCutinHide(), 4400);
+}
+function fxCutinHide() {
+  const host = $('fxcutin'); if (!host || host.className !== 'on') return;
+  const gen = ++fxCutinGen;
+  if (fxCutinTimer) { clearTimeout(fxCutinTimer); fxCutinTimer = null; }
+  [...host.children].forEach(ch => fxAnim(ch, [{ opacity: 1 }, { opacity: 0 }], { duration: 260, easing: 'ease-in' }));
+  setTimeout(() => { if (fxCutinGen === gen) { host.className = ''; host.innerHTML = ''; } }, 280);
+}
+document.addEventListener('pointerdown', () => { fxCutinHide(); }, true); // tap anywhere skips; never consumes the tap
+// ---- in-place position changes (B9): flips and ATK<->DEF rotation
+function fxRoundBChanged(ch, evs, prev, cur) {
+  const [con, loc] = ch.key.split(':').map(Number);
+  const b = ch.before, a = ch.after;
+  if (!b || !a || b.code !== a.code) return;
+  const bUp = (b.pos & E.POS_FACEUP) !== 0, aUp = (a.pos & E.POS_FACEUP) !== 0;
+  if (!bUp && aUp) { // face-down -> face-up: white flash + edge-on flip
+    fxWhiteFlash(ch.key);
+    const tile = document.querySelector('.slot[data-zone="' + ch.key + '"] .tile');
+    if (tile) fxAnim(tile, [
+      { transform: 'scaleX(1)' }, { transform: 'scaleX(.06)', offset: 0.45 }, { transform: 'scaleX(1)' },
+    ], { duration: 430, easing: 'ease-in-out' });
+    fxRecord('flip', { code: a.code });
+    return;
+  }
+  if (bUp && aUp && loc === E.LOC.MZONE) { // attack <-> defense: the card body rotates
+    const bDef = (b.pos & E.POS_DEFENSE) !== 0, aDef = (a.pos & E.POS_DEFENSE) !== 0;
+    if (bDef !== aDef) {
+      const inner = document.querySelector('.slot[data-zone="' + ch.key + '"] .tile .inner');
+      if (inner) fxAnim(inner, aDef
+        ? [{ transform: 'rotate(0deg) scale(1)' }, { transform: 'rotate(90deg) scale(.82)' }]
+        : [{ transform: 'rotate(90deg) scale(.82)' }, { transform: 'rotate(0deg) scale(1)' }], { duration: 330, easing: 'ease-in-out' });
+      fxRecord('poschange', { code: a.code, to: aDef ? 'def' : 'atk' });
+    }
+  }
+}
+function fxRoundBEvents(evs, prev, cur, diff) {
+  const st = diff.state;
+  // ---- ace cut-in (B6)
+  if (fxSettings.cutin) {
+    for (const ev of evs) {
+      if ((ev.kind === 'summon' || ev.kind === 'spsummon') && ev.code != null && FX_CUTIN_CODES.has(ev.code)) {
+        fxCutinShow(ev.code);
+        fxRecord('cutin', { code: ev.code });
+      }
+    }
+  }
+  // ---- chain growth is computed first: a set S/T activation that
+  // IS the new link merges its tilt pop with the chain pop (B8+B9)
+  const grew = cur.links.length > prev.links.length;
+  const newLink = grew ? cur.links[cur.links.length - 1] : null;
+  let popDone = false;
+  // ---- set S/T activations (B9): SZONE activations tip into the
+  // chain presentation; activations from hand/grave keep the
+  // existing showcase side
+  for (const ev of evs) {
+    if (ev.kind !== 'activate' || ev.loc !== E.LOC.SZONE) continue;
+    const isNewLink = !!(newLink && ev.code === newLink.code && ev.con === newLink.con);
+    fxSetActivate(ev.code, isNewLink ? cur.links.length : 0);
+    if (isNewLink) popDone = true;
+    fxRecord('setactivate', { code: ev.code });
+  }
+  // ---- attacks (B7)
+  let lastAtkAttr = null;
+  for (const ev of evs) {
+    if (ev.kind === 'damage') fxLastHitAt = performance.now();
+    if (ev.kind !== 'attack') continue;
+    const d = ev.code != null ? cardData(ev.code) : null;
+    const attr = d ? d.attribute : null;
+    lastAtkAttr = attr;
+    fxLastHitAt = performance.now(); fxLastHitAttr = attr;
+    const la = st ? st.lastAttack : null;
+    let aKey = null, tKey = null;
+    if (la && la.attacker && la.attacker.con === ev.con) {
+      aKey = la.attacker.con + ':' + E.LOC.MZONE + ':' + la.attacker.seq;
+      if (la.target) tKey = la.target.con + ':' + E.LOC.MZONE + ':' + la.target.seq;
+    }
+    if (!aKey && ev.code != null) { // fallback: find the attacker in the standing snapshot
+      for (const k of Object.keys(cur.z)) {
+        const e2 = cur.z[k], parts = k.split(':').map(Number);
+        if (e2 && e2.code === ev.code && parts[0] === ev.con && parts[1] === E.LOC.MZONE) { aKey = k; break; }
+      }
+    }
+    if (aKey) fxZoneGlow(aKey, 520);
+    if (ev.direct || !tKey) { // direct attack: the line runs to the LP plate + banner
+      const lpEl = fxLpEl(1 - ev.con);
+      const aPt = aKey ? fxPtOfKey(aKey) : null, tPt = lpEl ? fxRel(lpEl) : null;
+      if (aPt && tPt) fxAttackLine(aPt, tPt);
+      fxAtkBanner();
+      fxRecord('attackline', { code: ev.code, direct: true });
+      fxRecord('directattack', { code: ev.code });
+    } else {
+      const aPt = aKey ? fxPtOfKey(aKey) : null, tPt = fxPtOfKey(tKey);
+      if (aPt && tPt) { fxAttackLine(aPt, tPt); fxImpact(tPt, attr); }
+      fxRecord('attackline', { code: ev.code, direct: false });
+      fxRecord('impact', { code: ev.code, attr });
+    }
+  }
+  // ---- finisher (B7): only the blow that ends the duel gets the
+  // full-screen wash (attribute-tinted); the result overlay follows.
+  // Keyed on the winner transition + a recent hit (see fxLastHitAt)
+  if (cur.winner != null && prev.winner == null && fxLastHitAt && performance.now() - fxLastHitAt < 5000) {
+    fxFinisher(lastAtkAttr != null ? lastAtkAttr : fxLastHitAttr);
+    fxRecord('finisher', { attr: lastAtkAttr != null ? lastAtkAttr : fxLastHitAttr });
+  }
+  // ---- chain (B8): newest link pops forward; solving is recorded
+  // (its glow lives on the bar chip in render). Skipped when the new
+  // link is a set S/T activation — its tilt pop already carries the
+  // number (see fxSetActivate)
+  if (grew && !popDone) {
+    const n = cur.links.length;
+    fxChainPop(n, cur.links[n - 1].code);
+    fxRecord('chainpop', { n, code: cur.links[n - 1].code });
+  } else if (grew) {
+    fxRecord('chainpop', { n: cur.links.length, code: cur.links[cur.links.length - 1].code, via: 'tilt' });
+  }
+  if (cur.solving !== prev.solving && cur.solving > 0) fxRecord('chainsolving', { n: cur.solving });
+  // ---- LP (B7): the counter counts; heals float blue
+  for (let p = 0; p < 2; p++) {
+    if (cur.lp[p] === prev.lp[p]) continue;
+    if (fxLpShown[p] == null) fxLpShown[p] = prev.lp[p];
+    fxLpCount(p, cur.lp[p]);
+    fxRecord('lpchange', { player: p, from: prev.lp[p], to: cur.lp[p] });
+    if (cur.lp[p] > prev.lp[p]) { fxHealFloat(p, cur.lp[p] - prev.lp[p]); fxRecord('healfloat', { player: p, amount: cur.lp[p] - prev.lp[p] }); }
+  }
+}
+function fxResetRoundB() {
+  if (fxCutinTimer) { clearTimeout(fxCutinTimer); fxCutinTimer = null; }
+  fxCutinGen++;
+  fxLastHitAt = 0; fxLastHitAttr = null;
+  for (let p = 0; p < 2; p++) {
+    if (fxLpTimers[p]) { clearInterval(fxLpTimers[p]); fxLpTimers[p] = null; }
+    fxLpShown[p] = null;
+  }
+}
 // Test surface (same spirit as window.__layout / window.__bgm). process/snap
 // let test-fx drive the diff pipeline with synthetic state pairs so each
 // grammar is asserted deterministically, not just observed in live duels.
@@ -689,6 +1031,9 @@ window.__fx = {
   get ready() { return !!fxPrev; },
   process: fxProcess,
   reset: fxResetDuel,
+  settings: fxSettings, // round B (B11): the same object the prompt UI reads
+  cutinOn: () => { const h = $('fxcutin'); return !!h && h.className === 'on'; },
+  lpShown: (con) => fxLpShown[con],
 };
 
 // ---------------------------------------------------------------- rendering
@@ -705,7 +1050,10 @@ function tileHTML(card, con, actKey) {
     (actKey ? ' data-act="' + actKey + '"' : '') + '>' +
     (card.materials ? '<div class="mats">×' + card.materials + '</div>' : '') +
     (ctrTotal ? '<div class="ctrs">◉' + ctrTotal + '</div>' : '') +
-    '<div class="inner">' +
+    // the artwork lives INSIDE .inner (round B): in defense position
+    // the whole inner — art + name band — rotates 90 degrees, while
+    // the corner badges (.mats/.ctrs) and the stat strip stay upright
+    '<div class="inner"><div class="art"></div>' +
     (nm ? '<div class="nm">' + nm + '</div>' : '') +
     '</div></div>';
 }
@@ -721,7 +1069,11 @@ function slotStatsHTML(card, con) {
   const d = cardData(card.code);
   const atk = card.curAtk != null ? card.curAtk : d.atk;
   const def = card.curDef != null ? card.curDef : d.def;
-  return '<div class="slotstats"><span>ATK <b>' + atk + '</b></span><span>DEF <b>' + def + '</b></span></div>';
+  // round B (B9): in defense position the strip stays upright outside
+  // the rotated card, and the DEF line is emphasised so the form
+  // reads off the numbers as well as the rotation
+  const isDef = (card.pos & E.POS_DEFENSE) !== 0;
+  return '<div class="slotstats' + (isDef ? ' defmode' : '') + '"><span>ATK <b>' + atk + '</b></span><span' + (isDef ? ' class="defline"' : '') + '>DEF <b>' + def + '</b></span></div>';
 }
 function zoneRow(el, cards, con, loc) {
   el.innerHTML = cards.map((card, seq) => {
@@ -750,8 +1102,10 @@ let duelState = null;
 function render(state) {
   duelState = state;
   const me = state.players[HP], op = state.players[1 - HP];
-  $('oppLp').textContent = op.lp;
-  $('myLp').textContent = me.lp;
+  // round B (B7): while an LP count animation owns a counter, render
+  // must not stomp it — the count lands exactly on the state value
+  if (!fxLpBusy(1 - HP)) $('oppLp').textContent = op.lp;
+  if (!fxLpBusy(HP)) $('myLp').textContent = me.lp;
   $('opppiles').innerHTML = '手札 ' + op.hand.length + '<br>デッキ ' + op.deckCount;
   $('turninfo').textContent = 'ターン' + Math.max(1, state.turnCount) + '／' + (state.turnPlayer === HP ? '自分' : '相手');
   $('phaseinfo').textContent = state.phaseName ? ('フェイズ：' + phaseJa(state.phaseName) + (state.turnPlayer === HP ? '（自分のターン）' : '（相手のターン）')) : '—';
@@ -779,9 +1133,13 @@ function render(state) {
   const cb = $('chainbar');
   if (state.chain.length) {
     cb.className = 'on';
-    cb.innerHTML = state.chain.map((l, i) => {
+    // round B (B8): with 2+ links the bundle carries a CHAIN label
+    // from the moment it stacks; the newest link rides forward while
+    // stacking; the solving link glows; resolved links dim
+    cb.innerHTML = (state.chain.length >= 2 ? '<span class="chainlbl">CHAIN</span>' : '') + state.chain.map((l, i) => {
       const n = i + 1;
-      const cls = 'link' + (state.solvingLink === n ? ' solving' : '') + (l.negated || l.disabled ? ' negated' : '');
+      const cls = 'link' + (state.solvingLink === n ? ' solving' : '') + (l.negated || l.disabled ? ' negated' : '') +
+        (l.solved ? ' done' : '') + (!state.solvingLink && i === state.chain.length - 1 ? ' newest' : '');
       return '<span class="' + cls + '"><span class="no">' + n + '</span> ' + cardName(l.code) + (l.solved ? ' ✓' : '') + '</span>';
     }).join('');
   } else { cb.className = ''; cb.innerHTML = ''; }
@@ -836,6 +1194,14 @@ function finishPrompt(bytes) {
 }
 function uiAnswer(prompt, state) {
   return new Promise((resolve) => {
+    // Response mode 'off' (round B, B11): every non-forced chain
+    // prompt is passed without opening the dock. A presentation
+    // choice only — passing (i32 -1) is always a legal SELECT_CHAIN
+    // answer, and forced prompts are still shown in every mode.
+    if (fxSettings.resp === 'off' && prompt.name === 'SELECT_CHAIN' && !prompt.forced) { resolve(E.i32resp(-1)); return; }
+    // An arriving prompt takes the sheet back from the FX settings
+    // sheet (round B) — the settings sheet must never sit over a dock
+    if ($('sheet') && $('sheet').querySelector('#fxseg-cutin')) sheetClose();
     currentPrompt = { prompt, resolve };
     if (duel) { try { duel.refreshFieldStats(); } catch (e) {} } // live ATK/DEF behind the prompt UI
     try {
@@ -984,15 +1350,54 @@ function openDismissManager() {
   }));
   $('sheet-cancel').addEventListener('click', () => { playClick(); sheetClose(); });
 }
+// ---- FX / response settings (round B, B11) ----
+// The same toggles live on the start screen (seg-cutin / seg-resp)
+// and in this sheet, reachable mid-duel from the small 演出設定
+// button in the phase bar. Neither place ever touches the board:
+// the sheet is an overlay, and while a prompt is open the button is
+// inert (a prompt owns the sheet).
+function syncFxSegs() {
+  const mark = (id, v) => { const el = $(id); if (el) el.querySelectorAll('button').forEach(b => b.classList.toggle('sel', b.dataset.v === v)); };
+  mark('seg-cutin', fxSettings.cutin ? 'on' : 'off');
+  mark('seg-resp', fxSettings.resp);
+}
+function openFxSettings() {
+  if (currentPrompt) return; // during a prompt the dock/sheet carries the interaction
+  const draw = () => {
+    sheetOpen('<div class="ttl">演出・応答の設定</div>' +
+      '<div class="sub">対戦の処理には影響しません（見せ方と確認の仕方だけの設定です）。</div>' +
+      '<div class="segrow">召喚カットイン</div><div class="seg" id="fxseg-cutin">' +
+      '<button data-v="on"' + (fxSettings.cutin ? ' class="sel"' : '') + '>ON</button>' +
+      '<button data-v="off"' + (!fxSettings.cutin ? ' class="sel"' : '') + '>OFF</button></div>' +
+      '<div class="segrow">応答モード（チェーン確認）</div><div class="seg" id="fxseg-resp">' +
+      '<button data-v="auto"' + (fxSettings.resp === 'auto' ? ' class="sel"' : '') + '>Auto</button>' +
+      '<button data-v="on"' + (fxSettings.resp === 'on' ? ' class="sel"' : '') + '>On</button>' +
+      '<button data-v="off"' + (fxSettings.resp === 'off' ? ' class="sel"' : '') + '>Off</button></div>' +
+      '<div class="sub">Auto＝今までどおり／On＝「聞かない」設定を無効にして毎回確認／Off＝必須でないチェーン確認を自動でパス</div>' +
+      '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">閉じる</button></div>');
+    const wire = (id, apply) => {
+      const el = $(id); if (!el) return;
+      el.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { playClick(); apply(b.dataset.v); draw(); }));
+    };
+    wire('fxseg-cutin', (v) => { fxSettings.cutin = v === 'on'; fxSaveSettings(); syncFxSegs(); });
+    wire('fxseg-resp', (v) => { fxSettings.resp = v; fxSaveSettings(); syncFxSegs(); });
+    $('sheet-cancel').addEventListener('click', () => { playClick(); sheetClose(); });
+  };
+  draw();
+}
 function uiChain(prompt, state) {
   if (!state.chain.length) dismissedChains = new Set();
-  const hidden = (e) => dismissedChains.has(chainKey(e)) || dismissedDuel.has(chainKey(e));
+  // Response mode 'on' (round B, B11): confirm at EVERY timing — the
+  // per-chain / per-duel dismissals neither hide candidates nor
+  // auto-pass. 'auto' keeps the item-4 behaviour exactly as before.
+  const noDismiss = fxSettings.resp === 'on';
+  const hidden = (e) => !noDismiss && (dismissedChains.has(chainKey(e)) || dismissedDuel.has(chainKey(e)));
   const visibleIdx = () => prompt.entries.map((e, i) => i).filter(i => prompt.forced || !hidden(prompt.entries[i]));
   // Duel-long dismissal (item 4): auto-answer pass ONLY when every remaining
   // candidate belongs to a dismissed card class. Prompts with any other
   // candidate, and all forced prompts, are shown normally. A visible flash
   // indicator tells the player the auto-pass happened.
-  if (!prompt.forced && prompt.entries.length > 0 && prompt.entries.every(e => dismissedDuel.has(chainKey(e)))) {
+  if (!noDismiss && !prompt.forced && prompt.entries.length > 0 && prompt.entries.every(e => dismissedDuel.has(chainKey(e)))) {
     flashAutoPass([...new Set(prompt.entries.map(e => cardName(e.code)))].join('・'));
     const cp = currentPrompt;
     clearInteraction(); // board is inert during the short delay: no stale actions can fire
@@ -1012,7 +1417,7 @@ function uiChain(prompt, state) {
       '<div class="ctx">' + timingText(state) + '｜' + (top ? 'チェーン' + state.chain.length + '：' + cardName(top.code) + ' への応答' : '効果への応答') + (prompt.forced ? '（発動必須）' : '') + tag + '</div>' +
       retryWarn(prompt) +
       '<div class="cands">' + prompt.entries.map((e, i) => {
-        if (dismissedDuel.has(chainKey(e))) return ''; // duel-dismissed: hidden here, managed in the section below
+        if (!noDismiss && dismissedDuel.has(chainKey(e))) return ''; // duel-dismissed: hidden here, managed in the section below
         const disChain = dismissedChains.has(chainKey(e));
         return '<div class="cand' + (disChain ? ' dismissed' : '') + '" data-chain="' + i + '">' + cardName(e.code) +
           '<div class="loc">' + locLabel(e) + (disChain ? '（このチェーンでは聞かない）' : '') + '</div>' +
@@ -1021,7 +1426,7 @@ function uiChain(prompt, state) {
       }).join('') + '</div>' +
       (() => {
         const dd = prompt.entries.filter(e => dismissedDuel.has(chainKey(e)));
-        if (!dd.length) return '';
+        if (noDismiss || !dd.length) return '';
         return '<div class="duelsection">自動パス設定中：' + [...new Set(dd.map(e => cardName(e.code)))].join('・') +
           dd.map(e => '<button data-undismiss="' + chainKey(e) + '">' + cardName(e.code) + ' を解除</button>').join('') + '</div>';
       })() +
@@ -1820,6 +2225,10 @@ function wireSeg(id, apply) {
   wireSeg('seg-mydeck', (v) => { myDeckKey = v; });
   wireSeg('seg-opdeck', (v) => { opDeckKey = v; });
   wireSeg('seg-first', (v) => { firstChoice = v; });
+  syncFxSegs(); // reflect any persisted round-B settings before wiring
+  wireSeg('seg-cutin', (v) => { fxSettings.cutin = v === 'on'; fxSaveSettings(); });
+  wireSeg('seg-resp', (v) => { fxSettings.resp = v; fxSaveSettings(); });
+  $('fxbtn').addEventListener('click', () => { playClick(); openFxSettings(); });
   $('soundbtn').addEventListener('click', () => {
     audioOn = !audioOn;
     $('soundbtn').textContent = audioOn ? '音：ON' : '音：OFF';
