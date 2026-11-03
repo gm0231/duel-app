@@ -3303,13 +3303,20 @@ function uiAnswer(prompt, state) {
     // only, so its sheet can name whose attack it is (P1-2).
     promptAttacker = prompt.name === 'SELECT_CARD' ? pendingAttacker : null;
     pendingAttacker = null;
-    if (duel) { try { duel.refreshFieldStats(); } catch (e) {} } // live ATK/DEF behind the prompt UI
-    try {
-      dispatchPrompt(prompt, state);
-    } catch (err) {
-      // never dead-end: fall back to the bot policy answer for this prompt
-      finishPrompt(E.botAnswer(prompt, state, DATA, E.makeBotMemory()));
-    }
+    // Refresh live ATK/DEF behind the prompt UI, then dispatch. With the
+    // engine in a Worker, refreshFieldStats() returns a Promise for a
+    // worker round-trip (only serviceable while this prompt waits); the
+    // in-process Duel's version is synchronous and returns undefined, so
+    // awaiting it keeps the fallback path behaving exactly as before.
+    const refreshed = duel ? Promise.resolve().then(() => duel.refreshFieldStats()) : Promise.resolve();
+    refreshed.catch(() => {}).then(() => {
+      try {
+        dispatchPrompt(prompt, state);
+      } catch (err) {
+        // never dead-end: fall back to the bot policy answer for this prompt
+        finishPrompt(E.botAnswer(prompt, state, DATA, E.makeBotMemory()));
+      }
+    });
   });
 }
 function dispatchPrompt(prompt, state) {
@@ -4893,8 +4900,7 @@ function wireSeg(id, apply) {
     setBgmScene('normal', true);
     $('start').style.display = 'none';
     $('logline').textContent = '対戦を準備中…';
-    const M = await OcgCoreModule();
-    duel = new E.Duel(M, DATA, {
+    duel = await createClientDuel(DATA, {
       seed: (Date.now() % 100000) + 1,
       pace: { bot: 620, botChain: 300, batch: 40 },
       deckP0, deckP1, humanTeam: HP,
