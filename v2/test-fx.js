@@ -377,6 +377,87 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     window.close();
   }
 
+  // ================= Part 1D: redesign A — attack causality (F1/F2/F3) =================
+  {
+    const window = await boot();
+    const doc = window.document;
+    const E = window.Engine;
+    const fx = window.__fx;
+    const step = (st, evs) => { const before = fx.log.length; fx.process(evs || [], st); return fx.log.slice(before); };
+    const render = (st) => window.render(st); // production order: render() first, then fx.process()
+    const oppLpEl = doc.getElementById('oppLp'), myLpEl = doc.getElementById('myLp');
+    fx.reset();
+
+    // --- F1/F2: my direct attack, opponent LP 8000 -> 7100.
+    // render(trigger) reproduces the production stomp: it writes the
+    // FINAL value (7100) because no count scene exists yet. The FX
+    // pass must pin the counter back to the start value at scene
+    // creation and hold it until the scheduled count begins.
+    let st = fakeState(s => { s.log = []; s.players[0].mzone[0] = mon(NORMAL); });
+    render(st); step(st);
+    st = fakeState(s => { s.log = []; s.players[0].mzone[0] = mon(NORMAL); s.players[1].lp = 7100; });
+    st.lastAttack = { attacker: { con: 0, loc: E.LOC.MZONE, seq: 0 }, target: null };
+    render(st);
+    ok(oppLpEl.textContent === '7100', 'FXA0: setup — render() alone shows the final value first (the F1 trigger)');
+    step(st, [{ kind: 'attack', code: NORMAL, con: 0, direct: true }, { kind: 'damage', player: 1, amount: 900 }]);
+    ok(oppLpEl.textContent === '8000', 'FXA1: F1 — the counter is pinned to the start value the moment the LP scene is created (got ' + oppLpEl.textContent + ')');
+    const lpScene = fx.scenes().find(s => s.kind === 'lpcount');
+    ok(!!lpScene && lpScene.dur >= 1000, 'FXA1b: F1 — the count keeps its attack+400ms scheduling (lpcount dur=' + (lpScene ? lpScene.dur : 'none') + ', want 1020)');
+    const oppNum = doc.querySelector('.fx3-dmgnum');
+    ok(!!oppNum && oppNum.classList.contains('fx3-dmgnum--down'), 'FXA2: F2 — the opponent damage number is generated with the downward variant (class=' + (oppNum ? oppNum.className : 'none') + ')');
+    ok(!!oppNum && oppNum.textContent === '−900', 'FXA2b: F2 — the opponent damage number reads −900');
+    // sample the DOM while the scene drives: hold at 8000 through
+    // the delay, then a monotonic decrease to exactly 7100 — any
+    // final-value preview or jump-back breaks monotonicity.
+    const samples = [parseInt(oppLpEl.textContent, 10)];
+    const tEnd = Date.now() + 2600;
+    while (Date.now() < tEnd) {
+      await new Promise(r => setTimeout(r, 25));
+      const v = parseInt(oppLpEl.textContent, 10);
+      if (!Number.isNaN(v)) samples.push(v);
+      if (v === 7100 && fx.lpShown(1) === 7100) break;
+    }
+    ok(samples.slice(0, 6).every(v => v === 8000), 'FXA3: F1 — the counter holds the start value through the pre-impact delay (first samples: ' + samples.slice(0, 6).join(',') + ')');
+    ok(samples.every((v, i) => i === 0 || v <= samples[i - 1]), 'FXA3b: F1 — the LP display is monotonic non-increasing for the whole count (distinct: ' + samples.filter((v, i) => i === 0 || v !== samples[i - 1]).join('>') + ')');
+    ok(samples[samples.length - 1] === 7100 && fx.lpShown(1) === 7100, 'FXA3c: F1 — the count settles exactly on the state value 7100');
+
+    // --- F2 contrast: damage to ME keeps the upward variant, and
+    // the F1 pin applies to my counter too.
+    fx.reset();
+    st = fakeState(s => { s.log = []; s.players[1].mzone[0] = mon(NORMAL2); });
+    render(st); step(st);
+    st = fakeState(s => { s.log = []; s.players[1].mzone[0] = mon(NORMAL2); s.players[0].lp = 7100; });
+    st.lastAttack = { attacker: { con: 1, loc: E.LOC.MZONE, seq: 0 }, target: null };
+    render(st); step(st, [{ kind: 'attack', code: NORMAL2, con: 1, direct: true }, { kind: 'damage', player: 0, amount: 900 }]);
+    ok(myLpEl.textContent === '8000', 'FXA4: F1 — my counter is pinned to the start value at scene creation too (got ' + myLpEl.textContent + ')');
+    const myNum = doc.querySelector('.fx3-dmgnum');
+    ok(!!myNum && !myNum.classList.contains('fx3-dmgnum--down'), 'FXA4b: F2 — my damage number keeps the upward variant (class=' + (myNum ? myNum.className : 'none') + ')');
+    await new Promise(r => setTimeout(r, 1300));
+    ok(myLpEl.textContent === '7100' && fx.lpShown(0) === 7100, 'FXA4c: my LP count settles exactly on 7100 (got ' + myLpEl.textContent + ')');
+
+    // --- F3: a destroying attack generates the silhouette layer
+    // (white rectangle + gold rim + name band, CSS .fx3-silhouette)
+    // and it is visibly up inside the shifted 430-490ms peak window.
+    fx.reset();
+    const SANGA = 25955164, ZOLGA = 31525442; // audit-fx fixture: 2600 -> 1700, 900 damage, battle destruction
+    st = fakeState(s => { s.log = []; s.players[0].mzone[0] = mon(SANGA); s.players[1].mzone[0] = mon(ZOLGA); });
+    render(st); step(st);
+    st = fakeState(s => { s.log = []; s.players[0].mzone[0] = mon(SANGA); s.players[1].grave = [ZOLGA]; s.players[1].lp = 7100; });
+    st.lastAttack = { attacker: { con: 0, loc: E.LOC.MZONE, seq: 0 }, target: { con: 1, loc: E.LOC.MZONE, seq: 0 } };
+    render(st); step(st, [{ kind: 'attack', code: SANGA, con: 0, direct: false }, { kind: 'destroy', code: ZOLGA, con: 1, battle: true }, { kind: 'damage', player: 1, amount: 900 }]);
+    const sil = doc.querySelector('.fx3-silhouette');
+    ok(!!sil, 'FXA5: F3 — a destroying attack generates the silhouette layer');
+    ok(!!sil && !!sil.querySelector('.nm') && sil.querySelector('.nm').textContent === '予見者ゾルガ', 'FXA5b: F3 — the silhouette carries the target name band (got ' + (sil && sil.querySelector('.nm') ? sil.querySelector('.nm').textContent : 'none') + ')');
+    let frozeAt = null;
+    const fDeadline = Date.now() + 4000;
+    while (Date.now() < fDeadline) { const n = fx.now(); if (n >= 438 && n <= 482) { fx.hitStop(1500); frozeAt = n; break; } await new Promise(r => setTimeout(r, 4)); }
+    await new Promise(r => setTimeout(r, 150));
+    const silOp = sil ? parseFloat(sil.style.opacity || '0') : 0;
+    ok(frozeAt != null && silOp > 0.2, 'FXA5c: F3 — the silhouette is up in the shifted peak window (froze at ' + (frozeAt == null ? 'never' : Math.round(frozeAt) + 'ms') + ', opacity ' + silOp.toFixed(2) + ')');
+    ok(fx.error === null, 'FXA6: fxError stayed null through every redesign-A step (got: ' + fx.error + ')');
+    window.close();
+  }
+
   // ================= Part 2: live duels =================
   if (process.env.FX_SYNTH_ONLY) { console.log(failures === 0 ? 'ALL FX SYNTHETIC CHECKS PASSED' : failures + ' FAILED'); process.exit(failures ? 1 : 0); }
   const tally = {};

@@ -2133,16 +2133,35 @@ function fxLpCount(con, to, startAtFx) {
   fxLpScenes[con] = null;
   const start = fxLpShown[con];
   if (start == null || start === to) { fxLpShown[con] = to; el.textContent = to; return; }
+  // Redesign A / F1: pin the counter to the START value the moment
+  // the scene is created. render() runs BEFORE fxProcess in
+  // onUpdate and only defers to a count scene that already exists,
+  // so by the time we get here the DOM already shows the batch's
+  // FINAL value. Without this pin the final value is what the
+  // player sees until the count starts, and the count then jumps
+  // BACK to the start — a non-monotonic display (audit-fx F1).
+  // Pinning synchronously at creation closes that window before
+  // any paint can happen; the delay branch below then re-writes
+  // the start value unconditionally on every frame.
+  el.textContent = start;
   const delay = Math.max(0, (startAtFx != null ? startAtFx : fxTimeMs) - fxTimeMs);
   const isDmg = to < start;
+  // Redesign A / F2: the opponent's LP plate sits at the very top
+  // of the screen, so the upward damage number (anchored above the
+  // plate, translateY(-100%)) was clipped by the viewport. The
+  // opponent variant anchors at the plate's BOTTOM edge and drifts
+  // DOWN into the board (proto p1c: the glyph box sits at the
+  // plate's lower interior, fully on screen). My own plate (mid
+  // screen) keeps the upward form.
+  const dmgDown = isDmg && con !== HP;
   let numEl = null;
   if (isDmg) {
     const layer = fxLayerEl(), r = fxRel(el);
     if (layer && r) {
       numEl = document.createElement('div');
-      numEl.className = 'fx fx3-dmgnum';
+      numEl.className = 'fx fx3-dmgnum' + (dmgDown ? ' fx3-dmgnum--down' : '');
       numEl.textContent = '−' + (start - to);
-      numEl.style.left = r.cx + 'px'; numEl.style.top = (r.y - 2) + 'px';
+      numEl.style.left = r.cx + 'px'; numEl.style.top = (dmgDown ? (r.y + r.h - 3) : (r.y - 2)) + 'px';
       numEl.style.opacity = '0';
       layer.appendChild(numEl);
     }
@@ -2152,7 +2171,7 @@ function fxLpCount(con, to, startAtFx) {
     kind: 'lpcount', dur: delay + 620,
     render(t) {
       const tt = t - delay;
-      if (tt < 0) { if (fxLpShown[con] !== start) { fxLpShown[con] = start; el.textContent = start; } }
+      if (tt < 0) { fxLpShown[con] = start; el.textContent = start; } // F1: unconditional — in the delay window the DOM must hold the start value on EVERY frame, so no path (a stray render, a superseding batch) can flash the final value first
       else {
         if (isDmg && !flashed) { flashed = true; el.classList.remove('lpflash'); void el.offsetWidth; el.classList.add('lpflash'); }
         const u = Math.min(1, tt / 600);
@@ -2166,7 +2185,9 @@ function fxLpCount(con, to, startAtFx) {
           const s = 1.45 - 0.45 * FXE.settle(fxSeg(t, delay + 20, delay + 150));
           const fade = Math.min(fxSeg(t, delay + 20, delay + 60) * 2, 1, (1 - fxSeg(t, delay + 480, delay + 600)) * 1.6 + 0.15);
           numEl.style.opacity = String(Math.max(0, Math.min(1, fade)));
-          numEl.style.transform = 'translate(-50%,-100%) translateY(' + (-8 * nu) + 'px) scale(' + s.toFixed(3) + ')';
+          numEl.style.transform = dmgDown
+            ? 'translate(-50%,0) translateY(' + (8 * nu) + 'px) scale(' + s.toFixed(3) + ')'
+            : 'translate(-50%,-100%) translateY(' + (-8 * nu) + 'px) scale(' + s.toFixed(3) + ')';
         }
         // V4: the number runs white-hot for its first 70 ms, then
         // cools to the standard red (3 quantized steps, not a ramp)
@@ -2245,7 +2266,7 @@ function fxAttackSceneV3(o) {
   // stacked copies — main, a white-hot copy, a gray copy — whose
   // filters are set ONCE here; the dissolve becomes an opacity
   // cross-fade, so no filter is ever written per frame.
-  let ghost = null, ghostHot = null, ghostGray = null;
+  let ghost = null, ghostHot = null, ghostGray = null, ghostSil = null;
   if (!o.direct && o.targetCode != null) {
     const gw = Math.max(10, tPt.w - 2), gh = Math.max(10, tPt.h - 24);
     ghost = fxPlaceGhost(o.targetCode, false, tPt, gw, gh);
@@ -2255,6 +2276,17 @@ function fxAttackSceneV3(o) {
       if (ghostHot) { ghostHot.style.filter = 'brightness(2.7) saturate(0)'; ghostHot.style.opacity = '0'; nodes.push(ghostHot); }
       ghostGray = fxPlaceGhost(o.targetCode, false, tPt, gw, gh);
       if (ghostGray) { ghostGray.style.filter = 'grayscale(1) brightness(.82)'; ghostGray.style.opacity = '0'; nodes.push(ghostGray); }
+      // Redesign A / F3 (proto p1d): a dedicated silhouette layer
+      // ABOVE the hot/gray copies — a white card rectangle with a
+      // gold rim and a readable name band, all static paint in CSS
+      // (.fx3-silhouette); only its opacity/transform are animated.
+      // At the shifted white-hot peak (430-490, see render) this is
+      // what the player reads, so the target stays a CARD instead
+      // of dissolving into the bloom's white core.
+      if (o.destroyed) {
+        ghostSil = mk('fx3-silhouette', tPt.cx, tPt.cy, gw, gh);
+        if (ghostSil) { ghostSil.style.opacity = '0'; ghostSil.innerHTML = '<div class="nm">' + cardName(o.targetCode) + '</div>'; }
+      }
     }
   }
   // L7 attribute particles, born at the impact point on the FX clock
@@ -2318,12 +2350,12 @@ function fxAttackSceneV3(o) {
         trim.style.opacity = String(0.85 * p * (1 - fxSeg(t, 300, 460)));
       }
       if (ghost) {
-        if (t < 280) { ghost.style.opacity = '0'; if (ghostHot) ghostHot.style.opacity = '0'; if (ghostGray) ghostGray.style.opacity = '0'; }
+        if (t < 280) { ghost.style.opacity = '0'; if (ghostHot) ghostHot.style.opacity = '0'; if (ghostGray) ghostGray.style.opacity = '0'; if (ghostSil) ghostSil.style.opacity = '0'; }
         else {
           const st = t - 280;
           const gx = 3 * Math.sin(st / 17) * Math.exp(-st / 85); // L8: damped +-3px shake
-          if (o.destroyed && t >= 350) { // L9: white peak 350-410 on the hot copy, then the gray copy takes over the dissolve
-            const du = fxSeg(t, 350, 600);
+          if (o.destroyed && t >= 430) { // L9 (Redesign A / F3): the white-hot peak moved 350-410 -> 430-490, AFTER the bloom white core (280-500, alpha up to .95) has decayed; the silhouette layer peaks in the same window so the card rectangle + gold rim + name band stay readable at the peak. The dissolve fade itself (500-660) is unchanged.
+            const du = fxSeg(t, 430, 600);
             const tr = 'translate(' + gx.toFixed(1) + 'px,' + (-12 * FXE.inCubic(du)).toFixed(1) + 'px)';
             // Brushup FX-1a: the fade used to run 470-600, leaving
             // the colour copy at ~0.42 mid-dissolve while the gray
@@ -2335,13 +2367,15 @@ function fxAttackSceneV3(o) {
             const fade = 1 - fxSeg(t, 500, 660);
             ghost.style.transform = tr;
             ghost.style.opacity = String(fade);
-            if (ghostHot) { ghostHot.style.transform = tr; ghostHot.style.opacity = String(.85 * Math.sin(Math.PI * fxSeg(t, 350, 410)) * fade); }
-            if (ghostGray) { ghostGray.style.transform = tr; ghostGray.style.opacity = String(.85 * fxSeg(t, 410, 520) * fade); }
+            if (ghostHot) { ghostHot.style.transform = tr; ghostHot.style.opacity = String(.85 * Math.sin(Math.PI * fxSeg(t, 430, 490)) * fade); }
+            if (ghostGray) { ghostGray.style.transform = tr; ghostGray.style.opacity = String(.85 * fxSeg(t, 490, 600) * fade); }
+            if (ghostSil) { ghostSil.style.transform = tr; ghostSil.style.opacity = String(.96 * Math.sin(Math.PI * fxSeg(t, 430, 490)) * fade); }
           } else {
             ghost.style.transform = 'translate(' + gx.toFixed(1) + 'px,0px)';
             ghost.style.opacity = String(o.destroyed ? 1 : 1 - fxSeg(t, 450, 480));
             if (ghostHot) ghostHot.style.opacity = '0';
             if (ghostGray) ghostGray.style.opacity = '0';
+            if (ghostSil) ghostSil.style.opacity = '0';
           }
         }
       }

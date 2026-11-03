@@ -401,6 +401,17 @@
   .fx3-core{border-radius:50%;pointer-events:none;}
   .fx3-ring{border:2px solid #fff;border-radius:50%;pointer-events:none;}
   .fx3-dmgnum{position:absolute;transform:translate(-50%,-100%);font-size:19px;font-weight:800;color:#ff5348;text-shadow:0 1px 5px #000,0 0 12px #ff220066;pointer-events:none;white-space:nowrap;}
+  /* Redesign A / F2: opponent variant — anchored at the LP plate's
+     bottom edge, opening DOWNWARD into the board so the glyphs are
+     never clipped by the top of the screen (proto p1c). The scene
+     writes the matching translate(-50%,0) transform per frame. */
+  .fx3-dmgnum--down{transform:translate(-50%,0);}
+  /* Redesign A / F3: the white silhouette that carries the target's
+     read at the shifted white-hot peak (proto p1d) — white card
+     rectangle, gold rim, name band. All paint is static here; the
+     scene only animates opacity/transform on this node. */
+  .fx3-silhouette{background:linear-gradient(160deg,#ffffff,#e8e2d2);border-radius:5px;box-shadow:0 0 0 2px #e6c877,0 0 22px rgba(255,244,200,.55);overflow:hidden;pointer-events:none;}
+  .fx3-silhouette .nm{position:absolute;left:2px;right:2px;bottom:2px;font-size:8px;line-height:1.15;color:#4a3a12;background:rgba(255,255,255,.65);padding:1px 2px;border-radius:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .lpflash{animation:lpflashA .34s ease-out;}
   @keyframes lpflashA{0%{color:#ff6a5e;text-shadow:0 0 14px #ff3020;}100%{}}
   .fx3-chainno{position:absolute;left:50%;bottom:-13px;transform:translateX(-50%);font-size:30px;font-weight:800;color:#59d8f2;text-shadow:0 2px 6px #000,0 0 16px #59d8f288;line-height:1;pointer-events:none;}
