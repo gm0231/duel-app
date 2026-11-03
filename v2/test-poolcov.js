@@ -19,7 +19,18 @@
         a new restriction fails here until it is classified);
      E. the attribute-lock derivation equals the Vernusylph pair;
      F. behaviour spot-checks: yn follow-ups, pmap scopes, bare
-        pinning, once-per-turn usage tracking, 死者蘇生 latch.
+        pinning, once-per-turn usage tracking, 死者蘇生 latch;
+     G. (brushup round 2) card-name activation limits: the
+        derivation equals the enumerated set, and the reason
+        fires exactly while the limit is spent (turn scope
+        expires; duel scope persists);
+     H. (brushup round 2) grave-sent timing: derivation equals
+        {巨神封じの矢: ②}; arrivals are stamped per turn and
+        never across an identity-less observation;
+     I. (brushup round 2) EX-summon type locks: derivation
+        equals {トリロスークタ: ②/S}; the lock rises only on
+        the restricting effect's own number and expires with
+        the turn.
    It also PRINTS the per-card classification table (the audit;
    the same table lives in NOTES.md).                        */
 const fs = require('fs');
@@ -198,13 +209,13 @@ ok(clsCount['未カバー'] === 0, 'no card is left unclassified/uncovered witho
 // ---------- D: lingering-restriction scan ----------
 const RESTRICTION_PATTERNS = [
   { re: /このターン、自分は([地水炎風光闇神])属性以外のモンスターの効果を発動できない/, kind: '属性ロック（モンスター効果）', handling: 'ラッチ＋理由表示（対象：場のモンスター）' },
-  { re: /このターン、自分はSモンスターしかEXデッキから特殊召喚できない/, kind: 'EX召喚種別制限', handling: '未カバー（表面はEX召喚プロンプト — 理由表示の対象外として列挙）' },
+  { re: /このターン、自分はSモンスターしかEXデッキから特殊召喚できない/, kind: 'EX召喚種別制限', handling: '使用記録＋理由表示（対象：EXデッキシートの各行 — brushup round 2、検証は I）' },
   { re: /この効果で特殊召喚したモンスターは攻撃できず、その効果は発動できない/, kind: '蘇生モンスターへの制約', handling: 'ラッチ＋理由表示（対象：そのモンスターのシート）' },
   { re: /このターンそのモンスターは攻撃できない/, kind: '攻撃制限（相手モンスター）', handling: '対象外（攻撃の可否 — 発動シートの対象ではない）' },
   { re: /このターン、相手モンスターは直接攻撃できない/, kind: '攻撃制限（相手全体）', handling: '対象外（攻撃の可否）' },
-  { re: /このカードが墓地へ送られたターンには発動できない/, kind: '墓地発動のタイミング制限', handling: '未カバー（表面は墓地パイルシート — 列挙して残す）' },
-  { re: /このカード名のカードはデュエル中に１枚しか発動できない/, kind: 'カード名発動制限（デュエル中1枚）', handling: '未カバー（表面は手札シート — 列挙して残す）' },
-  { re: /このカード名のカードは１ターンに１枚しか発動できない/, kind: 'カード名発動制限（1ターン1枚）', handling: '未カバー（表面は手札シート — 列挙して残す）' },
+  { re: /このカードが墓地へ送られたターンには発動できない/, kind: '墓地発動のタイミング制限', handling: '到着ターン記録＋理由表示（対象：墓地シートの行 — brushup round 2、検証は H）' },
+  { re: /このカード名のカードはデュエル中に１枚しか発動できない/, kind: 'カード名発動制限（デュエル中1枚）', handling: '使用記録＋理由表示（対象：手札シート／プレビューの理由行 — brushup round 2、検証は G）' },
+  { re: /このカード名のカードは１ターンに１枚しか発動できない/, kind: 'カード名発動制限（1ターン1枚）', handling: '使用記録＋理由表示（対象：手札シート／プレビューの理由行 — brushup round 2、検証は G）' },
 ];
 const found = [];
 for (const code of Object.keys(data.texts)) {
@@ -302,6 +313,75 @@ PC.noteRevive([{ kind: 'activate', code: 28958464, con: 0 }], stChain);
 PC.noteRevive([{ kind: 'activate', code: 99937011, con: 0 }], stChain);
 PC.noteRevive([{ kind: 'spsummon', code: 82633039, con: 0 }], { turnCount: 3, chain: [], players: fakeState.players });
 ok(PC.revivedReason(82633039, 4, 1, 3) === null, 'F25: an intervening own activation disarms (conservative miss, never a false claim)');
+
+// ---------- G: card-name activation limits (brushup round 2) ----------
+ok(JSON.stringify(PC.nameLimitCards().map(x => x.code + ':' + x.scope).sort()) === JSON.stringify([
+  '17484499:duel', '28958464:turn', '35726888:turn', '45725480:turn',
+]), 'G1: card-name limit derivation = {現世と冥界の逆転:duel, 死者蘇生/おろかな副葬/七星の宝刀:turn}');
+PC.reset();
+ok(PC.nameLimitReason(28958464) === null, 'G2: 死者蘇生 unspent -> silent');
+PC.trackUsedFx({ turnCount: 1, chain: [{ code: 28958464, con: 0, loc: 2, seq: 0, desc: SID(28958464, 0) }] });
+ok(PC.nameLimitReason(28958464) === 'このカード名のカードは１ターンに１枚しか発動できません',
+  'G3: after activating 死者蘇生, its name limit states the reason');
+PC.trackUsedFx({ turnCount: 2, chain: [] });
+ok(PC.nameLimitReason(28958464) === null, 'G4: the turn-scope limit expires with the turn');
+PC.reset();
+PC.trackUsedFx({ turnCount: 1, chain: [{ code: 17484499, con: 0, loc: 2, seq: 0, desc: SID(17484499, 0) }] });
+PC.trackUsedFx({ turnCount: 7, chain: [] });
+ok(PC.nameLimitReason(17484499) === 'このカード名のカードはデュエル中に１枚しか発動できません',
+  'G5: the duel-scope limit persists across turns');
+ok(PC.nameLimitReason(35726888) === null, 'G6: an unspent limit of the same family stays silent');
+ok(PC.nameLimitReason(82633039) === null, 'G7: a card with no card-name activation limit stays silent');
+
+// ---------- H: grave-sent timing (brushup round 2) ----------
+ok(JSON.stringify(PC.graveSentCards()) === JSON.stringify([{ code: 67037924, n: 2 }]),
+  'H1: grave-sent derivation = {巨神封じの矢: ②}');
+PC.reset();
+const gsState = (grave, turnCount) => ({ turnCount, players: [{ grave }, { grave: [] }] });
+PC.trackGraveArrivals(gsState([], 3));
+ok(PC.graveSentReason(67037924, 3) === null, 'H2: not in the grave -> silent');
+PC.trackGraveArrivals(gsState([67037924], 3));
+ok(PC.graveSentReason(67037924, 3) === 'このターンに墓地へ送られたため、②の効果は発動できません',
+  'H3: on its arrival turn the grave sheet states the reason');
+ok(PC.graveSentReason(67037924, 4) === null, 'H4: the reason is bound to the arrival turn');
+PC.trackGraveArrivals(gsState([67037924, 67037924], 5));
+ok(PC.graveSentReason(67037924, 5) !== null, 'H5: a second copy arriving later re-arms the note on ITS arrival turn');
+ok(PC.graveSentReason(67037924, 3) !== null, 'H5b: the first copy\'s stamp also survives while it remains in the grave');
+PC.reset();
+PC.trackGraveArrivals(gsState([null], 3));
+PC.trackGraveArrivals(gsState([67037924], 3));
+ok(PC.graveSentReason(67037924, 3) === null && PC.graveStamps().length === 0,
+  'H6: an identity-less observation in between stamps NOTHING (the deck/grave swap window)');
+PC.reset();
+PC.trackGraveArrivals(gsState([], 3));
+PC.trackGraveArrivals(gsState([67037924], 3));
+ok(PC.graveStamps().length === 1, 'H7a: the arrival is stamped');
+PC.trackGraveArrivals(gsState([], 3));
+ok(PC.graveSentReason(67037924, 3) === null && PC.graveStamps().length === 0,
+  'H7: a stamp dies when its copy leaves the grave');
+PC.reset();
+PC.trackGraveArrivals(gsState([67037924], 1));
+PC.trackGraveArrivals(gsState([67037924, 67037924], 3));
+ok(PC.graveSentReason(67037924, 3) !== null, 'H8 setup: a second copy arriving on turn 3 is claimable');
+PC.trackGraveArrivals(gsState([67037924], 3));
+ok(PC.graveSentReason(67037924, 3) === null,
+  'H8: one copy leaving makes the record ambiguous — stamps drop (silence over a guess)');
+
+// ---------- I: EX-summon type locks (brushup round 2) ----------
+ok(JSON.stringify(PC.exLockCards()) === JSON.stringify([{ code: 21368273, n: 2, typeBit: 0x2000, token: 'Sモンスター' }]),
+  'I1: EX-lock derivation = {マナドゥム・トリロスークタ: ②, Synchro only}');
+PC.reset();
+ok(PC.exSummonLock() === null, 'I2: no lock before the restricting effect is used');
+PC.trackUsedFx({ turnCount: 1, chain: [{ code: 21368273, con: 0, loc: 4, seq: 0, desc: SID(21368273, 0) }] });
+ok(PC.exSummonLock() === null, 'I3: using ① does NOT raise the lock (the clause lives in ②)');
+PC.trackUsedFx({ turnCount: 1, chain: [{ code: 21368273, con: 0, loc: 4, seq: 0, desc: SID(21368273, 1) }] });
+const exLk = PC.exSummonLock();
+ok(!!exLk && exLk.typeBit === 0x2000 && exLk.code === 21368273, 'I4: using ② raises the Synchro-only lock');
+ok(PC.exLockReason(exLk) === '《マナドゥム・トリロスークタ》②の効果の制約で、このターンはSモンスターしかEXデッキから特殊召喚できません',
+  'I5: the lock reason names the source card and effect');
+PC.trackUsedFx({ turnCount: 2, chain: [] });
+ok(PC.exSummonLock() === null, 'I6: the lock expires with the turn');
+PC.reset();
 
 console.log(failures ? failures + ' CHECK(S) FAILED' : 'ALL POOLCOV CHECKS PASSED');
 process.exit(failures ? 1 : 0);
