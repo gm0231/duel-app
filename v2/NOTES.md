@@ -5855,3 +5855,7 @@ test-neuron-url.js is the real-network Chromium E2E (real
 share link + real deck code; retries the full flow up to 3x
 per case against relay flakiness). Frames: cap-neuron.js adds
 panel-guidance and import-visual shots (390x620 / 390x700).
+
+## 2026-11-04: classic Agido aliases the Ancient Guard art (user ruling)
+- The user ruled that the art delivered for 《古衛兵アギド》 (62320425) is also used for the deck's classic 《アギド》 (16135253): CARD_ART gains `16135253: 'agido'` (same two files, no new assets). The entry for 62320425 stays for when that card returns to a deck.
+- test-cardart / test-cardview: the unlisted-fallback exemplar moves from 16135253 to 《現世と冥界の逆転》 (17484499) — with the alias, no Ishizu main-deck monster remains unlisted. CA7c inverts (the agido art is now preloaded via the classic card's deck membership); CA7b2 pins the alias itself.
