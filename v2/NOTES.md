@@ -5568,3 +5568,110 @@ tiles only via the fabricated-board class contract and the
 band legend, not in real play. WKWebView on a real device
 remains unmeasured, as ever (capture environment is
 Chromium-class).
+## Neuron import Phase 1 (2026-11-04, user concept: 相手デッキは自前、自分のデッキはニューロンから)
+
+What landed: the deck-select page's own-deck section gains an
+import entry (＋ デッキを取り込む); saved decks become rows
+inside the own-deck list itself, under a 保存したデッキ divider
+(a second list region crushed the page at phone heights — the
+one-scroll-region shape is the deck page's own rule). Imported
+decks are validated against the OCG GENESYS rules,
+saved to localStorage ('v2saveddecks', ~0.7 KB per deck), listed
+next to the built-in decks, and — when every main+extra card is
+in the current 63-card pool — playable immediately. Opponent
+decks stay curated; importing is own-side only.
+
+Import inputs (Phase 0 verdict stands: the app itself can never
+fetch the official DB — CORS blocks it from any static origin,
+verified in a real browser; the user brings the data):
+- the official deck page's HTML (text view, whole-page copy).
+  Rows are parsed per list table (monster/spell/trap -> main,
+  extra_list -> extra, side_list -> side); each row's hidden
+  link_value cid maps to a passcode via the bundled cid table,
+  then alias-normalizes to the representative passcode
+  (83764719 -> 83764718, verified end to end).
+- .ydk / passcode lists (with #main / #extra / !side markers, or
+  bare: Extra-Deck monster kinds are split off by type), YDKE
+  URLs, and card-name lists (名前 ×n lines; names resolve through
+  a whitespace/width-normalized index). Passcodes of 1-8 digits
+  are accepted (real codes include 4-digit ones like 2511).
+- Unresolvable names / codes are rejected at import with the
+  offending entries listed — nothing is silently dropped.
+- A pasted deck with no name (text formats) gets a provisional
+  name 取り込みデッキ YYYY-MM-DD hh:mm (date/time of import).
+
+Validator (neuron.js validateGenesis, data in genesys-data.json):
+- points: main+extra+side total <= 100. Point data = the official
+  point list, 2026-10-01 applied edition (?list=202610),
+  snapshot at tools-neuron/official_points_202610.json (1,115
+  names; parse verified identical to the hand-kept pt_by_name
+  table). On failure the breakdown is shown per card
+  (name (pt) xN = subtotal).
+- same name <= 3 across all three decks (grouped by
+  representative passcode and by identical display name).
+- no Link / Pendulum; deck sizes main 40-60 / extra 0-15 /
+  side 0-15.
+- release cutoff of the bundled list: cards first released on or
+  after 2026-03-01 are rejected, named individually (ocg_date
+  from YGOPRODeck misc info, earliest across printings).
+- cards that cannot be used in official duels (Token / Skill /
+  placeholder heuristic) are rejected, named individually.
+- three verdicts, three wordings: Genesis-illegal ->
+  「このデッキは使えません」 + reasons, NO save offered;
+  Genesis-legal but pool-unsupported -> 「Genesisには適合して
+  いますが、このアプリでは未対応のカードが含まれています」
+  + the unsupported names, save offered (labelled 対戦はまだ
+  できません), start button disabled while it is selected with
+  the reason on the button and the summary line naming the
+  cards; fully supported -> 「Genesis適合 ― そのまま対戦
+  できます」. Side-deck cards count toward points but do not
+  gate play (the app has no side deck; noted in the result view).
+
+Dataset (genesys-data.json, ~0.8 MB, fetched lazily ONLY when the
+import panel is used; built by tools-neuron/gen-genesys-data.py):
+points / JA names (12,301 reps) / alias (BabelCDB datas.alias +
+same-English-name fallback merges) / cid map (14,409, from
+ygo.sqlite) / link-pendulum, extra-kind, post-cutoff (402) and
+unusable (231) rep sets. Point-name -> passcode resolution:
+YGOPRODeck JA dump + ygo.sqlite JA names first, then Yugipedia
+SMW (exact batches + archseries harvest), then individual
+official-DB lookups (keyword search -> cid -> sqlite passcode;
+glyph-variant stragglers closed by core-token search with HTML-
+entity unescape + NFKC normalization). FINAL COVERAGE: all 1,115
+pointed names resolved to a representative passcode — 0
+unresolved. A deck containing a pointed card can therefore never
+have that card silently valued at 0.
+
+Known limits (honest edges):
+- Same-name counting does NOT merge cards whose name is *treated
+  as* another card's name (e.g. ハーピィ・レディ1号 is counted
+  under its own name). Needs treated-as data the sources do not
+  expose mechanically.
+- 659 representative cards have no ocg_date in the sources; they are
+  treated as pre-cutoff. A brand-new card missing its date would
+  slip the cutoff check (its name would still surface in the
+  composition view).
+- The HTML path expects the page's text view: the visible-text
+  clipboard form (what a plain select-all copy produces) is not
+  parsed in Phase 1 — the panel asks for the page HTML.
+- Points follow the bundled 202610 list only; list revisions
+  (Phase 5) re-run the generator (sources are cached in
+  ~/workspace/neuron-import-research/build-cache).
+
+Out of scope (per the phase plan): Phase 2 (deck-code input —
+needs a relay decision; direct fetch is impossible), Phase 3
+(full-pool engine: lazy script/card/image supply), Phase 4
+(pool-wide clarity machinery).
+
+Tests: test-neuron (N0-N13) — real-fixture HTML import -> 45/15/9,
+100pt, legal, playable, save -> reboot -> select -> duel starts;
+variant-passcode normalization; points / copies / Link rejections
+with reasons and no save; cutoff unit; legal-but-unsupported
+save + start gating + two-step delete; name-list resolution and
+unknown-name rejection. Regression: test-deckpage, test-ui,
+test-layout, test-oppinfo, test-facedown-select, test-recipe-v11,
+test-typecolor, test-cardart, test-bgm, test-setvis, test-atkblock,
+test-genesis pass. test-logdetail-ui D11/D12 fail IDENTICALLY on
+the unmodified base tree (pre-existing, not this change).
+Frames: cap-neuron.js in shots-neuron/ (import OK / NG verdicts
+and the saved deck on the deck page, 390x620 / 390x700).
