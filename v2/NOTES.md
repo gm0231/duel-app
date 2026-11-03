@@ -5153,19 +5153,30 @@ class never rides on .inner, own set and opponent face-down
 tiles carry no kind class). Impact suites green on the branch:
 cardart, setvis, facedown, layout, strot.
 
-Capture: cap-tileframe.js -> shots-tileframe/ — REAL play at
-390x620/700 (human seat driven through the real UI: hand tap ->
-action sheet -> zone tap; position change through the action
-sheet on turn 2; CPU plays its own turns). Frames: board-atk
+Capture: cap-tileframe.js -> shots-tileframe/ (390x700) and
+shots-tileframe-620/ (390x620) — REAL play (human seat driven
+through the real UI: hand tap -> action sheet -> zone tap;
+position change through the action sheet on the next own turn;
+CPU plays its own turns). At 700 the full set landed: board-atk
 (face-up monster framed right after the summon), board-mixed
-(first live moment with >= 2 kinds face-up at once, when it
-occurs), board-def (face-up DEFENSE monster — rotated art inside
-an upright kind frame — next to an opponent face-down card with
-no frame); styles.json records the computed ::after border for
-own face-up / own defense / opponent face-down tiles plus the
-defense .inner transform. Normal and ritual monsters do not
-exist in the current pool (0 cards), so those two frame colors
-are verified on tiles only via the fabricated-board class
-contract and the band legend, not in real play. WKWebView on a
-real device remains unmeasured, as ever (capture environment is
+(opponent face-up Spell framed green next to an own face-up
+Effect monster framed orange, captured mid CPU turn), board-def
+(face-up DEFENSE monster: computed ::after border 2px in the
+Effect color rgb(207,116,52) on the unrotated .tile while the
+.inner transform is a 90-degree rotation matrix; the owner's
+own set S/T beside it carries no frame). At 620, board-atk and
+board-mixed landed (same two frame colors visible, layout
+intact) but no board-def: across repeated attempts the CPU's
+turn did not return within the capture harness's 9-minute
+patience window, so the defense frame at 620 rests on the 700
+measurement plus the shared stylesheet. The successful run's
+styles.json has oppBack null — the CPU had no face-down card
+at that moment — so an opponent face-down tile's computed
+style is NOT measured; its framelessness is pinned by the
+fabricated-board class checks (TC29/TC30) and the faceUp gate
+itself. Normal and ritual monsters do not exist in the current
+pool (0 cards), so those two frame colors are verified on
+tiles only via the fabricated-board class contract and the
+band legend, not in real play. WKWebView on a real device
+remains unmeasured, as ever (capture environment is
 Chromium-class).
