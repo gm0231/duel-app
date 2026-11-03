@@ -4777,3 +4777,105 @@ CA14n/CA16n plain, CA11s/CA16o scoped) and the face-down
 pin CA13g. cap-deckart.js now runs all three sisters;
 shots-deckart/ holds the trio's real-play frames at
 390x620/700 (tile + preview styles pin the scoped files).
+
+## Card-kind colors — variant A shipped (2026-11-03)
+
+User pick after the two-variant prototype (branch proto/type-color,
+typecolor-report.md): variant A — the whole name band takes the
+card-kind color — adopted; the accent variant B was removed, not
+kept as a toggle. Kinds are derived mechanically from the core
+type bitmask in data.json (client cardKind()/kindCls(); priority
+spell > trap > fusion > synchro > xyz > ritual > normal > effect);
+all 63 pool cards classify, 0 unclassified, unknown codes get no
+class and keep the default #000a band. The palette is the original
+frame hues (--k-*) with a deepened set (--k-*-d) for band
+backgrounds so cream text stays readable; synchro keeps the
+original silver with dark text. The class rides every name band
+that is visible under the normal rules: board tiles, hand,
+resident preview (name pill), the three selection grids
+(gridSheet / unselect / announce), FX ghosts, the finisher and
+ace-appearance big cards and the cut-in big card — the FX spots
+were out of the prototype's scope and were folded in here via the
+same helper. Face-down visibility is unchanged: an opponent's
+set card renders no .nm at all, and the owner's set card keeps
+its name + veil treatment (its band takes the kind color like
+any owner-visible band). Board TILES still show no band (the art
+layer covers it) — coloring the tiles themselves is a separate
+user decision with its own prototypes (branch proto/tile-color).
+Pinned by test-typecolor.js (33 checks: pool-wide agreement with
+an independent derivation, DOM classes on a fabricated board,
+opponent face-down nameless, stylesheet contract). Capture:
+cap-typecolor-a.js -> shots-typecolor-a/ (fabricated mixed board
+via render(), real gridSheet, computed colors in styles.json).
+Merged over the DECK_ART line (ac90e65): the eight same-line
+collisions were resolved by keeping BOTH changes — deck-scoped
+art resolution (artInline/artCss/artApply deck arguments) and
+the kind class on the band.
+
+## Per-card illustrations, 14th delivery (2026-11-03): Vernusylph Flower Crown — plain art AND a deck-scoped variant
+
+《春化精の花冠》 14108995 — passcode verified against
+data.json (names/cards), NOT from memory: a Continuous Spell,
+1 copy in the Ishizu main deck, none in GG. The first card to
+arrive with BOTH paintings at once:
+
+- plain art 'kakan' in CARD_ART — the forest painting (the
+  pink-haired fairy placing a golden ring over the white
+  rabbit). Source ~/workspace/duel-assets/
+  kakan-user-20261103.jpg (1024x1536).
+- deck-scoped 'kakan-ishizu' in DECK_ART under ishizu — the
+  same composition in Egyptian dress (gold collars and ankh,
+  river and temple behind). Source ~/workspace/duel-assets/
+  kakan-ishizu-user-20261103.jpg (1024x1536). The 4th
+  DECK_ART entry, and the first SPELL with an override; it
+  rides the existing map unchanged — one value in CARD_ART,
+  one value in DECK_ART, no new code path.
+
+Files keep the standard shape and the user's crop rule
+(keep the top, cut the bottom): assets/card-art-kakan{-s}.jpg
+(small 34KB / big 161KB) and assets/card-art-kakan-ishizu{-s}
+.jpg (small 44KB / big 219KB). Standard top-anchored crops,
+NO start adjustment for either painting: in both, the fairy
+sits upper-right/centre with her face at ~y25-35% and the
+62x88 tile simulation (cover, centre-top) shows her face
+whole and unmistakable; the rabbit's head enters at the
+tile's lower edge, as with the sisters' paired compositions.
+
+Surfaces behave like the books (the spell precedent): own
+face-up S/T tile shows the art, own SET S/T carries it under
+the breathing setown veil, the opponent's set card gets
+neither art nor veil, and preload warms both paintings for
+the Ishizu deck (the plain file stays warm for contexts that
+resolve the other way).
+
+Tests (test-cardart, 183 checks): CA0 delivered-file entries
+for both pairs; CA0p/CA0q (deck membership: 1 copy in Ishizu,
+none in GG — code-only surfaces resolve Kakan's membership
+unambiguously); CA7aa/CA7ab (base map + preload);
+CA7z15-CA7z18 (DECK_ART entry, resolution both ways,
+preload); a fabricated Kakan board on the default seats
+(CA24/CA11t/CA11u/CA13h/CA14o/CA16p — Ishizu-context face-up
+tile, set-under-veil, opponent-set blank, hand, preview all
+pin kakan-ishizu); a flipped-seat fixture (CA25/CA11v/CA11w/
+CA13i/CA14p/CA16q/CA16r — GG-context tile/hand/preview fall
+back to the plain forest art, the Ishizu seat's face-up copy
+keeps the Egyptian art, its SET copy stays bare). Impact
+suites green: setvis, facedown, layout, overlay, poolcov,
+fx, swap, strot, phase2, ui.
+
+Frames (cap-kakan.js, shots-kakan/): real play at 390x620/
+700 — Kakan drawn in the opening hand (hand frames show the
+Egyptian art in the hand tile), tapped (action sheet), then
+SET through the real action sheet; the set frames show the
+fairy ghosting under the card-back veil, and styles.json
+pins card-art-kakan-ishizu-s.jpg + veil on the real set tile
+at both heights (seat decks ishizu/gg). A declared
+fabricated board adds the face-up S/T tile beside the set
+one (field frames). Eyeballed: names, text and art agree —
+the preview header reads 《春化精の花冠》 over the Egyptian
+thumbnail. The plain forest painting never appears in a real
+duel today (no non-Ishizu deck runs Kakan); its fallback is
+pinned by the flipped-seat fixture, and it will surface for
+real the day a Neuron-imported deck runs the card.
+WKWebView on a real device remains unmeasured, as ever
+(capture environment is Chromium-class).
