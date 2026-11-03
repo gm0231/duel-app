@@ -3969,3 +3969,57 @@ WKWebView frame rates.
 - Real-browser frames eyeballed at 390x620 and 390x700 for
   every surface above (paths inline). BU-11's worst-case
   strip (defense position, 4-digit, 40px tile) is among them.
+
+## Set-card visuals (2026-11-03): double-draw defects + own-set ghost + user card back
+
+User reports (real device): (1) face-up DEFENSE tiles kept an
+upright copy of the artwork behind the rotated card; (2) face-down
+DEFENSE tiles read as two overlapping cards (chevron moire);
+(3) own set cards should show the back pattern veiled over the real
+face, ghosting through with a slow light/dark breath, instead of a
+plain back / 「裏」 badge. Later the same day the user supplied a
+new card-back design (golden hieroglyph vortex on black) and ruled
+it replaces the CSS stripe back on EVERY face-down surface.
+
+Root cause of (1)+(2): the card face / back pattern was drawn
+TWICE — as the .tile element's own background (never rotates) and
+inside .inner .art (the layer that rotates in defense position).
+Face-up DEF: upright art showed around the rotated inner.
+Face-down DEF: upright stripes + 90°-rotated stripes crossed into
+a herringbone that read as two cards. The position-change
+animation had the same residue (it rotates .inner over the tile's
+own art). Fix: .tile's background is plain #3a2f1d and .tile.back
+paints nothing of its own; .art is the single drawing layer for
+both face and back.
+
+Own-set design: tiles for the human's face-down cards carry
+.setown (tileHTML: con === HP && !faceUp && code known). The 「裏」
+setbadge is gone. Inside .inner, a .veil layer over .art carries
+the card-back image and breathes: @keyframes setbreath, opacity
+0.58 <-> 0.86, 4.6s ease-in-out infinite alternate (opacity only —
+no per-frame shadow/filter writes). The veil sits inside .inner,
+so a face-down DEFENSE tile carries face+veil sideways as ONE
+card. Opponent face-down tiles keep .back (image only, no veil):
+information asymmetry preserved. Detail/info views unchanged.
+
+User card back: source ~/workspace/duel-assets/
+card-back-user-20261103.jpg (1024x1536) -> distribution copy
+assets/card-back-s.jpg (320x480, q82, 62KB; same width policy as
+card-art-placeholder-s.jpg). Applied via center/cover (the
+vortex centre lands on the tile centre) at every face-down
+surface: .tile.back .inner .art, .hcard.back .himg (opponent
+hand), .posbtn .glyph.back, .fx-ghost.back, .fx-peel, and the
+.setown veil. The old repeating-linear-gradient stripe back is
+removed everywhere.
+
+Verification: new v2/test-setvis.js (SV1–SV12 + SV3b/SV3c per
+surface) — CSS single-draw contract, keyframes animate opacity
+only, DOM classes/veil per owner and position, asymmetry gates.
+Real-browser frames (cap-setvis.js, parked duel + fabricated
+board, 390x620/700): shots-setvis/before-* reproduce both defects
+(chevron on opp face-down DEF, upright residue behind DEF
+tiles); after2-* show one sideways back for face-down DEF, clean
+slots behind face-up DEF, opponent backs in the new design, and
+own set tiles ghosting — after2-h700-t0 (veil near opacity min,
+ghost strongest) vs after2-h700-t2 (near max, ghost faintest)
+bracket the breath.
