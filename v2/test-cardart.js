@@ -34,10 +34,13 @@ const wasmBinary = fs.readFileSync(path.join(V2, 'build', 'ocgcore.wasm'));
 let failures = 0;
 const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (!cond) failures++; };
 
-const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515;
-// Zolga gained art in the 5th delivery, so the unlisted exemplar is
-// now 転輪のスフィンクス (a pool card with no individual art).
-const UNLISTED = 46148485;
+const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360;
+// The unlisted exemplar moved Zolga -> Sphinx (5th delivery), and
+// Sphinx gained art in the 7th delivery, so the role now sits with
+// 《森と目覚の春化精》 36745317: a real Ishizu main-deck monster
+// (x3) with no individual art, usable on every fallback surface
+// (tile / hand / preview / ghost).
+const UNLISTED = 36745317;
 
 // ---- delivered art files (existence + top-anchored dimensions) ----
 for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.jpg', 640, 882],
@@ -45,7 +48,11 @@ for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.
                          ['card-art-kelbek-s.jpg', 320, 320], ['card-art-kelbek.jpg', 640, 882],
                          ['card-art-keldo-s.jpg', 320, 320], ['card-art-keldo.jpg', 640, 882],
                          ['card-art-zolga-s.jpg', 320, 320], ['card-art-zolga.jpg', 640, 882],
-                         ['card-art-cardan-s.jpg', 320, 320], ['card-art-cardan.jpg', 640, 882]]) {
+                         ['card-art-cardan-s.jpg', 320, 320], ['card-art-cardan.jpg', 640, 882],
+                         ['card-art-sphinx-s.jpg', 320, 320], ['card-art-sphinx.jpg', 640, 882],
+                         ['card-art-taiyou-s.jpg', 320, 320], ['card-art-taiyou.jpg', 640, 882],
+                         ['card-art-tsuki-s.jpg', 320, 320], ['card-art-tsuki.jpg', 640, 882],
+                         ['card-art-chaospod-s.jpg', 320, 320], ['card-art-chaospod.jpg', 640, 882]]) {
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
@@ -55,6 +62,10 @@ ok(data.decks.ishizu.main.filter(c => c === KELBEK).length === 1, 'CA0d: the Ish
 ok(data.decks.ishizu.main.filter(c => c === KELDO).length === 3, 'CA0e: the Ishizu deck runs 3 copies of Keldo');
 ok(data.decks.ishizu.main.filter(c => c === ZOLGA).length === 1, 'CA0f: the Ishizu deck runs 1 copy of Zolga');
 ok(data.decks.ishizu.main.filter(c => c === CARDAN).length === 3, 'CA0g: the Ishizu deck runs 3 copies of Cardan');
+ok(data.decks.ishizu.main.filter(c => c === SPHINX).length === 1, 'CA0h: the Ishizu deck runs 1 copy of Sphinx');
+ok(data.decks.ishizu.main.filter(c => c === TAIYOU).length === 1, 'CA0i: the Ishizu deck runs 1 copy of Taiyou');
+ok(data.decks.ishizu.main.filter(c => c === TSUKI).length === 1, 'CA0j: the Ishizu deck runs 1 copy of Tsuki');
+ok(data.decks.ishizu.main.filter(c => c === CHAOSPOD).length === 2, 'CA0k: the Ishizu deck runs 2 copies of Chaos Pod');
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -108,12 +119,24 @@ async function boot() {
     zolgaInline: artInline(${ZOLGA}),
     cardanSlug: CARD_ART[${CARDAN}],
     cardanInline: artInline(${CARDAN}),
+    sphinxSlug: CARD_ART[${SPHINX}],
+    sphinxInline: artInline(${SPHINX}),
+    taiyouSlug: CARD_ART[${TAIYOU}],
+    taiyouInline: artInline(${TAIYOU}),
+    tsukiSlug: CARD_ART[${TSUKI}],
+    tsukiInline: artInline(${TSUKI}),
+    chaoospodSlug: CARD_ART[${CHAOSPOD}],
+    chaoospodInline: artInline(${CHAOSPOD}),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.kelbekSlug === 'kelbek' && helpers.kelbekInline.includes('card-art-kelbek-s.jpg') && helpers.kelbekInline.includes('background-position:center top'), 'CA7d: Kelbek maps and stamps like the others');
   ok(helpers.keldoSlug === 'keldo' && helpers.keldoInline.includes('card-art-keldo-s.jpg') && helpers.keldoInline.includes('background-position:center top'), 'CA7f: Keldo maps and stamps like the others');
   ok(helpers.zolgaSlug === 'zolga' && helpers.zolgaInline.includes('card-art-zolga-s.jpg') && helpers.zolgaInline.includes('background-position:center top'), 'CA7h: Zolga maps and stamps like the others');
   ok(helpers.cardanSlug === 'cardan' && helpers.cardanInline.includes('card-art-cardan-s.jpg') && helpers.cardanInline.includes('background-position:center top'), 'CA7j: Cardan maps and stamps like the others');
+  ok(helpers.sphinxSlug === 'sphinx' && helpers.sphinxInline.includes('card-art-sphinx-s.jpg') && helpers.sphinxInline.includes('background-position:center top'), 'CA7l: Sphinx maps and stamps like the others');
+  ok(helpers.taiyouSlug === 'taiyou' && helpers.taiyouInline.includes('card-art-taiyou-s.jpg') && helpers.taiyouInline.includes('background-position:center top'), 'CA7n: Taiyou maps and stamps like the others');
+  ok(helpers.tsukiSlug === 'tsuki' && helpers.tsukiInline.includes('card-art-tsuki-s.jpg') && helpers.tsukiInline.includes('background-position:center top'), 'CA7p: Tsuki maps and stamps like the others');
+  ok(helpers.chaoospodSlug === 'chaospod' && helpers.chaoospodInline.includes('card-art-chaospod-s.jpg') && helpers.chaoospodInline.includes('background-position:center top'), 'CA7r: Chaos Pod maps and stamps like the others');
   ok(helpers.slug === 'mudora', 'CA2: CARD_ART maps Mudora -> mudora');
   ok(helpers.small === '../assets/card-art-mudora-s.jpg' && helpers.big === '../assets/card-art-mudora.jpg', 'CA3: art files resolve (small + big)');
   ok(helpers.inline.includes('card-art-mudora-s.jpg') && helpers.inline.includes('background-position:center top'), 'CA4: artInline pins the top (crop rule: keep top, cut bottom)');
@@ -125,6 +148,10 @@ async function boot() {
   ok(helpers.preloaded.includes('../assets/card-art-keldo-s.jpg') && helpers.preloaded.includes('../assets/card-art-keldo.jpg'), 'CA7g: boot preloads Keldo too (same deck)');
   ok(helpers.preloaded.includes('../assets/card-art-zolga-s.jpg') && helpers.preloaded.includes('../assets/card-art-zolga.jpg'), 'CA7i: boot preloads Zolga too (same deck)');
   ok(helpers.preloaded.includes('../assets/card-art-cardan-s.jpg') && helpers.preloaded.includes('../assets/card-art-cardan.jpg'), 'CA7k: boot preloads Cardan too (same deck)');
+  ok(helpers.preloaded.includes('../assets/card-art-sphinx-s.jpg') && helpers.preloaded.includes('../assets/card-art-sphinx.jpg'), 'CA7m: boot preloads Sphinx too (same deck)');
+  ok(helpers.preloaded.includes('../assets/card-art-taiyou-s.jpg') && helpers.preloaded.includes('../assets/card-art-taiyou.jpg'), 'CA7o: boot preloads Taiyou too (same deck)');
+  ok(helpers.preloaded.includes('../assets/card-art-tsuki-s.jpg') && helpers.preloaded.includes('../assets/card-art-tsuki.jpg'), 'CA7q: boot preloads Tsuki too (same deck)');
+  ok(helpers.preloaded.includes('../assets/card-art-chaospod-s.jpg') && helpers.preloaded.includes('../assets/card-art-chaospod.jpg'), 'CA7s: boot preloads Chaos Pod too (same deck)');
 
   doc.getElementById('startbtn').click();
   for (let i = 0; i < 120 && doc.querySelectorAll('.slot').length < 10; i++)
@@ -138,7 +165,7 @@ async function boot() {
       const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
       b.players[0].mzone[0] = mon(${MUDORA}, 0x1);  // own face-up ATK Mudora
       b.players[0].mzone[1] = mon(${MUDORA}, 0x4);  // own face-up DEF Mudora (2nd copy)
-      b.players[0].mzone[2] = mon(${UNLISTED}, 0x1); // own face-up Sphinx (no art)
+      b.players[0].mzone[2] = mon(${UNLISTED}, 0x1); // own face-up Vernusylph (no art)
       b.players[0].mzone[3] = mon(${AGIDO}, 0x1);   // own face-up Agido (2nd delivery)
       b.players[0].mzone[4] = mon(${KELBEK}, 0x1);  // own face-up Kelbek (3rd delivery)
       b.players[1].mzone[0] = mon(${MUDORA}, 0x1);  // opp face-up Mudora (public: art shows)
@@ -198,6 +225,85 @@ async function boot() {
   ok(res.pvUnlisted === '', 'CA17: resident preview falls back for unlisted cards');
   ok(res.ghost.includes('card-art-mudora-s.jpg') && res.ghostPos.includes('top'), 'CA18: face-up FX ghost carries the art, top-pinned');
   ok(res.ghostBack === '' && res.ghostUnlisted === '', 'CA19: face-down and unlisted ghosts get no art');
+
+  // ---- Sphinx board (7th delivery): both rows above are full, so
+  // she gets her own fabricated board — face-up tile + hand +
+  // preview carry the art, and her own face-down tile on the
+  // opponent's side must NOT (she is a keycard; the asymmetry
+  // contract applies to her exactly like the others) ----
+  const res2 = window.eval(`
+    (() => {
+      const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
+      const P = () => ({ mzone: [null,null,null,null,null,null,null], szone: [null,null,null,null,null,null], grave: [], removed: [], extra: [], hand: [], deckCount: 38, lp: 8000 });
+      const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
+      b.players[0].mzone[0] = mon(${SPHINX}, 0x1);  // own face-up ATK Sphinx
+      b.players[0].mzone[1] = mon(${CHAOSPOD}, 0x1); // own face-up ATK Chaos Pod (10th delivery, same board)
+      b.players[1].mzone[0] = mon(${SPHINX}, 0x8);  // opp face-down DEF Sphinx (MUST stay hidden)
+      b.players[0].hand = [{ code: ${SPHINX} }, { code: ${CHAOSPOD} }];
+      render(b);
+      const artOf = (zone) => {
+        const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
+        const a = slot && slot.querySelector('.tile .art');
+        return a ? (a.getAttribute('style') || '') : null;
+      };
+      const h = document.querySelector('#hand .hcard[data-code="${SPHINX}"] .himg');
+      const hPod = document.querySelector('#hand .hcard[data-code="${CHAOSPOD}"] .himg');
+      setPreview(${SPHINX}, null);
+      const pv = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      setPreview(${CHAOSPOD}, null);
+      const pvPod = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      return { ownUp: artOf('0:4:0'), ownPod: artOf('0:4:1'), oppDown: artOf('1:4:0'), hand: h ? (h.getAttribute('style') || '') : null, handPod: hPod ? (hPod.getAttribute('style') || '') : null, pv, pvPod };
+    })()
+  `);
+  ok(res2.ownUp !== null && res2.oppDown !== null, 'CA20: non-vacuity — Sphinx board rendered');
+  ok(res2.ownUp.includes('card-art-sphinx-s.jpg'), 'CA11g: Sphinx tile shows its own art');
+  ok(res2.oppDown === '' && !String(res2.oppDown).includes('sphinx'), 'CA13b: opponent FACE-DOWN Sphinx gets NO art (asymmetry / no leak)');
+  ok(res2.hand !== null && res2.hand.includes('card-art-sphinx-s.jpg'), 'CA14e: hand Sphinx shows the art');
+  ok(res2.pv.includes('card-art-sphinx-s.jpg'), 'CA16c: resident preview shows the art for Sphinx');
+  ok(res2.ownPod !== null && res2.ownPod.includes('card-art-chaospod-s.jpg'), 'CA11j: Chaos Pod tile shows its own art');
+  ok(res2.handPod !== null && res2.handPod.includes('card-art-chaospod-s.jpg'), 'CA14h: hand Chaos Pod shows the art');
+  ok(res2.pvPod.includes('card-art-chaospod-s.jpg'), 'CA16f: resident preview shows the art for Chaos Pod');
+
+  // ---- Books board (8th/9th deliveries — the first SPELLS with
+  // art): surfaces are the S/T zone, the hand and the preview.
+  // Own face-up S/T shows the art; own SET S/T carries the art
+  // UNDER the setown veil (the ghost the owner reads); opponent
+  // set S/T gets NO art and NO veil (asymmetry, as ever) ----
+  const res3 = window.eval(`
+    (() => {
+      const st = (code, pos) => ({ code, pos, materials: 0 });
+      const P = () => ({ mzone: [null,null,null,null,null,null,null], szone: [null,null,null,null,null,null], grave: [], removed: [], extra: [], hand: [], deckCount: 38, lp: 8000 });
+      const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
+      b.players[0].szone[0] = st(${TAIYOU}, 0xa);  // own SET Taiyou (veil ghost)
+      b.players[0].szone[1] = st(${TSUKI}, 0x5);   // own face-up Tsuki
+      b.players[1].szone[0] = st(${TSUKI}, 0xa);   // opp SET Tsuki (MUST stay hidden)
+      b.players[0].hand = [{ code: ${TAIYOU} }, { code: ${TSUKI} }];
+      render(b);
+      const tileOf = (zone) => {
+        const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
+        const t = slot && slot.querySelector('.tile');
+        if (!t) return null;
+        const a = t.querySelector('.art');
+        return { cls: t.className, veil: !!t.querySelector('.veil'), art: a ? (a.getAttribute('style') || '') : null };
+      };
+      const handImgs = [...document.querySelectorAll('#hand .hcard')].map(h => ({ code: h.dataset.code, style: (h.querySelector('.himg') || {}).getAttribute ? (h.querySelector('.himg').getAttribute('style') || '') : '' }));
+      setPreview(${TAIYOU}, null);
+      const pvTaiyou = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      setPreview(${TSUKI}, null);
+      const pvTsuki = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      return { ownSetTaiyou: tileOf('0:8:0'), ownUpTsuki: tileOf('0:8:1'), oppSetTsuki: tileOf('1:8:0'), handImgs, pvTaiyou, pvTsuki };
+    })()
+  `);
+  ok(res3.ownSetTaiyou !== null && res3.ownUpTsuki !== null && res3.oppSetTsuki !== null, 'CA21: non-vacuity — books board rendered');
+  ok(res3.ownUpTsuki.art !== null && res3.ownUpTsuki.art.includes('card-art-tsuki-s.jpg') && !res3.ownUpTsuki.veil, 'CA11h: own face-up Tsuki S/T tile shows its own art');
+  ok(res3.ownSetTaiyou.art !== null && res3.ownSetTaiyou.art.includes('card-art-taiyou-s.jpg') && res3.ownSetTaiyou.veil && res3.ownSetTaiyou.cls.split(/\s+/).includes('setown'), 'CA11i: own SET Taiyou carries its art under the setown veil (owner ghost)');
+  ok(res3.oppSetTsuki.art === '' && !res3.oppSetTsuki.veil && !String(res3.oppSetTsuki.art).includes('tsuki'), 'CA13c: opponent SET Tsuki gets NO art and NO veil (asymmetry / no leak)');
+  const hTaiyou = res3.handImgs.find(h => h.code === String(TAIYOU));
+  const hTsuki = res3.handImgs.find(h => h.code === String(TSUKI));
+  ok(!!hTaiyou && hTaiyou.style.includes('card-art-taiyou-s.jpg'), 'CA14f: hand Taiyou shows the art');
+  ok(!!hTsuki && hTsuki.style.includes('card-art-tsuki-s.jpg'), 'CA14g: hand Tsuki shows the art');
+  ok(res3.pvTaiyou.includes('card-art-taiyou-s.jpg'), 'CA16d: resident preview shows the art for Taiyou');
+  ok(res3.pvTsuki.includes('card-art-tsuki-s.jpg'), 'CA16e: resident preview shows the art for Tsuki');
 
   window.close();
   console.log(failures === 0 ? 'ALL CARDART CHECKS PASSED' : failures + ' CARDART CHECK(S) FAILED');
