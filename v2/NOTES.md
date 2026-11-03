@@ -4563,3 +4563,36 @@ frames (cap-chaospod.js, shots-chaospod-v2/): drawn and
 normal-summoned face-up (tile + resident preview read
 instantly — eye and grin between the two jars) and set
 face-down under the breathing veil, at 390x620/700.
+
+Eleventh to thirteenth deliveries (user, 2026-11-03): the
+Vernusylph trio — 《丘と芽吹の春化精》 9350312 (oka),
+《花と野原の春化精》 62133026 (hana), 《森と目覚の春化精》
+36745317 (mori); sources ~/workspace/duel-assets/
+{oka,hana,mori}-user-20261103.jpg (1024x1536 each).
+MAPPING CORRECTION (user, 2026-11-03): the first assignment
+had Oka and Hana swapped — Oka is the pink-haired fairy,
+Hana is the white rabbit. The duel-assets files were
+content-swapped before this round ran; md5s were re-verified
+and both images eyeballed before generation, so the
+delivered files were built from the corrected sources.
+Standard top-anchored crops for all three, no start
+adjustment: small = y0-1024 -> 320x320 (35-39KB), big =
+full width x y0-1411 -> 640x882 (161-177KB). The tile
+simulation (cover, centre top, 62x88 box) keeps every face
+whole: the fairy's face upper-centre, the rabbit's head
+upper-centre, the forest boy in the upper half with the
+sleeping beast below. Three lines in CARD_ART.
+test-cardart: the unlisted fallback exemplar moved
+Mori -> 《地久神－カルボン》 15079028 (x3 in the deck, no
+art), and the trio gained CA0l-CA0o / CA7t-CA7y /
+CA11k-CA11m / CA13d / CA14i-CA14k / CA16g-CA16i / CA22 —
+119 checks in total, ALL PASSED. Full suite on the branch:
+green except the known test-strot ST4 reachability flake
+(ST5 passed) and one load-related test-fx FX1 failure that
+passes on an isolated rerun (ALL FX CHECKS PASSED).
+Real-play frames (cap-shunka.js, shots-shunka/): each
+sister drawn, tapped (resident preview) and normal-summoned
+face-up through the real sheet at 390x620/700 — tile,
+preview and hand all carry her own art, and the name/stat
+lines confirm the corrected mapping (Oka 200/2000 = pink
+fairy, Hana 600/1600 = rabbit, Mori 900/1800 = forest boy).
