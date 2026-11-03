@@ -146,6 +146,44 @@ function locLabel(e) {
     default: return who;
   }
 }
+// ---- hidden candidates in selection prompts (user report
+// 2026-11-04: a target-selection grid showed the opponent's set
+// cards with their names and art). The engine strips the code of
+// such entries before delivery (maskPromptForHuman); this predicate
+// is the render-side twin, so a candidate list that still carries a
+// code is masked here too. A candidate is hidden when its identity
+// is not public information for the viewer: an opponent's face-down
+// field / Extra card, or an opponent hand / deck card. The one
+// legal exception is shared with the engine: 墓穴の道連れ's own
+// effect reveals both hands before the choice (context code), so
+// its candidates stay visible. One's OWN face-down cards are never
+// hidden — the owner knows them.
+const HAND_DESTRUCTION_CODE = 16435215;
+function selCardHidden(e, prompt) {
+  if (!e) return false;
+  if (e.code == null) return true; // no identity delivered, nothing to show
+  if (e.con == null || e.con === HP) return false;
+  if (prompt && prompt.context && prompt.context.code === HAND_DESTRUCTION_CODE) return false;
+  if (e.loc === E.LOC.HAND || e.loc === E.LOC.DECK) return true;
+  if ((e.loc === E.LOC.MZONE || e.loc === E.LOC.SZONE || e.loc === E.LOC.EXTRA) && e.pos != null && !(e.pos & E.POS_FACEUP)) return true;
+  return false;
+}
+// Public-only label for a hidden candidate: which slot it sits in is
+// table information (the loc line already says it); for a face-down
+// monster its position form is public too (the board shows it).
+function hiddenCardLabel(e) {
+  if (!e) return '裏側のカード';
+  if (e.loc === E.LOC.MZONE) {
+    if (e.pos != null && (e.pos & E.POS.FD_ATK)) return '裏側のモンスター（攻撃表示）';
+    if (e.pos != null && (e.pos & E.POS.FD_DEF)) return '裏側のモンスター（守備表示）';
+    return '裏側のモンスター';
+  }
+  if (e.loc === E.LOC.SZONE) return '裏側のカード';
+  if (e.loc === E.LOC.HAND) return '相手の手札のカード';
+  if (e.loc === E.LOC.DECK) return '相手のデッキのカード';
+  if (e.loc === E.LOC.EXTRA) return '相手のEXデッキのカード';
+  return '裏側のカード';
+}
 function isMonster(code) { const d = cardData(code); return d && (d.type & 0x1); }
 // card-kind (original frame) key, derived mechanically from the core
 // type bitmask in data.json (cards[code].type) — no per-card hand
@@ -4060,18 +4098,27 @@ function uiPosition(prompt, state) {
 function gridSheet(o) {
   // o: {title, sub, cards:[{code,locLabel,extra,locked}], selected:Set(idx), valid:fn, confirmLabel, cancelable, onToggle}
   const draw = () => {
-    const tray = [...o.selected].map(i => '<span class="chip" data-chip="' + i + '">' + cardName(o.cards[i].code) + ' ✕</span>').join('') +
-      (o.locked || []).map(c => '<span class="chip locked">' + cardName(c.code) + '（固定）</span>').join('');
+    // Hidden candidates (opponent's face-down / hand / deck cards)
+    // render as the card back with a public-only label: no name, no
+    // art, no stats, no text, no detail button.
+    const hidOf = (c) => selCardHidden(c.ref || c, o.prompt);
+    const nameOf = (c) => hidOf(c) ? hiddenCardLabel(c.ref || c) : cardName(c.code);
+    const tray = [...o.selected].map(i => '<span class="chip" data-chip="' + i + '">' + nameOf(o.cards[i]) + ' ✕</span>').join('') +
+      (o.locked || []).map(c => '<span class="chip locked">' + (selCardHidden(c, o.prompt) ? hiddenCardLabel(c) : cardName(c.code)) + '（固定）</span>').join('');
     const subTxt = typeof o.sub === 'function' ? o.sub() : o.sub;
     sheetOpen('<div class="ttl">' + o.title + '</div><div class="sub" id="gsub">' + subTxt + '</div>' + contextLineHTML(o.prompt) + retryWarn(o.prompt) +
       // (W-24: a retry used to repeat the sub as a 「条件：」 line
       // under the warning — the same sentence twice. The shortfall
       // already lives on the disabled confirm button's label.)
       (tray ? '<div id="tray">' + tray + '</div>' : '<div id="tray"></div>') +
-      '<div class="grid">' + o.cards.map((c, i) =>
-        '<div class="gcard' + (o.selected.has(i) ? ' sel' : '') + '" data-grid="' + i + '"' + artInline(c.code, false, c.ref && c.ref.con != null ? deckKeyOfSeat(c.ref.con) : deckKeyOfSeat(HP)) + '><button class="gdetail" data-gdetail="' + i + '">詳細</button><div class="loc">' + c.locLabel + '</div><div class="nm' + kindCls(c.code) + '">' + cardName(c.code) + (c.extra ? ' ' + c.extra : '') + '</div>' +
-        (statsLine(c.code) ? '<div class="stats">' + statsLine(c.code) + '</div>' : '') +
-        (o.showText && cardText(c.code) ? '<div class="itext">' + cardText(c.code) + '</div>' : '') + '</div>').join('') + '</div>' +
+      '<div class="grid">' + o.cards.map((c, i) => {
+        const hid = hidOf(c);
+        return '<div class="gcard' + (hid ? ' back' : '') + (o.selected.has(i) ? ' sel' : '') + '" data-grid="' + i + '"' + (hid ? '' : artInline(c.code, false, c.ref && c.ref.con != null ? deckKeyOfSeat(c.ref.con) : deckKeyOfSeat(HP))) + '>' +
+        (hid ? '' : '<button class="gdetail" data-gdetail="' + i + '">詳細</button>') +
+        '<div class="loc">' + c.locLabel + '</div><div class="nm' + (hid ? '' : kindCls(c.code)) + '">' + (hid ? hiddenCardLabel(c.ref || c) : cardName(c.code) + (c.extra ? ' ' + c.extra : '')) + '</div>' +
+        (hid ? '' : (statsLine(c.code) ? '<div class="stats">' + statsLine(c.code) + '</div>' : '') +
+        (hid ? '' : (o.showText && cardText(c.code) ? '<div class="itext">' + cardText(c.code) + '</div>' : ''))) + '</div>';
+      }).join('') + '</div>' +
       '<div class="btnrow"><button class="bigbtn" id="grid-confirm" ' + (o.valid() ? '' : 'disabled') + '>' + (o.valid() ? (o.confirmLabel || '決定') : (o.needLabel ? o.needLabel() : (o.confirmLabel || '決定'))) + '</button>' +
       (o.cancelable ? '<button class="bigbtn sub" id="grid-cancel">選ばずにやめる</button>' : '') + '</div>');
     $('sheet').querySelectorAll('[data-grid]').forEach(g => g.addEventListener('click', (ev) => { if (ev.target.closest('[data-gdetail]')) return; playClick();
@@ -4155,10 +4202,14 @@ function uiUnselect(prompt, state) {
   if (prompt.finishable && selCount > 0 && selCount < prompt.min) hint = 'あと' + (prompt.min - selCount) + '枚選ぶと決定できます。';
   if (prompt.finishable && selCount > 0) hint += 'やめる場合は選択をすべて外してください。';
   sheetOpen('<div class="ttl">カードの選択</div><div class="sub">' + prompt.min + '〜' + prompt.max + ' 枚（現在 ' + selCount + ' 枚選択中）。タップで選択／解除します。' + (hint ? ' ' + hint : '') + '</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
-    '<div class="grid">' + combined.map((x, k) =>
-      '<div class="gcard' + (x.sel ? ' sel' : '') + '" data-unselect="' + x.idx + '"' + artInline(x.c.code, false, deckKeyOfSeat(x.c.con)) + '><button class="gdetail" data-uinfo="' + k + '">詳細</button><div class="loc">' + locLabel(x.c) + '</div><div class="nm' + kindCls(x.c.code) + '">' + cardName(x.c.code) + '</div>' +
-      (statsLine(x.c.code) ? '<div class="stats">' + statsLine(x.c.code) + '</div>' : '') +
-      (cardText(x.c.code) ? '<div class="itext">' + cardText(x.c.code) + '</div>' : '') + '</div>').join('') + '</div>' +
+    '<div class="grid">' + combined.map((x, k) => {
+      const hid = selCardHidden(x.c, prompt);
+      return '<div class="gcard' + (hid ? ' back' : '') + (x.sel ? ' sel' : '') + '" data-unselect="' + x.idx + '"' + (hid ? '' : artInline(x.c.code, false, deckKeyOfSeat(x.c.con))) + '>' +
+      (hid ? '' : '<button class="gdetail" data-uinfo="' + k + '">詳細</button>') +
+      '<div class="loc">' + locLabel(x.c) + '</div><div class="nm' + (hid ? '' : kindCls(x.c.code)) + '">' + (hid ? hiddenCardLabel(x.c) : cardName(x.c.code)) + '</div>' +
+      (hid ? '' : (statsLine(x.c.code) ? '<div class="stats">' + statsLine(x.c.code) + '</div>' : '') +
+      (hid ? '' : (cardText(x.c.code) ? '<div class="itext">' + cardText(x.c.code) + '</div>' : ''))) + '</div>';
+    }).join('') + '</div>' +
     '<div class="btnrow">' +
     (prompt.finishable && selCount >= prompt.min ? '<button class="bigbtn" id="unselect-finish">決定</button>' : '') +
     (cancelTruthful ? '<button class="bigbtn sub" id="unselect-cancel">選ばずにやめる</button>' : '') + '</div>');
@@ -4213,7 +4264,7 @@ function uiCounter(prompt, state) {
   const draw = () => {
     const total = amounts.reduce((a, b) => a + b, 0);
     sheetOpen('<div class="ttl">カウンターの取り除き</div><div class="sub">合計 ' + prompt.count + ' 個（現在 ' + total + ' 個）</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
-      prompt.cards.map((c, i) => '<div class="counterrow"><span>' + cardName(c.code) + '（' + locLabel(c) + '／' + c.count + '個）</span>' +
+      prompt.cards.map((c, i) => '<div class="counterrow"><span>' + (selCardHidden(c, prompt) ? hiddenCardLabel(c) : cardName(c.code)) + '（' + locLabel(c) + '／' + c.count + '個）</span>' +
         '<span class="ctl"><button data-dec="' + i + '">−</button><b>' + amounts[i] + '</b><button data-inc="' + i + '">＋</button></span></div>').join('') +
       '<div class="btnrow"><button class="bigbtn" id="counter-confirm" ' + (total === prompt.count ? '' : 'disabled') + '>決定</button></div>');
     $('sheet').querySelectorAll('[data-inc]').forEach(b => b.addEventListener('click', () => { const i = +b.dataset.inc; if (amounts[i] < prompt.cards[i].count) amounts[i]++; playClick(); draw(); }));
@@ -4227,7 +4278,7 @@ function uiSort(prompt, state) {
   let order = prompt.cards.map((_, i) => i); // order[pos] = original index
   const draw = () => {
     sheetOpen('<div class="ttl">' + (prompt.name === 'SORT_CHAIN' ? 'チェーンの順番' : 'カードの順番') + '</div><div class="sub">' + (prompt.name === 'SORT_CHAIN' ? '上から順に処理される順番です。並べ替えて「この順番で決定」を押してください。' : '上から順に、次に使う順番に並べてください。') + '</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
-      order.map((ci, pos) => '<div class="sortrow"><span>' + (pos + 1) + '. ' + cardName(prompt.cards[ci].code) + '</span><span class="mv">' +
+      order.map((ci, pos) => '<div class="sortrow"><span>' + (pos + 1) + '. ' + (selCardHidden(prompt.cards[ci], prompt) ? hiddenCardLabel(prompt.cards[ci]) : cardName(prompt.cards[ci].code)) + '</span><span class="mv">' +
         '<button data-up="' + pos + '">↑</button><button data-down="' + pos + '">↓</button></span></div>').join('') +
       '<div class="btnrow"><button class="bigbtn" id="sort-ok">この順番で決定</button><button class="bigbtn sub" id="sort-keep">元の順番のままにする</button></div>');
     $('sheet').querySelectorAll('[data-up]').forEach(b => b.addEventListener('click', () => { const p = +b.dataset.up; if (p > 0) { [order[p-1], order[p]] = [order[p], order[p-1]]; } playClick(); draw(); }));
@@ -4257,6 +4308,9 @@ window.__purpose = { infer: inferSelectPurpose, phaseCtx: phaseJaContext };
 // Test surface: render the SELECT_UNSELECT_CARD sheet for a synthetic
 // prompt so its button states can be asserted without a live duel.
 window.__unselect = { open: (prompt) => uiUnselect(prompt, null) };
+// Test surface: render the SELECT_CARD grid sheet for a synthetic
+// prompt (same seam as __unselect), for test-facedown-select.js.
+window.__select = { open: (prompt) => uiSelectCards(prompt, null) };
 function uiYesNo(prompt, state) {
   const isEff = prompt.name === 'SELECT_EFFECTYN';
   // WHICH card and WHICH effect is being asked must be readable on
