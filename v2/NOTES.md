@@ -5306,3 +5306,31 @@ shots-fxcov/ — callout-summon-me / -opp / -spsummon /
 -flipsummon at 390x620 and 390x700, f01 stamp (~120-180 ms) and
 f02 hold (~400-570 ms) read off the frames: enlarged card, seat
 rim, name band legible, board not covered.
+
+## App renamed: MILLENNIUM DUELISTS (2026-11-04, user decision)
+
+The app's title changed from 「トトと簡易デュエル」 to
+**MILLENNIUM DUELISTS** — the plural is deliberate: the selling point
+is that AI-piloted original-work character decks are the opponents.
+Display surfaces replaced (text only, world styling unchanged, the
+wordmark is set in the app's own type — no imitation of any official
+logo):
+
+- v2/index.html: `<title>` and the start-screen `<h1>`, now set as a
+  two-line gold inscription (MILLENNIUM / DUELISTS, letterspaced).
+- index.html (retired v1 page): `<title>`, `<h1>`, footer name.
+- README.md: repository heading (with a one-line 旧名 note).
+
+Untouched on purpose: repository name, URLs, file paths, and the v1
+localStorage keys (`toto-duel-*-v1`) — those are functional
+identifiers, not display names. No test depended on the old title
+string.
+
+Subtitle (same decision, added minutes later): the title screen
+carries a small **for GENESYS** line under the wordmark — GENESYS is
+Konami's official English spelling of the format, and the line marks
+the app as GENESYS-rules-only. Placement judgement: the subtitle
+lives ONLY on the v2 title screen. It is deliberately NOT folded
+into the `<title>` tags, the v1 page, or the README heading — those
+carry the plain proper name; the subtitle is a title-screen design
+element, not part of the name itself.
