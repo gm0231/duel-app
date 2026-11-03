@@ -458,6 +458,14 @@
   /* chain bar upgrades (round B): CHAIN label, newest link forward,
      resolved links dim */
   #chainbar .chainlbl{flex:0 0 auto;font-size:10px;font-weight:700;color:#59d8f2;border:1px solid #59d8f2;border-radius:10px;padding:2px 7px;background:#12222b;white-space:nowrap;}
+  /* redesign B (p2b): once a link has landed, the floating CHAIN
+     word is absorbed into this label — gold text + a gold
+     underline (the 2px bottom border is offset by 1px less bottom
+     padding, so the bar's frozen height never changes), and the
+     landed chip keeps a gold frame. Static paint only: the FX
+     layer toggles the class once, at the landing / at render. */
+  #chainbar .chainlbl.landed{color:#e6c877;border-bottom:2px solid #c9a227;padding-bottom:1px;}
+  #chainbar .link.landed{box-shadow:0 0 0 1.5px #c9a227;}
   .link.newest{border-color:#59d8f2;background:#12222b;color:#dff8ff;transform:scale(1.12);}
   .link.done{opacity:.45;}
   /* detail preview: modified ATK/DEF in MD's light blue */

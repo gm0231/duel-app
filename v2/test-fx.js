@@ -458,6 +458,67 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     window.close();
   }
 
+  // ================= Part 1E: redesign B — chain unification (p2a/p2b/p2c, audit C3) =================
+  {
+    const window = await boot();
+    const doc = window.document;
+    const E = window.Engine;
+    const fx = window.__fx;
+    fx.reset();
+    const step = (st, evs) => { const before = fx.log.length; fx.process(evs || [], st); return fx.log.slice(before); };
+    const render = (st) => window.render(st); // production order: render() first, then fx.process()
+    const has = (recs, kind, pred) => recs.some(r => r.kind === kind && (!pred || pred(r)));
+    const link = (code, con, loc, seq) => ({ code, con: con || 0, loc: loc == null ? E.LOC.HAND : loc, seq: seq || 0, negated: false, disabled: false, solved: false });
+    const THUNDER = 12580477, MOON = 14087893, SOLEMN = 40605147; // サンダー・ボルト / 月の書 / 神の通告 (proto 案2 fixtures)
+    ok(!!data.cards[THUNDER] && !!data.cards[MOON] && !!data.cards[SOLEMN], 'FXC0: redesign-B fixtures are in the pool');
+
+    // --- fix 1 (p2a): the pop bundle lifts until its bottom edge
+    // clears the chain bar's top edge by 4px. jsdom geometry is all
+    // zero, so the app / bar rects are stubbed to the prototype's
+    // capture geometry (390x620, bar top at 228): base cy = 620*.34
+    // = 210.8, card bottom = 281.8, lift = ceil(281.8 - (228-4)) = 58.
+    let st = fakeState(s => { s.log = []; s.chain = [link(THUNDER, 0)]; });
+    step(st);
+    st = fakeState(s => { s.log = []; s.chain = [link(THUNDER, 0), link(MOON, 1)]; });
+    render(st);
+    const rect = (left, top, width, height) => ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top });
+    doc.getElementById('app').getBoundingClientRect = () => rect(0, 0, 390, 620);
+    doc.getElementById('chainbar').getBoundingClientRect = () => rect(0, 228, 390, 21);
+    let recs = step(st, [{ kind: 'activate', code: MOON, con: 1, loc: E.LOC.HAND }]);
+    ok(has(recs, 'chainlift', r => r.n === 2 && r.lift === 58), 'FXC1: p2a — the lift branch fires and computes the lift from the measured overlap (lift=' + (recs.find(r => r.kind === 'chainlift') || {}).lift + ', want 58)');
+    const popGhost = doc.querySelector('#fxlayer .fx-ghost');
+    ok(!!popGhost && popGhost.dataset.chainLift === '58' && Math.abs(parseFloat(popGhost.style.top) - 81.8) < 0.6, 'FXC1b: p2a — the pop node itself is placed at the lifted position (top=' + (popGhost ? popGhost.style.top : 'none') + ', want ~81.8px = 210.8-58-71)');
+    ok(!!doc.querySelector('#fxlayer .fx3-chainword'), 'FXC1c: p2a — the CHAIN word rides the lifted bundle');
+
+    // --- fix 2 (p2b): with the landed flag set, render()'s bar
+    // output carries the gold-absorption classes (the flag lives
+    // module-side, so it survives the bar's innerHTML rebuild)
+    fx.markChainLanded(2, MOON);
+    ok(fx.chainLanded().join(',') === '2', 'FXC2: p2b — the landed flag stands for link 2');
+    render(st);
+    const lbl = doc.querySelector('#chainbar .chainlbl');
+    ok(!!lbl && lbl.classList.contains('landed'), 'FXC2b: p2b — render() paints the CHAIN label with the landed (gold) class');
+    const chips = doc.querySelectorAll('#chainbar .link');
+    ok(chips.length === 2 && chips[1].classList.contains('landed') && !chips[0].classList.contains('landed'), 'FXC2c: p2b — only the landed chip carries the landed (gold frame) class');
+    render(fakeState(s => { s.log = []; s.chain = []; }));
+    ok(fx.chainLanded().length === 0, 'FXC2d: p2b — an empty chain clears the landed flags');
+
+    // --- fix 3 (p2c / C3): a set trap becoming link 2 gets the
+    // CHAIN word + a gold frame over its own (flipped) tile
+    fx.reset(); // wipes the FX layer, so the nodes below can only come from this step
+    let st3 = fakeState(s => { s.log = []; s.players[1].szone[0] = { code: SOLEMN, pos: 10 }; s.chain = [link(THUNDER, 0)]; });
+    step(st3);
+    st3 = fakeState(s => { s.log = []; s.players[1].szone[0] = { code: SOLEMN, pos: 5 }; s.chain = [link(THUNDER, 0), link(SOLEMN, 1, E.LOC.SZONE, 0)]; });
+    render(st3);
+    recs = step(st3, [{ kind: 'activate', code: SOLEMN, con: 1, loc: E.LOC.SZONE }]);
+    ok(has(recs, 'setactivate', r => r.code === SOLEMN), 'FXC3: p2c — the set trap activation still tips into the presentation');
+    ok(has(recs, 'setactivatechain', r => r.n === 2 && r.frame === true && r.targetKey === '1:' + E.LOC.SZONE + ':0'), 'FXC3b: p2c — the set-link record names link 2 and its own tile as the gold-frame target (got ' + JSON.stringify(recs.find(r => r.kind === 'setactivatechain') || null) + ')');
+    ok(!!doc.querySelector('#fxlayer .fx3-chainword'), 'FXC3c: p2c — the CHAIN word stands for a set trap at link 2');
+    ok(!!doc.querySelector('#fxlayer .fx3-goldframe'), 'FXC3d: p2c — a gold frame node sits over the flipped trap tile');
+    ok(fx.error === null, 'FXC4: fxError stayed null through every redesign-B step (got: ' + fx.error + ')');
+    window.close();
+  }
+
   // ================= Part 2: live duels =================
   if (process.env.FX_SYNTH_ONLY) { console.log(failures === 0 ? 'ALL FX SYNTHETIC CHECKS PASSED' : failures + ' FAILED'); process.exit(failures ? 1 : 0); }
   const tally = {};

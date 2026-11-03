@@ -1775,6 +1775,7 @@ function fxResetFoundation() {
   fxStopUntilWall = 0; fxTimeMs = 0; fxLastWall = 0;
   fxAceSceneRef = null; fxFinisherSceneRef = null; fxAceRecent = null; // stage 3 scene refs (hosts are wiped by fxResetDuel)
   fxChainWordScene = null; fxBannerScene = null; // V4 scene refs
+  try { fxChainLanded.clear(); } catch (e) {} // redesign B: landed flags never survive a duel reset
   const appEl = $('app'); if (appEl) appEl.style.transform = ''; // a finisher tilt must not survive the duel
   for (const id of ['fxcv', 'fxcvTop']) { const c = $(id); if (c && c.getContext) { const x = c.getContext('2d'); if (x) x.clearRect(0, 0, c.width, c.height); } }
   fxCanvasDirty.low = fxCanvasDirty.top = false;
@@ -1841,6 +1842,10 @@ function fxProcessInner(evs, state) {
   const prev = fxPrev;
   fxPrev = cur;
   if (!prev) return; // first update of the duel is the baseline, nothing "happened" yet
+  // redesign B (p2b): a chain that emptied or shrank (ended /
+  // rebuilt) takes its landed flags with it — the next chain
+  // starts un-absorbed and re-earns the gold on its own landings
+  if (cur.chainLen === 0 || cur.chainLen < prev.chainLen) { try { fxChainLanded.clear(); } catch (e) {} }
   // ---- phase banner (3-8): only at the transition, an overlay band
   if (cur.phaseFam && cur.phaseFam !== prev.phaseFam && cur.turn > 0) fxPhaseBanner(cur.phaseFam);
   // ---- zone cell diffs
@@ -2583,13 +2588,48 @@ function fxChainChipEl(n) {
   const chips = document.querySelectorAll('#chainbar .link');
   return chips && chips[n - 1] ? chips[n - 1] : null;
 }
+// ---- redesign B (proto 案2 / p2b): the landed state of a chain
+// link. When a pop lands on its chip, the floating CHAIN word is
+// absorbed into the bar — the bar's CHAIN label turns gold with a
+// gold underline and the landed chip keeps a gold frame. #chainbar
+// is rebuilt by render() via innerHTML, so a class the FX layer
+// pasted on would vanish at the next render: the landed set lives
+// HERE, on the module side, and render() reads it when it paints
+// the bar. Entries are pruned when the chain empties (render and
+// the fx diff both clear), when it shrinks / is rebuilt (the diff
+// clears on a length drop), and per-link when the link now sitting
+// at that number is a different card (render-time prune).
+let fxChainLanded = new Map(); // link number -> code (null when the code is unknown)
+function fxChainPruneLanded(chain) {
+  if (!chain || !chain.length) { fxChainLanded.clear(); return; }
+  for (const [n, code] of [...fxChainLanded]) {
+    const l = chain[n - 1];
+    if (!l || (code != null && l.code !== code)) fxChainLanded.delete(n);
+  }
+}
+function fxChainApplyLanded() { // paint the absorbed state onto the CURRENT bar DOM (between renders)
+  if (!fxChainLanded.size) return;
+  const lbl = document.querySelector('#chainbar .chainlbl');
+  if (lbl) lbl.classList.add('landed');
+  document.querySelectorAll('#chainbar .link').forEach((chip, i) => { if (fxChainLanded.has(i + 1)) chip.classList.add('landed'); });
+}
+function fxChainMarkLanded(n, code) {
+  if (!n) return;
+  fxChainLanded.set(n, code != null ? code : (fxChainLanded.get(n) || null));
+  fxChainApplyLanded();
+}
 // V4-3: from the 2nd link, the word CHAIN stands up above the pop,
 // letter by letter (30 ms stagger), and stays while the chain is
-// the foreground event.
+// the foreground event. Redesign B (p2b): it does NOT outlive the
+// presentation — it fades out into the landing (the last 150 ms of
+// its duration), because at the landing the word is absorbed into
+// the chain bar's label (fxChainMarkLanded). Callers pass the
+// duration of their own presentation (chain pop 950, set tilt 820).
 let fxChainWordScene = null;
-function fxChainWord(cx, cy) {
+function fxChainWord(cx, cy, durMs) {
   const layer = fxLayerEl(); if (!layer) return;
   if (fxChainWordScene && !fxChainWordScene.dead) { fxChainWordScene.dead = true; if (fxChainWordScene.cleanup) fxChainWordScene.cleanup(); }
+  const dur = durMs || 950;
   const d = document.createElement('div');
   d.className = 'fx3-chainword';
   d.style.left = cx + 'px'; d.style.top = cy + 'px'; d.style.opacity = '0';
@@ -2597,9 +2637,9 @@ function fxChainWord(cx, cy) {
   layer.appendChild(d);
   const spans = [...d.children];
   const sc = fxAddScene({
-    kind: 'chainword', dur: 1500,
+    kind: 'chainword', dur,
     render(t) {
-      d.style.opacity = String(Math.min(fxSeg(t, 130, 250), 1 - fxSeg(t, 1250, 1500)));
+      d.style.opacity = String(Math.min(fxSeg(t, 130, 250), 1 - fxSeg(t, dur - 150, dur)));
       spans.forEach((sp, i) => {
         const u = FXE.settle(fxSeg(t, 150 + i * 30, 310 + i * 30));
         sp.style.transform = 'translateY(' + (10 * (1 - u)).toFixed(1) + 'px) scale(' + (0.6 + 0.4 * u).toFixed(3) + ')';
@@ -2615,10 +2655,30 @@ function fxChainSceneV3(n, code) {
   const layer = fxLayerEl(); if (!layer) return;
   const app = $('app'); if (!app) return;
   const ar = fxRel(app);
-  const cx = ar.cx, cy = ar.y + ar.h * 0.34, W = 104, H = 142;
+  const W = 104, H = 142;
+  // Redesign B (p2a): zero occlusion while the chain builds / holds.
+  // The pop's lower edge used to cover the link chips under it
+  // (~13 px in the audit frame). The whole bundle — pop card, rim
+  // and the CHAIN word — is lifted as ONE piece until the card's
+  // bottom edge sits 4 px above the chain bar's top edge. The lift
+  // is computed from the measured rects at scene creation (in the
+  // prototype's environment it came to 58 px; that number is an
+  // outcome of the geometry, never a constant), and it is applied
+  // ONCE, here, as the creation position — no per-frame writes,
+  // and neither the bar nor the board layout moves.
+  const baseCy = ar.y + ar.h * 0.34;
+  let lift = 0;
+  const barEl0 = $('chainbar');
+  if (barEl0) {
+    const br = fxRel(barEl0);
+    if (br.w > 0 || br.h > 0) lift = Math.max(0, Math.ceil((baseCy + H / 2) - (br.y - 4)));
+  }
+  const cx = ar.cx, cy = baseCy - lift;
   const card = fxPlaceGhost(code, false, { cx, cy }, W, H);
   if (!card) return;
   card.style.zIndex = 6;
+  card.dataset.chainLift = String(lift);
+  if (lift > 0) fxRecord('chainlift', { n, lift });
   // V4: the white rim is a preset-shadow overlay that only ever
   // changes opacity/transform — the card itself gets no per-frame
   // boxShadow write.
@@ -2686,6 +2746,10 @@ function fxChainSceneV3(n, code) {
     onDone() {
       card.remove();
       if (rimEl) rimEl.remove();
+      // redesign B (p2b): the landing absorbs the CHAIN word into
+      // the bar — flag this link as landed (module-side, so the
+      // state survives render()'s innerHTML rebuild of the bar)
+      fxChainMarkLanded(n, code);
       if (chip) fxAnim(chip, [{ transform: 'scale(1.28)' }, { transform: 'scale(1)' }], { duration: 180, easing: 'ease-out' }); // the chip swells on landing
     },
   });
@@ -2744,11 +2808,49 @@ function fxChainSolveSceneV3(n, code, neg) {
 }
 // ---- set S/T activation (B9): the card tips into the chain
 // presentation — tilted, white-rimmed — it never flips inside its zone
-function fxSetActivate(code, linkNo) {
+function fxSetActivate(code, linkNo, targetKey) {
   const layer = fxLayerEl(); if (!layer) return;
   const app = $('app'); if (!app) return;
   const ar = fxRel(app);
   const d = fxPlaceGhost(code, false, { cx: ar.cx, cy: ar.y + ar.h * 0.36 }, 74, 96); if (!d) return;
+  // Redesign B (p2c, audit C3): when a SET S/T becomes link 2+, the
+  // tilt path speaks the SAME grammar as a hand / field activation —
+  // until now it had neither the CHAIN word nor a gold frame, so a
+  // set trap joining the chain read as a lesser event. The word
+  // stands by the chain bar (centred over it, 16 px above its top
+  // edge, as in the prototype) and the gold frame (the preset
+  // .fx3-goldframe layer — opacity only, never a per-frame shadow
+  // write) sits over the flipped card's own tile. The frame is over
+  // the face-up tile, so it does not depend on the card-back art.
+  if (linkNo >= 2) {
+    const bar = $('chainbar');
+    let wx = ar.cx, wy = ar.y + ar.h * 0.36 - 70; // fallback: above the tilted pop
+    if (bar) { const br = fxRel(bar); if (br.w > 0 || br.h > 0) { wx = br.cx; wy = br.y - 16; } }
+    fxChainWord(wx, wy, 820);
+    if (!targetKey && duelState && duelState.players) { // fallback: locate the tile from the standing state by code
+      for (let con = 0; con < 2 && !targetKey; con++) {
+        const P = duelState.players[con];
+        if (!P || !P.szone) continue;
+        const si = P.szone.findIndex(c => c && c.code === code);
+        if (si >= 0) targetKey = con + ':' + E.LOC.SZONE + ':' + si;
+      }
+    }
+    let frameEl = null;
+    if (targetKey) {
+      const slotEl = fxSlotEl(targetKey);
+      if (slotEl) {
+        const r = fxRel(slotEl);
+        frameEl = fxNode('fx3-goldframe', r.cx, r.cy, Math.max(10, r.w - 2), Math.max(10, r.h - 2));
+        if (frameEl) { frameEl.style.opacity = '0'; frameEl.style.zIndex = 6; }
+      }
+    }
+    fxRecord('setactivatechain', { code, n: linkNo, frame: !!frameEl, targetKey: targetKey || null });
+    fxAddScene({
+      kind: 'setland', dur: 820,
+      render(t) { if (frameEl) frameEl.style.opacity = String(0.95 * fxSeg(t, 40, 160) * (1 - fxSeg(t, 640, 820))); },
+      onDone() { if (frameEl) frameEl.remove(); fxChainMarkLanded(linkNo, code); }, // the tilt lands like a pop: the word is absorbed into the bar
+    });
+  }
   // when this activation IS the chain's new link, the tilted card is
   // the foreground pop (B8) and carries the big link number itself —
   // a separate pop panel on top of it would just bury both.
@@ -3120,7 +3222,15 @@ function fxRoundBEvents(evs, prev, cur, diff) {
   for (const ev of evs) {
     if (ev.kind !== 'activate' || ev.loc !== E.LOC.SZONE) continue;
     const isNewLink = !!(newLink && ev.code === newLink.code && ev.con === newLink.con);
-    fxSetActivate(ev.code, isNewLink ? cur.links.length : 0);
+    // redesign B (p2c): the raw chain link carries the set card's
+    // own zone (con/loc/seq) — pass it so fxSetActivate can put the
+    // gold frame on that exact tile
+    let targetKey = null;
+    if (isNewLink && st && Array.isArray(st.chain)) {
+      const raw = st.chain[cur.links.length - 1];
+      if (raw && raw.loc === E.LOC.SZONE && raw.seq != null) targetKey = raw.con + ':' + raw.loc + ':' + raw.seq;
+    }
+    fxSetActivate(ev.code, isNewLink ? cur.links.length : 0, targetKey);
     if (isNewLink) popDone = true;
     fxRecord('setactivate', { code: ev.code });
   }
@@ -3222,6 +3332,12 @@ window.__fx = {
   settings: fxSettings, // round B (B11): the same object the prompt UI reads
   cutinOn: () => { const h = $('fxcutin'); return !!h && h.className === 'on'; },
   lpShown: (con) => fxLpShown[con],
+  // redesign B (p2b): the landed-link flags behind the chain bar's
+  // gold absorption — read them, or stand a link as landed, so
+  // harnesses verify the render() output against the flag itself
+  chainLanded: () => [...fxChainLanded.keys()].sort((a, b) => a - b),
+  markChainLanded: (n, code) => fxChainMarkLanded(n, code),
+  clearChainLanded: () => fxChainLanded.clear(),
   // V3 stage 1 foundation surface: the shared clock, the scene
   // registry, the particle budget and the hit-stop — so harnesses
   // verify the foundation's numbers, not just its wiring.
@@ -3378,15 +3494,20 @@ function render(state) {
   }).join('');
   // opponent hand = backs in topbar only (count); chain bar
   const cb = $('chainbar');
+  // redesign B (p2b): prune the FX layer's landed flags against
+  // THIS chain first (empty chain clears them; a different card at
+  // a landed number drops that flag) — the bar below then paints
+  // the absorbed gold straight from the surviving flags
+  fxChainPruneLanded(state.chain);
   if (state.chain.length) {
     cb.className = 'on';
     // round B (B8): with 2+ links the bundle carries a CHAIN label
     // from the moment it stacks; the newest link rides forward while
     // stacking; the solving link glows; resolved links dim
-    cb.innerHTML = (state.chain.length >= 2 ? '<span class="chainlbl">CHAIN</span>' : '') + state.chain.map((l, i) => {
+    cb.innerHTML = (state.chain.length >= 2 ? '<span class="chainlbl' + (fxChainLanded.size ? ' landed' : '') + '">CHAIN</span>' : '') + state.chain.map((l, i) => {
       const n = i + 1;
       const cls = 'link' + (state.solvingLink === n ? ' solving' : '') + (l.negated || l.disabled ? ' negated' : '') +
-        (l.solved ? ' done' : '') + (!state.solvingLink && i === state.chain.length - 1 ? ' newest' : '');
+        (l.solved ? ' done' : '') + (fxChainLanded.has(n) ? ' landed' : '') + (!state.solvingLink && i === state.chain.length - 1 ? ' newest' : '');
       return '<span class="' + cls + '"><span class="no">' + n + '</span> ' + cardName(l.code) + (l.solved ? ' ✓' : '') + '</span>';
     }).join('');
   } else {
