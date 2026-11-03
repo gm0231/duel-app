@@ -11,11 +11,13 @@ let DATA = null;
 let duel = null;
 let HP = 0; // core seat occupied by the human (0 = first player, 1 = second player)
 let currentPrompt = null;   // {prompt, resolve} while a human prompt is open
+let cmdPromptOpen = false;  // BU-02: an idle/battle command prompt is on screen
 let actionMap = new Map();  // "con:loc:seq" -> [{label, bytes}] for idle/battle prompts
 let pendingTap = null;      // triage-#2: a board tap buffered during the no-prompt window {key, at}
 let phaseAction = null;     // {label, bytes} for the phase button
 let menuActions = [];       // extra idle actions (hand shuffle)
 let placeCtx = null;        // active SELECT_PLACE/DISFIELD interaction
+let lastPlaceCard = null;   // {key, code} of a just-chosen summon/set action
 let dismissedChains = new Set(); // chain-candidate dismissals (this chain only)
 let dismissedDuel = new Map();   // chain-candidate dismissals (whole duel): chainKey -> {code}
 // start-screen choices (Phase 2 item 5)
@@ -2005,6 +2007,7 @@ function tileHTML(card, con, actKey) {
     (actKey && actionMap.has(actKey) ? ' actionable' : '') + '"' +
     (actKey ? ' data-act="' + actKey + '"' : '') + '>' +
     ((card.materials || isXyzCode(card.code)) ? '<div class="mats">×' + (card.materials || 0) + '</div>' : '') +
+    (con === HP && !faceUp && card.code != null ? '<div class="setbadge"' + ((card.materials || isXyzCode(card.code)) ? ' style="top:15px"' : '') + '>裏</div>' : '') +
     (ctrTotal ? '<div class="ctrs">◉' + ctrTotal + '</div>' : '') +
     // the artwork lives INSIDE .inner (round B): in defense position
     // the whole inner — art + name band — rotates 90 degrees, while
@@ -2038,8 +2041,9 @@ function zoneRow(el, cards, con, loc) {
     const hl = placeCtx && placeCtx.avail.has(key) ? ' hl' : '';
     const pk = placeCtx && placeCtx.chosen.has(key) ? ' picked' : '';
     const st = card ? slotStatsHTML(card, con) : '';
-    return '<div class="slot' + (st ? ' hs' : '') + hl + pk + '" data-zone="' + key + '">' +
-      '<span class="znum">' + (loc === E.LOC.SZONE && seq === 5 ? 'F' : (seq + 1)) + '</span>' +
+    const fz = loc === E.LOC.SZONE && seq === 5;
+    return '<div class="slot' + (st ? ' hs' : '') + hl + pk + (fz ? ' fzone' : '') + '" data-zone="' + key + '">' +
+      '<span class="znum">' + (fz ? '' : (seq + 1)) + '</span>' +
       (card ? tileHTML(card, con, key) + st : '') +
       '</div>';
   }).join('');
@@ -2050,12 +2054,39 @@ function pileHTML(p, con) {
   const actExtra = [...actionMap.keys()].some(k => k.startsWith(con + ':' + E.LOC.EXTRA + ':'));
   const actRem = [...actionMap.keys()].some(k => k.startsWith(con + ':' + E.LOC.REMOVED + ':'));
   return '<div class="pile" data-pile="deck:' + con + '">デッキ <b>' + P.deckCount + '</b></div>' +
-    '<div class="pile' + (actExtra ? ' actionable' : '') + '" data-pile="extra:' + con + '">EX <b>' + P.extra.length + '</b></div>' +
-    '<div class="pile' + (actGrave ? ' actionable' : '') + '" data-pile="grave:' + con + '">墓地 <b>' + P.grave.length + '</b></div>' +
-    '<div class="pile' + (actRem ? ' actionable' : '') + '" data-pile="removed:' + con + '">除外 <b>' + P.removed.length + '</b></div>' +
+    '<div class="pile' + (actExtra ? ' actionable' : '') + '" data-pile="extra:' + con + '">EX <b>' + P.extra.length + '</b>' + (actExtra ? '<span class="pact">発動可</span>' : '') + '</div>' +
+    '<div class="pile' + (actGrave ? ' actionable' : '') + '" data-pile="grave:' + con + '">墓地 <b>' + P.grave.length + '</b>' + (actGrave ? '<span class="pact">発動可</span>' : '') + '</div>' +
+    '<div class="pile' + (actRem ? ' actionable' : '') + '" data-pile="removed:' + con + '">除外 <b>' + P.removed.length + '</b>' + (actRem ? '<span class="pact">発動可</span>' : '') + '</div>' +
     '<div class="pile" data-pile="hand:' + con + '">手札 <b>' + P.hand.length + '</b></div>';
 }
 let duelState = null;
+// B-10: the engine mirror caps its log at 60 lines; the client
+// keeps its own turn-tagged copy so the history sheet can show
+// what happened, with the turn it happened on.
+let logHist = [], logPrev = [];
+function captureLog(state) {
+  const cur = state.log;
+  let fresh = [];
+  if (logPrev.length && cur.length >= logPrev.length && logPrev.every((v, i) => cur[i] === v)) {
+    fresh = cur.slice(logPrev.length);
+  } else if (logPrev.length) {
+    let k = Math.min(logPrev.length, cur.length);
+    while (k > 0 && logPrev.slice(logPrev.length - k).join('\n') !== cur.slice(0, k).join('\n')) k--;
+    fresh = cur.slice(k);
+  } else fresh = cur.slice();
+  for (const t of fresh) logHist.push({ turn: state.turnCount, text: t });
+  if (logHist.length > 80) logHist = logHist.slice(-80);
+  logPrev = cur.slice();
+}
+function openLogHistory() {
+  if (currentPrompt || !logHist.length) return;
+  if ($('sheetwrap').classList.contains('on') || $('dock').className === 'on') return;
+  const rows = logHist.slice(-30).reverse().map(e =>
+    '<div class="loghistrow"><span class="lt">T' + Math.max(1, e.turn) + '</span>' + e.text + '</div>').join('');
+  sheetOpenView('<div class="ttl">対戦の履歴</div><div class="sub">直近 ' + Math.min(30, logHist.length) + ' 件（新しい順）</div>' + rows +
+    '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">盤面に戻る</button></div>');
+  $('sheet-cancel').addEventListener('click', () => { playClick(); sheetClose(); });
+}
 function render(state) {
   duelState = state;
   const me = state.players[HP], op = state.players[1 - HP];
@@ -2063,7 +2094,6 @@ function render(state) {
   // must not stomp it — the count lands exactly on the state value
   if (!fxLpBusy(1 - HP)) $('oppLp').textContent = op.lp;
   if (!fxLpBusy(HP)) $('myLp').textContent = me.lp;
-  $('opppiles').innerHTML = '手札 ' + op.hand.length + '<br>デッキ ' + op.deckCount;
   $('turninfo').textContent = 'ターン' + Math.max(1, state.turnCount) + '／' + (state.turnPlayer === HP ? '自分' : '相手');
   // B-08: the phase readout shows the phase name only — whose
   // turn it is already lives in the topbar, and the long form
@@ -2078,15 +2108,19 @@ function render(state) {
   zoneRow($('mySzone'), [0,1,2,3,4,5].map(i => me.szone[i]), HP, E.LOC.SZONE);
   $('oppPilebar').innerHTML = pileHTML(null, 1 - HP);
   $('myPilebar').innerHTML = pileHTML(null, HP);
+  captureLog(state);
   // hand
   $('handcount').textContent = me.hand.length;
+  const handCounts = {};
+  me.hand.forEach(c => { if (c.code != null) handCounts[c.code] = (handCounts[c.code] || 0) + 1; });
   $('hand').innerHTML = me.hand.map((c, i) => {
     const key = HP + ':' + E.LOC.HAND + ':' + i;
-    const act = actionMap.has(key) ? ' actionable' : '';
+    const act = (actionMap.has(key) ? ' actionable' : '') + (lastPlaceCard && lastPlaceCard.key === key ? ' placing' : '') + (cmdPromptOpen && !actionMap.has(key) ? ' dim' : '');
     const st = c.code != null && isMonster(c.code)
       ? '<div class="hstats' + (Math.abs(cardData(c.code).atk) >= 10000 || Math.abs(cardData(c.code).def) >= 10000 ? ' big5' : '') + '"><span>ATK <b>' + cardData(c.code).atk + '</b></span><span>DEF <b>' + cardData(c.code).def + '</b></span></div>'
       : '<div class="hstats"></div>';
     return '<div class="hcard' + act + '" data-act="' + key + '"' + (c.code != null ? ' data-code="' + c.code + '"' : '') + '>' +
+      (c.code != null && handCounts[c.code] > 1 ? '<div class="cnt">×' + handCounts[c.code] + '</div>' : '') +
       '<div class="himg"><div class="nm">' + (c.code != null ? cardName(c.code) : '？') + '</div></div>' + st + '</div>';
   }).join('');
   // opponent hand = backs in topbar only (count); chain bar
@@ -2102,7 +2136,15 @@ function render(state) {
         (l.solved ? ' done' : '') + (!state.solvingLink && i === state.chain.length - 1 ? ' newest' : '');
       return '<span class="' + cls + '"><span class="no">' + n + '</span> ' + cardName(l.code) + (l.solved ? ' ✓' : '') + '</span>';
     }).join('');
-  } else { cb.className = ''; cb.innerHTML = ''; }
+  } else {
+    // B-17: the reserved band is not wasted while no chain is
+    // up — it carries the previous event (the logline holds the
+    // latest) and the history entry (B-10). The button is 19px
+    // tall because the band's height is frozen by the layout.
+    cb.className = 'idle';
+    const prevLog = state.log.length >= 2 ? state.log[state.log.length - 2] : '';
+    cb.innerHTML = '<span class="prevlog">' + prevLog + '</span><button id="loghistbtn">履歴</button>';
+  }
   $('logline').textContent = state.log.length ? state.log[state.log.length - 1] : '';
   // phase button
   const pb = $('phasebtn');
@@ -2112,7 +2154,9 @@ function render(state) {
     // triage-#2 fix: between prompts the game is PROCESSING
     // (opponent chain check, batch pacing) — say so, never leave
     // a dead "—" up while taps would be meaningless.
-    pb.textContent = currentPrompt ? '選択中…' : (duelState && state.winner == null ? '処理中…' : '—');
+    // C-30: on the opponent's turn the disabled button says so —
+    // waiting-for-the-opponent is not waiting-for-the-engine.
+    pb.textContent = currentPrompt ? '選択中…' : (state.winner != null ? '—' : (state.turnPlayer !== HP ? '相手のターン' : '処理中…'));
   }
   $('midbar').classList.toggle('busy', !currentPrompt && !!duelState && state.winner == null);
   // B-08: the button never appears/disappears (that reflowed the
@@ -2141,12 +2185,19 @@ function timingText(state) {
 function confirmTag(state) { // call ONCE per shown prompt, never per redraw
   if (state.turnCount !== confirmTurn) { confirmTurn = state.turnCount; confirmSeq = 0; }
   confirmSeq++;
-  return '（このターン' + confirmSeq + '回目の確認）';
+  return confirmSeq >= 3 ? '（このターン' + confirmSeq + '回目の確認）' : '';
 }
+// C-27: duel-long suppression for effect-activation yes/no,
+// keyed per card AND effect descriptor — the exit the chain
+// dock already had, which SELECT_EFFECTYN never offered.
+let duelNoConfirm = new Set();
+const effectYnKey = (p) => p.code + '|' + p.desc;
 
 // ---------------------------------------------------------------- prompt UI
-function sheetOpen(html) { closeInfoPop(); $('sheet').innerHTML = html; $('sheetwrap').className = 'on'; const pk = $('peekbtn'); if (pk) pk.textContent = '盤面を見る'; }
-function sheetClose() { closeInfoPop(); $('sheetwrap').className = ''; $('sheet').innerHTML = ''; }
+let sheetKind = 'prompt';
+function sheetOpenView(html) { sheetOpen(html, 'view'); }
+function sheetOpen(html, kind) { sheetKind = kind || 'prompt'; closeInfoPop(); $('sheet').innerHTML = html; $('sheetwrap').className = 'on'; $('sheetwrap').dataset.kind = sheetKind; const pk = $('peekbtn'); if (pk) pk.textContent = '盤面を見る'; }
+function sheetClose() { closeInfoPop(); $('sheetwrap').className = ''; $('sheetwrap').removeAttribute('data-kind'); $('sheet').innerHTML = ''; }
 // R-SEL-1: a read-only detail that floats OVER whatever selection
 // is in progress — opening or closing it never answers, toggles
 // or cancels anything, so a choice can be checked mid-selection
@@ -2168,7 +2219,10 @@ function closeInfoPop() { const p = $('infopop'); if (p && p.className) { p.clas
 function dockClose() { $('dock').className = ''; $('dock').innerHTML = ''; }
 function clearInteraction() {
   sheetClose(); dockClose();
-  actionMap = new Map(); phaseAction = null; menuActions = []; placeCtx = null;
+  cmdPromptOpen = false;
+  actionMap = new Map(); phaseAction = null; menuActions = [];
+  if (placeCtx) lastPlaceCard = null; // a finished placement consumes the marker
+  placeCtx = null;
   $('placehint').className = '';
 }
 function retryWarn(prompt) {
@@ -2188,6 +2242,7 @@ function uiAnswer(prompt, state) {
     // choice only — passing (i32 -1) is always a legal SELECT_CHAIN
     // answer, and forced prompts are still shown in every mode.
     if (fxSettings.resp === 'off' && prompt.name === 'SELECT_CHAIN' && !prompt.forced) { resolve(E.i32resp(-1)); return; }
+    if (prompt.name === 'SELECT_EFFECTYN' && duelNoConfirm.has(effectYnKey(prompt))) { flashAutoPass(cardName(prompt.code)); resolve(E.i32resp(0)); return; }
     // An arriving prompt takes the sheet back from the FX settings
     // sheet (round B) — the settings sheet must never sit over a dock
     if ($('sheet') && $('sheet').querySelector('#fxseg-cutin')) sheetClose();
@@ -2202,6 +2257,7 @@ function uiAnswer(prompt, state) {
   });
 }
 function dispatchPrompt(prompt, state) {
+  if (prompt.name !== 'SELECT_PLACE' && prompt.name !== 'SELECT_DISFIELD' && prompt.name !== 'SELECT_POSITION') lastPlaceCard = null;
   switch (prompt.name) {
     case 'SELECT_IDLECMD': case 'SELECT_BATTLECMD': return uiCmd(prompt, state);
     case 'SELECT_CHAIN': return uiChain(prompt, state);
@@ -2223,6 +2279,7 @@ function dispatchPrompt(prompt, state) {
 }
 // ---- idle / battle commands (EDOPro-style: actions live on the card) ----
 function uiCmd(prompt, state) {
+  cmdPromptOpen = true;
   actionMap = new Map(); menuActions = [];
   const add = (list, label, type) => list.forEach((e, i) => {
     const key = e.con + ':' + e.loc + ':' + e.seq;
@@ -2314,12 +2371,16 @@ function openActionSheet(key) {
   const fxBlocks = zoneCode != null && offeredFx.length > 1
     ? offeredFx.map(n => { const seg = effectSegments(zoneCode).find(s => s.n === n); return seg ? fxBlockHTML(zoneCode, seg) : ''; }).join('')
     : '';
-  sheetOpen('<div class="ttl">' + title + '</div><div class="sub">' + locLabel({ con, loc, seq }) + (meta ? '／' + meta : '') + '</div>' +
+  sheetOpenView('<div class="ttl">' + title + '</div><div class="sub">' + locLabel({ con, loc, seq }) + (meta ? '／' + meta : '') + '</div>' +
     acts.map((a, i) => '<button class="optbtn" data-action-idx="' + i + '">' + a.label + '</button>').join('') +
     unusable +
     (fxBlocks || (txt ? '<div class="cardtext">' + txt + '</div>' : '')) +
     '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">盤面に戻る</button></div>');
-  $('sheet').querySelectorAll('[data-action-idx]').forEach(b => b.addEventListener('click', () => { playClick(); finishPrompt(acts[+b.dataset.actionIdx].bytes); }));
+  $('sheet').querySelectorAll('[data-action-idx]').forEach(b => b.addEventListener('click', () => {
+    const a = acts[+b.dataset.actionIdx];
+    if (a.label === '通常召喚' || a.label === '特殊召喚' || a.label === 'モンスターをセット' || a.label === '魔法・罠をセット') lastPlaceCard = { key, code: a.code };
+    playClick(); finishPrompt(a.bytes);
+  }));
   $('sheet-cancel').addEventListener('click', () => { playClick(); sheetClose(); });
 }
 function openPileSheet(kind, con) {
@@ -2335,9 +2396,9 @@ function openPileSheet(kind, con) {
   let body = '';
   if (kind === 'grave' || kind === 'removed') {
     const list = kind === 'grave' ? P.grave : P.removed;
-    body = list.length ? list.slice().reverse().map(c => '<div class="sortrow" data-info="' + (c != null ? c : '') + '">' + (c != null ? cardName(c) : '？') + '</div>').join('') : '<div class="sub">空です</div>';
+    body = list.length ? list.slice().reverse().map(c => '<div class="sortrow" data-info="' + (c != null ? c : '') + '">' + (c != null ? cardName(c) : '？') + '<span class="chev">›</span></div>').join('') : '<div class="sub">' + (kind === 'grave' ? '墓地は空です（0枚）' : '除外されているカードはありません（0枚）') + '</div>';
   } else if (kind === 'extra') {
-    body = con === HP ? (P.extra.length ? P.extra.map(c => '<div class="sortrow" data-info="' + c.code + '">' + cardName(c.code) + '</div>').join('') : '<div class="sub">空です</div>') : '<div class="sub">相手のEXデッキは見られません（残り ' + P.extra.length + ' 枚）</div>';
+    body = con === HP ? (P.extra.length ? P.extra.map(c => '<div class="sortrow" data-info="' + c.code + '">' + cardName(c.code) + '<span class="chev">›</span></div>').join('') : '<div class="sub">EXデッキは空です（0枚）</div>') : '<div class="sub">相手のEXデッキは見られません（残り ' + P.extra.length + ' 枚）</div>';
   } else if (kind === 'deck') {
     body = '<div class="sub">残り ' + P.deckCount + ' 枚' + (state.deckTop[con] ? '<br>一番上（公開中）：' + cardName(state.deckTop[con]) : '') + '</div>';
   } else if (kind === 'hand') {
@@ -2347,7 +2408,7 @@ function openPileSheet(kind, con) {
     body += '<div class="ttl" style="margin-top:8px">実行できるアクション</div>' + pileActs.map((pa, i) =>
       pa.acts.map((a, j) => '<button class="optbtn" data-pile-act="' + i + ':' + j + '">' + cardName(a.code) + '：' + a.label + '</button>').join('')).join('');
   }
-  sheetOpen('<div class="ttl">' + ({ grave: '墓地', removed: '除外', extra: 'EXデッキ', deck: 'デッキ', hand: '手札' }[kind]) + '（' + (con === HP ? '自分' : '相手') + '）</div>' + body +
+  sheetOpenView('<div class="ttl">' + ({ grave: '墓地', removed: '除外', extra: 'EXデッキ', deck: 'デッキ', hand: '手札' }[kind]) + '（' + (con === HP ? '自分' : '相手') + '）</div>' + body +
     '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">盤面に戻る</button></div>');
   $('sheet').querySelectorAll('[data-pile-act]').forEach(b => b.addEventListener('click', () => {
     const [i, j] = b.dataset.pileAct.split(':').map(Number); playClick(); finishPrompt(pileActs[i].acts[j].bytes);
@@ -2364,7 +2425,7 @@ function openCardInfo(code) {
   const txt = cardText(code);
   const meta = cardMetaLine(code);
   const st = statsLine(code);
-  sheetOpen('<div class="ttl">' + cardName(code) + '</div>' +
+  sheetOpenView('<div class="ttl">' + cardName(code) + '</div>' +
     '<div class="sub">' + [meta, st].filter(Boolean).join('／') + '</div>' +
     (txt ? '<div class="cardtext">' + txt + '</div>' : '<div class="sub">テキスト未収録</div>') +
     '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">盤面に戻る</button></div>');
@@ -2389,7 +2450,7 @@ function openDismissManager() {
   if (currentPrompt) return; // during a prompt the dock itself carries the controls
   const rows = [...dismissedDuel.entries()].map(([k, v]) =>
     '<div class="sortrow"><span>' + dismissalName(v) + '</span><span class="mv"><button data-undismiss="' + k + '">解除</button></span></div>').join('');
-  sheetOpen('<div class="ttl">自動パスの設定（このデュエル）</div>' +
+  sheetOpenView('<div class="ttl">自動パスの設定（このデュエル）</div>' +
     '<div class="sub">ここにあるカードだけが残ったチェーン確認は、自動でパスされます。他に候補がある確認は通常どおり表示されます。</div>' +
     (rows || '<div class="sub">設定中のカードはありません</div>') +
     '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">盤面に戻る</button></div>');
@@ -2412,16 +2473,16 @@ function syncFxSegs() {
 function openFxSettings() {
   if (currentPrompt) return; // during a prompt the dock/sheet carries the interaction
   const draw = () => {
-    sheetOpen('<div class="ttl">演出・応答の設定</div>' +
-      '<div class="sub">対戦の処理には影響しません（見せ方と確認の仕方だけの設定です）。</div>' +
+    sheetOpenView('<div class="ttl">演出・応答の設定</div>' +
+      '<div class="sub">見せ方と確認の仕方だけの設定です。対戦の処理には影響しません。</div>' +
       '<div class="segrow">召喚カットイン</div><div class="seg" id="fxseg-cutin">' +
       '<button data-v="on"' + (fxSettings.cutin ? ' class="sel"' : '') + '>ON</button>' +
       '<button data-v="off"' + (!fxSettings.cutin ? ' class="sel"' : '') + '>OFF</button></div>' +
       '<div class="segrow">応答モード（チェーン確認）</div><div class="seg" id="fxseg-resp">' +
-      '<button data-v="auto"' + (fxSettings.resp === 'auto' ? ' class="sel"' : '') + '>Auto</button>' +
-      '<button data-v="on"' + (fxSettings.resp === 'on' ? ' class="sel"' : '') + '>On</button>' +
-      '<button data-v="off"' + (fxSettings.resp === 'off' ? ' class="sel"' : '') + '>Off</button></div>' +
-      '<div class="sub">Auto＝今までどおり／On＝「聞かない」設定を無効にして毎回確認／Off＝必須でないチェーン確認を自動でパス</div>' +
+      '<button data-v="auto"' + (fxSettings.resp === 'auto' ? ' class="sel"' : '') + '>おまかせ</button>' +
+      '<button data-v="on"' + (fxSettings.resp === 'on' ? ' class="sel"' : '') + '>毎回</button>' +
+      '<button data-v="off"' + (fxSettings.resp === 'off' ? ' class="sel"' : '') + '>自動</button></div>' +
+      '<div class="sub">おまかせ：「聞かない」にしたカードだけ自動でパス。それ以外は毎回確認します<br>毎回：すべてのチェーンで毎回確認します（「聞かない」設定は無効）<br>自動：任意のチェーン確認は全て自動でパス。必須の確認だけ表示します</div>' +
       '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">盤面に戻る</button></div>');
     const wire = (id, apply) => {
       const el = $(id); if (!el) return;
@@ -2474,7 +2535,7 @@ function uiChain(prompt, state) {
         return '<div class="cand' + (disChain ? ' dismissed' : '') + '" data-chain="' + i + '">' + cardName(e.code) +
           '<div class="loc">' + locLabel(e) + (disChain ? '（このチェーンでは聞かない）' : '') + '</div>' +
           (cfx && cfx.n ? '<div class="fxline">' + (cfx.act ? '発動：' : '効果' + CIRCLED_NUM[cfx.n - 1] + '：') + fxExcerpt(cfx) + '</div>' : '') +
-          (prompt.forced ? '' : '<span class="dismiss" data-dismiss="' + i + '" title="このチェーンでは聞かない／元に戻す">×</span>') +
+          (prompt.forced ? '' : '<span class="dismiss" data-dismiss="' + i + '">' + (disChain ? '聞くに戻す' : 'このチェーンでは聞かない') + '</span>') +
           (prompt.forced || disChain ? '' : '<span class="dueldismiss" data-dueldismiss="' + i + '">このデュエル中は聞かない</span>') +
           '<span class="candinfo" data-info="' + i + '">詳細</span></div>';
       }).join('') + '</div>' +
@@ -2547,12 +2608,35 @@ function availZones(prompt) {
   if (avail & 0x80000000) add(1 - prompt.player, E.LOC.SZONE, 7);
   return out;
 }
+function renderPlaceHint() {
+  const h = $('placehint');
+  if (!h || !placeCtx) return;
+  h.innerHTML = placeCtx.title + '（あと ' + (placeCtx.count - placeCtx.chosen.size) + '）' +
+    (placeCtx.retry ? '<div class="retry">その場所には置けません。光っている場所から選んでください。</div>' : '');
+}
 function uiPlace(prompt, state) {
   const zones = availZones(prompt);
-  placeCtx = { avail: new Set(zones.map(z => z.con + ':' + z.loc + ':' + z.seq)), chosen: new Map(), count: prompt.count };
-  $('placehint').textContent = contextText(prompt) + (prompt.name === 'SELECT_PLACE' ? '置く場所をタップしてください' : '無効にするゾーンをタップしてください') +
-    '（あと ' + prompt.count + '）' + (prompt.retryCount ? ' ※その選択はできませんでした' : '');
-  $('placehint').className = 'on';
+  let title;
+  if (prompt.name === 'SELECT_PLACE') {
+    // C-26: name what is being placed whenever the identity is
+    // certain — the just-chosen procedure action's card, else
+    // the asking effect in the context form (never a guess).
+    if (lastPlaceCard) title = '《' + cardName(lastPlaceCard.code) + '》を置く場所をタップしてください';
+    else title = contextText(prompt) + '置く場所をタップしてください';
+  } else {
+    title = contextText(prompt) + '無効にするゾーンをタップしてください';
+  }
+  placeCtx = { avail: new Set(zones.map(z => z.con + ':' + z.loc + ':' + z.seq)), chosen: new Map(), count: prompt.count, retry: !!prompt.retryCount, title };
+  const h = $('placehint');
+  // C-26: directly under the midbar, over the top edge of the
+  // player's own field — no longer hiding the opponent's piles.
+  const mb = $('midbar'), ap = $('app');
+  if (mb && ap && ap.getBoundingClientRect) {
+    const mbB = mb.getBoundingClientRect().bottom, apT = ap.getBoundingClientRect().top;
+    if (mbB) h.style.top = Math.round(mbB - apT) + 'px';
+  }
+  h.className = 'on';
+  renderPlaceHint();
   render(state);
 }
 
@@ -2574,15 +2658,19 @@ function gridSheet(o) {
   const draw = () => {
     const tray = [...o.selected].map(i => '<span class="chip" data-chip="' + i + '">' + cardName(o.cards[i].code) + ' ✕</span>').join('') +
       (o.locked || []).map(c => '<span class="chip locked">' + cardName(c.code) + '（固定）</span>').join('');
-    sheetOpen('<div class="ttl">' + o.title + '</div><div class="sub">' + (typeof o.sub === 'function' ? o.sub() : o.sub) + '</div>' + contextLineHTML(o.prompt) + retryWarn(o.prompt) +
+    const subTxt = typeof o.sub === 'function' ? o.sub() : o.sub;
+    sheetOpen('<div class="ttl">' + o.title + '</div><div class="sub" id="gsub">' + subTxt + '</div>' + contextLineHTML(o.prompt) + retryWarn(o.prompt) +
+      (o.prompt && o.prompt.retryCount ? '<div class="sub">条件：' + subTxt + '</div>' : '') +
       (tray ? '<div id="tray">' + tray + '</div>' : '<div id="tray"></div>') +
       '<div class="grid">' + o.cards.map((c, i) =>
         '<div class="gcard' + (o.selected.has(i) ? ' sel' : '') + '" data-grid="' + i + '"><button class="gdetail" data-gdetail="' + i + '">詳細</button><div class="loc">' + c.locLabel + '</div><div class="nm">' + cardName(c.code) + (c.extra ? ' ' + c.extra : '') + '</div>' +
         (statsLine(c.code) ? '<div class="stats">' + statsLine(c.code) + '</div>' : '') +
         (o.showText && cardText(c.code) ? '<div class="itext">' + cardText(c.code) + '</div>' : '') + '</div>').join('') + '</div>' +
-      '<div class="btnrow"><button class="bigbtn" id="grid-confirm" ' + (o.valid() ? '' : 'disabled') + '>' + (o.confirmLabel || '決定') + '</button>' +
+      '<div class="btnrow"><button class="bigbtn" id="grid-confirm" ' + (o.valid() ? '' : 'disabled') + '>' + (o.valid() ? (o.confirmLabel || '決定') : (o.needLabel ? o.needLabel() : (o.confirmLabel || '決定'))) + '</button>' +
       (o.cancelable ? '<button class="bigbtn sub" id="grid-cancel">選ばずにやめる</button>' : '') + '</div>');
-    $('sheet').querySelectorAll('[data-grid]').forEach(g => g.addEventListener('click', (ev) => { if (ev.target.closest('[data-gdetail]')) return; playClick(); o.onToggle(+g.dataset.grid); draw(); }));
+    $('sheet').querySelectorAll('[data-grid]').forEach(g => g.addEventListener('click', (ev) => { if (ev.target.closest('[data-gdetail]')) return; playClick();
+      if (o.onToggle(+g.dataset.grid) === 'max') { const gs = $('gsub'); if (gs) { const orig = gs.innerHTML; gs.textContent = 'これ以上選べません。選んだカードをタップすると外せます'; setTimeout(() => { if (gs.isConnected) gs.innerHTML = orig; }, 1500); } return; }
+      draw(); }));
     // R-SEL-1: detail opens over the sheet; the selection (held
     // in o's closure) is untouched by opening or closing it.
     $('sheet').querySelectorAll('[data-gdetail]').forEach(b => b.addEventListener('click', (ev) => { ev.stopPropagation(); playClick(); openInfoPop(o.cards[+b.dataset.gdetail].code, o.cards[+b.dataset.gdetail].ref || null); }));
@@ -2608,9 +2696,10 @@ function uiSelectCards(prompt, state) {
     showText: true,
     cancelable: prompt.cancelable,
     valid: () => isTrib ? (sum() >= prompt.min && selected.size <= prompt.max) : (selected.size >= prompt.min && selected.size <= prompt.max),
+    needLabel: () => isTrib ? '決定（合計あと' + Math.max(0, prompt.min - sum()) + '）' : '決定（あと' + Math.max(0, prompt.min - selected.size) + '枚）',
     onToggle: (i) => {
       if (selected.has(i)) selected.delete(i);
-      else { if (!isTrib && selected.size >= prompt.max) return; selected.add(i); }
+      else { if (!isTrib && selected.size >= prompt.max) return 'max'; selected.add(i); }
     },
     onConfirm: (idx) => finishPrompt(E.cardsResp(idx)),
   });
@@ -2625,7 +2714,7 @@ function uiUnselect(prompt, state) {
       (cardText(x.c.code) ? '<div class="itext">' + cardText(x.c.code) + '</div>' : '') + '</div>').join('') + '</div>' +
     '<div class="btnrow">' +
     (prompt.finishable && prompt.unselect.length >= prompt.min ? '<button class="bigbtn" id="unselect-finish">決定</button>' : '') +
-    (prompt.cancelable ? '<button class="bigbtn sub" id="unselect-cancel">キャンセル</button>' : '') + '</div>');
+    (prompt.cancelable ? '<button class="bigbtn sub" id="unselect-cancel">選ばずにやめる</button>' : '') + '</div>');
   $('sheet').querySelectorAll('[data-unselect]').forEach(g => g.addEventListener('click', (ev) => { if (ev.target.closest('[data-uinfo]')) return; playClick(); finishPrompt(E.unselectToggleResp(+g.dataset.unselect)); }));
   $('sheet').querySelectorAll('[data-uinfo]').forEach(b => b.addEventListener('click', (ev) => { ev.stopPropagation(); playClick(); const x = combined[+b.dataset.uinfo]; openInfoPop(x.c.code, x.c); }));
   const fin = $('unselect-finish'); if (fin) fin.addEventListener('click', () => { playClick(); finishPrompt(E.cancelResp()); });
@@ -2679,6 +2768,18 @@ function uiSort(prompt, state) {
   draw();
 }
 // ---- yes/no, option ----
+const OPTION_LABELS = {
+  '62320425|4': '自分のデッキの上から5枚を墓地へ送る', // 古衛兵アギド
+  '62320425|5': '相手のデッキの上から5枚を墓地へ送る',
+};
+function optionLabelText(desc) {
+  if (typeof desc !== 'number' || !isFinite(desc)) return null;
+  // desc = aux.Stringid(code, idx) = code<<20 | idx (see
+  // descEffect; the code*16+n form names no real card)
+  const code = Math.floor(desc / 1048576), idx = desc % 1048576;
+  return OPTION_LABELS[code + '|' + idx] || null;
+}
+window.__optLabel = { resolve: optionLabelText };
 function uiYesNo(prompt, state) {
   const isEff = prompt.name === 'SELECT_EFFECTYN';
   // WHICH card and WHICH effect is being asked must be readable on
@@ -2722,22 +2823,30 @@ function uiYesNo(prompt, state) {
     // a follow-up question is not an activation: its answer pair
     // says 行う/行わない, matching the question's own wording
     '<button class="optbtn" id="yn-yes">' + (fx && fx.follow ? '行う' : (isEff || named ? '発動する' : 'はい')) + '</button>' +
-    '<button class="optbtn" id="yn-no">' + (fx && fx.follow ? '行わない' : (isEff || named ? '発動しない' : 'いいえ')) + '</button>');
+    '<button class="optbtn" id="yn-no">' + (fx && fx.follow ? '行わない' : (isEff || named ? '発動しない' : 'いいえ')) + '</button>' +
+    // C-27 (audit round): an effectyn class can be suppressed for
+    // the rest of the duel; the auto-answer is then 発動しない.
+    (isEff ? '<button class="optbtn" id="yn-suppress">この効果の確認を、このデュエル中は省略する</button><div class="sub">省略すると、次回からは自動で「発動しない」として進みます</div>' : ''));
   $('yn-yes').addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(1)); });
   $('yn-no').addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(0)); });
+  const sup = $('yn-suppress');
+  if (sup) sup.addEventListener('click', () => { playClick(); duelNoConfirm.add(effectYnKey(prompt)); finishPrompt(E.i32resp(0)); });
 }
 function uiOption(prompt, state) {
-  // C-24 resolved for this pool: option entries are the same desc
-  // string ids as everywhere else, so when an option's desc decodes
-  // to a card effect, the button carries that effect itself. The
-  // SOURCE card comes from the context or from the first decodable
-  // option desc. System-id options (not seen in this pool) keep the
-  // numbered label WITH the source's full text above them.
+  // C-24: option entries are the same desc string ids as everywhere
+  // else. A button's label, in order of precision: the audit round's
+  // hand-written wording for sub-descriptions (Agido's mill
+  // choices, which are NOT numbered effects), then the numbered
+  // effect the desc decodes to, then a plain numbered label. The
+  // SOURCE card (from the context or the first decodable option)
+  // is named in the title and its full text rides below.
   const optFx = prompt.options.map(o => descEffect(o));
   const srcCode = (prompt.context && prompt.context.code) || (optFx.find(d => d) || {}).code || null;
   const ttl = srcCode ? cardName(srcCode) + ' の効果の選択' : '効果の選択';
   sheetOpen('<div class="ttl">' + ttl + '</div><div class="sub">適用する効果を選んでください。</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
     prompt.options.map((o, i) => {
+      const lb = optionLabelText(o);
+      if (lb) return '<button class="optbtn" data-opt="' + i + '">' + lb + '</button>';
       const d = optFx[i];
       const fx = d ? resolveEffect(d.code, o) : null;
       if (fx && fx.n) return '<button class="optbtn" data-opt="' + i + '">効果' + CIRCLED_NUM[fx.n - 1] + '：' + fxExcerpt(fx) + '</button>';
@@ -2801,7 +2910,7 @@ function uiRps(prompt, state) {
   $('sheet').querySelectorAll('[data-rps]').forEach(b => b.addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(+b.dataset.rps)); }));
 }
 function uiFallback(prompt, state) {
-  sheetOpen('<div class="ttl">確認（' + prompt.name + '）</div><div class="sub">この確認には専用UIがまだありません。自動応答で進行します。</div>' +
+  sheetOpen('<div class="ttl">確認（' + prompt.name + '）</div><div class="sub">この確認は自動で処理します（対戦はそのまま進みます）。</div>' +
     '<div class="btnrow"><button class="bigbtn" id="fb-auto">自動応答</button></div>');
   $('fb-auto').addEventListener('click', () => { playClick(); finishPrompt(E.botAnswer(prompt, state, DATA, E.makeBotMemory())); });
 }
@@ -2809,10 +2918,17 @@ function uiFallback(prompt, state) {
 $('autopass').addEventListener('click', () => { playClick(); openDismissManager(); });
 $('preview').addEventListener('click', () => { if (previewState) { playClick(); openCardInfo(previewState.code); } });
 document.addEventListener('click', (ev) => {
+  if (ev.target.closest('#loghistbtn')) { playClick(); openLogHistory(); return; }
   // preview follows the player's taps (hand cards always; field zones when
   // not placing) — it never consumes the tap, the handlers below still run
   const handEl = ev.target.closest('#hand .hcard');
-  if (handEl && handEl.dataset.code) setPreview(+handEl.dataset.code, null);
+  if (handEl && handEl.dataset.code) {
+    // BU-02: state only the reason that is mechanically certain
+    let reason = null;
+    if (handEl.classList.contains('dim') && currentPrompt && currentPrompt.prompt.name === 'SELECT_BATTLECMD' && isMonster(+handEl.dataset.code))
+      reason = 'バトルフェイズ中は通常召喚できません';
+    setPreview(+handEl.dataset.code, null, reason);
+  }
   const zoneEl = ev.target.closest('[data-zone]');
   if (zoneEl && placeCtx) {
     const key = zoneEl.dataset.zone;
@@ -2824,7 +2940,7 @@ document.addEventListener('click', (ev) => {
         finishPrompt(E.placeResp([...placeCtx.chosen.values()]));
         return;
       }
-      $('placehint').textContent = $('placehint').textContent.replace(/あと \d+/, 'あと ' + (placeCtx.count - placeCtx.chosen.size));
+      renderPlaceHint();
       if (duelState) render(duelState);
     }
     return;
@@ -2874,7 +2990,7 @@ document.addEventListener('click', (ev) => {
 $('phasebtn').addEventListener('click', () => { if (phaseAction) { playClick(); finishPrompt(phaseAction.bytes); } });
 $('menubtn').addEventListener('click', () => {
   if (!menuActions.length) return;
-  sheetOpen('<div class="ttl">その他のアクション</div>' +
+  sheetOpenView('<div class="ttl">その他のアクション</div>' +
     menuActions.map((a, i) => '<button class="optbtn" data-menu="' + i + '">' + a.label + '</button>').join('') +
     '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">盤面に戻る</button></div>');
   $('sheet').querySelectorAll('[data-menu]').forEach(b => b.addEventListener('click', () => { playClick(); finishPrompt(menuActions[+b.dataset.menu].bytes); }));
@@ -3326,9 +3442,9 @@ function renderLayoutDebug() {
 // the strip only). Tapping the strip opens the full card-info sheet.
 // Default before any tap: the first card of the opening hand.
 let previewState = null; // {code, con, loc, seq, sig}
-function setPreview(code, ref) {
+function setPreview(code, ref, reason) {
   if (code == null || !DATA || !DATA.cards[code]) return;
-  previewState = { code, con: ref ? ref.con : null, loc: ref ? ref.loc : null, seq: ref ? ref.seq : null, sig: '' };
+  previewState = { code, con: ref ? ref.con : null, loc: ref ? ref.loc : null, seq: ref ? ref.seq : null, sig: '', reason: reason || null };
   renderPreview();
 }
 function renderPreview() {
@@ -3351,13 +3467,14 @@ function renderPreview() {
     stats = 'ATK ' + (atk !== d.atk ? '<span class="mod">' + atk + '</span>' : atk) +
       '／DEF ' + (def !== d.def ? '<span class="mod">' + def + '</span>' : def);
   }
-  const sig = previewState.code + '|' + stats + '|' + (card ? card.pos : '') + '|' + (card ? (card.materials || 0) : '');
+  const sig = previewState.code + '|' + stats + '|' + (card ? card.pos : '') + '|' + (card ? (card.materials || 0) : '') + '|' + (previewState.reason || '');
   if (sig === previewState.sig) return; // no DOM churn on unrelated re-renders
   previewState.sig = sig;
   el.innerHTML = '<div class="pv-art"></div><div class="pv-body">' +
     '<div class="pv-top"><span class="pv-name">' + cardName(previewState.code) + '</span>' +
     (stats ? '<span class="pv-stats">' + stats + '</span>' : '') + '</div>' +
     '<div class="pv-meta">' + cardMetaLine(previewState.code, card ? (card.materials || 0) : null) + '</div>' +
+    (previewState.reason ? '<div class="pv-reason">' + previewState.reason + '</div>' : '') +
     '<div class="pv-text">' + (cardText(previewState.code) || '') + '</div></div>';
 }
 function updatePreviewFromState(state) {
@@ -3394,7 +3511,7 @@ function wireSeg(id, apply) {
     // and labelled while loading, live only when a duel can start.
     const sb = $('startbtn'); sb.disabled = false; sb.textContent = 'デュエル開始';
   } catch (e) {
-    $('loadmsg').textContent = 'data.json の読み込みに失敗しました';
+    $('loadmsg').textContent = 'カードデータの読み込みに失敗しました。通信環境を確認して、もう一度お試しください。';
     const sb = $('startbtn'); sb.disabled = false; sb.textContent = '再読み込み';
     sb.addEventListener('click', () => location.reload());
     return;
@@ -3409,6 +3526,13 @@ function wireSeg(id, apply) {
   // R-SEL-2: while a selection sheet is up, the board can be
   // checked without answering anything — the sheet slides down
   // to a grab strip and the dim lifts; tapping again restores it.
+  // C-20: view sheets can also be left by tapping the dimmed
+  // backdrop or the x button — the same single exit as their
+  // own close button. Prompt sheets ignore backdrop taps.
+  $('sheetx').addEventListener('click', () => { playClick(); sheetClose(); });
+  $('sheetwrap').addEventListener('click', (ev) => {
+    if (ev.target === $('sheetwrap') && sheetKind === 'view') { playClick(); sheetClose(); }
+  });
   $('peekbtn').addEventListener('click', () => {
     playClick();
     const w = $('sheetwrap'); const on = w.classList.toggle('peek');
@@ -3452,8 +3576,10 @@ function wireSeg(id, apply) {
       vs.classList.remove('on');
     }
     dismissedChains = new Set();
+    logHist = []; logPrev = []; // B-10 history restarts with the duel
     pendingTap = null; // triage-#2: no buffered tap survives into a new duel
     dismissedDuel = new Map();
+    duelNoConfirm = new Set(); // C-27 suppression restarts with the duel
     confirmTurn = -1; confirmSeq = 0; // per-turn confirmation counter restarts with the duel
     updateAutoPassChip();
     fxResetDuel(); // FX snapshot/layers restart with the duel (stale overlays must not survive)
