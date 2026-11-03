@@ -144,6 +144,12 @@ const tick = (ms) => new Promise(r => setTimeout(r, ms));
         const decision = T.chainPassDecision(prompt, state);
         stats.byDecision[decision] = (stats.byDecision[decision] || 0) + 1;
         const dock = els.dock || (els.dock = stubEl());
+        // The real client clears the dock after every answered
+        // prompt (finishPrompt -> clearInteraction -> dockClose);
+        // this harness answers via answerCurrent, bypassing that
+        // cleanup, so mirror it here — otherwise a redrawn dock
+        // with byte-identical HTML reads as "not drawn".
+        dock.innerHTML = ''; dock.className = '';
         const beforeHTML = dock.innerHTML;
         const p = T.uiAnswer(prompt, state);
         let settled = false;
