@@ -4151,3 +4151,18 @@ and normal-summoned at 390x700 (tile + preview read clearly at
 tile size), a fabricated three-arts board at 390x620 (Mudora /
 Agido / Kelbek side by side on field and in hand), cut-in via
 fxCutinShow as before.
+
+Fourth delivery: 《宿神像ケルドウ》 63542003 (x3 in the Ishizu
+deck). Source: ~/workspace/duel-assets/keldo-user-20261103.jpg
+(1024x1536 — gold/teal guardian statue whose wing shields carry
+red eyes, temple hall). Small file = top-anchored full-width
+square crop x0-1024 / y0-1024 -> 320x320 (44KB): the statue's
+head sits at top centre with BOTH red shield-eyes inside the
+window; only the lower skirt and floor are cut, per the rule.
+Big file = full width x y0-1411 -> 640x882 (194KB). One line in
+CARD_ART; test-cardart gained CA0e/CA7f/CA7g/CA11d/CA14b
+(40 checks). Real-play frames (cap-keldo.js, shots-keldo/):
+Keldo drawn and normal-summoned through the real sheet at
+390x700 (tile + resident preview read clearly), a fabricated
+four-arts board at 390x620 (Mudora / Agido / Kelbek / Keldo on
+field and in hand), cut-in via fxCutinShow as before.

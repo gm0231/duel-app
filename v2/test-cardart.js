@@ -34,18 +34,20 @@ const wasmBinary = fs.readFileSync(path.join(V2, 'build', 'ocgcore.wasm'));
 let failures = 0;
 const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (!cond) failures++; };
 
-const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, ZOLGA = 31525442;
+const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442;
 
 // ---- delivered art files (existence + top-anchored dimensions) ----
 for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.jpg', 640, 882],
                          ['card-art-agido-s.jpg', 320, 320], ['card-art-agido.jpg', 640, 882],
-                         ['card-art-kelbek-s.jpg', 320, 320], ['card-art-kelbek.jpg', 640, 882]]) {
+                         ['card-art-kelbek-s.jpg', 320, 320], ['card-art-kelbek.jpg', 640, 882],
+                         ['card-art-keldo-s.jpg', 320, 320], ['card-art-keldo.jpg', 640, 882]]) {
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
 ok(data.decks.ishizu.main.filter(c => c === MUDORA).length === 3, 'CA0b: the Ishizu deck runs 3 copies of Mudora');
 ok(data.decks.ishizu.main.filter(c => c === AGIDO).length === 1, 'CA0c: the Ishizu deck runs 1 copy of Agido');
 ok(data.decks.ishizu.main.filter(c => c === KELBEK).length === 1, 'CA0d: the Ishizu deck runs 1 copy of Kelbek');
+ok(data.decks.ishizu.main.filter(c => c === KELDO).length === 3, 'CA0e: the Ishizu deck runs 3 copies of Keldo');
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -93,9 +95,12 @@ async function boot() {
     agidoInline: artInline(${AGIDO}),
     kelbekSlug: CARD_ART[${KELBEK}],
     kelbekInline: artInline(${KELBEK}),
+    keldoSlug: CARD_ART[${KELDO}],
+    keldoInline: artInline(${KELDO}),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.kelbekSlug === 'kelbek' && helpers.kelbekInline.includes('card-art-kelbek-s.jpg') && helpers.kelbekInline.includes('background-position:center top'), 'CA7d: Kelbek maps and stamps like the others');
+  ok(helpers.keldoSlug === 'keldo' && helpers.keldoInline.includes('card-art-keldo-s.jpg') && helpers.keldoInline.includes('background-position:center top'), 'CA7f: Keldo maps and stamps like the others');
   ok(helpers.slug === 'mudora', 'CA2: CARD_ART maps Mudora -> mudora');
   ok(helpers.small === '../assets/card-art-mudora-s.jpg' && helpers.big === '../assets/card-art-mudora.jpg', 'CA3: art files resolve (small + big)');
   ok(helpers.inline.includes('card-art-mudora-s.jpg') && helpers.inline.includes('background-position:center top'), 'CA4: artInline pins the top (crop rule: keep top, cut bottom)');
@@ -104,6 +109,7 @@ async function boot() {
   ok(helpers.preloaded.includes('../assets/card-art-mudora-s.jpg') && helpers.preloaded.includes('../assets/card-art-mudora.jpg'), 'CA7: boot preloads both sizes for the default decks');
   ok(helpers.preloaded.includes('../assets/card-art-agido-s.jpg') && helpers.preloaded.includes('../assets/card-art-agido.jpg'), 'CA7c: boot preloads Agido too (same deck)');
   ok(helpers.preloaded.includes('../assets/card-art-kelbek-s.jpg') && helpers.preloaded.includes('../assets/card-art-kelbek.jpg'), 'CA7e: boot preloads Kelbek too (same deck)');
+  ok(helpers.preloaded.includes('../assets/card-art-keldo-s.jpg') && helpers.preloaded.includes('../assets/card-art-keldo.jpg'), 'CA7g: boot preloads Keldo too (same deck)');
 
   doc.getElementById('startbtn').click();
   for (let i = 0; i < 120 && doc.querySelectorAll('.slot').length < 10; i++)
@@ -122,7 +128,8 @@ async function boot() {
       b.players[0].mzone[4] = mon(${KELBEK}, 0x1);  // own face-up Kelbek (3rd delivery)
       b.players[1].mzone[0] = mon(${MUDORA}, 0x1);  // opp face-up Mudora (public: art shows)
       b.players[1].mzone[1] = mon(${MUDORA}, 0x8);  // opp face-down DEF Mudora (MUST stay hidden)
-      b.players[0].hand = [{ code: ${MUDORA} }, { code: ${ZOLGA} }];
+      b.players[1].mzone[2] = mon(${KELDO}, 0x1);   // opp face-up Keldo (4th delivery; own row is full)
+      b.players[0].hand = [{ code: ${MUDORA} }, { code: ${ZOLGA} }, { code: ${KELDO} }];
       render(b);
       const artOf = (zone) => {
         const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
@@ -139,7 +146,7 @@ async function boot() {
       const ghostUnlisted = fxGhostEl(${ZOLGA}, false, 40, 55);
       return {
         ownAtk: artOf('0:4:0'), ownDef: artOf('0:4:1'), ownZolga: artOf('0:4:2'), ownAgido: artOf('0:4:3'), ownKelbek: artOf('0:4:4'),
-        oppUp: artOf('1:4:0'), oppDown: artOf('1:4:1'),
+        oppUp: artOf('1:4:0'), oppDown: artOf('1:4:1'), oppKeldo: artOf('1:4:2'),
         handImgs, pvMudora, pvZolga,
         ghost: ghost.style.backgroundImage || '', ghostPos: ghost.style.backgroundPosition || '',
         ghostBack: ghostBack.style.backgroundImage || '', ghostUnlisted: ghostUnlisted.style.backgroundImage || '',
@@ -152,11 +159,14 @@ async function boot() {
   ok(res.ownZolga === '', 'CA11: unlisted card tile keeps the placeholder (no inline art)');
   ok(res.ownAgido !== null && res.ownAgido.includes('card-art-agido-s.jpg'), 'CA11b: Agido tile shows its own art (slug, not Mudora’s)');
   ok(res.ownKelbek !== null && res.ownKelbek.includes('card-art-kelbek-s.jpg'), 'CA11c: Kelbek tile shows its own art');
+  ok(res.oppKeldo !== null && res.oppKeldo.includes('card-art-keldo-s.jpg'), 'CA11d: Keldo tile shows its own art');
   ok(res.oppUp.includes('card-art-mudora-s.jpg'), 'CA12: opponent face-up Mudora shows the art (public information)');
   ok(res.oppDown === '' && !String(res.oppDown).includes('mudora'), 'CA13: opponent FACE-DOWN Mudora gets NO art (asymmetry / no leak)');
   const hMudora = res.handImgs.find(h => h.code === String(MUDORA));
   const hZolga = res.handImgs.find(h => h.code === String(ZOLGA));
   ok(!!hMudora && hMudora.style.includes('card-art-mudora-s.jpg'), 'CA14: hand Mudora shows the art');
+  const hKeldo = res.handImgs.find(h => h.code === String(KELDO));
+  ok(!!hKeldo && hKeldo.style.includes('card-art-keldo-s.jpg'), 'CA14b: hand Keldo shows the art');
   ok(!!hZolga && hZolga.style === '', 'CA15: hand Zolga keeps the placeholder');
   ok(res.pvMudora.includes('card-art-mudora-s.jpg'), 'CA16: resident preview shows the art for Mudora');
   ok(res.pvZolga === '', 'CA17: resident preview falls back for unlisted cards');
