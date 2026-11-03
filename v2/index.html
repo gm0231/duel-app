@@ -278,6 +278,23 @@
   .fx-chainpop .no{display:block;font-size:26px;font-weight:700;color:#59d8f2;line-height:1;}
   .fx-chainpop .cn2{font-size:12px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .fx-chainpop.solving{border-color:var(--gold);color:#ffe9a8;box-shadow:0 0 20px #c9a22766;}
+  /* V3 stage 2: scene-driven battle/chain elements. Per-frame values
+     (transform/opacity) are written by the scene engine; only the
+     static paint lives here. */
+  .fx3-emph{border:2px solid #fff;border-radius:6px;pointer-events:none;}
+  .fx3-trim{border:2px solid #fff;border-radius:6px;pointer-events:none;}
+  .fx3-linew{position:absolute;height:0;pointer-events:none;transform-origin:0 50%;}
+  .fx3-linew .gl{position:absolute;left:0;top:-4px;height:9px;width:100%;background:linear-gradient(90deg,#59d8f200,#59d8f2cc 30%,#aefcff);border-radius:5px;}
+  .fx3-linew .cl{position:absolute;left:0;top:-1px;height:3px;width:100%;background:linear-gradient(90deg,#bdf3ff66,#eaffff);border-radius:2px;}
+  .fx3-tip{position:absolute;width:11px;height:11px;border-radius:50%;background:radial-gradient(circle,#ffffff 0%,#aefcff 45%,transparent 72%);pointer-events:none;}
+  .fx3-core{border-radius:50%;pointer-events:none;}
+  .fx3-ring{border:2px solid #fff;border-radius:50%;pointer-events:none;}
+  .fx3-dmgnum{position:absolute;transform:translate(-50%,-100%);font-size:19px;font-weight:800;color:#ff5348;text-shadow:0 1px 5px #000,0 0 12px #ff220066;pointer-events:none;white-space:nowrap;}
+  .lpflash{animation:lpflashA .34s ease-out;}
+  @keyframes lpflashA{0%{color:#ff6a5e;text-shadow:0 0 14px #ff3020;}100%{}}
+  .fx3-chainno{position:absolute;left:50%;bottom:-13px;transform:translateX(-50%);font-size:30px;font-weight:800;color:#59d8f2;text-shadow:0 2px 6px #000,0 0 16px #59d8f288;line-height:1;pointer-events:none;}
+  .fx3-chainring{position:absolute;left:50%;bottom:-24px;width:52px;height:52px;margin-left:-26px;border:2px solid #59d8f2;border-radius:50%;pointer-events:none;}
+  .fx3-linkline{position:absolute;height:3px;background:repeating-linear-gradient(90deg,#59d8f2 0 7px,transparent 7px 14px);pointer-events:none;transform-origin:0 50%;opacity:.85;}
   .fx-chainpop.solving .no{color:var(--gold);}
   /* chain bar upgrades (round B): CHAIN label, newest link forward,
      resolved links dim */
