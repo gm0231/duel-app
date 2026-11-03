@@ -25,8 +25,11 @@
      Entries: Mori (36745317) is 'mori-ishizu', Hana (62133026)
      is 'hana-ishizu' and Oka (9350312) is 'oka-ishizu' inside
      the Ishizu deck only; in any other deck context they resolve
-     to their plain art. The opponent face-down rule binds the
-     overrides exactly like the base art.
+     to their plain art. The 4th entry is the sisters' spell,
+     《春化精の花冠》 (14108995, 14th delivery): plain art 'kakan'
+     (the forest painting) in CARD_ART, 'kakan-ishizu' (the
+     Egyptian variant) in DECK_ART under ishizu. The opponent
+     face-down rule binds the overrides exactly like the base art.
    Method: boot the real client in jsdom (harness as test-setvis),
    paint a fabricated board through the client's own render() and
    assert the DOM contract in one synchronous eval. */
@@ -43,7 +46,7 @@ const wasmBinary = fs.readFileSync(path.join(V2, 'build', 'ocgcore.wasm'));
 let failures = 0;
 const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (!cond) failures++; };
 
-const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317;
+const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317, KAKAN = 14108995;
 // The unlisted exemplar moved Zolga -> Sphinx (5th delivery) ->
 // Mori (after the 7th), and Mori gained art in the 13th delivery
 // (the Vernusylph trio), so the role now sits with
@@ -68,7 +71,9 @@ for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.
                          ['card-art-mori-s.jpg', 320, 320], ['card-art-mori.jpg', 640, 882],
                          ['card-art-mori-ishizu-s.jpg', 320, 320], ['card-art-mori-ishizu.jpg', 640, 882],
                          ['card-art-hana-ishizu-s.jpg', 320, 320], ['card-art-hana-ishizu.jpg', 640, 882],
-                         ['card-art-oka-ishizu-s.jpg', 320, 320], ['card-art-oka-ishizu.jpg', 640, 882]]) {
+                         ['card-art-oka-ishizu-s.jpg', 320, 320], ['card-art-oka-ishizu.jpg', 640, 882],
+                         ['card-art-kakan-s.jpg', 320, 320], ['card-art-kakan.jpg', 640, 882],
+                         ['card-art-kakan-ishizu-s.jpg', 320, 320], ['card-art-kakan-ishizu.jpg', 640, 882]]) {
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
@@ -88,6 +93,8 @@ ok(data.decks.ishizu.main.filter(c => c === OKA).length === 1, 'CA0l: the Ishizu
 ok(data.decks.ishizu.main.filter(c => c === HANA).length === 2, 'CA0m: the Ishizu deck runs 2 copies of Hana');
 ok(data.decks.ishizu.main.filter(c => c === MORI).length === 3, 'CA0n: the Ishizu deck runs 3 copies of Mori');
 ok(data.decks.ishizu.main.filter(c => c === UNLISTED).length === 3, 'CA0o: the Ishizu deck runs 3 copies of the unlisted exemplar (Carbon)');
+ok(data.decks.ishizu.main.filter(c => c === KAKAN).length === 1, 'CA0p: the Ishizu deck runs 1 copy of Kakan (Vernusylph Flower Crown)');
+ok(!data.decks.gg.main.includes(KAKAN) && !data.decks.gg.extra.includes(KAKAN), 'CA0q: the GG deck does NOT run Kakan (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -170,6 +177,13 @@ async function boot() {
     okaIshizuSmall: cardArtFile(${OKA}, false, 'ishizu'),
     okaIshizuBig: cardArtFile(${OKA}, true, 'ishizu'),
     okaGg: cardArtFile(${OKA}, false, 'gg'),
+    kakanSlug: CARD_ART[${KAKAN}],
+    kakanInline: artInline(${KAKAN}),
+    deckArtKakan: DECK_ART.ishizu && DECK_ART.ishizu[${KAKAN}],
+    kakanIshizuSmall: cardArtFile(${KAKAN}, false, 'ishizu'),
+    kakanIshizuBig: cardArtFile(${KAKAN}, true, 'ishizu'),
+    kakanIshizuInline: artInline(${KAKAN}, false, 'ishizu'),
+    kakanGg: cardArtFile(${KAKAN}, false, 'gg'),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.kelbekSlug === 'kelbek' && helpers.kelbekInline.includes('card-art-kelbek-s.jpg') && helpers.kelbekInline.includes('background-position:center top'), 'CA7d: Kelbek maps and stamps like the others');
@@ -215,6 +229,12 @@ async function boot() {
   ok(helpers.okaIshizuSmall === '../assets/card-art-oka-ishizu-s.jpg' && helpers.okaIshizuBig === '../assets/card-art-oka-ishizu.jpg', 'CA7z12: Ishizu context resolves Oka to the Egyptian art (small + big)');
   ok(helpers.okaGg === '../assets/card-art-oka-s.jpg', 'CA7z13: GG context resolves Oka to the plain art');
   ok(helpers.preloaded.includes('../assets/card-art-oka-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-oka-ishizu.jpg'), 'CA7z14: boot preloads the deck-scoped Oka art too');
+  ok(helpers.kakanSlug === 'kakan' && helpers.kakanInline.includes('card-art-kakan-s.jpg') && helpers.kakanInline.includes('background-position:center top'), 'CA7aa: Kakan maps and stamps like the others (plain art = the forest painting)');
+  ok(helpers.preloaded.includes('../assets/card-art-kakan-s.jpg') && helpers.preloaded.includes('../assets/card-art-kakan.jpg'), 'CA7ab: boot preloads Kakan too (same deck)');
+  ok(helpers.deckArtKakan === 'kakan-ishizu', 'CA7z15: DECK_ART registers Kakan -> kakan-ishizu for the Ishizu deck (4th entry, first SPELL with an override)');
+  ok(helpers.kakanIshizuSmall === '../assets/card-art-kakan-ishizu-s.jpg' && helpers.kakanIshizuBig === '../assets/card-art-kakan-ishizu.jpg' && helpers.kakanIshizuInline.includes('card-art-kakan-ishizu-s.jpg'), 'CA7z16: Ishizu context resolves Kakan to the Egyptian art (small + big)');
+  ok(helpers.kakanGg === '../assets/card-art-kakan-s.jpg', 'CA7z17: GG context resolves Kakan to the plain forest art');
+  ok(helpers.preloaded.includes('../assets/card-art-kakan-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-kakan-ishizu.jpg'), 'CA7z18: boot preloads the deck-scoped Kakan art too');
 
   doc.getElementById('startbtn').click();
   for (let i = 0; i < 120 && doc.querySelectorAll('.slot').length < 10; i++)
@@ -419,6 +439,43 @@ async function boot() {
   ok(res4.pvHana.includes('card-art-hana-ishizu-s.jpg'), 'CA16h: resident preview shows the deck-scoped art for Hana (unique deck membership: Ishizu)');
   ok(res4.pvMori.includes('card-art-mori-ishizu-s.jpg'), 'CA16i: resident preview shows the deck-scoped art for Mori (unique deck membership: Ishizu)');
 
+  // ---- Kakan board (14th delivery — 《春化精の花冠》, a SPELL,
+  // and the first spell with a deck-scoped override): surfaces
+  // are the S/T zone, the hand and the preview, like the books.
+  // Seat 0 plays Ishizu in this boot, so every public surface
+  // carries the EGYPTIAN variant (kakan-ishizu); own SET Kakan
+  // carries it under the veil like the books, and the opponent's
+  // SET Kakan gets neither art nor veil ----
+  const res6 = window.eval(`
+    (() => {
+      const st = (code, pos) => ({ code, pos, materials: 0 });
+      const P = () => ({ mzone: [null,null,null,null,null,null,null], szone: [null,null,null,null,null,null], grave: [], removed: [], extra: [], hand: [], deckCount: 38, lp: 8000 });
+      const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
+      b.players[0].szone[0] = st(${KAKAN}, 0x5);  // own face-up Kakan (Ishizu deck context)
+      b.players[0].szone[1] = st(${KAKAN}, 0xa);  // own SET Kakan (veil ghost)
+      b.players[1].szone[0] = st(${KAKAN}, 0xa);  // opp SET Kakan (MUST stay hidden)
+      b.players[0].hand = [{ code: ${KAKAN} }];
+      render(b);
+      const tileOf = (zone) => {
+        const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
+        const t = slot && slot.querySelector('.tile');
+        if (!t) return null;
+        const a = t.querySelector('.art');
+        return { cls: t.className, veil: !!t.querySelector('.veil'), art: a ? (a.getAttribute('style') || '') : null };
+      };
+      const h = document.querySelector('#hand .hcard[data-code="${KAKAN}"] .himg');
+      setPreview(${KAKAN}, null);
+      const pv = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      return { ownUp: tileOf('0:8:0'), ownSet: tileOf('0:8:1'), oppSet: tileOf('1:8:0'), hand: h ? (h.getAttribute('style') || '') : null, pv };
+    })()
+  `);
+  ok(res6.ownUp !== null && res6.ownSet !== null && res6.oppSet !== null, 'CA24: non-vacuity — Kakan board rendered');
+  ok(res6.ownUp.art !== null && res6.ownUp.art.includes('card-art-kakan-ishizu-s.jpg') && !res6.ownUp.veil, 'CA11t: own face-up Kakan S/T tile in the Ishizu deck shows the DECK-SCOPED Egyptian art');
+  ok(res6.ownSet.art !== null && res6.ownSet.art.includes('card-art-kakan-ishizu-s.jpg') && res6.ownSet.veil && res6.ownSet.cls.split(/\s+/).includes('setown'), 'CA11u: own SET Kakan carries the deck-scoped art under the setown veil (owner ghost, like the books)');
+  ok(res6.oppSet.art === '' && !res6.oppSet.veil && !String(res6.oppSet.art).includes('kakan'), 'CA13h: opponent SET Kakan gets NO art and NO veil (asymmetry / no leak)');
+  ok(res6.hand !== null && res6.hand.includes('card-art-kakan-ishizu-s.jpg'), 'CA14o: hand Kakan (Ishizu deck) shows the deck-scoped art');
+  ok(res6.pv.includes('card-art-kakan-ishizu-s.jpg'), 'CA16p: resident preview shows the deck-scoped art for Kakan (unique deck membership: Ishizu)');
+
   // ---- Deck-scoped override, flipped seats (fixture): the SAME
   // Mori card under a NON-Ishizu deck context must fall back to
   // the plain art, while the seat actually playing Ishizu keeps
@@ -508,6 +565,50 @@ async function boot() {
     })()
   `);
   ok(res5b === '' && !String(res5b).includes('oka'), 'CA13g: opponent FACE-DOWN Oka gets NO art even in Ishizu context (asymmetry binds the 3rd override too)');
+
+  // ---- Kakan, flipped seats (fixture): the 4th override under
+  // the same lens as the sisters — a Kakan instance owned by a
+  // NON-Ishizu deck context falls back to the plain forest art
+  // on the S/T tile, the hand and the preview, while the Ishizu
+  // seat keeps the Egyptian variant; the Ishizu seat's SET
+  // Kakan stays invisible (asymmetry binds the 4th override).
+  // (Fabricated: the GG deck does not run Kakan, exactly like
+  // the sisters' fixture above.) ----
+  const res7 = window.eval(`
+    (() => {
+      const saved = seatDeckKeys;
+      seatDeckKeys = ['gg', 'ishizu']; // seat 0 now "plays" GG; seat 1 plays Ishizu
+      const st = (code, pos) => ({ code, pos, materials: 0 });
+      const P = () => ({ mzone: [null,null,null,null,null,null,null], szone: [null,null,null,null,null,null], grave: [], removed: [], extra: [], hand: [], deckCount: 38, lp: 8000 });
+      const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
+      b.players[0].szone[0] = st(${KAKAN}, 0x5);  // Kakan under a GG deck context (fixture)
+      b.players[1].szone[0] = st(${KAKAN}, 0x5);  // Kakan in the Ishizu deck (seat 1)
+      b.players[1].szone[1] = st(${KAKAN}, 0xa);  // opp SET Kakan, Ishizu context (MUST stay hidden)
+      b.players[0].hand = [{ code: ${KAKAN} }];
+      render(b);
+      const tileOf = (zone) => {
+        const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
+        const t = slot && slot.querySelector('.tile');
+        if (!t) return null;
+        const a = t.querySelector('.art');
+        return { veil: !!t.querySelector('.veil'), art: a ? (a.getAttribute('style') || '') : null };
+      };
+      const h = document.querySelector('#hand .hcard[data-code="${KAKAN}"] .himg');
+      setPreview(${KAKAN}, { con: 0, loc: E.LOC.SZONE, seq: 0 });
+      const pvSeat0 = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      setPreview(${KAKAN}, { con: 1, loc: E.LOC.SZONE, seq: 0 });
+      const pvSeat1 = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      seatDeckKeys = saved;
+      return { ggTile: tileOf('0:8:0'), ishizuTile: tileOf('1:8:0'), ishizuSet: tileOf('1:8:1'), hand: h ? (h.getAttribute('style') || '') : null, pvSeat0, pvSeat1 };
+    })()
+  `);
+  ok(res7.ggTile !== null && res7.ishizuTile !== null && res7.ishizuSet !== null, 'CA25: non-vacuity — flipped-seat Kakan board rendered');
+  ok(res7.ggTile.art !== null && res7.ggTile.art.includes('card-art-kakan-s.jpg') && !res7.ggTile.art.includes('kakan-ishizu'), 'CA11v: Kakan under a non-Ishizu deck context falls back to the plain forest art (S/T tile)');
+  ok(res7.ishizuTile.art !== null && res7.ishizuTile.art.includes('card-art-kakan-ishizu-s.jpg'), 'CA11w: Kakan in the Ishizu deck shows the Egyptian art even on the opponent’s seat (deck, not chair)');
+  ok(res7.ishizuSet.art === '' && !res7.ishizuSet.veil && !String(res7.ishizuSet.art).includes('kakan'), 'CA13i: opponent SET Kakan gets NO art and NO veil even in Ishizu context (asymmetry binds the 4th override too)');
+  ok(res7.hand !== null && res7.hand.includes('card-art-kakan-s.jpg') && !res7.hand.includes('kakan-ishizu'), 'CA14p: hand Kakan under a non-Ishizu deck context falls back to the plain art');
+  ok(res7.pvSeat0.includes('card-art-kakan-s.jpg') && !res7.pvSeat0.includes('kakan-ishizu'), 'CA16q: preview of a GG-context Kakan (instance ref) shows the plain art');
+  ok(res7.pvSeat1.includes('card-art-kakan-ishizu-s.jpg'), 'CA16r: preview of an Ishizu-context Kakan (instance ref) shows the Egyptian art');
 
   window.close();
   console.log(failures === 0 ? 'ALL CARDART CHECKS PASSED' : failures + ' CARDART CHECK(S) FAILED');
