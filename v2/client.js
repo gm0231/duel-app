@@ -133,6 +133,15 @@ function preloadCardArt(deckKeys) {
     if (!artPreloaded.has(f)) { artPreloaded.add(f); const im = new Image(); im.src = f; }
   }
 }
+// deck-select page: display names + the live selection summary
+// above the start button (what is chosen, on one line, always
+// current — the page's seg handlers refresh it on every change).
+function deckDisplayName(k) { return k === 'gg' ? 'ゲート・ガーディアン' : 'MILLENNIUM PROPHECY'; }
+function updateDeckSum() {
+  const el = $('decksum'); if (!el) return;
+  const turn = firstChoice === 'first' ? '先攻' : firstChoice === 'second' ? '後攻' : '先攻・後攻ランダム';
+  el.textContent = '自分：' + deckDisplayName(myDeckKey) + ' ／ 相手：' + deckDisplayName(opDeckKey) + ' ／ ' + turn;
+}
 function locLabel(e) {
   const who = e.con === HP ? '自分' : '相手';
   switch (e.loc) {
@@ -5338,6 +5347,13 @@ function wireSeg(id, apply) {
   }));
 }
 (async () => {
+  // deck-select page navigation (pure DOM — wired before the data
+  // load so the pages can be walked even on the failure path, whose
+  // retry button lives on the deck page).
+  $('deckpage').style.display = 'none';
+  updateDeckSum();
+  $('todeck').addEventListener('click', () => { playClick(); $('start').style.display = 'none'; $('deckpage').style.display = 'flex'; });
+  $('deckback').addEventListener('click', () => { playClick(); $('deckpage').style.display = 'none'; $('start').style.display = 'flex'; });
   try {
     DATA = await (await fetch('data.json')).json();
     // fxmap.json: which printed effect a desc index names. A failed
@@ -5360,9 +5376,9 @@ function wireSeg(id, apply) {
     sb.addEventListener('click', () => location.reload());
     return;
   }
-  wireSeg('seg-mydeck', (v) => { myDeckKey = v; preloadCardArt([myDeckKey, opDeckKey]); });
-  wireSeg('seg-opdeck', (v) => { opDeckKey = v; preloadCardArt([myDeckKey, opDeckKey]); });
-  wireSeg('seg-first', (v) => { firstChoice = v; });
+  wireSeg('seg-mydeck', (v) => { myDeckKey = v; preloadCardArt([myDeckKey, opDeckKey]); updateDeckSum(); });
+  wireSeg('seg-opdeck', (v) => { opDeckKey = v; preloadCardArt([myDeckKey, opDeckKey]); updateDeckSum(); });
+  wireSeg('seg-first', (v) => { firstChoice = v; updateDeckSum(); });
   syncFxSegs(); // reflect any persisted round-B settings before wiring
   wireSeg('seg-cutin', (v) => { fxSettings.cutin = v === 'on'; fxSaveSettings(); });
   wireSeg('seg-resp', (v) => { fxSettings.resp = v; fxSaveSettings(); });
@@ -5415,8 +5431,7 @@ function wireSeg(id, apply) {
     // covers the engine-start wait, so the tap is never followed
     // by dead time (audit C-33).
     {
-      const dn = (k) => k === 'gg' ? 'ゲート・ガーディアン' : 'MILLENNIUM PROPHECY';
-      $('vssub').innerHTML = dn(myDeckKey) + ' vs ' + dn(opDeckKey) + '<br>あなたは' + (humanFirst ? '先攻' : '後攻') + 'です';
+      $('vssub').innerHTML = deckDisplayName(myDeckKey) + ' vs ' + deckDisplayName(opDeckKey) + '<br>あなたは' + (humanFirst ? '先攻' : '後攻') + 'です';
       const vs = $('vsoverlay'); vs.classList.add('on');
       try {
         // DS-07 (brushup round 3): the curtain itself is NEVER
@@ -5454,6 +5469,7 @@ function wireSeg(id, apply) {
     fieldPrev = null; summonMarks.clear(); // cannot-attack trackers restart with the duel
     setBgmScene('normal', true);
     $('start').style.display = 'none';
+    $('deckpage').style.display = 'none';
     $('logline').textContent = '対戦を準備中…';
     duel = await createClientDuel(DATA, {
       seed: (Date.now() % 100000) + 1,
@@ -5532,6 +5548,7 @@ function wireSeg(id, apply) {
       if (cfg.my) { myDeckKey = cfg.my; setSeg('seg-mydeck', cfg.my); }
       if (cfg.op) { opDeckKey = cfg.op; setSeg('seg-opdeck', cfg.op); }
       if (cfg.first) { firstChoice = cfg.first; setSeg('seg-first', cfg.first); }
+      updateDeckSum();
       $('startbtn').click();
     }
   } catch (e) {}
