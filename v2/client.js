@@ -532,20 +532,53 @@ function fxZoneGlow(key, ms) {
   fxAnim(d, [{ opacity: 0 }, { opacity: 1, offset: 0.25 }, { opacity: 0 }], { duration: ms || 620, easing: 'ease-out' });
   fxKill(d, (ms || 620) + 40);
 }
-function fxPortal(key, method, delay) {
+function fxPortal(key, method, glowMs) {
+  // V4-5: the portal is a scene on the shared clock (was WAAPI).
+  // 60 ms staging: zone glow 0-, rings 60-, spiral 180, birth
+  // flash 330, the summon lands 330-520. Two counter-rotating
+  // layers spin up (quadratic), cruise, then brake into a scale
+  // collapse (720-840). The paired zone glow is folded into the
+  // scene (its third argument is the glow's duration).
   const el = fxSlotEl(key); if (!el) return;
   const r = fxRel(el);
   const size = Math.max(r.w, r.h) * 1.3;
-  const spawn = () => {
-    const d = fxNode('fx-portal ' + method, r.cx, r.cy, size, size); if (!d) return;
-    d.innerHTML = '<div class="ring"></div>';
-    fxAnim(d, [
-      { opacity: 0, transform: 'scale(.55)' }, { opacity: 1, transform: 'scale(1.04)', offset: 0.25 },
-      { opacity: 1, transform: 'scale(1)', offset: 0.75 }, { opacity: 0, transform: 'scale(1)' },
-    ], { duration: 780, easing: 'ease-out' });
-    fxKill(d, 820);
-  };
-  if (delay) setTimeout(spawn, delay); else spawn();
+  const col = method === 'fusion' ? '#b78bff' : method === 'synchro' ? '#cfe8d8' : '#ffd94d';
+  const glow = fxNode('fx-zoneglows', r.cx, r.cy, r.w, r.h);
+  if (glow) glow.style.opacity = '0';
+  const d = fxNode('fx3-portal ' + method, r.cx, r.cy, size, size);
+  if (!d) { if (glow) glow.remove(); return; }
+  d.innerHTML = '<div class="r1"></div><div class="r2"></div>';
+  d.style.opacity = '0';
+  const gMs = glowMs || 620;
+  fxAddScene({
+    kind: 'portal', dur: 840, winLow: [[320, 540]],
+    cues: [
+      { at: 180, fn: () => fxSpawnBurst('low', { seed: (Math.random() * 1e9) | 0, o: [r.cx, r.cy], n: 10, t0: fxTimeMs + 180, life: [380, 620], mode: 'spiral', r: [6, size * 0.52], turns: 1.5, size: [2.5, 4.5], cols: [col, '#ffffff'] }) },
+      { at: 330, fn: () => { const t2 = fxSlotEl(key); if (t2) fxAnim(t2, [{ filter: 'brightness(1.6)' }, { filter: 'brightness(1)' }], { duration: 190, easing: 'ease-out' }); } },
+    ],
+    drawLow(ctx, t) { // the birth flash: a bloom as the summon lands
+      const bt = fxSeg(t, 330, 470);
+      if (bt > 0) fxDrawGlow(ctx, r.cx, r.cy, fxLerp(40, 90, bt), col, .8 * (1 - bt));
+    },
+    render(t) {
+      if (glow) { // the folded zone glow: in by 25%, out by gMs
+        glow.style.opacity = String(t >= gMs ? 0 : (t < gMs * 0.25 ? t / (gMs * 0.25) : 1 - (t - gMs * 0.25) / (gMs * 0.75)));
+      }
+      const sp = fxSeg(t, 60, 400), su = sp * sp;
+      const brk = fxSeg(t, 600, 840);
+      const rot = 360 * su + Math.max(0, t - 400) * 0.36 * (1 - brk * 0.8);
+      let s;
+      if (t < 240) s = fxLerp(.55, 1.04, FXE.outCubic(fxSeg(t, 60, 240)));
+      else if (t < 400) s = fxLerp(1.04, 1, fxSeg(t, 240, 400));
+      else if (t < 720) s = 1;
+      else s = fxLerp(1, .8, fxSeg(t, 720, 840));
+      d.style.opacity = String(fxSeg(t, 60, 240) * (1 - fxSeg(t, 720, 840)));
+      d.style.transform = 'scale(' + s.toFixed(3) + ')';
+      d.children[0].style.transform = 'rotate(' + rot.toFixed(1) + 'deg)';
+      d.children[1].style.transform = 'rotate(' + (-rot * 0.7).toFixed(1) + 'deg)';
+    },
+    onDone() { try { d.remove(); } catch (e) {} if (glow) { try { glow.remove(); } catch (e) {} } },
+  });
 }
 function fxPuff(key) { // normal summons & sets: a small placement beat only
   const el = fxSlotEl(key); if (!el) return;
@@ -800,6 +833,9 @@ function fxBurstAliveAt(b, t) {
 function fxParticlesAliveAt(t) { return fxBursts.reduce((a, b) => a + fxBurstAliveAt(b, t), 0); }
 function fxSpawnBurst(cvKind, b) {
   b.cv = cvKind; b.mode = b.mode || 'burst';
+  // spiral bursts need a radius band and a turn count; default them
+  // here so a caller that omits them can never crash the draw pass
+  if (b.mode === 'spiral') { if (!b.r) b.r = [0, 60]; if (b.turns == null) b.turns = 1.5; }
   if (b.t0 == null) b.t0 = fxTimeMs;
   // budget: clip this burst so the projected live total (sampled over
   // its lifetime) never exceeds the cap; the draw pass hard-stops at
@@ -1135,7 +1171,7 @@ function fxProcessInner(evs, state) {
     const isSetMon = !isSp && !isNormal && code != null &&
       evs.some(e => e.kind === 'set' && e.loc === E.LOC.MZONE && e.con === con && e.code === code);
     if (fromGrave || fromRemoved) { // revival / return: NO flight — the zone lights and it appears
-      fxZoneGlow(ar.key, 700); fxPortal(ar.key, 'revive', 90);
+      fxPortal(ar.key, 'revive', 700); // V4-5: the zone glow is folded into the portal scene
       fxRecord('portal', { method: 'revive', code });
       consumedArr.add(ar.key);
       continue;
@@ -1164,8 +1200,7 @@ function fxProcessInner(evs, state) {
     if (method === 'fusion' || method === 'xyz') {
       const mats = matDepsOf(con);
       for (const m of mats) { consumedDep.add(m.key); fxConverge(m.key, ar.key); fxRecord('converge', { code: m.entry.code }); }
-      fxZoneGlow(ar.key, 640);
-      fxPortal(ar.key, method, mats.length ? 210 : 60);
+      fxPortal(ar.key, method, 640); // V4-5: glow folded in
       fxRecord('portal', { method, code });
       consumedArr.add(ar.key);
       continue;
@@ -1186,7 +1221,7 @@ function fxProcessInner(evs, state) {
       consumedArr.add(ar.key); continue;
     }
     // other special summons (from hand / deck / extra): zone glows first
-    fxZoneGlow(ar.key, 600); fxPortal(ar.key, method, 80);
+    fxPortal(ar.key, method, 600); // V4-5: glow folded in
     fxRecord('portal', { method, code });
     consumedArr.add(ar.key);
   }
@@ -1600,7 +1635,7 @@ function fxFinisherSceneV3(attr) {
   // ---- nodes: charge + vignette on the board layer; the rest in the host
   const nodes = [];
   const charge = fxNode('fx3-emph', la.aPt.cx, la.aPt.cy, la.aPt.w, la.aPt.h);
-  if (charge) { charge.style.borderColor = col; nodes.push(charge); }
+  if (charge) { charge.style.borderColor = col; charge.style.boxShadow = '0 0 26px ' + col + ', inset 0 0 14px ' + col; nodes.push(charge); } // V4: shadow set once; the charge is opacity/transform only
   const vig = document.createElement('div'); vig.className = 'fx3-vignette'; vig.style.opacity = '0'; layer.appendChild(vig); nodes.push(vig);
   host.innerHTML = ''; host.className = 'on';
   const hmk = (cls) => { const d = document.createElement('div'); d.className = cls; host.appendChild(d); nodes.push(d); return d; };
@@ -1621,28 +1656,48 @@ function fxFinisherSceneV3(attr) {
   beam.style.left = la.aPt.cx + 'px'; beam.style.top = la.aPt.cy + 'px'; beam.style.width = len + 'px'; beam.style.opacity = '0';
   beam.innerHTML = '<div class="gl"></div><div class="cl"></div>';
   host.appendChild(beam); nodes.push(beam);
-  const core = hmk('fx fx3-core');
-  core.style.left = (lpPt.cx - 150) + 'px'; core.style.top = (lpPt.cy - 150) + 'px'; core.style.width = '300px'; core.style.height = '300px';
-  core.style.background = 'radial-gradient(circle,#ffffff 0%,' + col + ' 34%,transparent 68%)'; core.style.opacity = '0';
   const wash = hmk('fx3-wash');
   wash.style.left = (lpPt.cx - 360) + 'px'; wash.style.top = (lpPt.cy - 360) + 'px'; wash.style.width = '720px'; wash.style.height = '720px';
   wash.style.background = 'radial-gradient(circle,' + washCol + ' 0%,' + washCol + ' 30%,transparent 68%)'; wash.style.opacity = '0';
   const appEl = app;
   const sc = fxAddScene({
-    kind: 'finisher', dur: 2900,
+    kind: 'finisher', dur: 2900, winTop: [[110, 720], [1400, 2400]],
     cues: [
       { at: 1200, fn: () => playSe((ATTR_SE && ATTR_SE[attr]) || 'atk_sword_big') },  // launch
       { at: 1420, fn: () => { fxHitStop(110); playSe('hit_critical'); } },          // impact
     ],
+    // V4-4: the charge halo (tier 2), the impact as a three-tier
+    // bloom, the wash's second source + the contracting last-light
+    // ring, and the result's gold bloom — all on the top canvas.
+    drawTop(ctx, t) {
+      const tier2 = fxSeg(t, 120, 420);
+      if (tier2 > 0) fxDrawGlow(ctx, la.aPt.cx, la.aPt.cy, fxLerp(54, 84, tier2), col, .45 * tier2 * (1 - fxSeg(t, 500, 700)));
+      if (t >= 1400 && t < 1700) { // impact bloom at the LP plate
+        const a = fxSeg(t, 1420, 1460) * (1 - fxSeg(t, 1500, 1650));
+        if (a > 0) {
+          fxDrawGlow(ctx, lpPt.cx, lpPt.cy, 34, '#ffffff', .95 * a);
+          fxDrawGlow(ctx, lpPt.cx, lpPt.cy, 74, col, .60 * a);
+          fxDrawGlow(ctx, lpPt.cx, lpPt.cy, 130, col, .32 * a);
+        }
+      }
+      if (t >= 1420 && t < 2400) { // the wash gets a second source at screen centre
+        const wu = fxSeg(t, 1420, 2400);
+        fxDrawGlow(ctx, ar.cx, ar.y + ar.h * 0.45, 190, col, .30 * Math.pow(1 - wu, 1.6));
+      }
+      if (t >= 1900 && t < 2350) { // the last light contracts as the wash decays
+        const cu = fxSeg(t, 1900, 2350);
+        fxDrawSoftRing(ctx, ar.cx, ar.y + ar.h * 0.45, fxLerp(260, 40, cu), '#ffe9a8', .5 * (1 - cu), .14);
+      }
+    },
     render(t) {
-      // L1 charge 0-500: attacker glow grows, vignette closes to .55
+      // L1 charge, V4 three-tier stagger: rim 0-300 (this element),
+      // halo 120-420 (drawTop), vignette 240-500
       if (charge) {
         const u = fxSeg(t, 0, 500);
         charge.style.transform = 'scale(' + (1 + 0.05 * u).toFixed(3) + ')';
-        charge.style.opacity = String(1 - fxSeg(t, 500, 700));
-        charge.style.boxShadow = '0 0 ' + Math.round(26 * u) + 'px ' + col + ', inset 0 0 14px ' + col;
+        charge.style.opacity = String(0.9 * fxSeg(t, 0, 300) * (1 - fxSeg(t, 500, 700)));
       }
-      if (vig) vig.style.opacity = String(0.55 * fxSeg(t, 0, 500) * (1 - fxSeg(t, 1900, 2400)));
+      if (vig) vig.style.opacity = String(0.55 * fxSeg(t, 240, 500) * (1 - fxSeg(t, 1900, 2400)));
       // L2 cut-in flash 500-1250: scrim to .6 (CSS scrim is already
       // translucent; opacity scales it), background swirl fades in
       // and turns, the card scales in (settle) by +250
@@ -1659,12 +1714,7 @@ function fxFinisherSceneV3(attr) {
         beam.style.transform = 'rotate(' + ang + 'deg) scaleX(' + ext.toFixed(3) + ')';
         beam.style.opacity = String(t < 1200 ? 0 : 1 - fxSeg(t, 1450, 1600));
       }
-      // L5 impact flash 1420-1900 at the origin
-      if (core) {
-        const u = fxSeg(t, 1420, 1900);
-        core.style.transform = 'scale(' + (0.5 + 0.6 * FXE.outCubic(u)).toFixed(3) + ')';
-        core.style.opacity = String(u <= 0 ? 0 : (1 - fxSeg(t, 1560, 1900)));
-      }
+      // L5: the impact flash is the drawTop three-tier bloom now
       // L6 wash 1420-2400: radial from the origin; peak 1530, held
       // to 1750, washOut decay to FULLY GONE at 2400
       if (wash) {
@@ -1675,24 +1725,29 @@ function fxFinisherSceneV3(attr) {
         wash.style.opacity = String(a * 0.95);
         wash.style.transform = 'scale(' + (0.55 + 0.45 * FXE.outCubic(fxSeg(t, 1420, 1900))).toFixed(3) + ')';
       }
-      // L7 tilt 1420-2050: the frame leans 0.5 degrees and recovers
-      // (a tilt, not a shake — MD's grammar, proposal 1.3)
+      // L7 tilt 1420-2050: V4 decaying recovery — the frame leans
+      // 0.5 degrees, overshoots +0.10 the other way, and settles
       if (appEl) {
         const tu = fxSeg(t, 1420, 2050);
-        appEl.style.transform = tu > 0 && tu < 1 ? 'rotate(' + (-0.5 * Math.sin(Math.PI * tu)).toFixed(3) + 'deg)' : '';
+        appEl.style.transform = tu > 0 && tu < 1 ? 'rotate(' + (-0.5 * Math.sin(Math.PI * tu) - 0.10 * Math.sin(2 * Math.PI * tu) * (1 - tu)).toFixed(3) + 'deg)' : '';
       }
-      // L9 LP drain 1600-2200: accelerating (quadratic) to zero,
-      // the counter pops once when it lands
+      // L9 LP drain 1600-2200: accelerating (quadratic) to zero.
+      // V4: a red pulse rides the drain rate (10 quantized steps),
+      // and the landing pop is a settle ON THE FX CLOCK (it was a
+      // wall-clock setTimeout, outside the hit-stop world)
       if (lpElRef) {
         if (t >= 1600 && t <= 2200) {
           const u = fxSeg(t, 1600, 2200);
           const v = Math.max(0, Math.round(drainFrom * (1 - u * u)));
           if (fxLpShown[defCon] !== v) { fxLpShown[defCon] = v; lpElRef.textContent = v; }
           lpElRef.style.transform = '';
-        } else if (t > 2200 && fxLpShown[defCon] !== 0) {
-          fxLpShown[defCon] = 0; lpElRef.textContent = '0';
-          lpElRef.style.transform = 'scale(1.15)';
-          setTimeout(() => { try { lpElRef.style.transform = ''; } catch (e) {} }, 130);
+          const rate = 2 * u * (1 - u) + 0.2, step = Math.round(rate * 10);
+          if (lpElRef._pulse !== step) { lpElRef._pulse = step; lpElRef.style.textShadow = '0 0 ' + Math.round(6 + 14 * rate) + 'px rgba(255,60,40,' + (0.5 * Math.min(1, rate)).toFixed(2) + ')'; }
+        } else if (t > 2200) {
+          if (fxLpShown[defCon] !== 0) { fxLpShown[defCon] = 0; lpElRef.textContent = '0'; }
+          if (lpElRef._pulse !== -1) { lpElRef._pulse = -1; lpElRef.style.textShadow = ''; }
+          const pu = fxSeg(t, 2200, 2330);
+          lpElRef.style.transform = pu < 1 ? 'scale(' + (1 + 0.15 * (1 - FXE.settle(pu))).toFixed(3) + ')' : '';
         }
       }
     },
@@ -1700,6 +1755,7 @@ function fxFinisherSceneV3(attr) {
       for (const n of nodes) { try { n.remove(); } catch (e) {} }
       host.className = '';
       if (appEl) appEl.style.transform = '';
+      if (lpElRef) { lpElRef.style.textShadow = ''; lpElRef.style.transform = ''; lpElRef._pulse = -1; }
       if (fxLpScenes[defCon] === sc) fxLpScenes[defCon] = null;
       fxFinisherSceneRef = null;
     },
@@ -4043,6 +4099,16 @@ function wireSeg(id, apply) {
     const over = !won && myLp < 0 ? '（' + (-myLp) + ' の超過ダメージ）' : (won && opLp < 0 ? '（' + (-opLp) + ' の超過ダメージ）' : '');
     $('resultSub').textContent = '最終LP 自分 ' + Math.max(0, myLp) + ' ― 相手 ' + Math.max(0, opLp) + over;
     $('result').style.display = 'flex';
+    // V4-4: the result stands with a snap, sinking 10 px into place;
+    // a gold bloom pulls a beat behind it (an element of the result
+    // itself — the FX canvas sits under this overlay and its own
+    // bloom there was occluded, verified on the R3 frame strip)
+    fxAnim($('result'), [{ opacity: '0', transform: 'translateY(-10px)' }, { opacity: '1', transform: 'translateY(0)' }], { duration: 260, easing: 'cubic-bezier(.2,.9,.25,1)' });
+    const rb = document.createElement('div');
+    rb.style.cssText = 'position:absolute;left:50%;top:42%;width:300px;height:300px;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(circle,rgba(255,217,77,.5) 0%,rgba(255,217,77,.14) 45%,transparent 70%);pointer-events:none;';
+    $('result').appendChild(rb);
+    fxAnim(rb, [{ opacity: '0' }, { opacity: '1', offset: 0.3 }, { opacity: '0' }], { duration: 800, delay: 120, easing: 'ease-out' });
+    fxKill(rb, 1000);
   });
   // A-06: the two exits say what they do. Rematch keeps the start
   // selections (decks, first/second, response mode, cut-in) and

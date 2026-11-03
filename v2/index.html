@@ -365,6 +365,18 @@
   .fx3-chainno{position:absolute;left:50%;bottom:-13px;transform:translateX(-50%);font-size:30px;font-weight:800;color:#59d8f2;text-shadow:0 2px 6px #000,0 0 16px #59d8f288;line-height:1;pointer-events:none;}
   .fx3-chainring{position:absolute;left:50%;bottom:-24px;width:52px;height:52px;margin-left:-26px;border:2px solid #59d8f2;border-radius:50%;pointer-events:none;}
   .fx3-linkline{position:absolute;height:3px;background:repeating-linear-gradient(90deg,#59d8f2 0 7px,transparent 7px 14px);pointer-events:none;transform-origin:0 50%;opacity:.85;}
+  .fx3-portal{pointer-events:none}
+  .fx3-portal .r1,.fx3-portal .r2{position:absolute;inset:0;border-radius:50%}
+  .fx3-portal.revive .r1{background:conic-gradient(from 0deg,transparent 0 40deg,rgba(255,217,77,.85) 70deg,transparent 110deg 200deg,rgba(255,217,77,.85) 240deg,transparent 280deg)}
+  .fx3-portal.revive .r2{background:radial-gradient(circle,transparent 52%,rgba(255,217,77,.5) 68%,transparent 78%)}
+  .fx3-portal.fusion .r1{background:conic-gradient(from 0deg,rgba(183,139,255,.8),transparent 40%,rgba(183,139,255,.8) 55%,transparent 90%)}
+  .fx3-portal.fusion .r2{background:radial-gradient(circle,rgba(183,139,255,.35) 0,transparent 62%)}
+  .fx3-portal.xyz .r1{background:conic-gradient(from 0deg,#0a0a12 0 30%,#ffd94d 46%,#0a0a12 62% 100%)}
+  .fx3-portal.xyz .r2{background:radial-gradient(circle,transparent 46%,rgba(255,217,77,.55) 60%,transparent 74%)}
+  .fx3-portal.synchro .r1{background:conic-gradient(from 0deg,rgba(207,232,216,.85),transparent 45%,rgba(207,232,216,.85) 60%,transparent 95%)}
+  .fx3-portal.synchro .r2{background:radial-gradient(circle,rgba(207,232,216,.3) 0,transparent 60%)}
+  .fx3-portal.generic .r1{background:conic-gradient(from 0deg,rgba(232,213,183,.75),transparent 42%,rgba(232,213,183,.75) 58%,transparent 92%)}
+  .fx3-portal.generic .r2{background:radial-gradient(circle,rgba(232,213,183,.28) 0,transparent 60%)}
   .fx3-chainrim{position:absolute;border-radius:6px;box-shadow:0 0 0 2px rgba(255,255,255,.95),0 12px 34px rgba(0,0,0,.55);pointer-events:none;}
   .fx3-chainword{position:absolute;transform:translate(-50%,-50%);font-size:20px;font-weight:800;letter-spacing:.3em;color:#59d8f2;text-shadow:0 2px 8px #000,0 0 18px #59d8f288;pointer-events:none;z-index:7;white-space:nowrap;}
   .fx3-chainword span{display:inline-block;}
