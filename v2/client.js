@@ -543,6 +543,7 @@ function trackUsedFx(state) {
     const key = usedFxChainEpoch + '|' + i + '|' + l.code + '|' + (l.desc || 0);
     if (usedFxSeen.has(key)) return;
     usedFxSeen.add(key);
+    if (l.con === HP) usedNamesDuel.add(l.code); // duel-scope card-name limits (brushup round 2 block below)
     if (l.con !== HP) return;
     let rec = usedFxByCode.get(l.code);
     if (!rec) { rec = { n: new Set(), any: false }; usedFxByCode.set(l.code, rec); }
@@ -678,6 +679,148 @@ function monsterRevivedReason(code, loc, seq, turnCount) {
   if (monsterRevived.code !== code || monsterRevived.seq !== seq) return null;
   return '《' + cardName(REVIVE_CODE) + '》の効果で特殊召喚されたため、このターンは効果を発動できません';
 }
+// ---- brushup round 2: cannot-activate reasons on the OTHER surfaces ----
+// The pool-coverage round stated reasons on the FIELD sheet and
+// enumerated three groups whose surface is elsewhere (NOTES,
+// Pool-wide coverage section 3). This block covers those surfaces
+// with the same discipline — text-derived sets, mechanically
+// certain evidence only, silence over a guessed reason:
+//   (4) card-name activation limits (「このカード名のカードは
+//       １ターンに１枚／デュエル中に１枚しか発動できない」) on
+//       the HAND surface: the action sheet for a hand card whose
+//       activation is spent, and the preview reason line when the
+//       card has no offered action at all. Usage evidence is the
+//       chain-link record itself (turn scope: usedFxByCode; duel
+//       scope: usedNamesDuel, fed by the same tracker).
+//   (5) 《巨神封じの矢》-type grave timing (「このカードが墓地へ
+//       送られたターンには発動できない」) on the GRAVE pile
+//       sheet. Arrival evidence is a multiset diff of the human's
+//       own grave across state updates, stamped with the turn —
+//       deliberately NOT stamped across an observation that
+//       contained identity-less (null) entries, so the deck/grave
+//       swap of 《現世と冥界の逆転》 can never mint a false claim.
+//       Stamps are per CODE: with several copies in the grave the
+//       note marks the code, not the individual copy — and if any
+//       copy of a code leaves, the code's stamps drop entirely,
+//       because counts cannot say which copy went.
+//   (6) Trilosucuta-type EX-summon type locks (「このターン、
+//       自分は○モンスターしかEXデッキから特殊召喚できない」)
+//       on the EXTRA pile sheet, where EX summons are launched:
+//       while the lock is live (the restricting effect sits in
+//       this turn's chain-link record), each own EX monster of a
+//       blocked type that carries no offered summon action gets
+//       the named reason under its row.
+let _nameLimitCards = null; // Map code -> 'turn' | 'duel', derived from DATA.texts
+function nameLimitCards() {
+  if (_nameLimitCards) return _nameLimitCards;
+  _nameLimitCards = new Map();
+  if (DATA && DATA.texts) {
+    for (const code of Object.keys(DATA.texts)) {
+      const t = DATA.texts[code];
+      if (!t || !t.text) continue;
+      if (/このカード名のカードはデュエル中に１枚しか発動できない/.test(t.text)) _nameLimitCards.set(+code, 'duel');
+      else if (/このカード名のカードは１ターンに１枚しか発動できない/.test(t.text)) _nameLimitCards.set(+code, 'turn');
+    }
+  }
+  return _nameLimitCards;
+}
+const usedNamesDuel = new Set(); // codes the human has put on a chain this duel (fed by trackUsedFx)
+function nameLimitReason(code) {
+  const scope = nameLimitCards().get(code);
+  if (!scope) return null;
+  if (scope === 'duel') {
+    return usedNamesDuel.has(code) ? 'このカード名のカードはデュエル中に１枚しか発動できません' : null;
+  }
+  const rec = usedFxByCode.get(code);
+  return rec && rec.any ? 'このカード名のカードは１ターンに１枚しか発動できません' : null;
+}
+let _graveSentCards = null; // Map code -> printed number of the segment carrying the clause
+function graveSentCards() {
+  if (_graveSentCards) return _graveSentCards;
+  _graveSentCards = new Map();
+  for (const code of Object.keys(DATA && DATA.texts ? DATA.texts : {})) {
+    const seg = effectSegments(+code).find(s => /このカードが墓地へ送られたターンには発動できない/.test(s.body));
+    if (seg) _graveSentCards.set(+code, seg.n);
+  }
+  return _graveSentCards;
+}
+let gravePrev = null; // Map code -> count in the human's grave at the previous observation (null = none yet)
+let gravePrevNulls = 0;
+let graveStamps = []; // {code, turn} — arrivals of the human's own grave cards
+function trackGraveArrivals(state) {
+  if (!state || !state.players || !state.players[HP]) return;
+  const cur = new Map();
+  let nulls = 0;
+  for (const c of state.players[HP].grave) {
+    if (c == null) { nulls++; continue; }
+    cur.set(c, (cur.get(c) || 0) + 1);
+  }
+  // stamp only across a clean pair of observations: if either side
+  // held identity-less entries (post-swap resync window), the diff
+  // proves nothing about how a card reached the grave — update the
+  // baseline and stay silent.
+  if (gravePrev && !gravePrevNulls && !nulls) {
+    for (const [code, n] of cur) {
+      const before = gravePrev.get(code) || 0;
+      for (let i = before; i < n; i++) graveStamps.push({ code, turn: state.turnCount });
+    }
+  }
+  // a departure makes the per-code record ambiguous: counts cannot
+  // say WHICH copy left, so if any copy of a code left since the
+  // previous observation, drop that code's stamps entirely
+  // (silence) rather than risk attributing an arrival turn to a
+  // copy that was already in the grave
+  const prevCounts = gravePrev;
+  gravePrev = cur; gravePrevNulls = nulls;
+  if (prevCounts) {
+    graveStamps = graveStamps.filter(s => (cur.get(s.code) || 0) >= (prevCounts.get(s.code) || 0));
+  }
+  // stamps die with the copy that carried them: cap each code's
+  // stamps at the number of copies currently in the grave
+  const kept = new Map();
+  graveStamps = graveStamps.filter(s => {
+    const used = kept.get(s.code) || 0;
+    if (used >= (cur.get(s.code) || 0)) return false;
+    kept.set(s.code, used + 1);
+    return true;
+  });
+}
+function graveSentReason(code, turnCount) {
+  const n = graveSentCards().get(code);
+  if (!n) return null;
+  const tc = turnCount != null ? turnCount : (duelState ? duelState.turnCount : null);
+  if (tc == null) return null;
+  if (!graveStamps.some(s => s.code === code && s.turn === tc)) return null;
+  return 'このターンに墓地へ送られたため、' + CIRCLED_NUM[n - 1] + 'の効果は発動できません';
+}
+const EX_TYPE_TOKENS = [['Sモンスター', 0x2000], ['シンクロモンスター', 0x2000], ['Xモンスター', 0x800000], ['エクシーズモンスター', 0x800000], ['融合モンスター', 0x40], ['リンクモンスター', 0x4000000]];
+let _exLockCards = null; // Map code -> {n, typeBit, token} from the segment carrying the clause
+function exLockCards() {
+  if (_exLockCards) return _exLockCards;
+  _exLockCards = new Map();
+  for (const code of Object.keys(DATA && DATA.texts ? DATA.texts : {})) {
+    for (const seg of effectSegments(+code)) {
+      const m = seg.body.match(/このターン、自分は(.+?)しかEXデッキから特殊召喚できない/);
+      if (!m) continue;
+      const hit = EX_TYPE_TOKENS.find(([tok]) => m[1].indexOf(tok) >= 0);
+      if (hit) _exLockCards.set(+code, { n: seg.n, typeBit: hit[1], token: hit[0] });
+    }
+  }
+  return _exLockCards;
+}
+// The EX-summon type lock in force for the human right now, or
+// null: the restricting effect's number sits in this turn's own
+// chain-link record (the same evidence optUsedReason trusts).
+function exSummonLock() {
+  for (const [code, info] of exLockCards()) {
+    const rec = usedFxByCode.get(code);
+    if (rec && rec.n.has(info.n)) return { code, n: info.n, typeBit: info.typeBit, token: info.token };
+  }
+  return null;
+}
+function exLockReason(lock) {
+  return '《' + cardName(lock.code) + '》' + CIRCLED_NUM[lock.n - 1] + 'の効果の制約で、このターンは' + lock.token + 'しかEXデッキから特殊召喚できません';
+}
 // Test surface for the pool-coverage checks (same spirit as __mlock).
 window.__poolcov = {
   resolveYesNo, scopedEffect, optCovered, optCoverage, fieldCandidates, optUsedReason,
@@ -685,7 +828,14 @@ window.__poolcov = {
   usedFx() { return [...usedFxByCode.entries()].map(([code, r]) => ({ code, n: [...r.n], any: r.any })); },
   noteRevive(evs, state) { noteReviveFromEvents(evs, state); },
   revivedReason(code, loc, seq, tc) { return monsterRevivedReason(code, loc, seq, tc); },
-  reset() { usedFxTurn = -1; usedFxByCode.clear(); usedFxSeen = new Set(); monsterRevived = null; reviveArm = null; reviveBatch = 0; },
+  nameLimitCards() { return [...nameLimitCards().entries()].map(([code, scope]) => ({ code, scope })); },
+  nameLimitReason,
+  graveSentCards() { return [...graveSentCards().entries()].map(([code, n]) => ({ code, n })); },
+  trackGraveArrivals, graveSentReason,
+  graveStamps() { return graveStamps.map(s => ({ code: s.code, turn: s.turn })); },
+  exLockCards() { return [...exLockCards().entries()].map(([code, v]) => ({ code, n: v.n, typeBit: v.typeBit, token: v.token })); },
+  exSummonLock, exLockReason,
+  reset() { usedFxTurn = -1; usedFxByCode.clear(); usedFxSeen = new Set(); monsterRevived = null; reviveArm = null; reviveBatch = 0; usedNamesDuel.clear(); gravePrev = null; gravePrevNulls = 0; graveStamps = []; },
 };
 // Drain the engine's presentation event queue into SE cues.
 const ATTR_SE = { 1: 'atk_earth', 2: 'atk_water', 4: 'atk_fire', 8: 'atk_wind', 16: 'atk_light', 32: 'atk_dark', 64: 'atk_light' };
@@ -3197,7 +3347,9 @@ function openActionSheet(key) {
   // regardless of materials or deck, any monster); (b) the
   // 死者蘇生 rider on a monster it brought back this turn;
   // (c) every field-activatable effect already spent under its
-  // once-per-turn clause (tracked from the chain links);
+  // once-per-turn clause (tracked from the chain links) — and,
+  // brushup round 2, a spent card-name activation limit
+  // (nameLimitReason), which also serves the HAND sheet below;
   // (d) for Xyz monsters, the detach cost vs live materials /
   // a mill count vs the live deck. When none is derivable but
   // the card provably HAS a field-activatable effect, the row
@@ -3206,6 +3358,14 @@ function openActionSheet(key) {
   // act's own flag: identified effects carry numbered labels,
   // so matching the bare label text missed them.)
   let unusable = '';
+  if (zoneCode != null && con === HP && loc === E.LOC.HAND && !acts.some(a => a.activate)) {
+    // brushup round 2 (the hand surface): a card-name activation
+    // limit that is already spent is the one reason that fully
+    // explains a missing activation from the hand — the same
+    // greyed row, on the sheet the hand card itself opens.
+    const hReason = nameLimitReason(zoneCode);
+    if (hReason) unusable = '<div class="optbtn disabled">効果を発動<span class="reason">' + hReason + '</span></div>';
+  }
   if (zoneCode != null && con === HP && (loc === E.LOC.MZONE || loc === E.LOC.SZONE) && !acts.some(a => a.activate)) {
     let faceup = true;
     if (duelState) {
@@ -3218,6 +3378,7 @@ function openActionSheet(key) {
       if (loc === E.LOC.MZONE) {
         reason = monsterLockReason(zoneCode) || monsterRevivedReason(zoneCode, loc, seq);
       }
+      if (!reason) reason = nameLimitReason(zoneCode);
       if (!reason) reason = optUsedReason(zoneCode);
       if (!reason && loc === E.LOC.MZONE && isXyzCode(zoneCode)) {
         const norm = txt.replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
@@ -3266,9 +3427,30 @@ function openPileSheet(kind, con) {
   let body = '';
   if (kind === 'grave' || kind === 'removed') {
     const list = kind === 'grave' ? P.grave : P.removed;
-    body = list.length ? list.slice().reverse().map(c => '<div class="sortrow" data-info="' + (c != null ? c : '') + '">' + (c != null ? cardName(c) : '？') + '<span class="chev">›</span></div>').join('') : '<div class="sub">' + (kind === 'grave' ? '墓地は空です（0枚）' : '除外されているカードはありません（0枚）') + '</div>';
+    body = list.length ? list.slice().reverse().map(c => {
+      let row = '<div class="sortrow" data-info="' + (c != null ? c : '') + '">' + (c != null ? cardName(c) : '？') + '<span class="chev">›</span></div>';
+      // brushup round 2 (the grave surface): a grave effect barred
+      // on the turn its card was sent there says so under its row.
+      if (kind === 'grave' && con === HP && c != null) {
+        const gr = graveSentReason(c);
+        if (gr) row += '<div class="rowreason">' + gr + '</div>';
+      }
+      return row;
+    }).join('') : '<div class="sub">' + (kind === 'grave' ? '墓地は空です（0枚）' : '除外されているカードはありません（0枚）') + '</div>';
   } else if (kind === 'extra') {
-    body = con === HP ? (P.extra.length ? P.extra.map(c => '<div class="sortrow" data-info="' + c.code + '">' + cardName(c.code) + '<span class="chev">›</span></div>').join('') : '<div class="sub">EXデッキは空です（0枚）</div>') : '<div class="sub">相手のEXデッキは見られません（残り ' + P.extra.length + ' 枚）</div>';
+    // brushup round 2 (the EX surface): while an EX-summon type
+    // lock is live, an own EX monster of a blocked type that the
+    // engine offers no summon for carries the named reason.
+    const exLock = con === HP ? exSummonLock() : null;
+    const actSeqs = new Set(pileActs.map(pa => pa.seq));
+    body = con === HP ? (P.extra.length ? P.extra.map((c, i) => {
+      let row = '<div class="sortrow" data-info="' + c.code + '">' + cardName(c.code) + '<span class="chev">›</span></div>';
+      if (exLock && !actSeqs.has(i)) {
+        const d = cardData(c.code);
+        if (d && !(d.type & exLock.typeBit)) row += '<div class="rowreason">' + exLockReason(exLock) + '</div>';
+      }
+      return row;
+    }).join('') : '<div class="sub">EXデッキは空です（0枚）</div>') : '<div class="sub">相手のEXデッキは見られません（残り ' + P.extra.length + ' 枚）</div>';
   } else if (kind === 'deck') {
     body = '<div class="sub">残り ' + P.deckCount + ' 枚' + (state.deckTop[con] ? '<br>一番上（公開中）：' + cardName(state.deckTop[con]) : '') + '</div>';
   } else if (kind === 'hand') {
@@ -3810,6 +3992,9 @@ document.addEventListener('click', (ev) => {
     let reason = null;
     if (handEl.classList.contains('dim') && currentPrompt && currentPrompt.prompt.name === 'SELECT_BATTLECMD' && isMonster(+handEl.dataset.code))
       reason = 'バトルフェイズ中は通常召喚できません';
+    // brushup round 2: a spent card-name activation limit is the
+    // other mechanically certain reason a dimmed hand card can state
+    if (!reason && handEl.classList.contains('dim')) reason = nameLimitReason(+handEl.dataset.code);
     setPreview(+handEl.dataset.code, null, reason);
   }
   const zoneEl = ev.target.closest('[data-zone]');
@@ -4350,14 +4535,21 @@ function renderPreview() {
     stats = 'ATK ' + (atk !== d.atk ? '<span class="mod">' + atk + '</span>' : atk) +
       '／DEF ' + (def !== d.def ? '<span class="mod">' + def + '</span>' : def);
   }
-  const sig = previewState.code + '|' + stats + '|' + (card ? card.pos : '') + '|' + (card ? (card.materials || 0) : '') + '|' + (previewState.reason || '');
+  // brushup round 2: in compact mode (short viewports) the strip
+  // is one line tall and the stacked reason line is clipped away
+  // by the fixed height — the reason rides the title line there
+  // (and truncates before the name does). Taller strips keep the
+  // stacked form.
+  const compact = el.classList.contains('compact');
+  const sig = previewState.code + '|' + stats + '|' + (card ? card.pos : '') + '|' + (card ? (card.materials || 0) : '') + '|' + (previewState.reason || '') + '|' + (compact ? 'c' : '');
   if (sig === previewState.sig) return; // no DOM churn on unrelated re-renders
   previewState.sig = sig;
   el.innerHTML = '<div class="pv-art"></div><div class="pv-body">' +
     '<div class="pv-top"><span class="pv-name">' + cardName(previewState.code) + '</span>' +
-    (stats ? '<span class="pv-stats">' + stats + '</span>' : '') + '</div>' +
+    (stats ? '<span class="pv-stats">' + stats + '</span>' : '') +
+    (compact && previewState.reason ? '<span class="pv-reason-inline">' + previewState.reason + '</span>' : '') + '</div>' +
     '<div class="pv-meta">' + cardMetaLine(previewState.code, card ? (card.materials || 0) : null) + '</div>' +
-    (previewState.reason ? '<div class="pv-reason">' + previewState.reason + '</div>' : '') +
+    (!compact && previewState.reason ? '<div class="pv-reason">' + previewState.reason + '</div>' : '') +
     '<div class="pv-text">' + (cardText(previewState.code) || '') + '</div></div>';
 }
 function updatePreviewFromState(state) {
@@ -4470,6 +4662,7 @@ function wireSeg(id, apply) {
     updateAutoPassChip();
     fxResetDuel(); // FX snapshot/layers restart with the duel (stale overlays must not survive)
     bgmWantedRank = -1; bgmSeenKeys.clear(); // BGM stage ladder restarts with the duel
+    usedNamesDuel.clear(); gravePrev = null; gravePrevNulls = 0; graveStamps = []; // brushup round 2 trackers restart with the duel
     setBgmScene('normal', true);
     $('start').style.display = 'none';
     $('logline').textContent = 'エンジン起動中…';
@@ -4486,6 +4679,7 @@ function wireSeg(id, apply) {
         fxCaptureDom(); // pre-render hand geometry for the FX reflow (FLIP)
         drainSeEvents(state);
         trackUsedFx(state); // this turn's own activations, for cannot-activate reasons
+        trackGraveArrivals(state); // own grave arrivals by turn, for the grave-sheet reason
         render(state);
         updateBgm(state);
         fxProcess(fxEvs, state); // presentation FX overlays (read-only; board geometry is final now)

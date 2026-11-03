@@ -3618,3 +3618,146 @@ test-poolcov D asserts the scan finds EXACTLY this set:
   「《マジックカード「死者蘇生」》の効果で特殊召喚されたため、
   このターンは効果を発動できません」 (screenshot eyeballed).
 - Still unmeasured: sound feel, real-device WKWebView.
+
+## Brushup round 2 (2026-11-03): BU-11 strip overflow, reasons on the remaining surfaces, sheet-open cost
+
+Integration round over the brushup backlog (the user's standing
+direction: do not wait for the next daily loop). Worktree
+duel-app-brushup2 (feat/brushup-round2); evidence in b2shots/.
+
+### 1. BU-11 — the ATK/DEF strip overflowed sideways at the tile floor
+
+Root cause: the round-4 width budget was wrong twice, plus a
+third contributor. (a) The -.5px letter-spacing the budget
+assumed was never actually in the CSS — both strip rules stood
+at letter-spacing:0. (b) The "36px inner width of a 40px tile"
+was miscounted: a 40px slot leaves 34px for the line (40 − 2
+border − 2x2 strip padding). (c) The defmode rule
+(.slotstats.defmode span.defline b, specificity 0,3,2) kept DEF
+digits at 10px, above the smalltiles 9px rule (0,2,1) — defense
+lines were the widest of all. Live measurement before the fix
+(390x620, tile 40px, real duel): every 4-digit line 3-6px over
+(worst "DEF 1100" = 40px of text in 34px); at 390x700 (tile
+47px) even regular lines were +1px and 5-digit lines +4/+7px.
+Fix is CSS-only in index.html (tile sizes, zone geometry and
+the mid-duel freeze are untouched): letter-spacing:-.5px on
+.slotstats/.hstats at every size (the value the budget always
+assumed); big5 digits 9px -> 8px, and 7.5px at the floor
+(defline included, via a .big5.defmode rule); smalltiles
+defline digits brought down to the smalltiles 9px. Verified:
+Chromium width rigs (normal / defmode / big5 / defmode+big5
+strips) at 40px and 47px — every line fits; real duels after
+the fix at 390x620 and 390x700 — worst strip overflow over a
+full duel = 0px at both heights (before: 6px); a defense-
+position ATK 2600 / DEF 2200 at 620 reads in full, last digits
+intact (b2shots/board620-4digit.png, eyeballed; hand strips
+likewise, b2shots/s4-preview-620.png). Boundary: 6+-digit
+values are not accommodated — no in-pool line produces them
+(the builder's big5 threshold is >= 10000).
+
+### 2. Cannot-activate reasons on the remaining surfaces
+
+Covers the three groups the pool-coverage section 3 enumerated
+as NOT COVERED. Same discipline as before: sets derived from
+the pool's own texts, reasons only on mechanically certain
+evidence, silence otherwise. Gate: test-poolcov sections G/H/I
+(derivations asserted equal to the enumerated sets; behaviour
+spot-checks); section D's handling strings updated to match.
+
+(4) Card-name activation limits (「このカード名のカードは
+１ターンに１枚しか発動できない」: 死者蘇生 28958464 /
+おろかな副葬 35726888 / 七星の宝刀 45725480; 「デュエル中に
+１枚しか発動できない」: 現世と冥界の逆転 17484499) — derived
+by nameLimitCards(). Usage evidence is the chain-link record
+itself: turn scope reads usedFxByCode (any link of the code),
+duel scope a new usedNamesDuel set fed by the same tracker
+(cleared at duel start). Surfaces: the hand card's own action
+sheet gains the greyed 「効果を発動」 row with the reason when
+its activation is spent (openActionSheet HAND branch; the
+check also joins the field-sheet reason chain, so a set
+七星の宝刀 answers on the field sheet too), and the preview
+reason line states it when the card has no offered action at
+all (the BU-02 dim-tap path). A rendering gap found on the
+way: at 390x620 the preview is compact (~22px) and the stacked
+reason line was clipped by the strip's fixed height — the
+reason now rides the title line in compact mode (name/stats
+never shrink; the reason truncates first), stacked as before
+at taller sizes. Probes (real builders, production-shaped
+records, eyeballed): hand sheet at 620 and 700
+(b2shots/s2-hand-*.png); preview via a real battle-command
+tap (probe-b2s4) and the compact/stacked render check
+(probe-b2s4b, b2shots/s4b-preview-*.png).
+(5) Grave-sent timing (「このカードが墓地へ送られたターン
+には発動できない」, 巨神封じの矢 67037924 segment ②) —
+derived by graveSentCards(). Arrival evidence: trackGrave-
+Arrivals diffs the human's own grave (code multiset) across
+state updates and stamps arrivals with the turn. Deliberate
+silences: no stamp across an observation containing identity-
+less (null) entries, so the deck/grave swap of 《現世と冥界
+の逆転》 can never mint a claim; stamps are per CODE (with
+several copies in the grave the note marks the code, not the
+copy), and if any copy of a code leaves, that code's stamps
+drop entirely — counts cannot say which copy went, and an
+ambiguous record stays silent. Surface: the grave pile
+sheet puts 「このターンに墓地へ送られたため、②の効果は
+発動できません」 under the card's row on its arrival turn
+(probes b2shots/s1-grave-620.png / -700.png, eyeballed).
+(6) EX-summon type lock (「このターン、自分は○モンスター
+しかEXデッキから特殊召喚できない」, Trilosucuta 21368273
+segment ② -> Synchro only) — derived by exLockCards() with a
+token->type-bit table (S/シンクロ, X/エクシーズ, 融合,
+リンク). The lock is live when the restricting effect's own
+number sits in this turn's chain-link record (exSummonLock —
+①'s use does NOT raise it; test I3). Surface: the EXTRA pile
+sheet, where EX summons are launched — each own EX monster of
+a blocked type that carries no offered summon action gets
+「《マナドゥム・トリロスークタ》②の効果の制約で、この
+ターンはSモンスターしかEXデッキから特殊召喚できません」
+under its row (probe b2shots/s3-extra-620.png / -700.png:
+Luce x3 and Pluto carry it, the Synchro Horus does not).
+Boundary kept, by construction: selection grids only ever
+contain engine-offered cards, so a blocked monster has no row
+there to annotate — the pile sheet is the surface that lists
+the whole EX deck. The activation record has the same known
+edge as optUsedReason: a negated activation still counts in
+the record; in this matchup no card negates these activations.
+
+### 3. Sheet-open stall — re-profiled; the recorded cause does not hold
+
+The v4 record said the ~133ms sheet-open stall "is dominated
+by the sheet content's innerHTML construction". Re-profiled
+in the live page (390x620, software rendering, bench-b2.js):
+the parse of the heaviest sheet markup in the app (16-card
+grid with full texts, 5.6KB) costs 0.1ms in a detached
+template; the real builders' synchronous cost is <= 0.7ms
+median (28-row grave sheet, 16-card grid). The cost that WAS
+measurable at open is the LAYOUT of long sheet lists: a
+forced layout after opening the grid measured 4.3ms median /
+7.3 max, and the open+layout pair spiked to 52.7ms on first
+opens (bench2-b2.js). Fix: sheet list rows skip layout/paint
+while below the fold — content-visibility:auto with
+contain-intrinsic-size on #sheet .gcard (auto 104px) and
+#sheet .sortrow (auto 34px); rendered rows are unchanged.
+After: grid forced layout 0.9ms median / 1.5 max, reopen of
+the same markup 0.9 / 1.0, grave sheet 1.0 / 1.4.
+The 133ms figure itself was a whole-frame gap under the v4
+stage-0 live-play protocol. In this round's live-play frame
+recordings (gaps-b2.js, full duels), frames containing a
+sheet open measured 16.6-16.7ms with 0 of 3 over 33.4ms,
+before and after alike; whole-frame spikes (to ~183ms) still
+occur in play but do NOT coincide with sheet opens — they
+belong to FX-scene frames, the v4 programme's territory. The
+residual is returned to the brushup backlog with these
+numbers (BU-12). Still unmeasured: sound feel, real-device
+WKWebView frame rates.
+
+### Verification (this round)
+
+- All 20 suites pass on the integrated tree (node: node /
+  explore / phase2 / genesis / overlay / facedown / cpu /
+  cpu-tune / cpu-tune2 / ggfusion / swap / investigate /
+  poolcov; jsdom: ui / bgm / fx / fxidentify / layout /
+  minerva3 / zolga).
+- Real-browser frames eyeballed at 390x620 and 390x700 for
+  every surface above (paths inline). BU-11's worst-case
+  strip (defense position, 4-digit, 40px tile) is among them.

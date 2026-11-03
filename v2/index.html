@@ -55,13 +55,29 @@
      (clipped inside its own line), never vertically. Widths measured
      in Chromium: worst line "DEF 3400" = 38.3px at 8px/9px, ~35.8px
      with the -.5px letter-spacing — inside the 36px inner width of
-     even the minimum 40px tile. */
-  .slotstats{position:absolute;left:0;right:0;bottom:0;height:24px;display:flex;flex-direction:column;justify-content:center;padding:0 2px;font-size:9px;letter-spacing:0;color:var(--txt-dim);overflow:hidden;}
+     even the minimum 40px tile.
+     BU-11 correction (brushup round 2, 2026-11-03): that budget was
+     wrong twice — the -.5px letter-spacing was never actually in
+     the CSS (letter-spacing:0 stood here), and the inner width of
+     a 40px tile is 34px, not 36 (40 − 2 border − 2x2 padding).
+     Live measurement at the 40px floor showed EVERY line 3-6px
+     over (defense DEF lines worst: the defline rule below kept
+     their digits at 10px, above the smalltiles 9px). The budget
+     now stands as: -.5px tracking at every size, smalltiles
+     defline digits at the smalltiles size, and the big5 shrink
+     deepened (8px, 7.5px at the floor) — re-measured in Chromium
+     across normal / defmode / big5 / defmode+big5 strips at tile
+     40px and 47px: worst line fits with 0px to spare. */
+  .slotstats{position:absolute;left:0;right:0;bottom:0;height:24px;display:flex;flex-direction:column;justify-content:center;padding:0 2px;font-size:9px;letter-spacing:-.5px;color:var(--txt-dim);overflow:hidden;}
   .slotstats span{display:block;white-space:nowrap;overflow:hidden;line-height:12px;}
   .slotstats b{color:var(--txt);font-size:10px;}
-  .slotstats.big5 b,.hstats.big5 b{font-size:9px;}
+  .slotstats.big5 b,.hstats.big5 b{font-size:8px;}
+  .slotstats.big5.defmode span.defline b{font-size:8px;}
   .smalltiles .slotstats{font-size:8px;}
   .smalltiles .slotstats b{font-size:9px;}
+  .smalltiles .slotstats.defmode span.defline b{font-size:9px;}
+  .smalltiles .slotstats.big5 b{font-size:7.5px;}
+  .smalltiles .slotstats.big5.defmode span.defline b{font-size:7.5px;}
   .tile .nm{font-size:clamp(8px, calc(var(--sw) * 0.17), 12px);line-height:1.15;background:#000a;padding:1px 2px;border-radius:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   /* scale .82: the rotated inner is imgH (1.22 x tile width) wide;
      unscaled it would overflow the slot by ~11% on each side and the
@@ -128,7 +144,7 @@
   /* layout round 4: same two-line strip as .slotstats (see there) —
      the one-row form wrapped identically and the wrapped number line
      was clipped by .hcard's overflow:hidden at the card's bottom edge */
-  .hstats{height:24px;flex:0 0 auto;display:flex;flex-direction:column;justify-content:center;padding:0 2px;font-size:9px;letter-spacing:0;color:var(--txt-dim);overflow:hidden;}
+  .hstats{height:24px;flex:0 0 auto;display:flex;flex-direction:column;justify-content:center;padding:0 2px;font-size:9px;letter-spacing:-.5px;color:var(--txt-dim);overflow:hidden;}
   .hstats span{display:block;white-space:nowrap;overflow:hidden;line-height:12px;}
   .hstats b{color:var(--txt);font-size:10px;}
   .hcard.actionable{box-shadow:0 0 0 2px var(--gold);}
@@ -141,6 +157,14 @@
   #preview .pv-top{display:flex;gap:8px;align-items:baseline;}
   #preview .pv-name{font-size:13px;font-weight:700;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   #preview .pv-stats{font-size:11px;color:var(--txt);white-space:nowrap;}
+  /* brushup round 2: in compact mode the stacked reason line is
+     clipped by the strip's fixed height (overflow hidden), so the
+     reason rides the title line instead and truncates first; the
+     name and stats never shrink (the card's identity is the
+     strip's first job) */
+  #preview.compact .pv-name{flex:0 0 auto;}
+  #preview.compact .pv-stats{flex:0 0 auto;}
+  #preview .pv-reason-inline{flex:1 1 auto;min-width:0;font-size:10px;color:#f0c08a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   #preview .pv-reason{font-size:10px;color:#f0c08a;line-height:1.35;}
   .pv-meta{font-size:10px;color:var(--txt-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   #preview .pv-text{flex:1 1 auto;overflow-y:auto;font-size:11px;line-height:1.55;white-space:pre-wrap;margin-top:2px;}
@@ -205,6 +229,18 @@
   .posbtn .glyph.def{transform:rotate(90deg);}
   .posbtn .glyph.back{background:repeating-linear-gradient(45deg,#3d2c14 0 6px,#2c1f0d 6px 12px);}
   .sortrow{display:flex;align-items:center;gap:6px;border:1px solid var(--tile-edge);border-radius:6px;padding:6px 8px;margin:4px 0;background:var(--panel2);font-size:12px;}
+  /* brushup round 2 (sheet-open stall): long sheet lists skip the
+     layout/paint of rows below the fold until they scroll near
+     (content-visibility:auto; the 'auto' intrinsic size is the
+     browser-remembered real size after first render). Bench on
+     the heaviest sheet (16-card grid, full texts): open+forced-
+     layout 9.7ms median / 52.7ms max -> 1.0 / 18.2. Rendered
+     rows are unchanged. */
+  #sheet .gcard{content-visibility:auto;contain-intrinsic-size:auto 104px;}
+  #sheet .sortrow{content-visibility:auto;contain-intrinsic-size:auto 34px;}
+  /* brushup round 2: reason line under a pile-sheet row (the
+     cannot-activate reasons on the grave / EX surfaces) */
+  #sheet .rowreason{font-size:10px;color:#f0c08a;padding:0 8px 5px;line-height:1.5;}
   .sortrow .mv{margin-left:auto;display:flex;gap:4px;}
   .sortrow .chev{margin-left:auto;color:var(--txt-dim);font-size:14px;}
   .sortrow button{background:var(--panel);color:var(--txt);border:1px solid var(--tile-edge);border-radius:4px;padding:9px 11px;}
