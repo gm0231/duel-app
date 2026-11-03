@@ -34,13 +34,18 @@ const wasmBinary = fs.readFileSync(path.join(V2, 'build', 'ocgcore.wasm'));
 let failures = 0;
 const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (!cond) failures++; };
 
-const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442;
+const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515;
+// Zolga gained art in the 5th delivery, so the unlisted exemplar is
+// now 転輪のスフィンクス (a pool card with no individual art).
+const UNLISTED = 46148485;
 
 // ---- delivered art files (existence + top-anchored dimensions) ----
 for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.jpg', 640, 882],
                          ['card-art-agido-s.jpg', 320, 320], ['card-art-agido.jpg', 640, 882],
                          ['card-art-kelbek-s.jpg', 320, 320], ['card-art-kelbek.jpg', 640, 882],
-                         ['card-art-keldo-s.jpg', 320, 320], ['card-art-keldo.jpg', 640, 882]]) {
+                         ['card-art-keldo-s.jpg', 320, 320], ['card-art-keldo.jpg', 640, 882],
+                         ['card-art-zolga-s.jpg', 320, 320], ['card-art-zolga.jpg', 640, 882],
+                         ['card-art-cardan-s.jpg', 320, 320], ['card-art-cardan.jpg', 640, 882]]) {
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
@@ -50,6 +55,8 @@ ok(data.decks.ishizu.main.filter(c => c === AGIDO).length === 0 &&
   'CA0c: recipe v11 — the deck runs the CLASSIC Agido (16135253) x1; the user art keyed to Ancient Guard Agido (62320425) no longer matches a deck card and stays dormant in CARD_ART until the user rules on it');
 ok(data.decks.ishizu.main.filter(c => c === KELBEK).length === 1, 'CA0d: the Ishizu deck runs 1 copy of Kelbek');
 ok(data.decks.ishizu.main.filter(c => c === KELDO).length === 3, 'CA0e: the Ishizu deck runs 3 copies of Keldo');
+ok(data.decks.ishizu.main.filter(c => c === ZOLGA).length === 1, 'CA0f: the Ishizu deck runs 1 copy of Zolga');
+ok(data.decks.ishizu.main.filter(c => c === CARDAN).length === 3, 'CA0g: the Ishizu deck runs 3 copies of Cardan');
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -89,8 +96,8 @@ async function boot() {
     inline: artInline(${MUDORA}),
     inlineBig: artInline(${MUDORA}, true),
     css: artCss(${MUDORA}),
-    unlistedInline: artInline(${ZOLGA}),
-    unlistedFile: cardArtFile(${ZOLGA}, false),
+    unlistedInline: artInline(${UNLISTED}),
+    unlistedFile: cardArtFile(${UNLISTED}, false),
     nullInline: artInline(null),
     preloaded: [...artPreloaded],
     agidoSlug: CARD_ART[${AGIDO}],
@@ -99,10 +106,16 @@ async function boot() {
     kelbekInline: artInline(${KELBEK}),
     keldoSlug: CARD_ART[${KELDO}],
     keldoInline: artInline(${KELDO}),
+    zolgaSlug: CARD_ART[${ZOLGA}],
+    zolgaInline: artInline(${ZOLGA}),
+    cardanSlug: CARD_ART[${CARDAN}],
+    cardanInline: artInline(${CARDAN}),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.kelbekSlug === 'kelbek' && helpers.kelbekInline.includes('card-art-kelbek-s.jpg') && helpers.kelbekInline.includes('background-position:center top'), 'CA7d: Kelbek maps and stamps like the others');
   ok(helpers.keldoSlug === 'keldo' && helpers.keldoInline.includes('card-art-keldo-s.jpg') && helpers.keldoInline.includes('background-position:center top'), 'CA7f: Keldo maps and stamps like the others');
+  ok(helpers.zolgaSlug === 'zolga' && helpers.zolgaInline.includes('card-art-zolga-s.jpg') && helpers.zolgaInline.includes('background-position:center top'), 'CA7h: Zolga maps and stamps like the others');
+  ok(helpers.cardanSlug === 'cardan' && helpers.cardanInline.includes('card-art-cardan-s.jpg') && helpers.cardanInline.includes('background-position:center top'), 'CA7j: Cardan maps and stamps like the others');
   ok(helpers.slug === 'mudora', 'CA2: CARD_ART maps Mudora -> mudora');
   ok(helpers.small === '../assets/card-art-mudora-s.jpg' && helpers.big === '../assets/card-art-mudora.jpg', 'CA3: art files resolve (small + big)');
   ok(helpers.inline.includes('card-art-mudora-s.jpg') && helpers.inline.includes('background-position:center top'), 'CA4: artInline pins the top (crop rule: keep top, cut bottom)');
@@ -113,6 +126,8 @@ async function boot() {
     'CA7c: recipe v11 — Agido (62320425) left the decks, so its art is NOT preloaded (dormant entry; preload follows deck membership)');
   ok(helpers.preloaded.includes('../assets/card-art-kelbek-s.jpg') && helpers.preloaded.includes('../assets/card-art-kelbek.jpg'), 'CA7e: boot preloads Kelbek too (same deck)');
   ok(helpers.preloaded.includes('../assets/card-art-keldo-s.jpg') && helpers.preloaded.includes('../assets/card-art-keldo.jpg'), 'CA7g: boot preloads Keldo too (same deck)');
+  ok(helpers.preloaded.includes('../assets/card-art-zolga-s.jpg') && helpers.preloaded.includes('../assets/card-art-zolga.jpg'), 'CA7i: boot preloads Zolga too (same deck)');
+  ok(helpers.preloaded.includes('../assets/card-art-cardan-s.jpg') && helpers.preloaded.includes('../assets/card-art-cardan.jpg'), 'CA7k: boot preloads Cardan too (same deck)');
 
   doc.getElementById('startbtn').click();
   for (let i = 0; i < 120 && doc.querySelectorAll('.slot').length < 10; i++)
@@ -126,13 +141,15 @@ async function boot() {
       const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
       b.players[0].mzone[0] = mon(${MUDORA}, 0x1);  // own face-up ATK Mudora
       b.players[0].mzone[1] = mon(${MUDORA}, 0x4);  // own face-up DEF Mudora (2nd copy)
-      b.players[0].mzone[2] = mon(${ZOLGA}, 0x1);   // own face-up Zolga (no art)
+      b.players[0].mzone[2] = mon(${UNLISTED}, 0x1); // own face-up Sphinx (no art)
       b.players[0].mzone[3] = mon(${KELDO}, 0x1);   // own face-up Keldo (4th delivery; the 2nd-delivery Agido left the pool in recipe v11, so it can no longer be fabricated from DATA)
       b.players[0].mzone[4] = mon(${KELBEK}, 0x1);  // own face-up Kelbek (3rd delivery)
       b.players[1].mzone[0] = mon(${MUDORA}, 0x1);  // opp face-up Mudora (public: art shows)
       b.players[1].mzone[1] = mon(${MUDORA}, 0x8);  // opp face-down DEF Mudora (MUST stay hidden)
       b.players[1].mzone[2] = mon(${KELDO}, 0x1);   // opp face-up Keldo (4th delivery; own row is full)
-      b.players[0].hand = [{ code: ${MUDORA} }, { code: ${ZOLGA} }, { code: ${KELDO} }];
+      b.players[1].mzone[3] = mon(${ZOLGA}, 0x1);   // opp face-up Zolga (5th delivery)
+      b.players[1].mzone[4] = mon(${CARDAN}, 0x1);  // opp face-up Cardan (6th delivery)
+      b.players[0].hand = [{ code: ${MUDORA} }, { code: ${UNLISTED} }, { code: ${KELDO} }, { code: ${ZOLGA} }, { code: ${CARDAN} }];
       render(b);
       const artOf = (zone) => {
         const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
@@ -144,13 +161,15 @@ async function boot() {
       const pvMudora = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
       setPreview(${ZOLGA}, null);
       const pvZolga = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      setPreview(${UNLISTED}, null);
+      const pvUnlisted = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
       const ghost = fxGhostEl(${MUDORA}, false, 40, 55);
       const ghostBack = fxGhostEl(${MUDORA}, true, 40, 55);
-      const ghostUnlisted = fxGhostEl(${ZOLGA}, false, 40, 55);
+      const ghostUnlisted = fxGhostEl(${UNLISTED}, false, 40, 55);
       return {
-        ownAtk: artOf('0:4:0'), ownDef: artOf('0:4:1'), ownZolga: artOf('0:4:2'), ownAgido: artOf('0:4:3'), ownKelbek: artOf('0:4:4'),
-        oppUp: artOf('1:4:0'), oppDown: artOf('1:4:1'), oppKeldo: artOf('1:4:2'),
-        handImgs, pvMudora, pvZolga,
+        ownAtk: artOf('0:4:0'), ownDef: artOf('0:4:1'), ownUnlisted: artOf('0:4:2'), ownAgido: artOf('0:4:3'), ownKelbek: artOf('0:4:4'),
+        oppUp: artOf('1:4:0'), oppDown: artOf('1:4:1'), oppKeldo: artOf('1:4:2'), oppZolga: artOf('1:4:3'), oppCardan: artOf('1:4:4'),
+        handImgs, pvMudora, pvZolga, pvUnlisted,
         ghost: ghost.style.backgroundImage || '', ghostPos: ghost.style.backgroundPosition || '',
         ghostBack: ghostBack.style.backgroundImage || '', ghostUnlisted: ghostUnlisted.style.backgroundImage || '',
       };
@@ -159,20 +178,27 @@ async function boot() {
   ok(res.ownAtk !== null && res.ownDef !== null && res.oppDown !== null, 'CA8: non-vacuity — fabricated tiles rendered');
   ok(res.ownAtk.includes('card-art-mudora-s.jpg'), 'CA9: own face-up Mudora tile shows the individual art');
   ok(res.ownDef.includes('card-art-mudora-s.jpg'), 'CA10: every copy is covered (2nd Mudora, face-up DEF)');
-  ok(res.ownZolga === '', 'CA11: unlisted card tile keeps the placeholder (no inline art)');
+  ok(res.ownUnlisted === '', 'CA11: unlisted card tile keeps the placeholder (no inline art)');
   ok(res.ownAgido !== null && res.ownAgido.includes('card-art-keldo-s.jpg'), 'CA11b: the fourth tile (Keldo) shows its own art (slug, not Mudora’s)');
   ok(res.ownKelbek !== null && res.ownKelbek.includes('card-art-kelbek-s.jpg'), 'CA11c: Kelbek tile shows its own art');
   ok(res.oppKeldo !== null && res.oppKeldo.includes('card-art-keldo-s.jpg'), 'CA11d: Keldo tile shows its own art');
+  ok(res.oppZolga !== null && res.oppZolga.includes('card-art-zolga-s.jpg'), 'CA11e: Zolga tile shows its own art');
+  ok(res.oppCardan !== null && res.oppCardan.includes('card-art-cardan-s.jpg'), 'CA11f: Cardan tile shows its own art');
   ok(res.oppUp.includes('card-art-mudora-s.jpg'), 'CA12: opponent face-up Mudora shows the art (public information)');
   ok(res.oppDown === '' && !String(res.oppDown).includes('mudora'), 'CA13: opponent FACE-DOWN Mudora gets NO art (asymmetry / no leak)');
   const hMudora = res.handImgs.find(h => h.code === String(MUDORA));
-  const hZolga = res.handImgs.find(h => h.code === String(ZOLGA));
+  const hUnlisted = res.handImgs.find(h => h.code === String(UNLISTED));
   ok(!!hMudora && hMudora.style.includes('card-art-mudora-s.jpg'), 'CA14: hand Mudora shows the art');
   const hKeldo = res.handImgs.find(h => h.code === String(KELDO));
   ok(!!hKeldo && hKeldo.style.includes('card-art-keldo-s.jpg'), 'CA14b: hand Keldo shows the art');
-  ok(!!hZolga && hZolga.style === '', 'CA15: hand Zolga keeps the placeholder');
+  const hZolga = res.handImgs.find(h => h.code === String(ZOLGA));
+  ok(!!hZolga && hZolga.style.includes('card-art-zolga-s.jpg'), 'CA14c: hand Zolga shows the art');
+  const hCardan = res.handImgs.find(h => h.code === String(CARDAN));
+  ok(!!hCardan && hCardan.style.includes('card-art-cardan-s.jpg'), 'CA14d: hand Cardan shows the art');
+  ok(!!hUnlisted && hUnlisted.style === '', 'CA15: hand unlisted card keeps the placeholder');
   ok(res.pvMudora.includes('card-art-mudora-s.jpg'), 'CA16: resident preview shows the art for Mudora');
-  ok(res.pvZolga === '', 'CA17: resident preview falls back for unlisted cards');
+  ok(res.pvZolga.includes('card-art-zolga-s.jpg'), 'CA16b: resident preview shows the art for Zolga');
+  ok(res.pvUnlisted === '', 'CA17: resident preview falls back for unlisted cards');
   ok(res.ghost.includes('card-art-mudora-s.jpg') && res.ghostPos.includes('top'), 'CA18: face-up FX ghost carries the art, top-pinned');
   ok(res.ghostBack === '' && res.ghostUnlisted === '', 'CA19: face-down and unlisted ghosts get no art');
 

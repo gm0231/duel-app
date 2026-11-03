@@ -38,7 +38,7 @@ function cardData(code) { return (DATA && DATA.cards[code]) || null; }
 // bottom — never crop the head. That is why artInline pins
 // background-position to top; the delivered files are themselves
 // top-anchored crops.
-const CARD_ART = { 99937011: 'mudora', 62320425: 'agido', 25926710: 'kelbek', 63542003: 'keldo' }; // 剣神官ムドラ / 古衛兵アギド / 古尖兵ケルベク / 宿神像ケルドウ (user art 2026-11-03)
+const CARD_ART = { 99937011: 'mudora', 62320425: 'agido', 25926710: 'kelbek', 63542003: 'keldo', 31525442: 'zolga', 86605515: 'cardan' }; // 剣神官ムドラ / 古衛兵アギド / 古尖兵ケルベク / 宿神像ケルドウ / 予見者ゾルガ / 賢瑞官カルダーン (user art 2026-11-03)
 function cardArtFile(code, big) {
   const s = code != null ? CARD_ART[code] : null;
   return s ? '../assets/card-art-' + s + (big ? '.jpg' : '-s.jpg') : null;
@@ -3040,19 +3040,28 @@ function tileHTML(card, con, actKey, loc) {
   // rotated every S/T tile 90 degrees (user report 2026-11-03)
   const isDef = loc === E.LOC.MZONE && (card.pos & E.POS_DEFENSE) !== 0;
   const showFace = faceUp || con === HP;
+  // the owner's own face-down cards (user design 2026-11-03): no plain
+  // back and no 「裏」 badge — the back pattern is veiled over the real
+  // face, which ghosts through with a slow opacity breath (.setown).
+  // Opponent face-down cards keep the plain back (showFace false).
+  const ownSet = con === HP && !faceUp && card.code != null;
   const nm = showFace && card.code != null ? cardName(card.code) : '';
   const ctrTotal = card.counters ? (Array.isArray(card.counters) ? card.counters.reduce((a, c) => a + (c.count || 0), 0) : card.counters) : 0;
-  return '<div class="tile' + (isDef ? ' def' : '') + (showFace ? '' : ' back') +
+  return '<div class="tile' + (isDef ? ' def' : '') + (showFace ? '' : ' back') + (ownSet ? ' setown' : '') +
     (card.materials >= 2 ? ' mats2' : card.materials === 1 ? ' mats1' : '') +
     (actKey && actionMap.has(actKey) ? ' actionable' : '') + '"' +
     (actKey ? ' data-act="' + actKey + '"' : '') + '>' +
     ((card.materials || isXyzCode(card.code)) ? '<div class="mats">×' + (card.materials || 0) + '</div>' : '') +
-    (con === HP && !faceUp && card.code != null ? '<div class="setbadge"' + ((card.materials || isXyzCode(card.code)) ? ' style="top:15px"' : '') + '>裏</div>' : '') +
     (ctrTotal ? '<div class="ctrs">◉' + ctrTotal + '</div>' : '') +
     // the artwork lives INSIDE .inner (round B): in defense position
     // the whole inner — art + name band — rotates 90 degrees, while
-    // the corner badges (.mats/.ctrs) and the stat strip stay upright
+    // the corner badges (.mats/.ctrs) and the stat strip stay upright.
+    // The .art layer is the ONLY drawing of the card face: the tile's
+    // own background must stay plain, or an unrotated copy of the face
+    // (or of the back pattern) shows behind the rotated inner and the
+    // tile reads as two overlapping cards (user report 2026-11-03).
     '<div class="inner"><div class="art"' + (showFace && card.code != null ? artInline(card.code) : '') + '></div>' +
+    (ownSet ? '<div class="veil"></div>' : '') +
     (nm ? '<div class="nm">' + nm + '</div>' : '') +
     '</div></div>';
 }

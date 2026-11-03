@@ -4061,6 +4061,60 @@ shows deck 40 after the opening draw, EX 15, recipe cards in
 hand). Card faces in those local captures show the fallback
 tablet art — the image host is not reachable from the capture
 sandbox; production image delivery is unchanged.
+## Set-card visuals (2026-11-03): double-draw defects + own-set ghost + user card back
+
+User reports (real device): (1) face-up DEFENSE tiles kept an
+upright copy of the artwork behind the rotated card; (2) face-down
+DEFENSE tiles read as two overlapping cards (chevron moire);
+(3) own set cards should show the back pattern veiled over the real
+face, ghosting through with a slow light/dark breath, instead of a
+plain back / 「裏」 badge. Later the same day the user supplied a
+new card-back design (golden hieroglyph vortex on black) and ruled
+it replaces the CSS stripe back on EVERY face-down surface.
+
+Root cause of (1)+(2): the card face / back pattern was drawn
+TWICE — as the .tile element's own background (never rotates) and
+inside .inner .art (the layer that rotates in defense position).
+Face-up DEF: upright art showed around the rotated inner.
+Face-down DEF: upright stripes + 90°-rotated stripes crossed into
+a herringbone that read as two cards. The position-change
+animation had the same residue (it rotates .inner over the tile's
+own art). Fix: .tile's background is plain #3a2f1d and .tile.back
+paints nothing of its own; .art is the single drawing layer for
+both face and back.
+
+Own-set design: tiles for the human's face-down cards carry
+.setown (tileHTML: con === HP && !faceUp && code known). The 「裏」
+setbadge is gone. Inside .inner, a .veil layer over .art carries
+the card-back image and breathes: @keyframes setbreath, opacity
+0.58 <-> 0.86, 4.6s ease-in-out infinite alternate (opacity only —
+no per-frame shadow/filter writes). The veil sits inside .inner,
+so a face-down DEFENSE tile carries face+veil sideways as ONE
+card. Opponent face-down tiles keep .back (image only, no veil):
+information asymmetry preserved. Detail/info views unchanged.
+
+User card back: source ~/workspace/duel-assets/
+card-back-user-20261103.jpg (1024x1536) -> distribution copy
+assets/card-back-s.jpg (320x480, q82, 62KB; same width policy as
+card-art-placeholder-s.jpg). Applied via center/cover (the
+vortex centre lands on the tile centre) at every face-down
+surface: .tile.back .inner .art, .hcard.back .himg (opponent
+hand), .posbtn .glyph.back, .fx-ghost.back, .fx-peel, and the
+.setown veil. The old repeating-linear-gradient stripe back is
+removed everywhere.
+
+Verification: new v2/test-setvis.js (SV1–SV12 + SV3b/SV3c per
+surface) — CSS single-draw contract, keyframes animate opacity
+only, DOM classes/veil per owner and position, asymmetry gates.
+Real-browser frames (cap-setvis.js, parked duel + fabricated
+board, 390x620/700): shots-setvis/before-* reproduce both defects
+(chevron on opp face-down DEF, upright residue behind DEF
+tiles); after2-* show one sideways back for face-down DEF, clean
+slots behind face-up DEF, opponent backs in the new design, and
+own set tiles ghosting — after2-h700-t0 (veil near opacity min,
+ghost strongest) vs after2-h700-t2 (near max, ghost faintest)
+bracket the breath.
+
 ## Per-card illustrations (decided + first delivery, 2026-11-03)
 
 Decision (user): instead of one shared placeholder for all 63
@@ -4106,6 +4160,7 @@ same code the finisher/ace scenes use).
 Regression: v2/test-cardart.js (CA0-CA19) — mapping, top-pin,
 fallback emptiness, preload contents, DOM contract on a
 fabricated board incl. the opponent-face-down no-leak case.
+
 ## Brushup round 3 (backlog leftovers: BU-12 / BU-13 / DS-07 / DS-09)
 
 ### BU-12 — engine processing bursts: localized, NOT force-fixed
@@ -4272,3 +4327,41 @@ test-cardart adapted accordingly: CA0c (deck composition), CA7c
 (Agido art is NOT preloaded now), and the fabricated board's
 fourth tile is Keldo instead of the departed Agido (CA11b);
 the mechanism checks (map/inline/asymmetry/ghost) are unchanged.
+Fifth delivery: 《予見者ゾルガ》 31525442 (x1 in the Ishizu
+deck). Source: ~/workspace/duel-assets/zolga-user-20261103.jpg
+(1024x1536 — blue-masked seer in white robes, visions of the
+future floating around him). Small file = top-anchored
+full-width square crop x0-1024 / y0-1024 -> 320x320 (30KB):
+the blue mask sits large at top centre with the gold collar
+and the glowing core inside; the robe's lower swirls are the
+sanctioned bottom cut. Big file = full width x y0-1411 ->
+640x882 (124KB). One line in CARD_ART; test-cardart gained
+CA0f/CA7h/CA7i/CA11e/CA14c/CA16b (48 checks). NOTE: Zolga was
+the test suite's unlisted exemplar (fallback checks CA6/CA11/
+CA15/CA17); that role moved to 《転輪のスフィンクス》 46148485
+(UNLISTED), so the fallback contract is still pinned on a real
+pool card. Real-play frames (cap-zolga.js, shots-zolga/):
+Zolga drawn and normal-summoned through the real sheet at
+390x700 (tile + resident preview — the mask reads at tile
+size), a fabricated five-arts board at 390x620 (all five
+deliveries on field and in hand), cut-in via fxCutinShow as
+before.
+
+Sixth delivery: 《賢瑞官カルダーン》 86605515 (x3 in the Ishizu
+deck). Source: ~/workspace/duel-assets/cardan-user-20261103.jpg
+(1024x1536 — ibis-headed priest with purple magic in one hand
+and a serpent staff topped by a glowing orb, temple hall).
+Small file = top-anchored full-width square crop x0-1024 /
+y0-1024 -> 320x320 (41KB): the golden ibis head sits at top
+centre-left with the purple magic hand and the staff orb both
+inside the window; only the robe's lower half is cut, per the
+rule. Big file = full width x y0-1411 -> 640x882 (158KB).
+One line in CARD_ART; test-cardart gained CA0g/CA7j/CA7k/
+CA11f/CA14d (55 checks). Real-play frames (cap-cardan.js,
+shots-cardan/): Cardan drawn and normal-summoned through the
+real sheet at 390x700 (the tile and the resident preview read
+clearly at tile size; his ① is an on-summon optional effect,
+so the capture answers 発動しない / パス through the real UI
+before shooting the field), a fabricated six-arts board at
+390x620 (all six deliveries on field and in hand), cut-in via
+fxCutinShow as before.
