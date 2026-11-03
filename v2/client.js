@@ -38,7 +38,7 @@ function cardData(code) { return (DATA && DATA.cards[code]) || null; }
 // bottom — never crop the head. That is why artInline pins
 // background-position to top; the delivered files are themselves
 // top-anchored crops.
-const CARD_ART = { 99937011: 'mudora', 62320425: 'agido', 25926710: 'kelbek', 63542003: 'keldo', 31525442: 'zolga', 86605515: 'cardan', 46148485: 'sphinx', 38699854: 'taiyou', 14087893: 'tsuki', 79106360: 'chaospod', 9350312: 'oka', 62133026: 'hana', 36745317: 'mori', 14108995: 'kakan', 15079028: 'carbon', 55702233: 'silky', 36898537: 'horus' }; // 剣神官ムドラ / 古衛兵アギド / 古尖兵ケルベク / 宿神像ケルドウ / 予見者ゾルガ / 賢瑞官カルダーン / 転輪のスフィンクス / 太陽の書 / 月の書 / カオスポッド / 丘と芽吹の春化精 / 花と野原の春化精 / 森と目覚の春化精 / 春化精の花冠 / 地久神－カルボン / 生きる偲びのシルキィ / メタファイズ・ホルス・ドラゴン (user art 2026-11-03)
+const CARD_ART = { 99937011: 'mudora', 62320425: 'agido', 25926710: 'kelbek', 63542003: 'keldo', 31525442: 'zolga', 86605515: 'cardan', 46148485: 'sphinx', 38699854: 'taiyou', 14087893: 'tsuki', 79106360: 'chaospod', 9350312: 'oka', 62133026: 'hana', 36745317: 'mori', 14108995: 'kakan', 15079028: 'carbon', 55702233: 'silky', 36898537: 'horus', 98715423: 'hakamori' }; // 剣神官ムドラ / 古衛兵アギド / 古尖兵ケルベク / 宿神像ケルドウ / 予見者ゾルガ / 賢瑞官カルダーン / 転輪のスフィンクス / 太陽の書 / 月の書 / カオスポッド / 丘と芽吹の春化精 / 花と野原の春化精 / 森と目覚の春化精 / 春化精の花冠 / 地久神－カルボン / 生きる偲びのシルキィ / メタファイズ・ホルス・ドラゴン (user art 2026-11-03) / 墓守の罠 (user art 2026-11-04, 18th delivery — the first TRAP with individual art, and a keycard-activation presentation target)
 // ---- deck-scoped art overrides (user decision 2026-11-03): a card
 // can carry a DIFFERENT illustration while it belongs to a specific
 // deck. DECK_ART maps deck id (the data.json decks key) -> passcode
@@ -2495,7 +2495,7 @@ function fxStressScene() {
 function fxResetFoundation() {
   fxScenes = []; fxBursts = [];
   fxStopUntilWall = 0; fxTimeMs = 0; fxLastWall = 0;
-  fxAceSceneRef = null; fxFinisherSceneRef = null; fxAceRecent = null; // stage 3 scene refs (hosts are wiped by fxResetDuel)
+  fxAceSceneRef = null; fxFinisherSceneRef = null; fxAceRecent = null; fxKeycardSceneRef = null; // stage 3 scene refs (hosts are wiped by fxResetDuel)
   fxChainWordScene = null; fxBannerScene = null; // V4 scene refs
   // redesign E: the sweep's leftovers live outside #fxlayer (the
   // hairline is a #midbar child, the seated state a #phaseinfo
@@ -4093,6 +4093,97 @@ function fxAceSceneV3(o) {
   fxAceSceneRef = sc;
   return sc;
 }
+// ---- keycard spell/trap activation cut-in (user, 2026-11-04):
+// a key card that is a SPELL or TRAP gets an ace-grade presentation
+// when it ACTIVATES — the same trigger that raises the BGM ladder
+// (the codes come from KEYCARD_ACTIVATE_CODES, the keycard
+// definitions themselves, never a per-name branch in the FX code).
+// The summon ace scene is built around materials converging on an
+// empty zone, so an activation — the card already stands in its
+// S/T zone — takes the same STAGE instead: a gold frame stands
+// over the card's own tile, the scrim rises, and the card itself
+// stands large with its name banner. Shorter than the summon
+// scene (2400 ms): an activation usually sits inside a chain and
+// must not hold the duel up. While it runs it OWNS the event —
+// fxRoundBEvents skips the generic fxSetActivate tilt pop for the
+// same activation, so the two never stack. Any tap skips to the
+// exit, like the ace scene.
+let fxKeycardSceneRef = null;
+function fxKeycardSkip() {
+  const sc = fxKeycardSceneRef;
+  if (!sc || sc.dead || sc.skipLocal != null) return;
+  const local = fxTimeMs - sc.t0;
+  if (local < 2000) { sc.skipLocal = local; sc.dur = local + 420; }
+}
+function fxKeycardCutin(code, con, key) {
+  const layer = fxLayerEl(); if (!layer) return null;
+  const host = $('fxcutin'); if (!host) return null;
+  const app = $('app'); if (!app) return null;
+  const ar = fxRel(app);
+  const cols = FX_PORTAL_COLS.generic;
+  const nodes = [];
+  // zone side: the gold frame over the activating card's own tile
+  // (the card does not move; the frame is what says this one is
+  // the key card — the same preset fxSetActivate uses for chain
+  // links, held for the whole presentation here)
+  let frameEl = null;
+  const slotEl = key ? fxSlotEl(key) : null;
+  if (slotEl) {
+    const r = fxRel(slotEl);
+    frameEl = fxNode('fx3-goldframe', r.cx, r.cy, Math.max(10, r.w - 2), Math.max(10, r.h - 2));
+    if (frameEl) { frameEl.style.opacity = '0'; frameEl.style.zIndex = 6; nodes.push(frameEl); }
+  }
+  // presentation side (#fxcutin): scrim, the big card (big art
+  // file, top-anchored; unlisted key S/T fall back to the shared
+  // placeholder through the .bigcard class background, exactly
+  // like the summon cut-in), the name banner, burst rings.
+  host.innerHTML = ''; host.className = 'on';
+  const hmk = (cls) => { const n2 = document.createElement('div'); n2.className = cls; host.appendChild(n2); nodes.push(n2); return n2; };
+  const scrim = hmk('scrim'); scrim.style.opacity = '0';
+  const vw = Math.min(window.innerWidth || 390, 430);
+  const cw = Math.round(Math.min(250, vw * 0.62)), chh = Math.round(cw * 1.38);
+  const card = hmk('bigcard'); card.style.width = cw + 'px'; card.style.height = chh + 'px'; card.style.opacity = '0';
+  artApply(card, code, true, deckKeyOfSeat(con));
+  card.style.boxShadow = '0 0 42px ' + cols[0] + '77, 0 6px 24px #000c';
+  card.innerHTML = '<div class="nm' + kindCls(code) + '">' + cardName(code) + '</div>';
+  const banner = hmk('banner'); banner.style.opacity = '0';
+  const d = cardData(code);
+  banner.innerHTML = '<div class="cn">' + cardName(code) + '</div><div class="rule"></div><div class="cs">' + (d && (d.type & 0x4) ? '罠カード' : '魔法カード') + '</div>';
+  const ruleEl = banner.querySelector('.rule');
+  const ccx = ar.cx, ccy = ar.y + ar.h * 0.40;
+  const ringMk = () => { const r = hmk('fx fx3-ring'); r.style.left = (ccx - 32) + 'px'; r.style.top = (ccy - 32) + 'px'; r.style.width = '64px'; r.style.height = '64px'; r.style.borderColor = cols[0]; r.style.opacity = '0'; return r; };
+  const ringA = ringMk(), ringB = ringMk();
+  fxSpawnBurst('top', { seed: (Math.random() * 1e9) | 0, o: [ccx, ccy], n: 20, t0: fxTimeMs + 350, life: [380, 720], speed: [120, 300], ang: [0, Math.PI * 2], grav: 300, dragK: 2.2, size: [3, 7], cols: [cols[0], '#ffffff', cols[1]], alpha: .95 });
+  const sc = fxAddScene({
+    kind: 'keycardact', dur: 2400,
+    render(t) {
+      const te = sc.skipLocal != null && t > sc.skipLocal ? 2000 + (t - sc.skipLocal) : t;
+      const holdOut = 1 - fxSeg(te, 2000, 2320);
+      if (frameEl) frameEl.style.opacity = String(0.95 * fxSeg(te, 0, 160) * (1 - fxSeg(te, 1900, 2320)));
+      if (scrim) scrim.style.opacity = String(0.78 * fxSeg(te, 150, 400) * (1 - fxSeg(te, 2050, 2320)));
+      if (card) {
+        const sIn = 1.35 - 0.35 * FXE.settle(fxSeg(te, 300, 750));
+        const sOut = 1 - 0.15 * fxSeg(te, 2000, 2320);
+        card.style.transform = 'translate(-50%,-50%) translateY(' + (6 * fxSeg(te, 2000, 2320)).toFixed(1) + 'px) scale(' + (sIn * sOut).toFixed(3) + ')';
+        card.style.opacity = String(fxSeg(te, 300, 430) * holdOut);
+      }
+      if (ringA) { const u = FXE.outCubic(fxSeg(te, 350, 950)); ringA.style.transform = 'scale(' + (0.4 + 1.2 * u).toFixed(3) + ')'; ringA.style.opacity = String(0.8 * (1 - u) * (te >= 350 ? 1 : 0)); }
+      if (ringB) { const u = FXE.outCubic(fxSeg(te, 500, 1100)); ringB.style.transform = 'scale(' + (0.4 + 1.2 * u).toFixed(3) + ')'; ringB.style.opacity = String(0.7 * (1 - u) * (te >= 500 ? 1 : 0)); }
+      if (banner) {
+        banner.style.opacity = String(fxSeg(te, 500, 800) * holdOut);
+        banner.style.transform = 'translateX(' + (-26 * (1 - FXE.snap(fxSeg(te, 500, 800)))).toFixed(1) + 'px)';
+        if (ruleEl) { ruleEl.style.transform = 'scaleX(' + fxSeg(te, 580, 800).toFixed(3) + ')'; ruleEl.style.opacity = String(fxSeg(te, 500, 800) * holdOut); }
+      }
+    },
+    onDone() {
+      for (const n of nodes) { try { n.remove(); } catch (e) {} }
+      if (host.className === 'on') host.className = '';
+      fxKeycardSceneRef = null;
+    },
+  });
+  fxKeycardSceneRef = sc;
+  return sc;
+}
 // ---- ace cut-in (B6, legacy path for arrivals the stage-3 scene
 // does not take over — revivals): portal flash on the zone (round
 // A) -> the scrim dims the field -> the card, large, with a
@@ -4127,7 +4218,7 @@ function fxCutinHide() {
   [...host.children].forEach(ch => fxAnim(ch, [{ opacity: 1 }, { opacity: 0 }], { duration: 260, easing: 'ease-in' }));
   setTimeout(() => { if (fxCutinGen === gen) { host.className = ''; host.innerHTML = ''; } }, 280);
 }
-document.addEventListener('pointerdown', () => { if (fxAceSceneRef && !fxAceSceneRef.dead) fxAceSkip(); else fxCutinHide(); }, true); // tap anywhere skips; never consumes the tap
+document.addEventListener('pointerdown', () => { if (fxAceSceneRef && !fxAceSceneRef.dead) fxAceSkip(); else if (fxKeycardSceneRef && !fxKeycardSceneRef.dead) fxKeycardSkip(); else fxCutinHide(); }, true); // tap anywhere skips; never consumes the tap
 // ---- in-place position changes (B9): flips and ATK<->DEF rotation
 function fxRoundBChanged(ch, evs, prev, cur) {
   const [con, loc] = ch.key.split(':').map(Number);
@@ -4183,6 +4274,25 @@ function fxRoundBEvents(evs, prev, cur, diff) {
       }
     }
   }
+  // ---- keycard spell/trap activations (user, 2026-11-04): the
+  // ace-grade stage, on the BGM ladder's own trigger (an
+  // 'activate' event for a KEYCARD_ACTIVATE_CODES code). When the
+  // presentation runs it owns the event — the generic set S/T
+  // tilt below stands down for it, so the two never stack. With
+  // the cut-in setting off, or while an ace scene is presenting,
+  // the generic presentation keeps the activation as before.
+  const keyActOwned = new Set();
+  if (fxSettings.cutin) {
+    for (const ev of evs) {
+      if (ev.kind !== 'activate' || ev.code == null || !KEYCARD_ACTIVATE_CODES.has(ev.code)) continue;
+      if (fxAceSceneRef && !fxAceSceneRef.dead) continue; // never poster over an ace scene
+      if (fxKeycardSceneRef && !fxKeycardSceneRef.dead) continue; // one keycard stage at a time
+      let key = null;
+      for (const k in cur.z) { const ze = cur.z[k]; if (ze && ze.code === ev.code && k.split(':')[0] === String(ev.con) && k.split(':')[1] === String(ev.loc)) { key = k; break; } }
+      const scK = fxKeycardCutin(ev.code, ev.con, key);
+      if (scK) { keyActOwned.add(ev); fxRecord('keycardact', { code: ev.code }); fxRecord('cutin', { code: ev.code, via: 'keycardact' }); }
+    }
+  }
   // ---- chain growth is computed first: a set S/T activation that
   // IS the new link merges its tilt pop with the chain pop (B8+B9)
   const grew = cur.links.length > prev.links.length;
@@ -4193,6 +4303,7 @@ function fxRoundBEvents(evs, prev, cur, diff) {
   // existing showcase side
   for (const ev of evs) {
     if (ev.kind !== 'activate' || ev.loc !== E.LOC.SZONE) continue;
+    if (keyActOwned.has(ev)) continue; // the keycard stage owns this activation (no stacking)
     const isNewLink = !!(newLink && ev.code === newLink.code && ev.con === newLink.con);
     // redesign B (p2c): the raw chain link carries the set card's
     // own zone (con/loc/seq) — pass it so fxSetActivate can put the
@@ -5117,7 +5228,11 @@ function openPileSheet(kind, con) {
   if (kind === 'grave' || kind === 'removed') {
     const list = kind === 'grave' ? P.grave : P.removed;
     body = list.length ? list.slice().reverse().map(c => {
-      let row = '<div class="sortrow" data-info="' + (c != null ? c : '') + '">' + (c != null ? cardName(c) : '？') + '<span class="chev">›</span></div>';
+      // card-view round: a known card leads with its thumbnail
+      // (small art, the instance's deck context); a hidden card
+      // (code null — face-down banished) keeps the bare '？' row:
+      // no thumbnail element, no name, nothing to resolve.
+      let row = '<div class="sortrow" data-info="' + (c != null ? c : '') + '">' + (c != null ? '<span class="pthumb"' + artInline(c, false, deckKeyOfSeat(con)) + '></span>' + cardName(c) : '？') + '<span class="chev">›</span></div>';
       // brushup round 2 (the grave surface): a grave effect barred
       // on the turn its card was sent there says so under its row.
       if (kind === 'grave' && con === HP && c != null) {
@@ -5133,7 +5248,7 @@ function openPileSheet(kind, con) {
     const exLock = con === HP ? exSummonLock() : null;
     const actSeqs = new Set(pileActs.map(pa => pa.seq));
     body = con === HP ? (P.extra.length ? P.extra.map((c, i) => {
-      let row = '<div class="sortrow" data-info="' + c.code + '">' + cardName(c.code) + '<span class="chev">›</span></div>';
+      let row = '<div class="sortrow" data-info="' + (c.code != null ? c.code : '') + '">' + (c.code != null ? '<span class="pthumb"' + artInline(c.code, false, deckKeyOfSeat(con)) + '></span>' + cardName(c.code) : '？') + '<span class="chev">›</span></div>';
       if (exLock && !actSeqs.has(i)) {
         const d = cardData(c.code);
         if (d && !(d.type & exLock.typeBit)) row += '<div class="rowreason">' + exLockReason(exLock) + '</div>';
@@ -5169,7 +5284,15 @@ function openCardInfo(code) {
   const txt = cardText(code);
   const meta = cardMetaLine(code);
   const st = statsLine(code);
-  sheetOpenView('<div class="ttl">' + cardName(code) + '</div>' +
+  sheetOpenView(
+    // card-view round: the sheet leads with the BIG art (the
+    // cut-in file, deck context resolved like the resident preview
+    // resolves a bare code); unlisted cards fall back to the shared
+    // placeholder through the .infoart class background, exactly
+    // like the FX big card. Name, meta, stats and text follow
+    // below the art, unchanged.
+    '<div class="infoart"' + artInline(code, true, deckKeyOfCode(code)) + '></div>' +
+    '<div class="ttl">' + cardName(code) + '</div>' +
     '<div class="sub">' + [meta, st].filter(Boolean).join('／') + '</div>' +
     (txt ? '<div class="cardtext">' + txt + '</div>' : '<div class="sub">このカードのテキストは表示できません</div>') +
     '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">閉じる</button></div>');

@@ -45,6 +45,13 @@
      EXTRA-deck monster to carry individual art, so its home
      surfaces are the EX pile sheet / card info / resident
      preview and any field tile after a Synchro summon.
+   - The 18th delivery (2026-11-04) is 《墓守の罠》
+     (98715423): plain art 'hakamori' (the white-robed
+     Egyptian priestess in a temple, rainbow light) in
+     CARD_ART, NO deck-scoped override — the first TRAP with
+     individual art, and one of the two keycard-activation
+     presentation targets, so its BIG file is also the
+     cut-in-grade stage art (test-keycardact pins that side).
    Method: boot the real client in jsdom (harness as test-setvis),
    paint a fabricated board through the client's own render() and
    assert the DOM contract in one synchronous eval. */
@@ -61,7 +68,7 @@ const wasmBinary = fs.readFileSync(path.join(V2, 'build', 'ocgcore.wasm'));
 let failures = 0;
 const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (!cond) failures++; };
 
-const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317, KAKAN = 14108995, CARBON = 15079028, SILKY = 55702233, HORUS = 36898537;
+const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317, KAKAN = 14108995, CARBON = 15079028, SILKY = 55702233, HORUS = 36898537, HAKAMORI = 98715423;
 // The unlisted exemplar moved Zolga -> Sphinx (5th delivery) ->
 // Mori (after the 7th) -> Carbon (after the 13th) -> Shilkey
 // (after the 15th), and Shilkey gained art in the 16th
@@ -98,7 +105,8 @@ for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.
                          ['card-art-carbon-ishizu-s.jpg', 320, 320], ['card-art-carbon-ishizu.jpg', 640, 882],
                          ['card-art-silky-s.jpg', 320, 320], ['card-art-silky.jpg', 640, 882],
                          ['card-art-silky-ishizu-s.jpg', 320, 320], ['card-art-silky-ishizu.jpg', 640, 882],
-                         ['card-art-horus-s.jpg', 320, 320], ['card-art-horus.jpg', 640, 882]]) {
+                         ['card-art-horus-s.jpg', 320, 320], ['card-art-horus.jpg', 640, 882],
+                         ['card-art-hakamori-s.jpg', 320, 320], ['card-art-hakamori.jpg', 640, 882]]) {
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
@@ -125,6 +133,8 @@ ok(data.decks.ishizu.main.filter(c => c === SILKY).length === 2, 'CA0s: the Ishi
 ok(!data.decks.gg.main.includes(SILKY) && !data.decks.gg.extra.includes(SILKY), 'CA0t: the GG deck does NOT run Silky (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
 ok(data.decks.ishizu.extra.filter(c => c === HORUS).length === 2, 'CA0u: the Ishizu EXTRA deck runs 2 copies of Horus (17th delivery — the first EX monster with individual art)');
 ok(!data.decks.gg.main.includes(HORUS) && !data.decks.gg.extra.includes(HORUS), 'CA0v: the GG deck does NOT run Horus (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
+ok(data.decks.ishizu.main.filter(c => c === HAKAMORI).length === 3, 'CA0w: the Ishizu deck runs 3 copies of Hakamori-no-Wana (18th delivery — the first trap with individual art)');
+ok(!data.decks.gg.main.includes(HAKAMORI) && !data.decks.gg.extra.includes(HAKAMORI), 'CA0x: the GG deck does NOT run Hakamori (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -235,6 +245,12 @@ async function boot() {
     horusBig: cardArtFile(${HORUS}, true),
     horusDeckArt: DECK_ART.ishizu && DECK_ART.ishizu[${HORUS}],
     horusIshizu: cardArtFile(${HORUS}, false, 'ishizu'),
+    hakamoriSlug: CARD_ART[${HAKAMORI}],
+    hakamoriInline: artInline(${HAKAMORI}),
+    hakamoriSmall: cardArtFile(${HAKAMORI}, false),
+    hakamoriBig: cardArtFile(${HAKAMORI}, true),
+    hakamoriDeckArt: DECK_ART.ishizu && DECK_ART.ishizu[${HAKAMORI}],
+    hakamoriIshizu: cardArtFile(${HAKAMORI}, false, 'ishizu'),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.kelbekSlug === 'kelbek' && helpers.kelbekInline.includes('card-art-kelbek-s.jpg') && helpers.kelbekInline.includes('background-position:center top'), 'CA7d: Kelbek maps and stamps like the others');
@@ -296,6 +312,10 @@ async function boot() {
   ok(helpers.horusSmall === '../assets/card-art-horus-s.jpg' && helpers.horusBig === '../assets/card-art-horus.jpg', 'CA7z32: Horus art files resolve (small + big)');
   ok(helpers.preloaded.includes('../assets/card-art-horus-s.jpg') && helpers.preloaded.includes('../assets/card-art-horus.jpg'), 'CA7z33: boot preloads Horus too (EXTRA-deck membership warms the art from deck-select time)');
   ok(helpers.horusDeckArt === undefined && helpers.horusIshizu === '../assets/card-art-horus-s.jpg', 'CA7z34: Horus has NO deck-scoped override — plain registration, Ishizu context keeps the base art');
+  ok(helpers.hakamoriSlug === 'hakamori' && helpers.hakamoriInline.includes('card-art-hakamori-s.jpg') && helpers.hakamoriInline.includes('background-position:center top'), 'CA7z35: Hakamori maps and stamps like the others (18th delivery)');
+  ok(helpers.hakamoriSmall === '../assets/card-art-hakamori-s.jpg' && helpers.hakamoriBig === '../assets/card-art-hakamori.jpg', 'CA7z36: Hakamori art files resolve (small + big)');
+  ok(helpers.preloaded.includes('../assets/card-art-hakamori-s.jpg') && helpers.preloaded.includes('../assets/card-art-hakamori.jpg'), 'CA7z37: boot preloads Hakamori too (main-deck membership warms the art from deck-select time)');
+  ok(helpers.hakamoriDeckArt === undefined && helpers.hakamoriIshizu === '../assets/card-art-hakamori-s.jpg', 'CA7z38: Hakamori has NO deck-scoped override — plain registration, Ishizu context keeps the base art');
   ok(helpers.kakanSlug === 'kakan' && helpers.kakanInline.includes('card-art-kakan-s.jpg') && helpers.kakanInline.includes('background-position:center top'), 'CA7aa: Kakan maps and stamps like the others (plain art = the forest painting)');
   ok(helpers.preloaded.includes('../assets/card-art-kakan-s.jpg') && helpers.preloaded.includes('../assets/card-art-kakan.jpg'), 'CA7ab: boot preloads Kakan too (same deck)');
   ok(helpers.deckArtKakan === 'kakan-ishizu', 'CA7z17: DECK_ART registers Kakan -> kakan-ishizu for the Ishizu deck (4th entry, first SPELL with an override)');
@@ -456,6 +476,42 @@ async function boot() {
   ok(!!hTsuki && hTsuki.style.includes('card-art-tsuki-s.jpg'), 'CA14g: hand Tsuki shows the art');
   ok(res3.pvTaiyou.includes('card-art-taiyou-s.jpg'), 'CA16d: resident preview shows the art for Taiyou');
   ok(res3.pvTsuki.includes('card-art-tsuki-s.jpg'), 'CA16e: resident preview shows the art for Tsuki');
+
+  // ---- Hakamori board (18th delivery — the first TRAP with
+  // art): same S/T surfaces as the Books, plus the asymmetry
+  // that matters most for a trap — the opponent's SET copy
+  // stays fully hidden. The big file's stage life (the keycard
+  // activation cut-in) is pinned in test-keycardact ----
+  const res3b = window.eval(`
+    (() => {
+      const st = (code, pos) => ({ code, pos, materials: 0 });
+      const P = () => ({ mzone: [null,null,null,null,null,null,null], szone: [null,null,null,null,null,null], grave: [], removed: [], extra: [], hand: [], deckCount: 38, lp: 8000 });
+      const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
+      b.players[0].szone[0] = st(${HAKAMORI}, 0xa);  // own SET Hakamori (veil ghost)
+      b.players[0].szone[1] = st(${HAKAMORI}, 0x5);  // own face-up Hakamori
+      b.players[1].szone[0] = st(${HAKAMORI}, 0xa);  // opp SET Hakamori (MUST stay hidden)
+      b.players[0].hand = [{ code: ${HAKAMORI} }];
+      render(b);
+      const tileOf = (zone) => {
+        const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
+        const t = slot && slot.querySelector('.tile');
+        if (!t) return null;
+        const a = t.querySelector('.art');
+        return { cls: t.className, veil: !!t.querySelector('.veil'), art: a ? (a.getAttribute('style') || '') : null };
+      };
+      const handImgs = [...document.querySelectorAll('#hand .hcard')].map(h => ({ code: h.dataset.code, style: (h.querySelector('.himg') || {}).getAttribute ? (h.querySelector('.himg').getAttribute('style') || '') : '' }));
+      setPreview(${HAKAMORI}, null);
+      const pv = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      return { ownSet: tileOf('0:8:0'), ownUp: tileOf('0:8:1'), oppSet: tileOf('1:8:0'), handImgs, pv };
+    })()
+  `);
+  ok(res3b.ownSet !== null && res3b.ownUp !== null && res3b.oppSet !== null, 'CA22: non-vacuity — Hakamori board rendered');
+  ok(res3b.ownUp.art !== null && res3b.ownUp.art.includes('card-art-hakamori-s.jpg') && !res3b.ownUp.veil, 'CA11k: own face-up Hakamori S/T tile shows its own art');
+  ok(res3b.ownSet.art !== null && res3b.ownSet.art.includes('card-art-hakamori-s.jpg') && res3b.ownSet.veil && res3b.ownSet.cls.split(/\s+/).includes('setown'), 'CA11l: own SET Hakamori carries its art under the setown veil (owner ghost)');
+  ok(res3b.oppSet.art === '' && !res3b.oppSet.veil && !String(res3b.oppSet.art).includes('hakamori'), 'CA13o: opponent SET Hakamori gets NO art and NO veil (asymmetry / no leak)');
+  const hHaka = res3b.handImgs.find(h => h.code === String(HAKAMORI));
+  ok(!!hHaka && hHaka.style.includes('card-art-hakamori-s.jpg'), 'CA14i: hand Hakamori shows the art');
+  ok(res3b.pv.includes('card-art-hakamori-s.jpg'), 'CA16z: resident preview shows the art for Hakamori');
 
   // ---- Vernusylph board (11th-13th deliveries — the three
   // sisters): own face-up tiles, hand and preview carry each
