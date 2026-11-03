@@ -4023,3 +4023,107 @@ slots behind face-up DEF, opponent backs in the new design, and
 own set tiles ghosting — after2-h700-t0 (veil near opacity min,
 ghost strongest) vs after2-h700-t2 (near max, ghost faintest)
 bracket the breath.
+## Brushup round 3 (backlog leftovers: BU-12 / BU-13 / DS-07 / DS-09)
+
+### BU-12 — engine processing bursts: localized, NOT force-fixed
+
+The FX audit's figures (process() self 567 ms, parseMessages
+483 ms) do not reproduce in isolation. Measured three ways:
+(a) Node driver probe over 30+ duels (threshold 8 ms, matchup
+rotation): worst single poc_process() = 56 ms; (b) the same
+probe inside a Chromium page: worst 37 ms; (c) a full in-situ
+UI duel under the CDP profiler: total WASM self time for the
+WHOLE duel ≈ 0.1–0.2 s, and the only long task ≥ 100 ms was
+276 ms at duel start, attributed mainly to the initial layout
+pass (viewportHeights / getBoundingClientRect), not the
+engine. GameState.apply (message application — the audit's
+"parseMessages"; no such function exists in the shipped code)
+is < 1 ms per batch in every measurement.
+The burst that does exist is one class: the single
+poc_process() call that completes a chain resolution and
+advances to the next command prompt (batches carrying only
+SELECT_IDLECMD / SELECT_BATTLECMD right after a SELECT_CHAIN
+answer; 8 of the 9 slowest calls in the 24-duel run). It is a
+single synchronous WASM call, proportional to chain size and
+board complexity; JS cannot split or yield inside it. The
+only structural cure is moving the engine to a Web Worker —
+an architecture change, returned to the backlog as an
+integration decision with these numbers, not taken here.
+Taken here, the one safe concession: Duel.run awaits sleep(0)
+after respond(bytes), so the tap feedback and the closing
+sheet get a paint before the heavy call. Uses the
+harness-provided sleep (stubbed test sleeps unchanged);
+processing order and results untouched.
+The 567/483 ms numbers were recorded under screenshot-burst
+capture on a shared VM; treat them as contention-inflated
+until a real-device profile says otherwise (still unmeasured:
+WKWebView on device).
+
+### BU-13 — care leftovers
+
+1. SELECT_CARD purpose (hand-limit discard): inferSelectPurpose
+   in client.js labels ONLY the provable case — END phase, no
+   chain, no asking effect, not cancelable, all candidates the
+   asked player's hand cards, min == max == hand − 6. The sheet
+   then reads 手札の上限 / 手札が上限（6枚）を超えています。
+   捨てるカードを N 枚選んでください / 捨てる（あとK枚） /
+   このカードを捨てる. Guards pinned by test-purpose.js (12
+   cases; every guard has a negative). Effect-driven selections
+   (costs, targets, materials) keep the generic title by
+   design. Driven proof (real Chromium, hoard duel, both
+   heights): sheet fired at turn 5 end phase with hand 7,
+   hand landed exactly 6 after answering
+   (shots-r3/handlimit-620.png / handlimit-700.png).
+2. Phase granularity (W-27): timingText now uses
+   phaseJaContext — BATTLE_START / BATTLE_STEP / BATTLE ->
+   バトルフェイズ; DAMAGE / DAMAGE_CAL -> ダメージ計算の確認;
+   others unchanged. The mid-bar phase READOUT keeps the fine
+   phaseJa names (display, not a context line; B-08 stands).
+   Driven proof: 相手のターン・バトルフェイズ｜効果への応答
+   (shots-r3/w27-context-700.png); unit pins in test-purpose.
+3. Close labels (W-28): 盤面に戻る is gone from every close
+   button. Selection-serving sheets (card actions, menu) say
+   選択に戻る; pure viewers （履歴， card info, dismiss manager,
+   settings, confirm sheet already) say 閉じる; the pile sheet
+   and the detail pop follow what closing does — pileActs
+   present / a prompt open -> 選択に戻る, else 閉じる.
+   Driven proof: shots-r3/w28-actionsheet-700.png (選択に戻る),
+   w28-pilesheet-700.png (閉じる). test-loghist updated.
+4. SELECT_COUNTER: re-verified unreachable in the current
+   pool — no pool card text mentions カウンター; the only two
+   scripts matching /ounter/ are 融合派兵 (activity counter,
+   internal) and 闇の護封剣 (turn counter), neither places or
+   removes card counters, so MSG_SELECT_COUNTER cannot be
+   issued. Left as a counted non-item; uiCounter stays as-is.
+
+### DS-07 — VS overlay see-through: REPRODUCED and fixed
+
+Root cause: the VS curtain was faded in as a whole element
+(WAAPI opacity 0->1, 220 ms) while the start screen was still
+displayed underneath, so the start screen bled through the
+"opaque" #070503 background for the whole fade. Transition
+burst frames (shots-r3/pre-*): start content legible at
++218 ms (620) / +226 ms (700); opaque only from ~+299 ms.
+Fix: the curtain never fades — it is opaque from the first
+painted frame; the matchup line (.vss) takes the small fade
+instead, and the beams / VS text keep their own entrances.
+Post-fix burst frames (shots-r3/post-*): deck-band mean abs
+diff vs the settled VS frame = 0.00 from the first frame at
+both heights; composition unchanged. Source pin in
+test-purpose (D1).
+
+### DS-09 — hand-sheet row unification: referent NOT identifiable
+
+Returned unimplemented, with the reason on the backlog: the
+design audit's §5 text (the item's only definition) is lost —
+the local audit-design.md is truncated mid-§4 and was never
+committed; the prior round reached the same wall. Candidate
+surfaces re-enumerated against the shipped code: pile /
+confirm / sort / dismiss rows all share .sortrow, action rows
+share .optbtn, selection grids share .gcard, and the hand
+pile sheet renders no rows at all (count only). No divergent
+row style remains among identifiable candidates. If the
+intended referent was the hand pile sheet (rows like the
+other piles), say so and it becomes a fresh, specified item —
+the own hand is already fully rendered on the board, so this
+was not guessed into existence.

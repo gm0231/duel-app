@@ -79,10 +79,11 @@ async function main() {
   ok(doc.getElementById('sheetwrap').className === 'on', 'L4: tapping 履歴 during SELECT_IDLECMD opens the sheet');
   ok(doc.getElementById('sheet').textContent.includes('対戦の履歴'), 'L5: sheet is the log history');
   ok(doc.querySelectorAll('#sheet .loghistrow').length >= 1, 'L6: history rows are rendered');
-  // close via 盤面に戻る — the pending prompt must survive untouched
+  // close via 閉じる (W-28: the history sheet is a pure viewer) —
+  // the pending prompt must survive untouched
   doc.getElementById('sheet-cancel').click();
   await new Promise(r => setTimeout(r, 400)); // sheetClose lands at 185 ms
-  ok(doc.getElementById('sheetwrap').className === '', 'L7: 盤面に戻る closes the sheet');
+  ok(doc.getElementById('sheetwrap').className === '', 'L7: 閉じる closes the sheet');
   ok(ev('!!currentPrompt && currentPrompt.prompt.name === "SELECT_IDLECMD"'), 'L8: the idle prompt is still pending after viewing history');
   // the log line itself is also a target now
   doc.getElementById('logline').click();
