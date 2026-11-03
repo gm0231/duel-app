@@ -4909,3 +4909,29 @@ tapped (resident preview) and normal-summoned face-up
 through the real sheet at 390x620/700 — tile and preview
 carry the new art, name/stat lines read 地久神－カルボン
 1200/1200.
+
+The same delivery also brought an Ishizu-scoped variant
+(user, 2026-11-04): 《地久神－カルボン》 wears gold-and-
+hieroglyph regalia ONLY inside the Ishizu deck — the 5th
+DECK_ART entry and the first for a MONSTER. Source
+~/workspace/duel-assets/carbon-ishizu-user-20261103.jpg
+(1024x1536, the same giant in Egyptian regalia). Standard
+top-anchored crops, no start adjustment: small = y0-1024
+-> 320x320 (43.9KB), big = full width x y0-1411 -> 640x882
+(212.4KB). The tile simulation keeps the face whole at
+upper centre, the hieroglyph ring in frame. One line in
+DECK_ART (ishizu: 15079028 -> 'carbon-ishizu'); the plain
+'carbon' stays in CARD_ART for every other deck context.
+test-cardart: CA7z21-CA7z24 pin the map and both
+resolutions; the seat-0 board (CA11x/CA14q/CA16s) now
+expects the scoped art, and a flipped-seat fixture
+(CA27 / CA11y / CA11z / CA13k / CA14r / CA16t / CA16u)
+pins the plain fallback under a non-Ishizu context, the
+regalia on the Ishizu seat, and no art on a face-down
+Carbon even in Ishizu context — 206 checks in total on
+the integrated tree, ALL PASSED (setvis / typecolor /
+facedown also green). Real-play frames (cap-carbon.js,
+shots-carbon-ishizu/): the same flow in the Ishizu deck
+now resolves tile and preview to card-art-carbon-ishizu;
+the plain stone art remains what any non-Ishizu context
+sees (fixture-pinned, as with the sisters).

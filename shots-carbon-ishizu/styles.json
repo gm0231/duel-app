@@ -1,0 +1,14 @@
+{
+ "620": {
+  "fieldArts": [
+   "background-image:url(../assets/card-art-carbon-ishizu-s.jpg);background-position:center to"
+  ],
+  "pvStyle": "background-image:url(../assets/card-art-carbon-ishizu-s.jpg);background-position:center to"
+ },
+ "700": {
+  "fieldArts": [
+   "background-image:url(../assets/card-art-carbon-ishizu-s.jpg);background-position:center to"
+  ],
+  "pvStyle": "background-image:url(../assets/card-art-carbon-ishizu-s.jpg);background-position:center to"
+ }
+}

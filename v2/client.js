@@ -51,9 +51,12 @@ const CARD_ART = { 99937011: 'mudora', 62320425: 'agido', 25926710: 'kelbek', 63
 // extends the same treatment to 《春化精の花冠》 (14108995), the
 // sisters' own spell: its Egyptian variant lives here, while
 // the forest painting stays in CARD_ART as the plain art any
-// other deck sees. Generic by design: new decks and cards are
-// data, not branches.
-const DECK_ART = { ishizu: { 36745317: 'mori-ishizu', 62133026: 'hana-ishizu', 9350312: 'oka-ishizu', 14108995: 'kakan-ishizu' } }; // 森と目覚の春化精 / 花と野原の春化精 / 丘と芽吹の春化精 / 春化精の花冠 (Egyptian art, Ishizu deck only)
+// other deck sees. The 5th entry is 《地久神－カルボン》
+// (15079028), the first MONSTER with an override: the giant
+// wears gold-and-hieroglyph regalia inside the Ishizu deck
+// and stays bare stone anywhere else. Generic by design: new
+// decks and cards are data, not branches.
+const DECK_ART = { ishizu: { 36745317: 'mori-ishizu', 62133026: 'hana-ishizu', 9350312: 'oka-ishizu', 14108995: 'kakan-ishizu', 15079028: 'carbon-ishizu' } }; // 森と目覚の春化精 / 花と野原の春化精 / 丘と芽吹の春化精 / 春化精の花冠 / 地久神－カルボン (Egyptian art, Ishizu deck only)
 // Which deck each core seat is playing this duel ([seat0, seat1]),
 // set at duel start; nulls outside a duel. Every art surface
 // derives its deck context from the seat that owns the card

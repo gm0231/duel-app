@@ -28,7 +28,11 @@
      to their plain art. The 4th entry is the sisters' spell,
      《春化精の花冠》 (14108995, 14th delivery): plain art 'kakan'
      (the forest painting) in CARD_ART, 'kakan-ishizu' (the
-     Egyptian variant) in DECK_ART under ishizu. The opponent
+     Egyptian variant) in DECK_ART under ishizu. The 5th entry
+     is 《地久神－カルボン》 (15079028, 15th delivery): plain art
+     'carbon' (the bare stone giant) in CARD_ART, 'carbon-ishizu'
+     (the gold-and-hieroglyph regalia) in DECK_ART under ishizu
+     — the first MONSTER with an override. The opponent
      face-down rule binds the overrides exactly like the base art.
    Method: boot the real client in jsdom (harness as test-setvis),
    paint a fabricated board through the client's own render() and
@@ -74,7 +78,8 @@ for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.
                          ['card-art-oka-ishizu-s.jpg', 320, 320], ['card-art-oka-ishizu.jpg', 640, 882],
                          ['card-art-kakan-s.jpg', 320, 320], ['card-art-kakan.jpg', 640, 882],
                          ['card-art-kakan-ishizu-s.jpg', 320, 320], ['card-art-kakan-ishizu.jpg', 640, 882],
-                         ['card-art-carbon-s.jpg', 320, 320], ['card-art-carbon.jpg', 640, 882]]) {
+                         ['card-art-carbon-s.jpg', 320, 320], ['card-art-carbon.jpg', 640, 882],
+                         ['card-art-carbon-ishizu-s.jpg', 320, 320], ['card-art-carbon-ishizu.jpg', 640, 882]]) {
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
@@ -189,6 +194,11 @@ async function boot() {
     kakanGg: cardArtFile(${KAKAN}, false, 'gg'),
     carbonSlug: CARD_ART[${CARBON}],
     carbonInline: artInline(${CARBON}),
+    deckArtCarbon: DECK_ART.ishizu && DECK_ART.ishizu[${CARBON}],
+    carbonIshizuSmall: cardArtFile(${CARBON}, false, 'ishizu'),
+    carbonIshizuBig: cardArtFile(${CARBON}, true, 'ishizu'),
+    carbonIshizuInline: artInline(${CARBON}, false, 'ishizu'),
+    carbonGg: cardArtFile(${CARBON}, false, 'gg'),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.kelbekSlug === 'kelbek' && helpers.kelbekInline.includes('card-art-kelbek-s.jpg') && helpers.kelbekInline.includes('background-position:center top'), 'CA7d: Kelbek maps and stamps like the others');
@@ -236,6 +246,10 @@ async function boot() {
   ok(helpers.preloaded.includes('../assets/card-art-oka-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-oka-ishizu.jpg'), 'CA7z14: boot preloads the deck-scoped Oka art too');
   ok(helpers.carbonSlug === 'carbon' && helpers.carbonInline.includes('card-art-carbon-s.jpg') && helpers.carbonInline.includes('background-position:center top'), 'CA7z15: Carbon maps and stamps like the others (15th delivery)');
   ok(helpers.preloaded.includes('../assets/card-art-carbon-s.jpg') && helpers.preloaded.includes('../assets/card-art-carbon.jpg'), 'CA7z16: boot preloads Carbon too (same deck)');
+  ok(helpers.deckArtCarbon === 'carbon-ishizu', 'CA7z21: DECK_ART registers Carbon -> carbon-ishizu for the Ishizu deck (5th entry, first MONSTER with an override)');
+  ok(helpers.carbonIshizuSmall === '../assets/card-art-carbon-ishizu-s.jpg' && helpers.carbonIshizuBig === '../assets/card-art-carbon-ishizu.jpg' && helpers.carbonIshizuInline.includes('card-art-carbon-ishizu-s.jpg'), 'CA7z22: Ishizu context resolves Carbon to the regalia art (small + big)');
+  ok(helpers.carbonGg === '../assets/card-art-carbon-s.jpg', 'CA7z23: GG context resolves Carbon to the plain stone art');
+  ok(helpers.preloaded.includes('../assets/card-art-carbon-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-carbon-ishizu.jpg'), 'CA7z24: boot preloads the deck-scoped Carbon art too');
   ok(helpers.kakanSlug === 'kakan' && helpers.kakanInline.includes('card-art-kakan-s.jpg') && helpers.kakanInline.includes('background-position:center top'), 'CA7aa: Kakan maps and stamps like the others (plain art = the forest painting)');
   ok(helpers.preloaded.includes('../assets/card-art-kakan-s.jpg') && helpers.preloaded.includes('../assets/card-art-kakan.jpg'), 'CA7ab: boot preloads Kakan too (same deck)');
   ok(helpers.deckArtKakan === 'kakan-ishizu', 'CA7z17: DECK_ART registers Kakan -> kakan-ishizu for the Ishizu deck (4th entry, first SPELL with an override)');
@@ -577,7 +591,10 @@ async function boot() {
   // unlisted exemplar, so he gets the full-surface treatment on
   // his own fabricated board — own face-up tile, hand and
   // preview carry the art, and an opponent face-down Carbon
-  // must NOT (asymmetry, as ever) ----
+  // must NOT (asymmetry, as ever). Seat 0 plays the Ishizu
+  // deck in this boot, so his surfaces carry the DECK-SCOPED
+  // regalia art; the flipped-seat fixture below pins the
+  // plain stone fallback for other deck contexts ----
   const res8 = window.eval(`
     (() => {
       const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
@@ -599,10 +616,52 @@ async function boot() {
     })()
   `);
   ok(res8.ownUp !== null && res8.oppDown !== null, 'CA26: non-vacuity — Carbon board rendered');
-  ok(res8.ownUp.includes('card-art-carbon-s.jpg'), 'CA11x: Carbon tile shows its own art');
+  ok(res8.ownUp.includes('card-art-carbon-ishizu-s.jpg'), 'CA11x: Carbon tile in the Ishizu deck (seat 0) shows the DECK-SCOPED regalia art');
   ok(res8.oppDown === '' && !String(res8.oppDown).includes('carbon'), 'CA13j: opponent FACE-DOWN Carbon gets NO art (asymmetry / no leak)');
-  ok(res8.hand !== null && res8.hand.includes('card-art-carbon-s.jpg'), 'CA14q: hand Carbon shows the art');
-  ok(res8.pv.includes('card-art-carbon-s.jpg'), 'CA16s: resident preview shows the art for Carbon');
+  ok(res8.hand !== null && res8.hand.includes('card-art-carbon-ishizu-s.jpg'), 'CA14q: hand Carbon (Ishizu deck) shows the deck-scoped art');
+  ok(res8.pv.includes('card-art-carbon-ishizu-s.jpg'), 'CA16s: resident preview shows the deck-scoped art for Carbon (unique deck membership: Ishizu)');
+
+  // ---- Carbon, flipped seats (fixture): the 5th override
+  // under the same lens — a Carbon instance owned by a
+  // NON-Ishizu deck context falls back to the plain stone art
+  // on the tile, the hand and the preview, while the Ishizu
+  // seat keeps the regalia variant; the Ishizu seat's
+  // face-down Carbon stays invisible (asymmetry binds the
+  // 5th override too). (Fabricated: the GG deck does not run
+  // Carbon, exactly like the sisters' fixture above.) ----
+  const res9 = window.eval(`
+    (() => {
+      const saved = seatDeckKeys;
+      seatDeckKeys = ['gg', 'ishizu']; // seat 0 now "plays" GG; seat 1 plays Ishizu
+      const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
+      const P = () => ({ mzone: [null,null,null,null,null,null,null], szone: [null,null,null,null,null,null], grave: [], removed: [], extra: [], hand: [], deckCount: 38, lp: 8000 });
+      const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
+      b.players[0].mzone[0] = mon(${CARBON}, 0x1);  // Carbon under a GG deck context (fixture)
+      b.players[1].mzone[0] = mon(${CARBON}, 0x1);  // Carbon in the Ishizu deck (seat 1)
+      b.players[1].mzone[1] = mon(${CARBON}, 0x8);  // opp face-down Carbon, Ishizu context (MUST stay hidden)
+      b.players[0].hand = [{ code: ${CARBON} }];
+      render(b);
+      const artOf = (zone) => {
+        const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
+        const a = slot && slot.querySelector('.tile .art');
+        return a ? (a.getAttribute('style') || '') : null;
+      };
+      const h = document.querySelector('#hand .hcard[data-code="${CARBON}"] .himg');
+      setPreview(${CARBON}, { con: 0, loc: E.LOC.MZONE, seq: 0 });
+      const pvSeat0 = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      setPreview(${CARBON}, { con: 1, loc: E.LOC.MZONE, seq: 0 });
+      const pvSeat1 = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      seatDeckKeys = saved;
+      return { ggTile: artOf('0:4:0'), ishizuTile: artOf('1:4:0'), ishizuDown: artOf('1:4:1'), hand: h ? (h.getAttribute('style') || '') : null, pvSeat0, pvSeat1 };
+    })()
+  `);
+  ok(res9.ggTile !== null && res9.ishizuTile !== null && res9.ishizuDown !== null, 'CA27: non-vacuity — flipped-seat Carbon board rendered');
+  ok(res9.ggTile.includes('card-art-carbon-s.jpg') && !res9.ggTile.includes('carbon-ishizu'), 'CA11y: Carbon under a non-Ishizu deck context falls back to the plain stone art (tile)');
+  ok(res9.ishizuTile.includes('card-art-carbon-ishizu-s.jpg'), 'CA11z: Carbon in the Ishizu deck shows the regalia art even on the opponent’s seat (deck, not chair)');
+  ok(res9.ishizuDown === '' && !String(res9.ishizuDown).includes('carbon'), 'CA13k: opponent FACE-DOWN Carbon gets NO art even in Ishizu context (asymmetry binds the 5th override too)');
+  ok(res9.hand !== null && res9.hand.includes('card-art-carbon-s.jpg') && !res9.hand.includes('carbon-ishizu'), 'CA14r: hand Carbon under a non-Ishizu deck context falls back to the plain art');
+  ok(res9.pvSeat0.includes('card-art-carbon-s.jpg') && !res9.pvSeat0.includes('carbon-ishizu'), 'CA16t: preview of a GG-context Carbon (instance ref) shows the plain art');
+  ok(res9.pvSeat1.includes('card-art-carbon-ishizu-s.jpg'), 'CA16u: preview of an Ishizu-context Carbon (instance ref) shows the regalia art');
   // ---- Kakan, flipped seats (fixture): the 4th override under
   // the same lens as the sisters — a Kakan instance owned by a
   // NON-Ishizu deck context falls back to the plain forest art
