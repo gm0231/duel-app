@@ -991,6 +991,207 @@ window.__poolcov = {
   exSummonLock, exLockReason,
   reset() { usedFxTurn = -1; usedFxByCode.clear(); usedFxSeen = new Set(); monsterRevived = null; reviveArm = null; reviveBatch = 0; usedNamesDuel.clear(); gravePrev = null; gravePrevNulls = 0; graveStamps = []; },
 };
+// ---- cannot-attack reasons (attack-block round, 2026-11-04) ----
+// The twin of the cannot-activate silence: a monster whose attack
+// the core does not offer in SELECT_BATTLECMD got NO row at all,
+// so a correct ruling read as a bug — the reported case: Baromett
+// Xyz-summoned under the opponent's 《ラビリンス・ウォール・
+// シャドウ》 could not attack and nothing anywhere said why.
+// Same discipline as the trackers above: sets are DERIVED from
+// the pool's own texts, the live evidence is the client's own
+// records, and a reason is stated only when it fully explains
+// the missing command. Derivations:
+//   (1) FIELD summon-turn block — a face-up field spell whose
+//       text bars monsters summoned this turn from attacking
+//       (except original Level N+): the source sits in a field
+//       zone (szone[5]) of either player, the monster arrived /
+//       was flip-summoned this turn (summonMarks), and it is not
+//       in the printed-Level exception (Xyz monsters have no
+//       Level and are always barred — the Baromett case).
+//   (2) SELF summon-turn block — the monster's OWN text carries
+//       「このカードは召喚したターンには攻撃できない」 and it was
+//       normal summoned / set this turn (kind-attributed mark).
+//   (3) the revive rider's attack half — the monsterRevived
+//       latch above already proves the summon and its source;
+//       the rider bars attacks as well as effects.
+// Enumerated NOT covered (pool audit in test-atkblock.js):
+//   - 《メタファイズ・ホルス・ドラゴン》's Pendulum-material
+//     rider (a monster whose control it stole cannot attack
+//     this turn): unreachable — the pool holds ZERO Pendulum
+//     monsters, so the branch can never arm.
+//   - 《光の護封霊剣》② (this turn, the opponent's monsters
+//     cannot DIRECT attack): the blocked side is always the
+//     CPU — the card sits only in the human's deck, so the
+//     human's own attack sheet can never be its surface.
+// "Summoned this turn" evidence is a zone-diff tracker in the
+// spirit of trackGraveArrivals: a zone newly holding a monster
+// is an arrival (normal summon, set and special summon all
+// arrive; a set flipped face-up by an effect keeps its arrival
+// turn, exactly like STATUS_SUMMON_TURN). Flip summons of a
+// monster set on an EARLIER turn arrive through the flipsummon
+// presentation event instead: the zone whose previous face was
+// down and is up now, when it is the only candidate — several
+// candidates stay silent. Kind attribution (summon / set /
+// spsummon) rides the same batch's presentation events; when
+// the batch does not attribute a kind, derivation (1) still
+// applies (it is kind-agnostic) and (2) stays silent. Control
+// changes write no summon event, so a stolen monster keeps the
+// marks of its own summon turn — no pool card changes control
+// today (audit), and a future one would need the swap case
+// revisited before its marks could be trusted across zones.
+let _summonTurnBlockCards = null; // Map code -> exempt original level, derived from DATA.texts
+function summonTurnBlockCards() {
+  if (_summonTurnBlockCards) return _summonTurnBlockCards;
+  _summonTurnBlockCards = new Map();
+  for (const code of Object.keys(DATA && DATA.texts ? DATA.texts : {})) {
+    const t = DATA.texts[code];
+    if (!t || !t.text) continue;
+    const norm = t.text.replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+    const m = norm.match(/元々のレベルが(\d+)以上のモンスターを除く、召喚・反転召喚・特殊召喚されたモンスターは、そのターンには攻撃できない/);
+    if (m) _summonTurnBlockCards.set(+code, +m[1]);
+  }
+  return _summonTurnBlockCards;
+}
+let _selfSummonBlockCards = null; // Set of codes whose own text bars attacking on their summon turn
+function selfSummonBlockCards() {
+  if (_selfSummonBlockCards) return _selfSummonBlockCards;
+  _selfSummonBlockCards = new Set();
+  for (const code of Object.keys(DATA && DATA.texts ? DATA.texts : {})) {
+    const t = DATA.texts[code];
+    if (t && t.text && /このカードは召喚したターンには攻撃できない/.test(t.text)) _selfSummonBlockCards.add(+code);
+  }
+  return _selfSummonBlockCards;
+}
+let fieldPrev = null; // per player: [{code, pos}|null] per mzone seq at the previous observation
+const summonMarks = new Map(); // 'con:seq' -> {code, turn, kinds:Set<string>}
+function trackFieldSummons(evs, state) {
+  if (!state || !state.players) return;
+  const cur = state.players.map(P => {
+    const row = [];
+    for (let s = 0; s < P.mzone.length; s++) {
+      const c = P.mzone[s];
+      row.push(c ? { code: c.code != null ? c.code : null, pos: c.pos != null ? c.pos : null } : null);
+    }
+    return row;
+  });
+  const fresh = new Set(); // zone keys whose arrival this very observation proves
+  for (let con = 0; con < 2; con++) {
+    for (let s = 0; s < cur[con].length; s++) {
+      const key = con + ':' + s;
+      const c = cur[con][s], p = fieldPrev ? fieldPrev[con][s] : null;
+      if (c && c.code != null && c.code !== 0 && (!p || (p.code != null && p.code !== 0 && p.code !== c.code))) {
+        // the zone newly holds this monster: an arrival. A
+        // previous IDENTITY-LESS occupant proves nothing (the
+        // monster may have been there all along) — stay silent,
+        // the grave tracker's discipline.
+        summonMarks.set(key, { code: c.code, turn: state.turnCount, kinds: new Set() });
+        fresh.add(key);
+      } else if (!c || c.code !== (summonMarks.get(key) || {}).code) {
+        summonMarks.delete(key); // zone emptied or the card is gone
+      }
+    }
+  }
+  // Kind attribution from THIS batch's presentation events
+  // (the same evidence noteReviveFromEvents reads). Summon /
+  // set / special summon events name con + code only, so they
+  // attribute to the fresh arrivals they can only mean.
+  if (evs) {
+    for (const ev of evs) {
+      if (ev.kind !== 'summon' && ev.kind !== 'spsummon' && ev.kind !== 'set' && ev.kind !== 'flipsummon') continue;
+      if (ev.kind === 'set' && ev.loc !== E.LOC.MZONE) continue;
+      if (ev.kind === 'flipsummon') {
+        // the monster was already on the field face-down: mark
+        // the one zone that turned face-up with this observation
+        const cands = [];
+        for (let s = 0; s < cur[ev.con].length; s++) {
+          const c = cur[ev.con][s], p = fieldPrev ? fieldPrev[ev.con][s] : null;
+          if (!c || c.code !== ev.code || !p) continue;
+          const wasDown = p.pos != null && (p.pos & E.POS_FACEUP) === 0;
+          const isUp = c.pos != null && (c.pos & E.POS_FACEUP) !== 0;
+          const marked = summonMarks.get(ev.con + ':' + s);
+          if (wasDown && isUp && !(marked && marked.turn === state.turnCount)) cands.push(s);
+        }
+        if (cands.length === 1) {
+          summonMarks.set(ev.con + ':' + cands[0], { code: ev.code, turn: state.turnCount, kinds: new Set(['flipsummon']) });
+        }
+        continue;
+      }
+      for (const key of fresh) {
+        const [kcon] = key.split(':').map(Number);
+        const mk = summonMarks.get(key);
+        if (kcon === ev.con && mk && mk.code === ev.code) mk.kinds.add(ev.kind);
+      }
+    }
+  }
+  fieldPrev = cur;
+}
+// The field-zone card imposing a summon-turn attack block right
+// now: {code, exempt} or null. Field spells live at szone[5];
+// the effect ranges over BOTH players' monster zones, so either
+// player's field zone counts.
+function liveSummonTurnBlock(state) {
+  const set = summonTurnBlockCards();
+  if (!set.size || !state || !state.players) return null;
+  for (let con = 0; con < 2; con++) {
+    const P = state.players[con];
+    const fz = P && P.szone ? P.szone[5] : null;
+    if (fz && fz.code != null && (fz.pos & E.POS_FACEUP) !== 0 && set.has(fz.code)) {
+      return { code: fz.code, exempt: set.get(fz.code) };
+    }
+  }
+  return null;
+}
+// The attack reason the sheet may state for the monster at
+// (con, loc, seq), or null. Callers gate the context first
+// (SELECT_BATTLECMD live, no 攻撃 action offered); this function
+// gates the monster itself: it must still be the marked card,
+// face-up in attack position — a face-down or defense monster
+// has no attack command by the basic rules, and claiming an
+// effect reason for it would be a false claim.
+function attackBlockReason(code, con, loc, seq, state) {
+  const st = state || duelState;
+  if (!st || loc !== E.LOC.MZONE || !st.players || !st.players[con]) return null;
+  const cell = st.players[con].mzone[seq];
+  if (!cell || cell.code !== code) return null;
+  if ((cell.pos & E.POS_FACEUP) === 0 || cell.pos !== E.POS.FU_ATK) return null;
+  const mark = summonMarks.get(con + ':' + seq);
+  const marked = mark && mark.code === code && mark.turn === st.turnCount ? mark : null;
+  // (3) the revive rider's attack half (same latch as the
+  // effect half in monsterRevivedReason; no pool card carries
+  // the rider today, so this arms only for a future pool card).
+  if (monsterRevived && monsterRevived.code === code && monsterRevived.seq === seq && monsterRevived.turnCount === st.turnCount) {
+    return '《' + cardName(monsterRevived.rider) + '》の効果で特殊召喚されたため、このターンは攻撃できません';
+  }
+  if (!marked) return null;
+  // (2) the monster's own printed clause — only a real normal
+  // summon / set arms it (its script hooks SUMMON_SUCCESS), so
+  // the mark must carry the kind.
+  if (selfSummonBlockCards().has(code) && (marked.kinds.has('summon') || marked.kinds.has('set'))) {
+    return 'このカードは召喚したターンには攻撃できません';
+  }
+  // (1) the field block: any summon kind counts (the core's
+  // STATUS_*_SUMMON_TURN covers them all); the printed-Level
+  // exception exempts — Xyz monsters have no Level at all.
+  const fb = liveSummonTurnBlock(st);
+  if (fb) {
+    const d = cardData(code);
+    const hasLevel = d && !(d.type & 0x800000);
+    if (!(hasLevel && d.level >= fb.exempt)) {
+      return '《' + cardName(fb.code) + '》の効果で、召喚したターンのモンスターは攻撃できません';
+    }
+  }
+  return null;
+}
+// Test surface (same spirit as __poolcov).
+window.__atkblock = {
+  summonTurnBlockCards() { return [...summonTurnBlockCards().entries()].map(([code, exempt]) => ({ code, exempt })); },
+  selfSummonBlockCards() { return [...selfSummonBlockCards()]; },
+  track(evs, state) { trackFieldSummons(evs, state); },
+  marks() { return [...summonMarks.entries()].map(([key, m]) => ({ key, code: m.code, turn: m.turn, kinds: [...m.kinds] })); },
+  liveBlock(state) { return liveSummonTurnBlock(state || duelState); },
+  reason(code, con, loc, seq, state) { return attackBlockReason(code, con, loc, seq, state); },
+  reset() { fieldPrev = null; summonMarks.clear(); },
+};
 // Drain the engine's presentation event queue into SE cues.
 const ATTR_SE = { 1: 'atk_earth', 2: 'atk_water', 4: 'atk_fire', 8: 'atk_wind', 16: 'atk_light', 32: 'atk_dark', 64: 'atk_light' };
 function drainSeEvents(state) {
@@ -1230,6 +1431,50 @@ function fxPuff(key) { // normal summons & sets: a small placement beat only
   d.innerHTML = '<div class="ring"></div>';
   fxAnim(d, [{ opacity: 0 }, { opacity: 0.9, offset: 0.3 }, { opacity: 0 }], { duration: 430, easing: 'ease-out' });
   fxKill(d, 470);
+}
+// ---- summon callout (FX coverage round): every summon that no
+// bigger scene owns still NAMES its card. The summoned card's image
+// stamps in over its own zone — settle-in, a seat rim (gold = the
+// human seat, lapis = the opponent, the redesign colour grammar),
+// a readable hold (longer for the opponent, whose actions run on
+// the CPU's pace), then an ease-out. It claims no input window and
+// sits in the FX layer, so it can never cover a prompt or the
+// result; a face-down arrival never calls out (its identity is not
+// public yet), and the ace scene's summons stand down via the
+// arrival branch order (they are consumed before reaching here).
+function fxSummonCallout(key, code, con, pos) {
+  if (code == null || (pos != null && (pos & E.POS_FACEUP) === 0)) return;
+  const el = fxSlotEl(key); if (!el) return;
+  const app = $('app'); if (!app) return;
+  const ar = fxRel(app);
+  const r = fxRel(el);
+  const W = Math.round(r.w * 1.5), H = Math.round(W * 1.36);
+  let cx = r.cx, cy = r.y + (r.h - 24) / 2;
+  cx = Math.max(W / 2 + 2, Math.min(ar.w - W / 2 - 2, cx));
+  cy = Math.max(H / 2 + 2, Math.min(ar.h - H / 2 - 2, cy));
+  const card = fxPlaceGhost(code, false, { cx, cy }, W, H, deckKeyOfSeat(con));
+  if (!card) return;
+  card.style.zIndex = 6; card.style.opacity = '0';
+  const rim = fxNode(con === HP ? 'fx3-goldframe' : 'fx3-lapisframe', cx, cy, W, H);
+  if (rim) { rim.style.opacity = '0'; rim.style.zIndex = 7; }
+  const hold = con === HP ? 640 : 800, dur = hold + 260;
+  fxAddScene({
+    kind: 'summoncall', dur,
+    render(t) {
+      const s = 0.7 + 0.3 * FXE.settle(fxSeg(t, 0, 200));
+      card.style.transform = 'scale(' + s.toFixed(3) + ')';
+      card.style.opacity = String(Math.min(fxSeg(t, 0, 90), 1 - fxSeg(t, hold, dur)));
+      if (rim) {
+        // ignition flash (0-460), then a low seat-coloured floor for
+        // the rest of the hold — the frame is what makes the stamp
+        // read as a presentation rather than a merely bigger tile
+        const ri = t < 80 ? t / 80 : Math.max(0.38, 1 - fxSeg(t, 240, 460));
+        rim.style.transform = card.style.transform;
+        rim.style.opacity = String(0.95 * ri * (1 - fxSeg(t, hold, dur)));
+      }
+    },
+    onDone() { try { card.remove(); } catch (e) {} if (rim) { try { rim.remove(); } catch (e) {} } },
+  });
 }
 function fxWhiteFlash(key) { // destruction: flash white, gone (restrained)
   const el = fxSlotEl(key); if (!el) return;
@@ -1856,6 +2101,10 @@ function fxProcessInner(evs, state) {
     if (fromGrave || fromRemoved) { // revival / return: NO flight — the zone lights and it appears
       fxPortal(ar.key, 'revive', 700); // V4-5: the zone glow is folded into the portal scene
       fxRecord('portal', { method: 'revive', code });
+      if ((ar.entry.pos & E.POS_FACEUP) !== 0) { // FX coverage: a revival names its card too
+        fxSummonCallout(ar.key, code, con, ar.entry.pos);
+        fxRecord('summoncall', { code, how: 'revive', con });
+      }
       consumedArr.add(ar.key);
       continue;
     }
@@ -1890,6 +2139,10 @@ function fxProcessInner(evs, state) {
     }
     if (isNormal || isSetMon) {
       fxPuff(ar.key); fxRecord('place', { how: isNormal ? 'summon' : 'set', code });
+      if (isNormal && (ar.entry.pos & E.POS_FACEUP) !== 0) { // FX coverage: the plainest summon in the game was the one with no card presentation at all
+        fxSummonCallout(ar.key, code, con, ar.entry.pos);
+        fxRecord('summoncall', { code, how: 'summon', con });
+      }
       // Round B (B10): an advance (tribute) summon's tributes leave the
       // way fusion/Xyz materials do — they glow and converge into the
       // summon point instead of flying to the graveyard — and the
@@ -1906,6 +2159,10 @@ function fxProcessInner(evs, state) {
     // other special summons (from hand / deck / extra): zone glows first
     fxPortal(ar.key, method, 600); // V4-5: glow folded in
     fxRecord('portal', { method, code });
+    if ((ar.entry.pos & E.POS_FACEUP) !== 0) { // FX coverage: the portal lights the zone; the callout names the card (never for a face-down arrival — not public yet)
+      fxSummonCallout(ar.key, code, con, ar.entry.pos);
+      fxRecord('summoncall', { code, how: 'spsummon', con });
+    }
     consumedArr.add(ar.key);
   }
   // arrivals on the spell/trap zone (sets): a small placement beat
@@ -1950,6 +2207,22 @@ function fxProcessInner(evs, state) {
     if (dep) {
       if (atkTargetKeys.has(dep.key)) fxRecord('destroyflash', { code: ev.code, via: 'scene' });
       else { fxWhiteFlash(dep.key); fxRecord('destroyflash', { code: ev.code }); }
+    }
+  }
+  // ---- flip summons (FX coverage): the flip itself is animated by
+  // the changed-diff below (round B); the callout names the card —
+  // a flip summon is a summon, and every summon presents its card.
+  for (const ev of evs) {
+    if (ev.kind !== 'flipsummon' || ev.code == null) continue;
+    for (const key of Object.keys(cur.z)) {
+      const ze = cur.z[key], parts = key.split(':').map(Number);
+      if (ze && ze.code === ev.code && parts[0] === ev.con && parts[1] === E.LOC.MZONE) {
+        if ((ze.pos & E.POS_FACEUP) !== 0) {
+          fxSummonCallout(key, ev.code, ev.con, ze.pos);
+          fxRecord('summoncall', { code: ev.code, how: 'flipsummon', con: ev.con });
+        }
+        break;
+      }
     }
   }
   // ---- in-place changes: xyz detach / attach, stat changes, flips (round B hook)
@@ -3710,7 +3983,19 @@ function openActionSheet(key) {
     zoneCode = c ? c.code : null;
   }
   if (zoneCode == null && !acts.length) return;
-  if (zoneCode != null) setPreview(zoneCode, { con, loc, seq });
+  // attack-block round: in a live battle command, an own monster
+  // the core offers no 攻撃 for gets the same courtesy as a
+  // missing activation — a greyed row WITH the reason when one
+  // is mechanically certain (attackBlockReason), and the same
+  // reason on the persistent preview. A monster WITH an attack
+  // action is untouched, as is every non-battle sheet.
+  let atkReason = null;
+  if (zoneCode != null && con === HP && loc === E.LOC.MZONE &&
+      currentPrompt && currentPrompt.prompt.name === 'SELECT_BATTLECMD' &&
+      !acts.some(a => a.label === '攻撃')) {
+    atkReason = attackBlockReason(zoneCode, con, loc, seq);
+  }
+  if (zoneCode != null) setPreview(zoneCode, { con, loc, seq }, atkReason);
   const title = zoneCode != null ? cardName(zoneCode) : 'アクション';
   const txt = zoneCode != null ? cardText(zoneCode) : '';
   const meta = zoneCode != null ? cardMetaLine(zoneCode, liveMats(con, loc, seq)) : '';
@@ -3781,8 +4066,10 @@ function openActionSheet(key) {
   const fxBlocks = zoneCode != null && offeredFx.length > 1
     ? offeredFx.map(n => { const seg = effectSegments(zoneCode).find(s => s.n === n); return seg ? fxBlockHTML(zoneCode, seg) : ''; }).join('')
     : '';
+  const atkRow = atkReason ? '<div class="optbtn disabled">攻撃<span class="reason">' + atkReason + '</span></div>' : '';
   sheetOpenView('<div class="ttl">' + title + '</div><div class="sub">' + locLabel({ con, loc, seq }) + (meta ? '／' + meta : '') + '</div>' +
     acts.map((a, i) => '<button class="optbtn" data-action-idx="' + i + '">' + a.label + '</button>').join('') +
+    atkRow +
     unusable +
     (fxBlocks || (txt ? '<div class="cardtext">' + txt + '</div>' : '')) +
     // W-28 (brushup round 3): this sheet IS the pending idle
@@ -4540,7 +4827,18 @@ document.addEventListener('click', (ev) => {
   }
   if (zoneEl && !placeCtx && duelState) {
     const hit = boardCardAt(zoneEl.dataset.zone);
-    if (hit) setPreview(hit.code, hit.ref);
+    if (hit) {
+      // attack-block round: the persistent preview carries the
+      // same certain reason the action sheet states — an own
+      // monster with no offered 攻撃 in a live battle command.
+      let reason = null;
+      const { con: zcon, loc: zloc, seq: zseq } = hit.ref;
+      if (zcon === HP && zloc === E.LOC.MZONE && currentPrompt && currentPrompt.prompt.name === 'SELECT_BATTLECMD' &&
+          !(actionMap.get(zcon + ':' + zloc + ':' + zseq) || []).some(a => a.label === '攻撃')) {
+        reason = attackBlockReason(hit.code, zcon, zloc, zseq);
+      }
+      setPreview(hit.code, hit.ref, reason);
+    }
   }
   const actEl = ev.target.closest('[data-act]');
   // triage-#2: a tap that lands while no IDLE/BATTLE prompt is
@@ -5214,6 +5512,7 @@ function wireSeg(id, apply) {
     fxResetDuel(); // FX snapshot/layers restart with the duel (stale overlays must not survive)
     bgmWantedRank = -1; bgmSeenKeys.clear(); // BGM stage ladder restarts with the duel
     usedNamesDuel.clear(); gravePrev = null; gravePrevNulls = 0; graveStamps = []; // brushup round 2 trackers restart with the duel
+    fieldPrev = null; summonMarks.clear(); // cannot-attack trackers restart with the duel
     setBgmScene('normal', true);
     $('start').style.display = 'none';
     $('logline').textContent = '対戦を準備中…';
@@ -5230,6 +5529,7 @@ function wireSeg(id, apply) {
         drainSeEvents(state);
         trackUsedFx(state); // this turn's own activations, for cannot-activate reasons
         trackGraveArrivals(state); // own grave arrivals by turn, for the grave-sheet reason
+        trackFieldSummons(fxEvs, state); // field arrivals by turn, for the cannot-attack reasons
         render(state);
         updateBgm(state);
         fxProcess(fxEvs, state); // presentation FX overlays (read-only; board geometry is final now)
