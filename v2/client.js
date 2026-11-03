@@ -43,6 +43,147 @@ function statsLine(code) {
   return '攻' + d.atk + '／守' + d.def;
 }
 function cardText(code) { return (DATA && DATA.texts && DATA.texts[code]) ? DATA.texts[code].text : ''; }
+// ---- which effect is being asked about (user report 2026-11-03:
+//    a confirmation that does not say WHICH effect is a defect) ----
+// The core identifies the effect behind every activatable entry and
+// most yes/no questions with its description string id. In this
+// build's bundled scripts (data.json utility.lua) the id is
+//   aux.Stringid(code, idx) = code<<20 | idx     (idx = 0-based)
+// where idx is the SAME index the script passes to SetDescription,
+// and script practice registers ONE description per activatable
+// effect, in effect order — so desc index n names official text
+// effect n+1 (verified live over 12 seeded duels: 1330 activatable
+// entries, desc code always equalled the entry's card, idx always
+// named an existing numbered segment; see NOTES). desc == 0 means
+// "no description set" (single implicit effect) and small descs are
+// core system strings — neither misidentifies, neither resolves.
+function descEffect(desc) {
+  if (desc == null || desc === 0) return null;
+  const code = Math.floor(desc / 1048576), idx = desc % 1048576;
+  if (code === 0 || idx >= 16 || !DATA || !DATA.cards[code]) return null;
+  return { code, idx };
+}
+const CIRCLED_NUM = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯';
+function effectSegments(code) { // [{n, body}] split of the official text on ①：-style markers
+  const t = cardText(code).replace(/[\r\n]+/g, '\n');
+  const out = [];
+  const re = /([①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯])：/g;
+  let m, last = null;
+  while ((m = re.exec(t))) {
+    if (last) out.push({ n: last.n, body: t.slice(last.end, m.index).trim() });
+    last = { n: CIRCLED_NUM.indexOf(m[1]) + 1, end: m.index + m[0].length };
+  }
+  if (last) out.push({ n: last.n, body: t.slice(last.end).trim() });
+  return out;
+}
+// The desc-index -> printed-effect-number correspondence is NOT
+// universally idx+1 (printed continuous effects own no description,
+// so the indices shift). fxmap.json (derived by gen-fxmap.js from
+// the bundled scripts + official texts, audited per card) says, per
+// card: {id:1} = identity is proven for this card, {map:{idx:n}} =
+// hand-audited override, {n} = count of described activatable
+// indices (for the follow-up rule below). Cards absent from fxmap
+// (or an fxmap that failed to load) get NO effect number anywhere —
+// the full text is shown instead of a possibly wrong number.
+let FXMAP = {};
+// Resolve (entry code, desc) to the effect the prompt is about:
+//   {n, body}        the numbered effect itself
+//   {follow:true}    desc index == the count of described effects:
+//                    the core's yes/no for the optional follow-up
+//                    clause of the effect now resolving (its desc is
+//                    registered one past the described effects)
+//   null             cannot be pinned — callers fall back to the
+//                    full text, never to a guessed effect
+function resolveEffect(code, desc) {
+  const de = descEffect(desc);
+  if (!de || de.code !== code) return null;
+  const m = FXMAP[code];
+  if (!m) return null;
+  const segs = effectSegments(code);
+  // follow-up yes/no (index == the card's described-effect count).
+  // Only for cards whose mapped effects exist at all: when a card
+  // has described-but-unnumbered indices (collisions, fxmap "n"
+  // without id/map), an index at the boundary cannot be trusted
+  // either, so it stays unidentified like every other index there.
+  if (de.idx === m.n && (m.id || m.map)) return { follow: true };
+  let n = 0;
+  if (m.map) n = m.map[de.idx] || 0;
+  else if (m.id) n = de.idx + 1;
+  if (!n) return null;
+  const seg = segs.find(s => s.n === n);
+  return seg ? { n: seg.n, body: seg.body } : null;
+}
+// The clause a follow-up yes/no asks about: the 「その後、…できる」
+// sentence of the effect now resolving. Every follow-up observed
+// in this pool (Mudora/Kelbek/the Trap spider, desc index == the
+// described-effect count in each case) asks exactly that, and for
+// each of those cards the LAST 「その後…できる」 sentence of the
+// text is the clause its prompt carries. When a card has none, the
+// fallback is the last 「〜できる」 sentence; '' when neither
+// exists (the block then says it is the resolving effect's
+// follow-up without quoting a clause).
+function followUpClause(code) {
+  const sentences = cardText(code).split('。').map(s => s.trim()).filter(Boolean);
+  const steps = sentences.filter(s => s.includes('その後') && s.includes('できる'));
+  const opt = steps.length ? steps : sentences.filter(s => s.includes('できる'));
+  const s = opt.length ? opt[opt.length - 1] : '';
+  if (!s) return '';
+  return s.length > 72 ? s.slice(0, 72) + '…' : s;
+}
+// The 「その後、…できる」 step clause INSIDE one numbered effect's
+// own text (a follow-up question's parent effect), '' when that
+// effect carries no such clause.
+function stepClause(code, n) {
+  const seg = effectSegments(code).find(s => s.n === n);
+  if (!seg) return '';
+  const s = seg.body.split('。').map(x => x.trim()).filter(x => x.includes('その後') && x.includes('できる'));
+  const out = s.length ? s[s.length - 1] : '';
+  return out.length > 72 ? out.slice(0, 72) + '…' : out;
+}
+function fxExcerpt(fx) { // one-line preview of an effect body
+  const s = (fx.body || '').replace(/\s+/g, ' ');
+  return s.length > 28 ? s.slice(0, 28) + '…' : s;
+}
+// The effect behind a prompt ENTRY (chain candidate / command
+// activation): resolveEffect first; when the core sends NO desc
+// for a Spell/Trap entry, the entry IS the card activation itself
+// (the ACTIVATE block of these cards carries no SetDescription —
+// census-verified: every desc-less S/T entry in this pool is a
+// fresh activation, and every effect activation carries a desc).
+// A Spell/Trap's activation effect is its FIRST numbered segment,
+// labelled as the activation rather than as a resolved number.
+function entryEffect(e) {
+  const fx = resolveEffect(e.code, e.desc);
+  if (fx) return fx;
+  if (!e.desc) {
+    const d = cardData(e.code);
+    if (d && (d.type & 0x6)) { // Spell or Trap card
+      const seg = effectSegments(e.code)[0];
+      if (seg) return { n: seg.n, body: seg.body, act: true };
+    }
+  }
+  return null;
+}
+// The highlight block: the asked-about effect alone, with its
+// number, over the full card text in a dimmer role (the full text
+// stays so nothing is hidden; the eye is told where to look).
+function fxBlockHTML(code, fx) {
+  const segBody = fx ? (fx.follow ? followUpClause(code) : (fx.body || '')) : '';
+  if (!segBody) return cardText(code) ? '<div class="cardtext">' + cardText(code) + '</div>' : '';
+  const head = fx.follow
+    ? '<div class="fxlab">この後、追加で選べる処理</div>'
+    : fx.act
+      ? '<div class="fxlab">発動する効果（このカードの発動）</div>'
+      : '<div class="fxlab">聞かれている効果：' + CIRCLED_NUM[fx.n - 1] + '</div>';
+  return head + '<div class="cardtext fxmain">' + segBody + '</div>' +
+    (cardText(code) ? '<details class="fxfull"><summary>カード全体のテキスト</summary><div class="cardtext">' + cardText(code) + '</div></details>' : '');
+}
+// Name as the dismissal manager shows it: with the effect number
+// when the dismissed class is one specific effect of the card.
+function dismissalName(e) {
+  const fx = resolveEffect(e.code, e.desc);
+  return cardName(e.code) + (fx && fx.n ? ' の効果' + CIRCLED_NUM[fx.n - 1] : '');
+}
 function isXyzCode(code) { const d = cardData(code); return !!(d && (d.type & 0x800000)); }
 function cardMetaLine(code, mats) {
   const d = cardData(code); if (!d) return '';
@@ -63,7 +204,11 @@ function liveMats(con, loc, seq) {
 function contextLineHTML(prompt) {
   const ctx = prompt && prompt.context;
   if (!ctx) return '';
-  return '<div class="ctx">「' + cardName(ctx.code) + '」の効果による確認（' + locLabel(ctx) + '）</div>';
+  // Name the effect number too when the asking link's desc pins it
+  // (same wording everywhere a context line appears).
+  const fx = resolveEffect(ctx.code, ctx.desc);
+  const what = fx && fx.n ? '」の効果' + CIRCLED_NUM[fx.n - 1] : '」の効果';
+  return '<div class="ctx">「' + cardName(ctx.code) + what + 'による確認（' + locLabel(ctx) + '）</div>';
 }
 function contextText(prompt) {
   const ctx = prompt && prompt.context;
@@ -2006,7 +2151,7 @@ function sheetClose() { closeInfoPop(); $('sheetwrap').className = ''; $('sheet'
 // is in progress — opening or closing it never answers, toggles
 // or cancels anything, so a choice can be checked mid-selection
 // and the selection is exactly as it was left.
-function openInfoPop(code, ref) {
+function openInfoPop(code, ref, fx) {
   if (code == null || !DATA || !DATA.cards[code]) return;
   setPreview(code, ref || null);
   const mats = ref ? liveMats(ref.con, ref.loc, ref.seq) : null;
@@ -2014,7 +2159,7 @@ function openInfoPop(code, ref) {
   const st = statsLine(code);
   $('infopop').innerHTML = '<div class="ttl">' + cardName(code) + '</div>' +
     '<div class="sub">' + [meta, st].filter(Boolean).join('／') + '</div>' +
-    (cardText(code) ? '<div class="cardtext">' + cardText(code) + '</div>' : '<div class="sub">テキスト未収録</div>') +
+    (cardText(code) ? (fx ? fxBlockHTML(code, fx) : '<div class="cardtext">' + cardText(code) + '</div>') : '<div class="sub">テキスト未収録</div>') +
     '<div class="btnrow"><button class="bigbtn sub" id="infopop-close">閉じる</button></div>';
   $('infopop').className = 'on';
   $('infopop-close').addEventListener('click', () => { playClick(); closeInfoPop(); });
@@ -2082,7 +2227,11 @@ function uiCmd(prompt, state) {
   const add = (list, label, type) => list.forEach((e, i) => {
     const key = e.con + ':' + e.loc + ':' + e.seq;
     if (!actionMap.has(key)) actionMap.set(key, []);
-    actionMap.get(key).push({ label, bytes: E.cmdResp(type, i), code: e.code });
+    // Activatable entries keep their desc: two effects of the same
+    // card must not collapse into indistinguishable buttons.
+    const fx = label === '効果を発動' ? entryEffect(e) : null;
+    const lab = fx && fx.n ? (fx.act ? 'カードを発動：' + fxExcerpt(fx) : '効果を発動：' + CIRCLED_NUM[fx.n - 1] + ' ' + fxExcerpt(fx)) : label;
+    actionMap.get(key).push({ label: lab, bytes: E.cmdResp(type, i), code: e.code, desc: e.desc });
   });
   if (prompt.name === 'SELECT_IDLECMD') {
     add(prompt.summon, '通常召喚', 0);
@@ -2158,10 +2307,17 @@ function openActionSheet(key) {
       unusable = '<div class="optbtn disabled">効果を発動<span class="reason">' + reason + '</span></div>';
     }
   }
+  // When this card has several offered effects, pin the texts: the
+  // offered effects are highlighted one by one (full text stays
+  // readable below, R-SEL-1 style).
+  const offeredFx = [...new Set(acts.map(a => { const f = entryEffect(a); return f && f.n ? f.n : 0; }).filter(Boolean))].sort();
+  const fxBlocks = zoneCode != null && offeredFx.length > 1
+    ? offeredFx.map(n => { const seg = effectSegments(zoneCode).find(s => s.n === n); return seg ? fxBlockHTML(zoneCode, seg) : ''; }).join('')
+    : '';
   sheetOpen('<div class="ttl">' + title + '</div><div class="sub">' + locLabel({ con, loc, seq }) + (meta ? '／' + meta : '') + '</div>' +
     acts.map((a, i) => '<button class="optbtn" data-action-idx="' + i + '">' + a.label + '</button>').join('') +
     unusable +
-    (txt ? '<div class="cardtext">' + txt + '</div>' : '') +
+    (fxBlocks || (txt ? '<div class="cardtext">' + txt + '</div>' : '')) +
     '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">盤面に戻る</button></div>');
   $('sheet').querySelectorAll('[data-action-idx]').forEach(b => b.addEventListener('click', () => { playClick(); finishPrompt(acts[+b.dataset.actionIdx].bytes); }));
   $('sheet-cancel').addEventListener('click', () => { playClick(); sheetClose(); });
@@ -2232,7 +2388,7 @@ function flashAutoPass(names) {
 function openDismissManager() {
   if (currentPrompt) return; // during a prompt the dock itself carries the controls
   const rows = [...dismissedDuel.entries()].map(([k, v]) =>
-    '<div class="sortrow"><span>' + cardName(v.code) + '</span><span class="mv"><button data-undismiss="' + k + '">解除</button></span></div>').join('');
+    '<div class="sortrow"><span>' + dismissalName(v) + '</span><span class="mv"><button data-undismiss="' + k + '">解除</button></span></div>').join('');
   sheetOpen('<div class="ttl">自動パスの設定（このデュエル）</div>' +
     '<div class="sub">ここにあるカードだけが残ったチェーン確認は、自動でパスされます。他に候補がある確認は通常どおり表示されます。</div>' +
     (rows || '<div class="sub">設定中のカードはありません</div>') +
@@ -2290,7 +2446,7 @@ function uiChain(prompt, state) {
   // candidate, and all forced prompts, are shown normally. A visible flash
   // indicator tells the player the auto-pass happened.
   if (!noDismiss && !prompt.forced && prompt.entries.length > 0 && prompt.entries.every(e => dismissedDuel.has(chainKey(e)))) {
-    flashAutoPass([...new Set(prompt.entries.map(e => cardName(e.code)))].join('・'));
+    flashAutoPass([...new Set(prompt.entries.map(e => dismissalName(e)))].join('・'));
     const cp = currentPrompt;
     clearInteraction(); // board is inert during the short delay: no stale actions can fire
     if (duelState) render(duelState);
@@ -2311,8 +2467,13 @@ function uiChain(prompt, state) {
       '<div class="cands">' + prompt.entries.map((e, i) => {
         if (!noDismiss && dismissedDuel.has(chainKey(e))) return ''; // duel-dismissed: hidden here, managed in the section below
         const disChain = dismissedChains.has(chainKey(e));
+        // the candidate's own effect, named on the candidate itself
+        // (a card with several chainable effects must not read as
+        // one undifferentiated name)
+        const cfx = entryEffect(e);
         return '<div class="cand' + (disChain ? ' dismissed' : '') + '" data-chain="' + i + '">' + cardName(e.code) +
           '<div class="loc">' + locLabel(e) + (disChain ? '（このチェーンでは聞かない）' : '') + '</div>' +
+          (cfx && cfx.n ? '<div class="fxline">' + (cfx.act ? '発動：' : '効果' + CIRCLED_NUM[cfx.n - 1] + '：') + fxExcerpt(cfx) + '</div>' : '') +
           (prompt.forced ? '' : '<span class="dismiss" data-dismiss="' + i + '" title="このチェーンでは聞かない／元に戻す">×</span>') +
           (prompt.forced || disChain ? '' : '<span class="dueldismiss" data-dueldismiss="' + i + '">このデュエル中は聞かない</span>') +
           '<span class="candinfo" data-info="' + i + '">詳細</span></div>';
@@ -2320,8 +2481,8 @@ function uiChain(prompt, state) {
       (() => {
         const dd = prompt.entries.filter(e => dismissedDuel.has(chainKey(e)));
         if (noDismiss || !dd.length) return '';
-        return '<div class="duelsection">自動パス設定中：' + [...new Set(dd.map(e => cardName(e.code)))].join('・') +
-          dd.map(e => '<button data-undismiss="' + chainKey(e) + '">' + cardName(e.code) + ' を解除</button>').join('') + '</div>';
+        return '<div class="duelsection">自動パス設定中：' + [...new Set(dd.map(e => dismissalName(e)))].join('・') +
+          dd.map(e => '<button data-undismiss="' + chainKey(e) + '">' + dismissalName(e) + ' を解除</button>').join('') + '</div>';
       })() +
       '<div class="row">' + (prompt.forced ? '' : '<button class="bigbtn" id="chain-pass">パス</button>') + '</div>';
     $('dock').className = 'on'; // exact class is a contract (tests/tools match on it) — do not append state classes here
@@ -2338,7 +2499,7 @@ function uiChain(prompt, state) {
     // the detail floats over the dock and closes back onto it.
     $('dock').querySelectorAll('[data-info]').forEach(x => x.addEventListener('click', (ev) => {
       ev.stopPropagation(); playClick();
-      const e = prompt.entries[+x.dataset.info]; openInfoPop(e.code, e);
+      const e = prompt.entries[+x.dataset.info]; openInfoPop(e.code, e, entryEffect(e));
     }));
     $('dock').querySelectorAll('[data-dismiss]').forEach(x => x.addEventListener('click', (ev) => {
       ev.stopPropagation(); playClick();
@@ -2350,11 +2511,11 @@ function uiChain(prompt, state) {
     $('dock').querySelectorAll('[data-dueldismiss]').forEach(x => x.addEventListener('click', (ev) => {
       ev.stopPropagation(); playClick();
       const e = prompt.entries[+x.dataset.dueldismiss];
-      dismissedDuel.set(chainKey(e), { code: e.code });
+      dismissedDuel.set(chainKey(e), { code: e.code, desc: e.desc });
       updateAutoPassChip();
       // if that was the last visible candidate class, the prompt now auto-passes
       if (!prompt.forced && prompt.entries.every(en => dismissedDuel.has(chainKey(en)))) {
-        flashAutoPass([...new Set(prompt.entries.map(en => cardName(en.code)))].join('・'));
+        flashAutoPass([...new Set(prompt.entries.map(en => dismissalName(en)))].join('・'));
         const cp = currentPrompt;
         clearInteraction();
         if (duelState) render(duelState);
@@ -2520,26 +2681,69 @@ function uiSort(prompt, state) {
 // ---- yes/no, option ----
 function uiYesNo(prompt, state) {
   const isEff = prompt.name === 'SELECT_EFFECTYN';
-  sheetOpen('<div class="ttl">' + (isEff ? cardName(prompt.code) + ' の効果' : '確認') + '</div>' +
+  // WHICH card and WHICH effect is being asked must be readable on
+  // the sheet itself (user report 2026-11-03). Sources, in order:
+  // EFFECTYN names its card outright; a plain YESNO carries the
+  // asking card in the prompt context AND, when its desc is that
+  // card's string id, the exact effect index being resolved.
+  const ctx = !isEff && prompt.context && prompt.context.code ? prompt.context : null;
+  const named = isEff ? { code: prompt.code } : ctx;
+  const fx = isEff ? resolveEffect(prompt.code, prompt.desc)
+                   : (ctx ? (resolveEffect(ctx.code, prompt.desc) || resolveEffect(ctx.code, ctx.desc)) : null);
+  const ttl = named
+    ? cardName(named.code) + ' の効果' + (fx && fx.n ? CIRCLED_NUM[fx.n - 1] : '')
+    : '確認';
+  let sub, block;
+  if (isEff) {
+    sub = locLabel(prompt) + ' の効果を発動しますか？';
+    block = fxBlockHTML(prompt.code, fx);
+  } else if (fx && fx.follow) {
+    // yes/no about the optional clause inside the resolving effect.
+    // The parent effect is the one the context (the solving chain
+    // link) names: when its number is known, the question is pinned
+    // to it and its own step clause is quoted; otherwise the clause
+    // is quoted from the card text as a whole.
+    const parentFx = resolveEffect(ctx.code, ctx.desc);
+    const clause = (parentFx && parentFx.n ? stepClause(ctx.code, parentFx.n) : '')
+      || followUpClause(ctx.code);
+    sub = '「' + cardName(ctx.code) + '」の効果の続きです。' + (clause ? '次も行いますか？' : 'この効果の処理を続けますか？');
+    block = fxBlockHTML(ctx.code, parentFx && parentFx.n ? parentFx : fx);
+  } else if (named) {
+    sub = '「' + cardName(named.code) + '」' + (fx && fx.n ? 'の効果' + CIRCLED_NUM[fx.n - 1] : 'の効果') + 'について確認です。この効果を進めますか？';
+    block = fxBlockHTML(named.code, fx);
+  } else {
+    sub = '選択してください';
+    block = '';
+  }
+  sheetOpen('<div class="ttl">' + ttl + '</div>' +
     '<div class="ctx">' + timingText(state) + confirmTag(state) + '</div>' +
-    '<div class="sub">' + (isEff ? locLabel(prompt) + ' の効果を発動しますか？' : '選択してください') + '</div>' + (isEff ? '' : contextLineHTML(prompt)) + retryWarn(prompt) +
-    // C-25: a yes/no about an effect must show the effect — the
-    // decision is made from the text, not from the card's name.
-    (isEff && cardText(prompt.code) ? '<div class="cardtext">' + cardText(prompt.code) + '</div>' : '') +
-    '<button class="optbtn" id="yn-yes">' + (isEff ? '発動する' : 'はい') + '</button>' +
-    '<button class="optbtn" id="yn-no">' + (isEff ? '発動しない' : 'いいえ') + '</button>');
+    '<div class="sub">' + sub + '</div>' + (isEff || named ? '' : contextLineHTML(prompt)) + retryWarn(prompt) +
+    block +
+    // a follow-up question is not an activation: its answer pair
+    // says 行う/行わない, matching the question's own wording
+    '<button class="optbtn" id="yn-yes">' + (fx && fx.follow ? '行う' : (isEff || named ? '発動する' : 'はい')) + '</button>' +
+    '<button class="optbtn" id="yn-no">' + (fx && fx.follow ? '行わない' : (isEff || named ? '発動しない' : 'いいえ')) + '</button>');
   $('yn-yes').addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(1)); });
   $('yn-no').addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(0)); });
 }
 function uiOption(prompt, state) {
-  // C-24 (partial): the option descriptors are core string IDs
-  // the client does not hold, so the buttons cannot be labelled
-  // with them yet — but the SOURCE card's full text is shown, so
-  // what the options choose between is readable in place.
-  const srcTxt = prompt.context && prompt.context.code ? cardText(prompt.context.code) : '';
-  sheetOpen('<div class="ttl">効果の選択</div><div class="sub">適用する効果を選んでください。</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
-    (srcTxt ? '<div class="cardtext">' + srcTxt + '</div>' : '') +
-    prompt.options.map((o, i) => '<button class="optbtn" data-opt="' + i + '">選択肢 ' + (i + 1) + '</button>').join(''));
+  // C-24 resolved for this pool: option entries are the same desc
+  // string ids as everywhere else, so when an option's desc decodes
+  // to a card effect, the button carries that effect itself. The
+  // SOURCE card comes from the context or from the first decodable
+  // option desc. System-id options (not seen in this pool) keep the
+  // numbered label WITH the source's full text above them.
+  const optFx = prompt.options.map(o => descEffect(o));
+  const srcCode = (prompt.context && prompt.context.code) || (optFx.find(d => d) || {}).code || null;
+  const ttl = srcCode ? cardName(srcCode) + ' の効果の選択' : '効果の選択';
+  sheetOpen('<div class="ttl">' + ttl + '</div><div class="sub">適用する効果を選んでください。</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
+    prompt.options.map((o, i) => {
+      const d = optFx[i];
+      const fx = d ? resolveEffect(d.code, o) : null;
+      if (fx && fx.n) return '<button class="optbtn" data-opt="' + i + '">効果' + CIRCLED_NUM[fx.n - 1] + '：' + fxExcerpt(fx) + '</button>';
+      return '<button class="optbtn" data-opt="' + i + '">選択肢 ' + (i + 1) + '</button>';
+    }).join('') +
+    (srcCode ? fxBlockHTML(srcCode, null) : ''));
   $('sheet').querySelectorAll('[data-opt]').forEach(b => b.addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(+b.dataset.opt)); }));
 }
 // ---- announce ----
@@ -3176,6 +3380,15 @@ function wireSeg(id, apply) {
 (async () => {
   try {
     DATA = await (await fetch('data.json')).json();
+    // fxmap.json: which printed effect a desc index names. A failed
+    // or foreign-shaped response (test stubs answer every fetch
+    // with data.json) just leaves FXMAP empty — identification
+    // degrades to full-text display, never to wrong numbers.
+    try {
+      const fm = await (await fetch('fxmap.json')).json();
+      const k = Object.keys(fm || {})[0];
+      if (fm && k && fm[k] && typeof fm[k].n === 'number') FXMAP = fm;
+    } catch (e) { /* identification off, display unaffected */ }
     $('loadmsg').textContent = '準備完了（カード ' + Object.keys(DATA.cards).length + ' 種）';
     // A-03: the start button's state IS the load state — disabled
     // and labelled while loading, live only when a duel can start.
