@@ -3089,6 +3089,73 @@ r2-solve, r2-chain2 (link-1 pops + a gold-ignition solve frame
 verified by eye; a link-2 pop strip is still owed — two-link
 chains did not occur in the capture duels). All 16 suites pass.
 
+## V4 polish — Round 3: finisher + portal (2026-11-03)
+
+V4-4 finisher (total 2900 ms, result gate 2300 ms, unchanged):
+the charge's boxShadow is set once at creation (it was rewritten
+every frame) and the charge staggers in three tiers — rim 0-300,
+halo 120-420 (top canvas), vignette 240-500. The DOM impact core
+became a three-tier canvas bloom (1420-1650). The wash gained a
+second source at screen centre (alpha .30*(1-u)^1.6) and a
+last-light ring contracting 260->40 px over 1900-2350. The tilt
+is now a decaying recovery (-0.5 deg, +0.10 deg overshoot,
+settle). The LP drain carries a red pulse synced to the drain
+rate (textShadow quantized to 10 steps), and the landing pop is
+a settle on the FX clock (it was a wall-clock setTimeout). The
+result itself now enters with a snap (sinks 10 px) and a gold
+bloom element of its own — the bloom was first drawn on the FX
+canvas, where the result overlay occluded it; the R3 frame strip
+showed that, so it moved into the result overlay.
+V4-5 portal: a scene on the shared clock (was WAAPI + a paired
+fxZoneGlow call at each site; the glow is folded into the scene,
+its duration is the third argument). 60 ms staging: glow 0-,
+rings 60-, spiral burst 180, birth flash 330, landing 330-520.
+Two counter-rotating ring layers (method-coloured CSS) spin up
+quadratically, cruise, and brake into a scale-.8 collapse
+(720-840). Defect found and fixed during this round: the new
+spiral burst omitted its radius band, which threw inside the
+particle draw pass and froze the frame loop (caught by the
+error-stack harness before shipping; fxSpawnBurst now defaults
+spiral r/turns so a malformed burst cannot do that again).
+Measured (mix 700): portal >33.4ms 0.5% (max 83.4); finisher
+>33.4ms 4.0% but max down to 83.4 (stage 0 spikes were ~350) —
+the remaining >33.4 frames sit in the cut-in phase and share
+the ace's known residual: the rotating conic background
+repaint, which Round 4 rasterizes. Frame strips:
+v4shots2/r3-finisher2 (charge/cut-in, impact bloom at the LP
+plate, wash decay, result after the gate — verified by eye).
+Zero pageerrors over a 480 s fusion-mirror run (v4err.js).
+
+## V4 polish — Round 4: rasterized backdrops + close-out (2026-11-03)
+
+The rotating conic backdrops (ace L8 + streaks, finisher swirl)
+and the finisher's 720 px wash were the repaint cost both the
+stage-0 and R3 distributions kept flagging: DOM gradient layers
+re-laid-out/repainted on every frame of their windows. They are
+now pre-rendered once per (colour, pattern) into offscreen
+rasters (fxConicRaster / fxDiscRaster, cached) and only drawn
+rotated / scaled on the FX canvas. Everything else about the
+scenes — envelopes, rates, colours — is unchanged, and the
+frame strips (v4shots2/r4-ace, r4-finisher) show the same look.
+Final measurement (mix 700, latest of three R4 samples;
+baseline >33.4ms 0.5%): attack 0.0%, portal 0.0%, chainpop and
+chainsolve ~0.5% (R2 run), finisher 2.6% (max 66.6; stage 0 was
+4.0% with ~350 ms spikes; the wash raster alone moved it from
+7.5% to 2.6% between two samples of the same day), ace 2.9%
+(max 83.4; stage 0: 7.0%). Run-to-run variance in this
+software-rendered harness is large (one R4 sample had a 1.6%
+baseline and proportionally worse scenes) and the two long
+scenes also absorb prompt/engine work that overlaps them, so
+the ace hold and the finisher drain remain above the 1% target
+ON THIS HARNESS; real-device (WKWebView, GPU-composited) fps is
+unmeasured by design and stays on the brushup loop's list.
+Still owed (capture luck, not defects): a monster-vs-monster
+attack strip (the destroyed-monster ghost cross-fade) and a
+link-2 chain-pop strip (CHAIN word + cord) — clicker duels
+produce direct attacks / prompt-suspended attacks and one-link
+chains only; both paths are covered structurally and by
+test-fx. All 18 suites pass.
+
 ### Merge with audit-27 (aafefea) — conflict resolution record
 feat/v4-polish (from f288d69) and audit-27 (also from f288d69)
 landed in parallel. client.js / index.html auto-merged (disjoint
