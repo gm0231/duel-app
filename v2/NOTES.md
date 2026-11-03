@@ -3619,6 +3619,98 @@ test-poolcov D asserts the scan finds EXACTLY this set:
   このターンは効果を発動できません」 (screenshot eyeballed).
 - Still unmeasured: sound feel, real-device WKWebView.
 
+## Log-history button triage (2026-11-03): the 履歴 button was dead under any open prompt
+
+User report (real device): 履歴のログが見れない — the button is
+pressed and NOTHING happens; the modal never gets a chance to open.
+
+Reproduction (cap-loghist.js, real Chromium, 390x700, own main
+phase): the button is rendered in the idle chain bar,
+elementFromPoint at its centre IS #loghistbtn (nothing covers
+it), logHist.length > 0, sheet/dock closed — and a real
+touchscreen tap changes nothing. probe-guard.js isolates the
+single variable: openLogHistory() with a prompt open -> sheet
+stays closed; the same call in a no-prompt gap -> sheet opens
+with all rows.
+
+Root cause: openLogHistory() opened with
+`if (currentPrompt || !logHist.length) return;`. uiAnswer sets
+currentPrompt for EVERY human prompt, and SELECT_IDLECMD /
+SELECT_BATTLECMD stay open for the player's whole turn — so the
+guard silently swallowed the tap at every moment the button
+would actually be used. It only ever worked in the brief
+processing gaps between prompts, which is how the B-10 round
+verified it (test clickers run in gaps) while the real-device
+path was dead ~always. It is the only view sheet with such a
+guard: pile sheets and the menu sheet open over a live prompt.
+
+Fix (client.js):
+- openLogHistory no longer gates on currentPrompt. A view sheet
+  is read-only, overlays the board and never answers the pending
+  prompt; an arriving sheet prompt reclaims the sheet via
+  sheetOpen. Still blocked: no log entries yet, a sheet already
+  open, or the dock open (those prompts live there).
+- Tap target: the button alone is 40x19 px inside the frozen
+  21 px band. The whole log strip now opens the history — the
+  履歴 button, the previous-event text (.prevlog) in the idle
+  chain bar, and the latest log line (#logline). No layout
+  change (the band height is frozen by the board-fit contract).
+
+Regression: v2/test-loghist.js (jsdom) boots the real client,
+holds the human's first SELECT_IDLECMD with a non-empty log —
+the exact dead state — and asserts: button click opens the
+history sheet with rows; 盤面に戻る closes it; the idle prompt
+is still pending afterwards; the log line opens it too; the
+view-sheet x closes it; the duel continues. ALL PASS.
+Frame evidence (real Chromium, real taps): shots-logfix/ —
+repro-700-* (before fix: tap, nothing), fixed-700-* /
+fixed-620-* (after fix), deep2-700-* (11 rows, sheet eyeballed:
+title, 直近 11 件, turn-tagged rows newest-first, 盤面に戻る).
+Scroll proof at 620 (probe-scroll.js): 17 rows held at
+SELECT_IDLECMD, sheet scrollHeight 553 > clientHeight 382,
+scrollTop reaches the 171 max and the oldest row (自分：5枚
+ドロー) is reachable — scroll620-top.png / scroll620-bottom.png,
+both eyeballed.
+Still unmeasured: real-device WKWebView tap behaviour.
+## S/T rotation triage (2026-11-03): every spell/trap tile rendered rotated 90 degrees
+
+User report (real device): 「魔法罠の画像が90度曲がる」. Reproduced —
+the report was exact, and the defect was unconditional, not situational.
+
+- Root cause: `tileHTML` derived the `def` class purely from the
+  position bitmask, `(card.pos & POS_DEFENSE) !== 0`. In the core's
+  position encoding a spell/trap is 0x5 face-up / 0xa face-down —
+  both ALWAYS intersect POS_DEFENSE (0xC). So every S/T tile, set or
+  face-up, carried `def`, and the round-B CSS
+  `.tile.def .inner{transform:rotate(90deg) scale(.82)}` (the
+  MD-style monster defense rotation) rotated its art + name band
+  90 degrees. tileHTML did not even receive the zone location.
+- Measured pre-fix on the real page (390x700, live duel): own set
+  《おろかな副葬》 and the opponent's face-up field spell
+  《ラビリンス・ウォール・シャドウ》 both sat in the S/T zone with
+  class "tile def" and computed transform
+  matrix(0, 0.82, -0.82, 0, 0, 0) = rotate(90deg) scale(.82).
+  Engine-level measurement agrees: activated face-up Swords of
+  Revealing Light pos=0x5, set S/T pos=0xa.
+- Fix: `tileHTML(card, con, actKey, loc)` — the def class is now
+  gated on `loc === E.LOC.MZONE`, the same guard the
+  position-change animation (fxPosChange) already used. Monster
+  behavior is bit-for-bit unchanged; S/T tiles can no longer
+  rotate in any state.
+- Verification: new test-strot.js (jsdom, real duel by clicking)
+  asserts no S/T tile ever carries `def` while defense monsters
+  do, with non-vacuity gates (S/T tiles AND a defense monster must
+  be observed). It FAILS on the pre-fix code (violations:
+  おろかな副葬 "tile def") and passes after. Live-page probes
+  post-fix (390x620 + 390x700): set trap / own set spell / face-up
+  spell / field spell all transform:none; the opponent's face-down
+  defense monster still matrix(0, 0.82, -0.82, 0, 0, 0).
+  Frames: shots-strot/ in the fix worktree.
+- Note: one test-fx run under heavy parallel load reported 10
+  timing failures; back-to-back re-runs on pristine main and on
+  the fixed tree both pass all 56 checks. Not related to this
+  change (tileHTML def gating only).
+
 ## Brushup round 2 (2026-11-03): BU-11 strip overflow, reasons on the remaining surfaces, sheet-open cost
 
 Integration round over the brushup backlog (the user's standing
