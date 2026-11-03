@@ -4260,3 +4260,94 @@ so the capture answers 発動しない / パス through the real UI
 before shooting the field), a fabricated six-arts board at
 390x620 (all six deliveries on field and in hand), cut-in via
 fxCutinShow as before.
+## Log detail (2026-11-03, user report: 履歴ログが詳細でない)
+
+The history log carried headlines only — which effect activated,
+what processing happened and what the outcome was (destroyed /
+banished / damage / returned) was written nowhere, so a duel
+could not be re-read from the log. The mirror now keeps a
+STRUCTURED detailed stream next to the headline log and the
+history sheet renders it as the duel's story.
+
+### Engine: GameState.dlog (structured; headline state.log untouched)
+
+- pushDLog stamps every entry with turn / turn player / phase;
+  chain activations additionally carry a chain-episode id (cid,
+  bumped per MSG_CHAINING that starts a new chain) and outcome
+  lines produced while a link resolves carry its number (sol).
+  Cap 600, trimmed from the head.
+- CHAINING (70): activation entries are stored STRUCTURED
+  ({k:'act', link, con, code, desc, loc, tgt}) — the printed
+  effect NUMBER is resolved client-side (fxmap lives there) at
+  capture time. Target naming: the wire's target fields name
+  the activating card itself when the effect has no target
+  (observed on every non-targeting activation in the pool), so
+  self-reference is dropped as "no target"; a real target is
+  named only when public (face-up on the field, grave/banished
+  piles, or the human's own card).
+- CHAIN_SOLVING (72) emits {k:'solve'} headers; CHAIN_NEGATED /
+  CHAIN_DISABLED emit neg/dis lines with the link number.
+- MOVE (50): every public move becomes an outcome line —
+  battle vs effect destruction told apart by the reason bits
+  (0x1 / 0x20), banish, deck-from mill, grave send, returns to
+  hand/deck (incl. Extra Deck), recoveries from grave/banish/
+  Extra, control change, Xyz material attach/detach, discards
+  (0x4000), hand-to-grave sends, deck shuffles reported by the
+  core. Arrival-side field/hand/deck moves are owned by the
+  summon/set/draw lines and stay unlogged here (no duplicates).
+- DAMAGE / RECOVER / PAY_LPCOST carry LP before -> after.
+  LPUPDATE (94) is deliberately not logged (would duplicate).
+- SET (54) names the human's own set card with its position;
+  the opponent's stays "カードをセット". Summons (60/62/64)
+  carry the position; an opponent's face-down summon stays
+  unnamed even when a preceding MOVE disclosed the code.
+- POS_CHANGE (53) names the position transition; the wire also
+  uses the face-up/face-down MASKS (0x5 / 0xA — a set card
+  announces 0xA), all six forms are named. An opponent's
+  face-down -> face-down change is suppressed (identity leak).
+- DRAW (90) names the human's drawn cards; the opponent's
+  draws stay count-only. CONFIRM_CARDS (31) groups what the
+  human was shown per (controller, location), deck top-first.
+- refreshFieldStats diffs effective ATK/DEF of known face-up
+  monsters and logs the delta (first sighting is a silent
+  baseline; face-down stats stay hidden). Attribution is by
+  prompt boundary, so these lines do not carry a chain link.
+- SWAP (55), SHUFFLE_HAND (33), SWAP_GRAVE_DECK (35),
+  SHUFFLE_SET_CARD (36), WIN (5) each add their line.
+
+### What the stream cannot say (counted, not faked)
+
+- Battle vs effect damage is not separable from MSG_DAMAGE
+  alone; inside a resolution the episode grouping shows it,
+  outside it the attack declaration precedes the damage line.
+- Xyz material COUNTS are not logged (the count is not final
+  at summon-message time).
+- Stat-change lines carry no resolving link (see above).
+
+### Client: capture + rendering
+
+- captureDLog (render) prefix-diffs the stream by entry
+  identity (append-only; the anchor survives the head trim
+  between renders) and bakes each entry's text at capture time:
+  act/solve/neg/dis lines go through the audited fx resolver —
+  numbered effects render 効果①-⑯, spell/trap card activations
+  render の発動, single-effect cards render の効果 (the
+  pool-coverage convention: the card itself is the identifier).
+- openLogHistory renders the detailed stream chronologically
+  (oldest first; opens scrolled to the newest entry), grouped
+  by turn headings （ターンN（自分／相手のターン）), phase
+  sub-headings, and chain-episode boxes; resolution headers are
+  styled as sub-headings, their outcome lines indented, and
+  negation lines tinted. Last 240 entries shown; the subtitle
+  states the total. The headline rendering remains as fallback
+  when no detailed entries exist. Rows carry content-visibility
+  like the other long sheet lists (round-2 performance rule).
+- The board's one-line log strip is unchanged (headlines).
+
+Tests: test-logdetail.js (node; full duels assert act<->solve
+correspondence, outcome kinds, LP arrows, opponent secrecy,
+no placeholder garbage), test-logdetail-ui.js (jsdom; sheet
+structure with the real fxmap, incl. a deterministic numbered-
+effect stamp probe). Frame evidence: shots-logdetail/ beside
+cap-logdetail.js (390x700/620, cut-in off + response auto via
+the app's own settings).
