@@ -4166,3 +4166,23 @@ Keldo drawn and normal-summoned through the real sheet at
 390x700 (tile + resident preview read clearly), a fabricated
 four-arts board at 390x620 (Mudora / Agido / Kelbek / Keldo on
 field and in hand), cut-in via fxCutinShow as before.
+
+Fifth delivery: 《予見者ゾルガ》 31525442 (x1 in the Ishizu
+deck). Source: ~/workspace/duel-assets/zolga-user-20261103.jpg
+(1024x1536 — blue-masked seer in white robes, visions of the
+future floating around him). Small file = top-anchored
+full-width square crop x0-1024 / y0-1024 -> 320x320 (30KB):
+the blue mask sits large at top centre with the gold collar
+and the glowing core inside; the robe's lower swirls are the
+sanctioned bottom cut. Big file = full width x y0-1411 ->
+640x882 (124KB). One line in CARD_ART; test-cardart gained
+CA0f/CA7h/CA7i/CA11e/CA14c/CA16b (48 checks). NOTE: Zolga was
+the test suite's unlisted exemplar (fallback checks CA6/CA11/
+CA15/CA17); that role moved to 《転輪のスフィンクス》 46148485
+(UNLISTED), so the fallback contract is still pinned on a real
+pool card. Real-play frames (cap-zolga.js, shots-zolga/):
+Zolga drawn and normal-summoned through the real sheet at
+390x700 (tile + resident preview — the mask reads at tile
+size), a fabricated five-arts board at 390x620 (all five
+deliveries on field and in hand), cut-in via fxCutinShow as
+before.
