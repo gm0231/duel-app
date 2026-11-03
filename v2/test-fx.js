@@ -591,6 +591,106 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     window.close();
   }
 
+  // ================= Part 1G: redesign F — non-battle LP changes =================
+  {
+    const window = await boot();
+    const doc = window.document;
+    const E = window.Engine;
+    const fx = window.__fx;
+    const step = (st, evs) => { const before = fx.log.length; fx.process(evs || [], st); return fx.log.slice(before); };
+    const render = (st) => window.render(st); // production order: render() first, then fx.process()
+    const has = (recs, kind, pred) => recs.some(r => r.kind === kind && (!pred || pred(r)));
+    const myLpEl = doc.getElementById('myLp'), oppLpEl = doc.getElementById('oppLp');
+    const base = (mut) => { fx.reset(); const st = fakeState(s => { s.log = []; if (mut) mut(s); }); render(st); step(st); };
+
+    // --- engine surface: MSG_PAY_LPCOST (case 100) now pushes a
+    // 'pay' event with the amount, and the LP arithmetic is unchanged
+    {
+      const gs = new E.GameState(data);
+      const lp0 = gs.players[0].lp;
+      gs.apply(new Uint8Array([100, 0, 0xDC, 0x05, 0x00, 0x00])); // player 0, 1500 (u32 LE)
+      ok(gs.players[0].lp === lp0 - 1500, 'FXF0: engine PAY_LPCOST still subtracts exactly the amount (lp ' + lp0 + ' -> ' + gs.players[0].lp + ')');
+      ok(gs.events.some(e => e.kind === 'pay' && e.player === 0 && e.amount === 1500), 'FXF0b: engine PAY_LPCOST pushes a {kind:pay, player, amount} event (got ' + JSON.stringify(gs.events) + ')');
+    }
+
+    // --- F-pay: my LP cost -> gold chip + a monotonic count, and
+    // NO battle damage number
+    base();
+    let st = fakeState(s => { s.log = []; s.players[0].lp = 6500; });
+    render(st);
+    let recs = step(st, [{ kind: 'pay', player: 0, amount: 1500 }]);
+    ok(has(recs, 'lpchip', r => r.chip === 'pay' && r.player === 0 && r.amount === 1500 && r.signed === -1500), 'FXF1: a pay event records a gold pay chip for the amount (got ' + JSON.stringify(recs.filter(r => r.kind === 'lpchip')) + ')');
+    ok(has(recs, 'lpchange', r => r.player === 0 && r.to === 6500), 'FXF1b: the LP change itself is still recorded');
+    const payChip = doc.querySelector('.fx3-lpchip--pay');
+    ok(!!payChip && payChip.textContent === '−1500' && payChip.dataset.lpKind === 'pay', 'FXF1c: the pay chip node reads −1500 and is marked as a pay chip (got ' + (payChip ? payChip.textContent + '/' + payChip.className : 'none') + ')');
+    ok(!doc.querySelector('.fx3-dmgnum'), 'FXF1d: a pay drop spawns NO battle damage number (the chip is the only presentation)');
+    ok(myLpEl.textContent === '8000', 'FXF1e: the counter is pinned to the start value at chip/count creation (got ' + myLpEl.textContent + ')');
+    const paySamples = [parseInt(myLpEl.textContent, 10)];
+    const payEnd = Date.now() + 1600;
+    while (Date.now() < payEnd) {
+      await new Promise(r => setTimeout(r, 25));
+      const v = parseInt(myLpEl.textContent, 10);
+      if (!Number.isNaN(v)) paySamples.push(v);
+      if (v === 6500 && fx.lpShown(0) === 6500) break;
+    }
+    ok(paySamples.every((v, i) => i === 0 || v <= paySamples[i - 1]), 'FXF1f: the pay count is monotonic non-increasing (distinct: ' + paySamples.filter((v, i) => i === 0 || v !== paySamples[i - 1]).join('>') + ')');
+    ok(paySamples[paySamples.length - 1] === 6500 && fx.lpShown(0) === 6500, 'FXF1g: the pay count settles exactly on 6500');
+
+    // --- F-damage: effect damage to the opponent -> red chip with
+    // the downward (anti-clip) variant, NO battle damage number
+    base();
+    st = fakeState(s => { s.log = []; s.players[1].lp = 7100; });
+    render(st);
+    recs = step(st, [{ kind: 'damage', player: 1, amount: 900 }]);
+    ok(has(recs, 'lpchip', r => r.chip === 'damage' && r.player === 1 && r.amount === 900 && r.down === true), 'FXF2: effect damage records a damage chip (opponent = downward variant)');
+    const dmgChip = doc.querySelector('.fx3-lpchip--damage');
+    ok(!!dmgChip && dmgChip.textContent === '−900' && dmgChip.classList.contains('fx3-lpchip--down') && dmgChip.dataset.direction === 'down', 'FXF2b: the effect-damage chip node reads −900 and carries the downward variant (class=' + (dmgChip ? dmgChip.className : 'none') + ')');
+    ok(!doc.querySelector('.fx3-dmgnum'), 'FXF2c: effect damage spawns NO battle damage number');
+
+    // --- F-heal (mine): + chip in gold; the float node IS the chip
+    base();
+    st = fakeState(s => { s.log = []; s.players[0].lp = 8600; });
+    render(st);
+    recs = step(st, [{ kind: 'recover', player: 0, amount: 600 }]);
+    ok(has(recs, 'lpchip', r => r.chip === 'heal' && r.player === 0 && r.amount === 600 && r.signed === 600 && r.variant === 'mine'), 'FXF3: my heal records a heal chip with the mine (gold) variant');
+    ok(has(recs, 'healfloat', r => r.amount === 600), 'FXF3b: the legacy healfloat record still fires for a heal');
+    const myHeal = doc.querySelector('.fx-healfloat');
+    ok(!!myHeal && myHeal.textContent === '+600' && myHeal.classList.contains('fx3-lpchip--heal') && myHeal.classList.contains('fx3-lpchip--mine') && !myHeal.classList.contains('fx-healfloat--down') && myHeal.dataset.direction === 'up', 'FXF3c: my heal node is the +600 gold chip and keeps the upward float (class=' + (myHeal ? myHeal.className : 'none') + ')');
+
+    // --- F-heal (opponent): + chip in lapis-white, and the float
+    // becomes the DOWNWARD variant (audit F2 remainder)
+    base();
+    st = fakeState(s => { s.log = []; s.players[1].lp = 8600; });
+    render(st);
+    recs = step(st, [{ kind: 'recover', player: 1, amount: 600 }]);
+    ok(has(recs, 'lpchip', r => r.chip === 'heal' && r.player === 1 && r.variant === 'opp' && r.down === true), 'FXF4: opponent heal records a heal chip with the opp (lapis-white) variant, downward');
+    const oppHeal = doc.querySelector('.fx-healfloat');
+    ok(!!oppHeal && oppHeal.textContent === '+600' && oppHeal.classList.contains('fx-healfloat--down') && oppHeal.classList.contains('fx3-lpchip--opp') && oppHeal.dataset.direction === 'down', 'FXF4b: the opponent heal float node is the downward lapis chip variant (class=' + (oppHeal ? oppHeal.className : 'none') + ', direction=' + (oppHeal ? oppHeal.dataset.direction : 'none') + ')');
+
+    // --- F-mixed: pay + effect damage in ONE batch -> one chip per
+    // kind, summing to the net loss
+    base();
+    st = fakeState(s => { s.log = []; s.players[0].lp = 6000; });
+    render(st);
+    recs = step(st, [{ kind: 'pay', player: 0, amount: 1500 }, { kind: 'damage', player: 0, amount: 500 }]);
+    ok(has(recs, 'lpchip', r => r.chip === 'pay' && r.amount === 1500) && has(recs, 'lpchip', r => r.chip === 'damage' && r.amount === 500), 'FXF5: a mixed pay+damage batch records one chip per kind (got ' + JSON.stringify(recs.filter(r => r.kind === 'lpchip')) + ')');
+    ok(doc.querySelectorAll('.fx3-lpchip').length === 2, 'FXF5b: the mixed batch shows exactly two chip nodes (got ' + doc.querySelectorAll('.fx3-lpchip').length + ')');
+
+    // --- F-suppression: an attack batch's battle damage gets NO
+    // F chip at all — the battle grammar (damage number + scheduled
+    // count) stays the only presentation
+    base(s => { s.players[0].mzone[0] = mon(NORMAL); });
+    st = fakeState(s => { s.log = []; s.players[0].mzone[0] = mon(NORMAL); s.players[1].lp = 7100; });
+    st.lastAttack = { attacker: { con: 0, loc: E.LOC.MZONE, seq: 0 }, target: null };
+    render(st);
+    recs = step(st, [{ kind: 'attack', code: NORMAL, con: 0, direct: true }, { kind: 'damage', player: 1, amount: 900 }]);
+    ok(!recs.some(r => r.kind === 'lpchip'), 'FXF6: an attack batch records NO lpchip (no double presentation)');
+    ok(!doc.querySelector('.fx3-lpchip'), 'FXF6b: an attack batch shows NO chip node');
+    ok(!!doc.querySelector('.fx3-dmgnum'), 'FXF6c: the battle damage number itself is intact for the attack batch');
+    ok(fx.error === null, 'FXF7: fxError stayed null through every redesign-F step (got: ' + fx.error + ')');
+    window.close();
+  }
+
   // ================= Part 2: live duels =================
   if (process.env.FX_SYNTH_ONLY) { console.log(failures === 0 ? 'ALL FX SYNTHETIC CHECKS PASSED' : failures + ' FAILED'); process.exit(failures ? 1 : 0); }
   const tally = {};

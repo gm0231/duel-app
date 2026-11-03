@@ -524,7 +524,7 @@ class GameState {
       case 94: { const p = r.u8(); this.players[p].lp = r.i32(); break; } // LPUPDATE
       case 91: { const p = r.u8(); const amt = r.u32(); this.players[p].lp -= amt; this.pushLog(this.who(p) + 'に ' + amt + ' ダメージ'); this.pushEvent({ kind: 'damage', player: p, amount: amt }); break; } // DAMAGE
       case 92: { const p = r.u8(); const amt = r.u32(); this.players[p].lp += amt; this.pushEvent({ kind: 'recover', player: p, amount: amt }); break; } // RECOVER
-      case 100: { const p = r.u8(); const amt = r.u32(); this.players[p].lp -= amt; break; } // PAY_LPCOST
+      case 100: { const p = r.u8(); const amt = r.u32(); this.players[p].lp -= amt; this.pushEvent({ kind: 'pay', player: p, amount: amt }); break; } // PAY_LPCOST (redesign F: the pay event is presentation-only — it lets the client tell an LP cost apart from damage; the LP arithmetic is unchanged)
       case 50: { // MOVE: code, from loc_info, to loc_info, reason
         const code = r.u32(); const from = r.locInfo(); const to = r.locInfo(); const reason = r.u32();
         if (code !== 0) { // code 0 = deck-internal reorder noise

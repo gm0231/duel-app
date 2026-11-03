@@ -383,6 +383,29 @@
   /* heal float (round B): the ONLY floating number — damage is read
      off the LP counter's count-down, MD-style */
   .fx-healfloat{font-size:15px;font-weight:700;color:#8fd8ff;text-shadow:0 1px 4px #000;}
+  /* Redesign F: non-battle LP chips (cost / effect damage / heal).
+     An engraved stamp at the LP plate that lingers ~2.4 s while the
+     counter counts underneath it. All paint is static here (the
+     glow included) — the FX layer only animates transform/opacity
+     via WAAPI, never box-shadow/filter per frame. Colour = meaning
+     (principle 4): a cost is gold (paid by choice), effect damage
+     is white-hot/red (dealt, never confused with the battle damage
+     number — this is a CHIP, a bordered stamp, not a bare numeral),
+     a heal is gold for me / lapis-white for the opponent. */
+  .fx3-lpchip{transform:translate(-50%,-100%);font-size:14px;font-weight:800;letter-spacing:.04em;color:#ffe9a8;background:linear-gradient(160deg,#3a2f1d,#241c0e);border:1.5px solid #c9a227;border-radius:10px;padding:2px 9px;box-shadow:0 2px 8px rgba(0,0,0,.6),0 0 12px rgba(201,162,39,.35),inset 0 1px 0 rgba(255,233,168,.35);text-shadow:0 1px 3px #000;pointer-events:none;white-space:nowrap;}
+  /* Redesign F / F2: opponent variant — anchored at the plate's
+     bottom interior edge, opening DOWNWARD into the board so the
+     chip is never clipped by the top of the screen. */
+  .fx3-lpchip--down{transform:translate(-50%,0);}
+  .fx3-lpchip--pay{color:#ffe9a8;border-color:#c9a227;}
+  .fx3-lpchip--damage{color:#ffc9c2;border-color:#ff5348;background:linear-gradient(160deg,#3d130e,#240a08);box-shadow:0 2px 8px rgba(0,0,0,.6),0 0 12px rgba(255,60,40,.4),inset 0 1px 0 rgba(255,201,194,.3);}
+  .fx3-lpchip--heal.fx3-lpchip--mine{color:#ffe9a8;border-color:#c9a227;}
+  .fx3-lpchip--heal.fx3-lpchip--opp{color:#eaf4ff;border-color:#7fa8e0;background:linear-gradient(160deg,#1a2c4a,#0e1a30);box-shadow:0 2px 8px rgba(0,0,0,.6),0 0 12px rgba(91,141,217,.4),inset 0 1px 0 rgba(234,244,255,.3);}
+  /* the heal float node doubles as the heal chip (fxHealFloat
+     carries the .fx3-lpchip classes above); its old bare-numeral
+     paint is superseded by the chip paint, and the opponent float
+     gets the same downward variant as the chips */
+  .fx-healfloat--down{transform:translate(-50%,0);}
   /* chain foreground pop (round B): the newest link, large, with its
      number — it shrinks toward the chain bar */
   .fx-chainpop{position:absolute;left:50%;top:34%;transform:translate(-50%,-50%);min-width:150px;max-width:240px;border:2px solid #59d8f2;border-radius:8px;background:#12222bee;color:#dff8ff;padding:10px 12px;text-align:center;box-shadow:0 0 20px #59d8f266;pointer-events:none;}

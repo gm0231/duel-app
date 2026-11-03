@@ -2184,7 +2184,7 @@ function fxLpEl(con) { return con === HP ? $('myLp') : $('oppLp'); }
 // damage number at the LP plate (L10): an accent at the counter —
 // the counter itself stays the primary readout. A scene that is
 // superseded mid-count restarts from the value currently shown.
-function fxLpCount(con, to, startAtFx) {
+function fxLpCount(con, to, startAtFx, opts) {
   const el = fxLpEl(con); if (!el) return;
   // V3 stage 3: while a finisher scene owns this seat's counter
   // (its LP drain), no count scene is started for it
@@ -2214,8 +2214,13 @@ function fxLpCount(con, to, startAtFx) {
   // plate's lower interior, fully on screen). My own plate (mid
   // screen) keeps the upward form.
   const dmgDown = isDmg && con !== HP;
+  // Redesign F: a NON-battle LP drop (effect damage / LP cost) is
+  // presented by its own chip (fxLpChip), not by this battle damage
+  // number — the LP loop passes opts.noNum for those batches so the
+  // drop is shown exactly once, in the chip grammar. Battle drops
+  // (attack-scheduled, startAtFx set) keep the number and get NO chip.
   let numEl = null;
-  if (isDmg) {
+  if (isDmg && !(opts && opts.noNum)) {
     const layer = fxLayerEl(), r = fxRel(el);
     if (layer && r) {
       numEl = document.createElement('div');
@@ -2268,19 +2273,91 @@ function fxLpCount(con, to, startAtFx) {
 }
 function fxHealFloat(con, amount) {
   const el = fxLpEl(con); if (!el) return;
-  const r = fxRel(el);
+  const r = fxRel(el); if (!r) return;
   const layer = fxLayerEl(); if (!layer) return;
+  // Redesign F (audit F2 remainder): the opponent's LP plate sits at
+  // the very top of the screen, so the old float — anchored at the
+  // plate's top edge (r.y) and rising 26px — was clipped. The
+  // opponent variant follows the redesign-A damage-number rule:
+  // anchor at the plate's BOTTOM interior edge and drift DOWN into
+  // the board. My own plate keeps the original upward float.
+  // Redesign F heal grammar: this node IS the heal chip — it also
+  // carries the fx3-lpchip classes (gold for me, lapis-white for the
+  // opponent), so a heal is presented exactly once, as one node.
+  const down = con !== HP;
   const d = document.createElement('div');
-  d.className = 'fx fx-healfloat';
+  d.className = 'fx fx-healfloat fx3-lpchip fx3-lpchip--heal fx3-lpchip--' + (down ? 'opp' : 'mine') +
+    (down ? ' fx-healfloat--down fx3-lpchip--down' : '');
+  d.dataset.direction = down ? 'down' : 'up';
+  d.dataset.lpKind = 'heal';
   d.textContent = '+' + amount;
-  d.style.left = r.cx + 'px'; d.style.top = r.y + 'px';
+  d.style.left = r.cx + 'px'; d.style.top = (down ? (r.y + r.h - 3) : r.y) + 'px';
   layer.appendChild(d);
+  // same on-screen clamp as fxLpChip (see there)
+  const appW = $('app').getBoundingClientRect().width, halfW = d.offsetWidth / 2;
+  if (appW > 0 && halfW > 0) d.style.left = Math.max(halfW + 2, Math.min(r.cx, appW - halfW - 2)) + 'px';
+  // Chip lifetime: the float rises (or, downward variant, sinks)
+  // quickly, then HOLDS fully visible before fading — the same
+  // residual-light linger as the pay/damage chips, at float scale.
+  if (down) {
+    fxAnim(d, [
+      { transform: 'translate(-50%,0)', opacity: 0 },
+      { transform: 'translate(-50%,10px)', opacity: 1, offset: 0.14 },
+      { transform: 'translate(-50%,20px)', opacity: 1, offset: 0.78 },
+      { transform: 'translate(-50%,26px)', opacity: 0 },
+    ], { duration: 1800, easing: 'ease-out' });
+  } else {
+    fxAnim(d, [
+      { transform: 'translate(-50%,0)', opacity: 0 },
+      { transform: 'translate(-50%,-10px)', opacity: 1, offset: 0.14 },
+      { transform: 'translate(-50%,-20px)', opacity: 1, offset: 0.78 },
+      { transform: 'translate(-50%,-26px)', opacity: 0 },
+    ], { duration: 1800, easing: 'ease-out' });
+  }
+  fxKill(d, 1840);
+}
+// ---- Redesign F: non-battle LP chips. An LP cost (engine 'pay'
+// event, MSG_PAY_LPCOST) and effect damage (a 'damage' event with
+// no attack scene behind it) each get an engraved chip at the LP
+// plate — gold stamp for a cost (paid by choice), white-hot/red for
+// effect damage — instead of the battle damage number, so "paid"
+// and "was dealt" never read the same. The chip lingers (residual
+// light, ~2.4 s) while fxLpCount counts the counter monotonically
+// underneath it. The opponent variant anchors at the plate's bottom
+// interior and drifts down (same anti-clip rule as above).
+// `stack` offsets a second chip in the same batch (pay + damage)
+// so the two chips never overlap. Animation is WAAPI
+// transform/opacity only; all glow is static CSS paint.
+function fxLpChip(con, chip, amount, stack) {
+  const el = fxLpEl(con); if (!el) return null;
+  const r = fxRel(el); if (!r) return null;
+  const layer = fxLayerEl(); if (!layer) return null;
+  const down = con !== HP;
+  const idx = stack || 0;
+  const d = document.createElement('div');
+  d.className = 'fx fx3-lpchip fx3-lpchip--' + chip + (down ? ' fx3-lpchip--down' : '');
+  d.dataset.direction = down ? 'down' : 'up';
+  d.dataset.lpKind = chip;
+  d.textContent = '−' + amount;
+  d.style.left = r.cx + 'px';
+  d.style.top = (down ? (r.y + r.h - 3 + idx * 24) : (r.y - 2 - idx * 24)) + 'px';
+  layer.appendChild(d);
+  // keep the whole chip on screen: the LP plate hugs the screen
+  // edge, so a wide chip centered on it bleeds off the side
+  // (measured: a -1500 pay chip started at x=-7). Guarded so the
+  // zero-geometry test environment skips the clamp.
+  const appW = $('app').getBoundingClientRect().width, halfW = d.offsetWidth / 2;
+  if (appW > 0 && halfW > 0) d.style.left = Math.max(halfW + 2, Math.min(r.cx, appW - halfW - 2)) + 'px';
+  const drift = down ? 6 : -6;
+  const base = down ? 'translate(-50%,0)' : 'translate(-50%,-100%)';
   fxAnim(d, [
-    { transform: 'translate(-50%,0)', opacity: 0 },
-    { transform: 'translate(-50%,-10px)', opacity: 1, offset: 0.25 },
-    { transform: 'translate(-50%,-26px)', opacity: 0 },
-  ], { duration: 950, easing: 'ease-out' });
-  fxKill(d, 990);
+    { transform: base + ' translateY(0px)', opacity: 0 },
+    { transform: base + ' translateY(' + (drift * 0.4) + 'px)', opacity: 1, offset: 0.08 },
+    { transform: base + ' translateY(' + drift + 'px)', opacity: 1, offset: 0.8 },
+    { transform: base + ' translateY(' + drift + 'px)', opacity: 0 },
+  ], { duration: 2400, easing: 'ease-out' });
+  fxKill(d, 2440);
+  return d;
 }
 // ---- battle (B7): attacker glows, a thin cyan line reaches the
 // target, the attribute-coloured impact lands there. The attacking
@@ -3352,17 +3429,63 @@ function fxRoundBEvents(evs, prev, cur, diff) {
     const link = cur.links[cur.solving - 1];
     if (link) fxChainSolveSceneV3(cur.solving, link.code, !!link.neg);
   }
-  // ---- LP (B7 -> V3 stage 2): the counter counts on the FX clock;
-  // after an attack it starts at attack+400 ms (impact first, then
-  // the number — cause before effect). Heals still float blue.
+  // ---- LP (B7 -> V3 stage 2 -> Redesign F): the counter counts on
+  // the FX clock; after an attack it starts at attack+400 ms (impact
+  // first, then the number — cause before effect).
+  // Redesign F classification, per seat and batch:
+  //  - attack-scheduled drop (an attack scene for this seat started
+  //    <400 ms ago — the same predicate that schedules the count):
+  //    BATTLE damage. It keeps the fxLpCount damage number and gets
+  //    NO F chip (no double presentation). The finisher's drain owns
+  //    its seat the same way: no chip while a finisher scene holds
+  //    the counter, and a lethal attack drop is attack-scheduled by
+  //    construction, so the drain is never doubled either.
+  //  - any other drop: split by the batch's events — 'pay' events
+  //    (MSG_PAY_LPCOST, engine redesign-F) are LP COSTS (gold chip),
+  //    'damage' events are EFFECT damage (red chip). A drop no event
+  //    explains (e.g. an LPUPDATE sync) falls back to effect damage.
+  //    fxLpCount's battle number is suppressed (noNum) so the drop
+  //    is shown exactly once, as chip(s); the count itself still
+  //    runs monotonically from the pinned start value.
+  //  - a rise: a heal. The heal float node IS the + chip (gold for
+  //    me, lapis-white for the opponent; see fxHealFloat).
   for (let p = 0; p < 2; p++) {
     if (cur.lp[p] === prev.lp[p]) continue;
     if (fxLpShown[p] == null) fxLpShown[p] = prev.lp[p];
+    const delta = cur.lp[p] - prev.lp[p];
     let startAt = null;
-    if (cur.lp[p] < prev.lp[p] && fxLastAttackScene && fxLastAttackScene.defCon === p && fxTimeMs - fxLastAttackScene.t0 < 400) startAt = fxLastAttackScene.t0 + 400;
-    fxLpCount(p, cur.lp[p], startAt);
+    if (delta < 0 && fxLastAttackScene && fxLastAttackScene.defCon === p && fxTimeMs - fxLastAttackScene.t0 < 400) startAt = fxLastAttackScene.t0 + 400;
+    const attackScheduled = startAt != null;
+    const finisherOwns = !!(fxLpScenes[p] && !fxLpScenes[p].dead && fxLpScenes[p].kind === 'finisher');
+    const chipLoss = delta < 0 && !attackScheduled && !finisherOwns;
+    fxLpCount(p, cur.lp[p], startAt, chipLoss ? { noNum: true } : null);
     fxRecord('lpchange', { player: p, from: prev.lp[p], to: cur.lp[p] });
-    if (cur.lp[p] > prev.lp[p]) { fxHealFloat(p, cur.lp[p] - prev.lp[p]); fxRecord('healfloat', { player: p, amount: cur.lp[p] - prev.lp[p] }); }
+    if (delta > 0) {
+      fxHealFloat(p, delta);
+      fxRecord('healfloat', { player: p, amount: delta });
+      fxRecord('lpchip', { player: p, chip: 'heal', amount: delta, signed: delta, variant: p === HP ? 'mine' : 'opp', down: p !== HP });
+    } else if (chipLoss) {
+      const loss = -delta;
+      let payAmt = 0, dmgAmt = 0;
+      for (const ev of evs) {
+        if (ev.player !== p || ev.amount == null) continue;
+        if (ev.kind === 'pay') payAmt += ev.amount;
+        else if (ev.kind === 'damage') dmgAmt += ev.amount;
+      }
+      // Reconcile the event split with the actual net loss: an
+      // unexplained remainder reads as effect damage; if the events
+      // overshoot the net (a heal offset the same batch), trim
+      // damage first, then pay, so the chips always sum to the loss.
+      if (payAmt + dmgAmt < loss) dmgAmt += loss - (payAmt + dmgAmt);
+      else if (payAmt + dmgAmt > loss) {
+        let excess = payAmt + dmgAmt - loss;
+        const cutD = Math.min(dmgAmt, excess); dmgAmt -= cutD; excess -= cutD;
+        payAmt -= excess;
+      }
+      let stack = 0;
+      if (payAmt > 0) { fxLpChip(p, 'pay', payAmt, stack++); fxRecord('lpchip', { player: p, chip: 'pay', amount: payAmt, signed: -payAmt, variant: 'pay', down: p !== HP }); }
+      if (dmgAmt > 0) { fxLpChip(p, 'damage', dmgAmt, stack++); fxRecord('lpchip', { player: p, chip: 'damage', amount: dmgAmt, signed: -dmgAmt, variant: 'damage', down: p !== HP }); }
+    }
   }
 }
 function fxResetRoundB() {
