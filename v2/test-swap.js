@@ -7,14 +7,17 @@
        deckCount kept the pre-swap value: pile counts were wrong at once,
        and as the real deck drained past the stale count, deckCount clamped
        at 0 while cards kept arriving elsewhere — totals inflated for the
-       rest of the duel (deterministic reproduction: seed 99 below ended
-       [59,58] instead of [58,55] on the old code).
+       rest of the duel (deterministic reproduction on the old deck:
+       seed 99 ended [59,58] instead of [58,55] on the old code).
      - When an Xyz host leaves for an entry-less pile (grave/removed/deck/
        hand), the core releases its units with separate MOVEs a few batches
        later; the mirror used to drop the count in between (batch-level dip).
        engine.js now parks the count in transit[] until the releases land.
-   Duel A (seed 99, exploratory policy both seats, deterministic shuffle):
-   Exchange of the Spirit resolves for both players mid-duel. At EVERY
+   Duel A (seed 17, exploratory policy both seats, deterministic shuffle):
+   Exchange of the Spirit resolves for both players mid-duel. (Seed was
+   99 until the v11 recipe swap changed the Ishizu deck to 45 cards;
+   the trajectory is deck-dependent, so the seed was re-scanned for
+   one where the swap still resolves.) At EVERY
    prompt the mirror is cross-checked against the core itself (pile sizes
    and grave identities via Duel.queryCard scans) and totals must satisfy
    combined == pool and the control-adjusted per-seat rule.
@@ -178,10 +181,10 @@ function foreignCounts(state, pools) {
   const pools = [new Set(data.decks.ishizu.main.concat(data.decks.ishizu.extra)),
                  new Set(data.decks.gg.main.concat(data.decks.gg.extra))];
 
-  // ---------------- Duel A: the swap duel (seed 99)
+  // ---------------- Duel A: the swap duel (seed 17)
   {
-    installSeededCrypto(99 * 2654435761 % 4294967296);
-    const R = rng(99 * 7919 + 13);
+    installSeededCrypto(17 * 2654435761 % 4294967296);
+    const R = rng(17 * 7919 + 13);
     let swapMsgs = 0, censusBad = 0, totalsBad = 0, graveIdBad = 0, prompts = 0, firstBad = '';
     let duel;
     const scanCount = (p, loc, max) => {
@@ -213,13 +216,13 @@ function foreignCounts(state, pools) {
         if (state.totalCards(p) - expected[p] !== foreign[p] - foreign[1 - p]) totalsBad++;
     };
     duel = new Engine.Duel(M, data, {
-      seed: 99, pace: { bot: 0, botChain: 0, batch: 0 }, sleep: () => Promise.resolve(), onLog: () => {},
+      seed: 17, pace: { bot: 0, botChain: 0, batch: 0 }, sleep: () => Promise.resolve(), onLog: () => {},
       onMessage: (m) => { if (m[0] === 35) swapMsgs++; },
       humanAnswerer: async (prompt, state) => { census(prompt, state); return exploreAnswer(prompt, state, data, R); },
       botAnswerer: (prompt, state) => { census(prompt, state); return exploreAnswer(prompt, state, data, R); },
     });
     const stats = await duel.run();
-    console.log('duel A (seed 99): swaps=' + swapMsgs + ' prompts=' + prompts + ' retries=' + stats.retries +
+    console.log('duel A (seed 17): swaps=' + swapMsgs + ' prompts=' + prompts + ' retries=' + stats.retries +
       ' censusBad=' + censusBad + ' totalsBad=' + totalsBad + ' graveIdBad=' + graveIdBad +
       ' final=' + JSON.stringify([duel.state.totalCards(0), duel.state.totalCards(1)]));
     if (firstBad) console.log('  first census divergence: ' + firstBad);

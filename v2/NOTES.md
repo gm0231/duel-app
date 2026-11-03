@@ -3969,3 +3969,95 @@ WKWebView frame rates.
 - Real-browser frames eyeballed at 390x620 and 390x700 for
   every surface above (paths inline). BU-11's worst-case
   strip (defense position, 4-digit, 40px tile) is among them.
+
+## Ishizu recipe v11 (2026-11-03): the deck becomes the user's MD build
+
+The user rebuilt Ishizu in Master Duel and pointed out the app
+still ran the v10 recipe (44 cards / EX 14). decks.ishizu is now
+the decided build (saved verbatim in
+~/workspace/yugioh/recipe_ishizu_v11.txt): main 45, extra 15,
+deck name MILLENNIUM PROPHECY (start screen + VS caption).
+Diff vs v10 — main: +丘と芽吹の春化精 x1, +死者蘇生 (classic) x1,
++アギド (classic) x1, シルキィ 1->2; -聖座天嗣ストン x1,
+-古衛兵アギド x1, -マジックカード「死者蘇生」 x1. Extra:
+カステル 2->3, プルート 1->2, バロメット 2->1. The side deck
+(9 cards incl. the four classic prints) is record-only; the app
+has no side deck.
+
+Two interpretation calls, both grounded in the MD screenshots:
+- The main-deck row reading just 「アギド」 (between ゾルガ and
+  カルダーン, where every remake sibling shows its full name) is
+  the CLASSIC 《アギド》 (16135253), not 《古衛兵アギド》 — the
+  side deck proves the user owns/uses the classic prints, and
+  the v10 recipe file also wrote plain 「アギド」.
+- 「死者蘇生」 is the classic print (83764718), NOT the
+  マジックカード retrain: the classic carries NO card-name
+  activation limit and NO cannot-attack/activate rider on the
+  revived monster. Gameplay changes accordingly.
+
+New full implementations (official text, verbatim Lua, passcodes):
+- 丘と芽吹の春化精 (9350312): its ① runs through the shared
+  Vernusylph helper (string base 9350312), ② is a continuous
+  destruction shield. fxmap: override {0:1} (the helper registers
+  the real effect at idx 0; the only SetDescription is the shield
+  marker). It carries the EARTH-lock sentence, so the derived
+  lock set is now the Vernusylph TRIO (poolcov D/E updated).
+  Client follow-up recognition: the YESNO the three Vernusylph
+  sisters ask during resolution lives under string base 9350312,
+  so with 9350312 itself in the pool, foreignFollowFx now treats
+  its descs as the family follow-up even when they decode — but
+  never for 9350312's own activations (F10 guards the foreign
+  side, F11b the own side).
+- アギド (16135253, classic): mandatory battle-destroyed trigger,
+  dice roll, level-matched Fairy revival. Its text is the
+  unnumbered old format; fxmap records one YESNO prompt ({n:1})
+  under the NO-NUMBERING classification, and poolcov registers
+  the '16135253|0' exception (no printed numbers exist).
+- 死者蘇生 (83764718, classic): plain target-and-summon, no
+  SetDescription (activation convention).
+
+Mechanisms de-hardcoded by the swap:
+- The revive-rider latch (client) keyed on the retrain's code
+  (28958464). It now DERIVES the rider card from card texts
+  (the "...攻撃できず、その効果は発動できない" sentence), so on
+  the current pool it never arms — correct, since the classic
+  has no rider. The latch itself is still exercised in
+  test-poolcov F20-F25 against a fixture DATA carrying the
+  retrain text.
+- OPTION_LABELS held only the old Agido's mill options; emptied
+  (the generic mechanism stays).
+- CPU bot: CC.AGIDO repointed to the classic (its value logic
+  rewritten — a battle-destroyed dice revival is not a mill),
+  CC.STONE removed, CC.REBORN repointed to the classic, and
+  丘と芽吹の春化精 joined the Vernusylph enabler valuations.
+
+Test maintenance: test-swap Duel A re-seeded 99 -> 17 (the
+trajectory is deck-dependent; the swap still resolves for both
+players — found by seed scan). test-phase2 D3 totals now derive
+from the deck data instead of hardcoding 113/55/58.
+test-minerva3 M3-1 expects the lock trio (+M3-10: Hills latches
+the lock and the reason names her). New test-recipe-v11.js:
+composition card-for-card, Hills search+summon in a rigged duel,
+Agido battle-destruction dice (R6a) and the full revival flow
+(R6), classic Reborn flow, bot duels on the new decks, and the
+client-side no-rider assertion (R10).
+
+Dice-sequence note (found while verifying Agido, pre-existing,
+NOT introduced by this swap): the PoC driver fixes core seed
+components 1..3 (67890/24680/13579), so the first six rolls of
+every duel land 1,1,1,3,x,1 regardless of the duel seed (the
+xoshiro state is dominated by the fixed components early on);
+rolls diverge from the 7th. Any future dice/coin card inherits
+this. Fixing it means changing the driver's seed expansion and
+rebuilding the WASM, which recalibrates every seeded test in
+the suite — its own round, not this one.
+
+Verification: all suites pass on this branch (23 files incl.
+the new test-recipe-v11 and the recalibrated swap/minerva3/
+phase2). Real-browser captures at 390x620 and 390x700:
+~/workspace/recipe-v11-shots/ (deck select shows MILLENNIUM
+PROPHECY / 45枚 for both seats; a live duel on the new deck
+shows deck 40 after the opening draw, EX 15, recipe cards in
+hand). Card faces in those local captures show the fallback
+tablet art — the image host is not reachable from the capture
+sandbox; production image delivery is unchanged.
