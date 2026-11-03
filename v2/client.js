@@ -3042,6 +3042,51 @@ function captureLog(state) {
   if (logHist.length > 80) logHist = logHist.slice(-80);
   logPrev = cur.slice();
 }
+// Detailed history (log-detail round): the engine mirror keeps a
+// structured detailed stream (state.dlog) next to the headline
+// log — activations with their chain links, resolution headers,
+// and outcome lines (destroyed / banished / milled / LP deltas /
+// stat changes), all composed from message data. The client
+// captures it turn-stamped like captureLog and renders it grouped
+// by turn and by chain episode, oldest first, so a duel can be
+// re-read as a story. The one thing the mirror cannot do is name
+// WHICH printed effect a chain link is — that needs fxmap, which
+// lives here; chain entries therefore arrive structured and get
+// their effect suffix at capture time from the same audited
+// resolver the prompt sheets use.
+let dlogPrev = [], histEntries = [];
+function dlogFxSuffix(code, desc, loc) {
+  const fx = resolveEffect(code, desc) || scopedEffect(code, desc, loc, 'chain');
+  if (fx && fx.n) return ' の効果' + CIRCLED_NUM[fx.n - 1];
+  const d = cardData(code);
+  if (d && (d.type & 0x6)) return ' の発動'; // Spell/Trap: the card activation itself
+  return ' の効果';
+}
+function dlogText(e) {
+  const who = e.con === HP ? '自分' : '相手';
+  if (e.k === 'act') return 'リンク' + e.link + '：' + who + ' の ' + cardName(e.code) + dlogFxSuffix(e.code, e.desc, e.loc) + (e.tgt ? '（対象：' + e.tgt + '）' : '');
+  if (e.k === 'solve') return '▼ 解決：リンク' + e.link + ' ' + cardName(e.code) + dlogFxSuffix(e.code, e.desc, e.loc);
+  if (e.k === 'neg') return who + ' の ' + cardName(e.code) + dlogFxSuffix(e.code, e.desc, e.loc) + ' の発動が無効になった（リンク' + e.link + '）';
+  if (e.k === 'dis') return who + ' の ' + cardName(e.code) + dlogFxSuffix(e.code, e.desc, e.loc) + ' の効果が無効になった（リンク' + e.link + '）';
+  return e.s || '';
+}
+function captureDLog(state) {
+  const cur = state.dlog || [];
+  // Entries are unique objects and the stream is append-only (the
+  // mirror trims from the head past 600): the last captured entry
+  // is the anchor — everything after it is fresh. A batch can
+  // never outrun the cap between two renders, so the anchor is
+  // always still present.
+  let fresh;
+  if (!dlogPrev.length) fresh = cur.slice();
+  else {
+    const idx = cur.lastIndexOf(dlogPrev[dlogPrev.length - 1]);
+    fresh = idx >= 0 ? cur.slice(idx + 1) : cur.slice();
+  }
+  for (const e of fresh) histEntries.push({ turn: e.turn, tp: e.tp, ph: e.ph, k: e.k, cid: e.cid, sol: e.sol, text: dlogText(e) });
+  if (histEntries.length > 500) histEntries = histEntries.slice(-500);
+  dlogPrev = cur.slice();
+}
 function openLogHistory() {
   // B-10 fix (2026-11-03, user report: 履歴ボタンが押しても何も
   // 起きない): do NOT gate on currentPrompt. SELECT_IDLECMD /
@@ -3053,13 +3098,45 @@ function openLogHistory() {
   // same way, and an arriving sheet prompt reclaims the sheet via
   // sheetOpen. What still blocks: a sheet or the dock already
   // owning the screen (those prompts live there).
-  if (!logHist.length) return;
+  if (!logHist.length && !histEntries.length) return;
   if ($('sheetwrap').classList.contains('on') || $('dock').className === 'on') return;
-  const rows = logHist.slice(-30).reverse().map(e =>
-    '<div class="loghistrow"><span class="lt">T' + Math.max(1, e.turn) + '</span>' + e.text + '</div>').join('');
-  sheetOpenView('<div class="ttl">対戦の履歴</div><div class="sub">直近 ' + Math.min(30, logHist.length) + ' 件（新しい順）</div>' + rows +
+  let rows, sub;
+  if (histEntries.length) {
+    // Detailed rendering: chronological (oldest first — the sheet
+    // opens scrolled to the newest entry), grouped by turn, with
+    // chain episodes boxed and each resolution header followed by
+    // its outcome lines, so activation <-> resolution correspondence
+    // can be traced by eye.
+    const entries = histEntries.slice(-240);
+    const parts = [];
+    let lastTurn = null, lastPh = null, chainOpen = false;
+    const closeChain = () => { if (chainOpen) { parts.push('</div>'); chainOpen = false; } };
+    for (const e of entries) {
+      if (e.turn !== lastTurn) {
+        closeChain();
+        parts.push('<div class="logturn">ターン' + Math.max(1, e.turn) + '（' + (e.tp === HP ? '自分' : '相手') + 'のターン）</div>');
+        lastTurn = e.turn; lastPh = null;
+      }
+      if (e.cid) { if (!chainOpen) { parts.push('<div class="logchain">'); chainOpen = true; } }
+      else closeChain();
+      if (e.ph && e.ph !== lastPh) { parts.push('<div class="logphase">' + phaseJa(e.ph) + '</div>'); lastPh = e.ph; }
+      const cls = 'loghistrow' + (e.k === 'solve' ? ' solve' : '') + (e.k === 'neg' || e.k === 'dis' ? ' neg' : '') + (e.sol ? ' res' : '');
+      parts.push('<div class="' + cls + '">' + e.text + '</div>');
+    }
+    closeChain();
+    rows = parts.join('');
+    sub = '全 ' + histEntries.length + ' 件（古い順・効果と処理の詳細）';
+  } else {
+    rows = logHist.slice(-30).reverse().map(e =>
+      '<div class="loghistrow"><span class="lt">T' + Math.max(1, e.turn) + '</span>' + e.text + '</div>').join('');
+    sub = '直近 ' + Math.min(30, logHist.length) + ' 件（新しい順）';
+  }
+  sheetOpenView('<div class="ttl">対戦の履歴</div><div class="sub">' + sub + '</div>' + rows +
     '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">盤面に戻る</button></div>');
   $('sheet-cancel').addEventListener('click', () => { playClick(); sheetClose(); });
+  // Open at the newest entry (the bottom of the chronological list).
+  const sh = $('sheet');
+  requestAnimationFrame(() => { try { sh.scrollTop = sh.scrollHeight; } catch (e) {} });
 }
 function render(state) {
   duelState = state;
@@ -3083,6 +3160,7 @@ function render(state) {
   $('oppPilebar').innerHTML = pileHTML(null, 1 - HP);
   $('myPilebar').innerHTML = pileHTML(null, HP);
   captureLog(state);
+  captureDLog(state);
   // hand
   $('handcount').textContent = me.hand.length;
   const handCounts = {};
@@ -4814,6 +4892,7 @@ function wireSeg(id, apply) {
     }
     dismissedChains = new Set();
     logHist = []; logPrev = []; // B-10 history restarts with the duel
+    dlogPrev = []; histEntries = []; // detailed history restarts too
     pendingTap = null; // triage-#2: no buffered tap survives into a new duel
     monsterLock = null; // activation lock restarts with the duel (Minerva 3rd triage)
     monsterRevived = null; reviveArm = null; reviveBatch = 0; usedFxTurn = -1; usedFxByCode.clear(); usedFxSeen = new Set(); // pool-coverage trackers restart

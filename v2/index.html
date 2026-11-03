@@ -108,6 +108,18 @@
   #loghistbtn{flex:0 0 auto;height:19px;font-size:10px;color:var(--gold);background:#241a0e;border:1px solid var(--gold-dim);border-radius:5px;padding:0 9px;cursor:pointer;}
   .loghistrow{font-size:11px;line-height:1.6;padding:3px 0;border-bottom:1px solid #2c2416;color:var(--txt);}
   .loghistrow .lt{color:var(--txt-dim);margin-right:6px;}
+  /* log-detail round: the history sheet renders the detailed
+     stream grouped by turn and chain episode. Rows below the fold
+     skip layout/paint like the other long sheet lists (round 2). */
+  #sheet .loghistrow{content-visibility:auto;contain-intrinsic-size:auto 30px;}
+  #sheet .logturn{content-visibility:auto;contain-intrinsic-size:auto 32px;}
+  #sheet .logphase{content-visibility:auto;contain-intrinsic-size:auto 18px;}
+  .logturn{font-size:12px;font-weight:700;color:var(--gold);margin:12px 0 4px;padding-top:8px;border-top:1px solid var(--gold-dim);}
+  .logphase{font-size:10px;color:var(--txt-dim);margin:7px 0 1px;letter-spacing:.1em;}
+  .logchain{border:1px solid #3a2f1d;border-left:3px solid var(--gold-dim);border-radius:6px;padding:2px 7px 4px;margin:5px 0;background:#ffffff07;}
+  .loghistrow.solve{color:var(--gold);font-weight:700;margin-top:5px;}
+  .loghistrow.res{padding-left:14px;}
+  .loghistrow.neg{color:#e08a8a;}
   .link{flex:0 0 auto;font-size:10px;border:1px solid var(--gold-dim);border-radius:10px;padding:2px 7px;background:var(--panel2);white-space:nowrap;}
   .link.solving{border-color:#ffd94d;background:#4a3a10;color:#fff;box-shadow:0 0 10px #ffd94d99,0 0 0 1px #ffd94d;}
   .link.negated{text-decoration:line-through;opacity:.55;}
