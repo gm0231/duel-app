@@ -2783,10 +2783,14 @@ window.__fx = {
 };
 
 // ---------------------------------------------------------------- rendering
-function tileHTML(card, con, actKey) {
+function tileHTML(card, con, actKey, loc) {
   if (!card) return '';
   const faceUp = (card.pos & E.POS_FACEUP) !== 0;
-  const isDef = (card.pos & E.POS_DEFENSE) !== 0;
+  // defense rotation is a MONSTER-zone concept only: in the core's
+  // position encoding a spell/trap is 0x5 face-up / 0xa face-down,
+  // which ALWAYS intersects POS_DEFENSE (0xC) — an unguarded bit test
+  // rotated every S/T tile 90 degrees (user report 2026-11-03)
+  const isDef = loc === E.LOC.MZONE && (card.pos & E.POS_DEFENSE) !== 0;
   const showFace = faceUp || con === HP;
   const nm = showFace && card.code != null ? cardName(card.code) : '';
   const ctrTotal = card.counters ? (Array.isArray(card.counters) ? card.counters.reduce((a, c) => a + (c.count || 0), 0) : card.counters) : 0;
@@ -2832,7 +2836,7 @@ function zoneRow(el, cards, con, loc) {
     const fz = loc === E.LOC.SZONE && seq === 5;
     return '<div class="slot' + (st ? ' hs' : '') + hl + pk + (fz ? ' fzone' : '') + '" data-zone="' + key + '">' +
       '<span class="znum">' + (fz ? '' : (seq + 1)) + '</span>' +
-      (card ? tileHTML(card, con, key) + st : '') +
+      (card ? tileHTML(card, con, key, loc) + st : '') +
       '</div>';
   }).join('');
 }
