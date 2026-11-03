@@ -2927,3 +2927,57 @@ D-40). They remain in fx-proto/audit-raw.md and in the
 proposal for the next round / the daily brush-up loop.
 Unmeasured as before: sound feel, real-device WKWebView
 frame rate and rendering.
+
+## V4 polish — Round 1: ace + attack (branch feat/v4-polish, 2026-11-03)
+
+Foundation added for all V4 rounds: scenes may register drawLow /
+drawTop paint hooks on the shared FX clock (fxPaintCanvases paints
+bursts — with an additive second pass for bursts flagged `add` —
+then hooks). Bloom/soft-ring/comet helpers (fxDrawGlow,
+fxDrawSoftRing, fxDrawComet) port the approved prototype's light
+model: additive 'lighter', three-tier gradients, sprite-only, no
+shadowBlur. Hooks declare paint windows (winLow / winTop) so an
+idle canvas is never cleared/repainted; fxAceSkip retargets the
+ace's windows when a skip moves the exit earlier. Structure rule
+verified by audit for both scenes: no per-frame boxShadow /
+filter / left / top writes remain in any render or hook (filters
+and shadows are set once at element creation; dissolves are
+opacity cross-fades between stacked copies).
+
+V4-1 ace: hold glow = 2 additive canvas layers (r200/r130, 2.4 s
+period, phase-shifted) replacing the per-frame boxShadow pulse
+(static frame shadow set once). Materials: preset-filter hot copy
+cross-fade + trail ghosts at 66%/33% of the converge path
+(.30/.15) + white heat glow at the moving point. Portal: dark
+funnel core (.55) + soft rim ring breathing with the spin-up.
+700 ms flash = three-tier bloom (52 white / 120 / 215). Card
+entrance: two afterimage copies at 55/120 ms lag (.30/.14).
+Banner stagger: name -> gold rule draws 1180-1400 -> count starts
+1280 (was 1200). Exit is two-stage: background/streak rotation
+freezes at 3900, glows collapse inward (implosion soft ring),
+card sinks +6 px, scrim lifts only from 3980. Landing = two soft
+rings, 60 ms stagger.
+
+V4-2 attack: the DOM line/tip/cores/rings are gone. drawLow paints
+the attacker halo + one rim-light sweep (170 ms), the tapered
+comet (tail = min(len*.55, 90px), trail ghosts at 30/60/95 ms
+lag), the three-tier impact bloom (34 white / 62 / 110), two soft
+rings (60 ms stagger) and, on destruction, 2-3 thin rising light
+streaks. Impact/destroy bursts paint additively. The dissolve is
+a cross-fade: main ghost / white-hot copy (peak 350-410) / gray
+copy (takes over 410-520). Damage number runs white-hot for its
+first 70 ms (3 quantized colour steps) in fxLpCount.
+
+Measured (v4probe, same protocol as stage 0; software rendering):
+mix 700 — baseline >16.7ms 3.9% / >33.4ms 0.8%; ace 7.3% / 0.4%,
+max 50.1 (stage 0: 7.0% / 0.9%, max 500 spike — the spike is
+gone); attack 5.4% / 0.2%, max 33.5 (stage 0: 5.1% / 0.7%).
+mix 620 — ace 8.1% / 0.5%, max 50.1; attack >33.4ms 0.9%, max 50.0.
+Residual for R4: the ace's >16.7ms rate still sits ~+3pt over the
+run baseline (stage 0 was +1.7pt with a slower baseline) — the
+remaining cost is the rotating conic bg/streaks repaint, not the
+V4 layers; candidate fix is rasterising that rotation to canvas.
+Frame strips: v4shots2/r1-ace, r1-attack, r1-attack2 (direct
+attack grammar verified end-to-end; monster-battle ghost stack
+verified structurally + by test-fx, its strip is still owed and
+scheduled with the R2/R3 captures). All 14 default tests pass.
