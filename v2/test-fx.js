@@ -519,6 +519,78 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     window.close();
   }
 
+  // ================= Part 1F: redesign I(1) — deck -> grave flights =================
+  {
+    const window = await boot();
+    const doc = window.document;
+    const fx = window.__fx;
+    const step = (st, evs) => { const before = fx.log.length; fx.process(evs || [], st); return fx.log.slice(before); };
+    const render = (st) => window.render(st); // production order: render() first, then fx.process()
+    const deckFlights = (recs) => recs.filter(r => r.kind === 'flight' && r.from === 'deck' && r.to === 'grave');
+    const graveFlights = (recs) => recs.filter(r => r.kind === 'flight' && r.to === 'grave');
+    const MILL3 = (() => { let n = 0; for (const [code, c] of Object.entries(data.cards)) if (isMainMonster(c) && ++n === 3) return +code; return null; })();
+    ok(!!MILL3 && MILL3 !== NORMAL && MILL3 !== NORMAL2, 'FXI0: third mill fixture is a distinct main-deck monster');
+
+    // (1) deck -> grave only: the deck-origin flight fires, face-up
+    fx.reset();
+    let st = fakeState(s => { s.log = []; s.players[0].deckCount = 40; });
+    render(st); step(st);
+    st = fakeState(s => { s.log = []; s.players[0].deckCount = 39; s.players[0].grave = [NORMAL]; });
+    render(st);
+    let recs = step(st);
+    ok(deckFlights(recs).length === 1 && deckFlights(recs)[0].code === NORMAL, 'FXI1: a deck->grave-only batch records exactly one deck-origin flight for the fallen card (got ' + JSON.stringify(deckFlights(recs)) + ')');
+    ok(graveFlights(recs).length === 1, 'FXI1b: no other grave flight fires in a deck->grave-only batch');
+    const ghost = doc.querySelector('#fxlayer .fx-ghost');
+    ok(!!ghost && !ghost.classList.contains('back'), 'FXI1c: the deck->grave ghost is face-UP (graveyard is public; what fell must be readable)');
+    ok(!!ghost && !!ghost.querySelector('.nm') && ghost.querySelector('.nm').textContent === data.names[NORMAL], 'FXI1d: the face-up ghost carries the fallen card name (got ' + (ghost && ghost.querySelector('.nm') ? ghost.querySelector('.nm').textContent : 'none') + ')');
+
+    // (1b) multiple cards fall together (mill): one flight per card
+    fx.reset();
+    step(fakeState(s => { s.players[0].deckCount = 40; }));
+    st = fakeState(s => { s.players[0].deckCount = 37; s.players[0].grave = [NORMAL, NORMAL2, MILL3]; });
+    recs = step(st);
+    ok(deckFlights(recs).length === 3 && [NORMAL, NORMAL2, MILL3].every(c => deckFlights(recs).some(r => r.code === c)), 'FXI1e: a 3-card mill records one deck-origin flight per fallen card (got ' + deckFlights(recs).length + ')');
+
+    // (2) hand -> grave and deck -> grave in the SAME batch: each
+    // flies exactly once, from its own origin — no double flight
+    fx.reset();
+    step(fakeState(s => { s.players[0].hand = [{ code: NORMAL }]; s.players[0].deckCount = 40; }));
+    st = fakeState(s => { s.players[0].hand = []; s.players[0].deckCount = 39; s.players[0].grave = [NORMAL, NORMAL2]; });
+    recs = step(st);
+    const handFlights = recs.filter(r => r.kind === 'flight' && r.from === 'hand' && r.to === 'grave');
+    ok(handFlights.length === 1 && handFlights[0].code === NORMAL, 'FXI2: the hand discard flies once from the hand (got ' + JSON.stringify(handFlights) + ')');
+    ok(deckFlights(recs).length === 1 && deckFlights(recs)[0].code === NORMAL2, 'FXI2b: the deck card flies once from the deck — the hand card is NOT re-flown as a deck card (got ' + JSON.stringify(deckFlights(recs)) + ')');
+    ok(graveFlights(recs).length === 2, 'FXI2c: exactly two grave flights in total for the mixed batch (no double flight)');
+
+    // (2b) same CODE from the field and from the deck in one batch
+    // (two copies): the multiset subtraction consumes the field
+    // copy, so the deck copy still flies — exactly once each
+    fx.reset();
+    step(fakeState(s => { s.players[0].mzone[0] = mon(NORMAL); s.players[0].deckCount = 40; }));
+    st = fakeState(s => { s.players[0].deckCount = 39; s.players[0].grave = [NORMAL, NORMAL]; });
+    recs = step(st);
+    ok(deckFlights(recs).length === 1 && deckFlights(recs)[0].code === NORMAL, 'FXI2d: with two copies in the grave (field + deck), the deck copy still gets its one deck flight');
+    ok(graveFlights(recs).length === 2, 'FXI2e: field copy + deck copy = exactly two grave flights for the duplicated code');
+
+    // (3) grave grows but the deck does NOT shrink (hand discard
+    // only): no deck flight may appear
+    fx.reset();
+    step(fakeState(s => { s.players[0].hand = [{ code: NORMAL }]; s.players[0].deckCount = 40; }));
+    st = fakeState(s => { s.players[0].hand = []; s.players[0].deckCount = 40; s.players[0].grave = [NORMAL]; });
+    recs = step(st);
+    ok(deckFlights(recs).length === 0, 'FXI3: no deck flight when the deck count did not decrease (hand discard only)');
+    ok(recs.filter(r => r.kind === 'flight' && r.from === 'hand' && r.to === 'grave').length === 1, 'FXI3b: the hand discard itself still flies from the hand');
+
+    // (3b) opponent deck -> grave works for the other seat too
+    fx.reset();
+    step(fakeState(s => { s.players[1].deckCount = 40; }));
+    st = fakeState(s => { s.players[1].deckCount = 38; s.players[1].grave = [NORMAL, NORMAL2]; });
+    recs = step(st);
+    ok(deckFlights(recs).length === 2, 'FXI3c: an opponent mill records deck-origin flights for both fallen cards (got ' + deckFlights(recs).length + ')');
+    ok(fx.error === null, 'FXI4: fxError stayed null through every redesign-I step (got: ' + fx.error + ')');
+    window.close();
+  }
+
   // ================= Part 2: live duels =================
   if (process.env.FX_SYNTH_ONLY) { console.log(failures === 0 ? 'ALL FX SYNTHETIC CHECKS PASSED' : failures + ' FAILED'); process.exit(failures ? 1 : 0); }
   const tally = {};

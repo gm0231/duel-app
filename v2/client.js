@@ -1007,15 +1007,22 @@ function fxPlaceGhost(code, faceDown, pt, w, h) {
 // A card ghost flies from one point to another (slight arc). Used for
 // every "hand-ward / pile-ward" movement: the destination is what the
 // player reads (presentation 3-5, supplement grammar asymmetry).
-function fxFly(code, faceDown, fromPt, toPt, w, h, dur) {
+// `delay` (optional, redesign I(1)): stagger for multi-card flights —
+// the ghost waits invisible at its origin until its turn, so cards
+// leaving together still land one after another. The delay rides the
+// WAAPI animation itself (no per-frame writes), like the sheet-row
+// stagger elsewhere; the kill timer accounts for it.
+function fxFly(code, faceDown, fromPt, toPt, w, h, dur, delay) {
   const d = fxPlaceGhost(code, faceDown, fromPt, w, h); if (!d) return;
+  const dl = delay || 0;
+  if (dl > 0) d.style.opacity = '0'; // held until the delayed animation takes over (fill:backwards shows frame 0)
   const dx = toPt.cx - fromPt.cx, dy = toPt.cy - fromPt.cy;
   fxAnim(d, [
     { transform: 'translate(0px,0px)', opacity: 1 },
     { transform: 'translate(' + (dx * 0.5) + 'px,' + (dy * 0.5 - 16) + 'px)', opacity: 1, offset: 0.55 },
     { transform: 'translate(' + dx + 'px,' + dy + 'px) scale(.72)', opacity: 0.9 },
-  ], { duration: dur || 430, easing: 'ease-in-out' });
-  fxKill(d, (dur || 430) + 40);
+  ], { duration: dur || 430, easing: 'ease-in-out', delay: dl, fill: dl > 0 ? 'backwards' : 'none' });
+  fxKill(d, dl + (dur || 430) + 40);
 }
 function fxZoneGlow(key, ms) {
   const el = fxSlotEl(key); if (!el) return;
@@ -1869,6 +1876,14 @@ function fxProcessInner(evs, state) {
   };
   const pilePt = (con, kind) => { const el = fxPileEl(con, kind); return el ? fxRel(el) : null; };
   const consumedArr = new Set(), consumedDep = new Set();
+  // Redesign I(1) — deck -> grave accounting: codes that ALREADY flew
+  // to a graveyard in this batch (field departures below, then the
+  // own-hand departures further down), as a per-player multiset.
+  // The deck-origin pass after the hand movements subtracts these
+  // from graveD[p].added; flying a code twice (e.g. a hand discard
+  // re-flown as if it came from the deck) is forbidden, so every
+  // grave flight in this batch MUST register here.
+  const graveFlown = [[], []];
   // ---- control change: a monster leaves one field and appears on the
   // other in the same batch — it slides (supplement), never teleports
   for (const ar of arrived) {
@@ -1997,6 +2012,7 @@ function fxProcessInner(evs, state) {
     if (dest === 'grave' || dest === 'removed' || dest === 'extra') {
       const toPt = pilePt(con, dest);
       fxRecord('flight', { to: dest, code: dep.entry.code }); // intent is recorded even if a rect is momentarily unreadable; the ghost spawns when geometry exists (always, post-render)
+      if (dest === 'grave' && dep.entry.code != null) graveFlown[con].push(dep.entry.code); // I(1): already flown — the deck-origin pass must not fly it again
       if (fromPt && toPt) fxFly(dep.entry.code, faceDown, fromPt, toPt, fromPt.w - 2, fromPt.h - 24);
       pileLand(con, dest);
     } else if (cur.handLen[con] > prev.handLen[con]) { // bounced to a hand
@@ -2057,7 +2073,7 @@ function fxProcessInner(evs, state) {
     if (placed) continue;
     const fromRect = fxHandRects.find(r => r.code === code);
     const fromPt = fromRect || handPt(HP);
-    if (graveD[HP].added.includes(code)) { const toPt = pilePt(HP, 'grave'); fxRecord('flight', { to: 'grave', from: 'hand', code }); if (fromPt && toPt) fxFly(code, false, fromPt, toPt, 44, 58); pileLand(HP, 'grave'); }
+    if (graveD[HP].added.includes(code)) { const toPt = pilePt(HP, 'grave'); fxRecord('flight', { to: 'grave', from: 'hand', code }); graveFlown[HP].push(code); if (fromPt && toPt) fxFly(code, false, fromPt, toPt, 44, 58); pileLand(HP, 'grave'); }
     else if (remD[HP].added.includes(code)) { const toPt = pilePt(HP, 'removed'); fxRecord('flight', { to: 'removed', from: 'hand', code }); if (fromPt && toPt) fxFly(code, false, fromPt, toPt, 44, 58); pileLand(HP, 'removed'); }
     else if (cur.deck[HP] > prev.deck[HP]) { if (fromRect) { const layer = fxLayerEl(); const d = fxPlaceGhost(code, false, fromRect, fromRect.w - 2, fromRect.h - 2); if (d) { fxAnim(d, [{ transform: 'scale(1)', opacity: 1 }, { transform: 'scale(.55)', opacity: 0 }], { duration: 320, easing: 'ease-in' }); fxKill(d, 360); } } fxRecord('vanish', { to: 'deck', from: 'hand', code }); pileLand(HP, 'deck'); }
   }
@@ -2067,6 +2083,45 @@ function fxProcessInner(evs, state) {
     const fromPt = pilePt(opp, 'deck'), toPt = handPt(opp);
     fxRecord('flight', { to: 'opphand', from: 'deck' });
     if (fromPt && toPt) fxFly(null, true, fromPt, toPt, 40, 52);
+  }
+  // ---- deck -> grave (redesign I(1)): cards an effect sends
+  // straight from the deck to the graveyard (《おろかな副葬》's
+  // resolution, mills, ...) previously only ticked the grave
+  // counter — nothing flew, so "what fell" could not be followed.
+  // Deck-origin candidates are what is LEFT of graveD[p].added
+  // after subtracting (as a multiset, one occurrence per flight)
+  // every code that already flew to that grave in this batch from
+  // the field or the hand (graveFlown, filled above). A candidate
+  // flies ONLY when the deck actually shrank, and never more
+  // cards than the deck shrank by — the count/code cross-check
+  // that keeps a hand discard (deck unchanged) or an unrelated
+  // grave arrival from ever being re-flown as a deck card.
+  // DEVIATION from proposals-rest item I, deliberate and decided:
+  // the proposal's wording has a face-DOWN (card-back) ghost fly,
+  // but the decided behaviour is a face-UP ghost. The graveyard
+  // is public information and the point of this item is that the
+  // player can follow WHAT fell — a back would hide exactly that.
+  // Multiple cards falling together stagger by 110 ms per card
+  // (the fxFly delay above), in grave-arrival order.
+  // Scope: grave only — deck -> removed / hand / field are not
+  // covered here (draws/searches already have their own grammar).
+  for (let p = 0; p < 2; p++) {
+    const deckDrop = prev.deck[p] - cur.deck[p];
+    if (deckDrop <= 0) continue;
+    const residual = graveD[p].added.slice();
+    for (const flown of graveFlown[p]) {
+      const i = residual.indexOf(flown);
+      if (i >= 0) residual.splice(i, 1);
+    }
+    if (!residual.length) continue;
+    const n = Math.min(residual.length, deckDrop);
+    const fromPt = pilePt(p, 'deck'), toPt = pilePt(p, 'grave');
+    for (let i = 0; i < n; i++) {
+      const code = residual[i];
+      fxRecord('flight', { to: 'grave', from: 'deck', code }); // from:'deck' is the deck-origin marker (same `from` convention as the hand flights)
+      if (fromPt && toPt) fxFly(code, false, fromPt, toPt, 44, 58, 430, i * 110);
+    }
+    if (n > 0) pileLand(p, 'grave');
   }
   // ---- pile count ticks where no flight already landed
   for (let p = 0; p < 2; p++) {
