@@ -770,6 +770,106 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     window.close();
   }
 
+  // ================= Part 1I: redesign C / E / G — result chip, phase sweep settle, finisher result gate =================
+  {
+    const window = await boot();
+    const doc = window.document;
+    const $ = (id) => doc.getElementById(id);
+    const E = window.Engine;
+    const fx = window.__fx;
+    const step = (st, evs) => { const before = fx.log.length; fx.process(evs || [], st); return fx.log.slice(before); };
+    const render = (st) => window.render(st); // production order: render() first, then fx.process()
+    const has = (recs, kind, pred) => recs.some(r => r.kind === kind && (!pred || pred(r)));
+    const SANGA = 25955164, ZOLGA = 31525442;
+    // render() reads state.log / state.lastAttack (engine states
+    // always carry them); the shared fakeState omits both, so wrap it
+    const FS = (mut) => fakeState(s => { s.log = []; s.lastAttack = null; if (mut) mut(s); });
+    const chipNodes = () => [...doc.querySelectorAll('#fxlayer .fx3-resultchip')];
+    const clearChips = () => chipNodes().forEach(n => n.remove());
+
+    // --- C1: battle destruction (the destroy event's battle
+    // flag) leaves the engraved 破壊 chip beside the zone
+    fx.reset(); clearChips();
+    let before = FS(s => { s.players[1].mzone[0] = mon(ZOLGA); });
+    render(before); fx.process([], before);
+    let after = FS(s => { s.players[1].grave = [ZOLGA]; });
+    render(after);
+    let recs = step(after, [{ kind: 'destroy', code: ZOLGA, con: 1, battle: true }]);
+    ok(has(recs, 'resultchip', r => r.code === ZOLGA), 'FXI-C1: battle destruction records the result chip');
+    ok(chipNodes().length === 1 && chipNodes()[0].textContent === '破壊' && chipNodes()[0].dataset.code === String(ZOLGA),
+      'FXI-C1b: exactly one 破壊 chip node stands in the FX layer');
+
+    // --- C2: EFFECT destruction gets NO chip (battle flag clear,
+    // no attack scene in the batch) — its grammar stays the flash
+    fx.reset(); clearChips();
+    before = FS(s => { s.players[1].mzone[0] = mon(ZOLGA); });
+    render(before); fx.process([], before);
+    after = FS(s => { s.players[1].grave = [ZOLGA]; });
+    render(after);
+    recs = step(after, [{ kind: 'destroy', code: ZOLGA, con: 1, battle: false }]);
+    ok(has(recs, 'destroyflash', r => r.code === ZOLGA), 'FXI-C2: effect destruction still flashes (sanity)');
+    ok(!has(recs, 'resultchip'), 'FXI-C2b: effect destruction records NO result chip');
+    ok(chipNodes().length === 0, 'FXI-C2c: effect destruction leaves NO chip node');
+
+    // --- C3: destruction via the batch's ATTACK SCENE also gets
+    // the chip, even when the destroy event carries no battle flag
+    fx.reset(); clearChips();
+    before = FS(s => { s.players[0].mzone[0] = mon(SANGA); s.players[1].mzone[0] = mon(ZOLGA); });
+    render(before); fx.process([], before);
+    after = FS(s => {
+      s.players[0].mzone[0] = mon(SANGA); s.players[1].grave = [ZOLGA];
+      s.lastAttack = { attacker: { con: 0, loc: E.LOC.MZONE, seq: 0 }, target: { con: 1, loc: E.LOC.MZONE, seq: 0 } };
+    });
+    render(after);
+    recs = step(after, [
+      { kind: 'attack', code: SANGA, con: 0, direct: false },
+      { kind: 'destroy', code: ZOLGA, con: 1, battle: false },
+    ]);
+    ok(has(recs, 'resultchip', r => r.code === ZOLGA && r.via === 'scene'), 'FXI-C3: attack-scene destruction records the chip (via scene)');
+    ok(chipNodes().length === 1, 'FXI-C3b: attack-scene destruction leaves the chip node');
+
+    // --- E: the transition runs the gold sweep over the mid bar;
+    // at settle the hairline remains and the phase name sits gold
+    // + bold in #phaseinfo (the fx-seated class)
+    fx.reset();
+    before = FS(s => { s.turnCount = 2; s.phaseName = ''; });
+    render(before); fx.process([], before);
+    ok(!fx.phaseSeated(), 'FXI-E0: no seated phase before any transition');
+    after = FS(s => { s.turnCount = 2; s.phaseName = 'BATTLE'; });
+    render(after);
+    recs = step(after, []);
+    ok(has(recs, 'phase', r => r.phase === 'battle'), 'FXI-E1: the battle transition still records the phase');
+    const banner = doc.querySelector('#fxlayer .fx-phase');
+    ok(!!banner && banner.textContent.includes('バトルフェイズ'), 'FXI-E2: the engraved phase name stands at board centre');
+    ok(!!doc.querySelector('#fxlayer .fx-phase-sweep'), 'FXI-E3: the sweep segment node exists over the mid bar');
+    ok(!!doc.querySelector('#midbar .fx-phase-hairline'), 'FXI-E4: the hairline node exists on the mid bar');
+    ok(!fx.phaseSeated(), 'FXI-E5: the phase is not seated while the sweep is still running');
+    const deadline = Date.now() + 5000;
+    while (!fx.phaseSeated() && Date.now() < deadline) await new Promise(r => setTimeout(r, 100));
+    ok(fx.phaseSeated() && $('phaseinfo').classList.contains('fx-seated'), 'FXI-E6: after settling, #phaseinfo carries the seated class');
+    const hair = doc.querySelector('#midbar .fx-phase-hairline');
+    ok(!!hair && hair.style.opacity === '0.3', 'FXI-E7: the settled hairline remains at opacity 0.30');
+    ok(!doc.querySelector('#fxlayer .fx-phase') && !doc.querySelector('#fxlayer .fx-phase-sweep'),
+      'FXI-E8: banner and sweep are gone after settling (only the hairline + seated name remain)');
+
+    // --- G: the finisher result gate is t0+2450 — strictly after
+    // the wash's last paint at 2400 (audit A-07) — and 0 without
+    // a finisher, so the result handler's wait-then-show order
+    // (the existing verification path) is unchanged in shape
+    fx.reset();
+    ok(fx.finisherGateMs() === 0, 'FXI-G1: no finisher scene -> gate 0 (the result is never delayed without one)');
+    step(FS(s => { s.players[0].mzone[0] = mon(SANGA); s.players[1].lp = 5600; }));
+    after = FS(s => { s.players[0].mzone[0] = mon(SANGA); s.players[1].lp = 0; s.winner = 0; });
+    after.lastAttack = { attacker: { con: 0, loc: E.LOC.MZONE, seq: 0 }, target: null };
+    recs = step(after, [{ kind: 'attack', code: SANGA, con: 0, direct: true }, { kind: 'damage', player: 1, amount: 5600 }]);
+    ok(has(recs, 'finisher'), 'FXI-G2: the duel-ending attack still fires the finisher (sanity)');
+    const gate = fx.finisherGateMs();
+    ok(gate === 2450, 'FXI-G3: with the finisher just fired, the result gate reads exactly 2450 ms (got ' + gate + ')');
+    ok(gate > 2400, 'FXI-G4: the gate is strictly after the wash fully disappears (2400 ms)');
+    ok(fx.error === null, 'FXI-Z: fxError stayed null through every redesign-C/E/G step (got: ' + fx.error + ')');
+    window.close();
+  }
+
   // ================= Part 2: live duels =================
   if (process.env.FX_SYNTH_ONLY) { console.log(failures === 0 ? 'ALL FX SYNTHETIC CHECKS PASSED' : failures + ' FAILED'); process.exit(failures ? 1 : 0); }
   const tally = {};

@@ -1095,6 +1095,37 @@ function fxWhiteFlash(key) { // destruction: flash white, gone (restrained)
   fxAnim(d, [{ opacity: 1 }, { opacity: 0 }], { duration: 320, easing: 'ease-out' });
   fxKill(d, 360);
 }
+// ---- Redesign C (proto 案3): the battle-destruction result chip
+// (residual light). An engraved stone tablet reading 「破壊」
+// (~44x18px, CSS .fx3-resultchip) stands beside the destroyed
+// zone's lower-right corner — its left edge 8px inside the zone's
+// right edge, its top 12px above the zone's bottom edge, exactly
+// the prototype's placement (cap-proto p3fresh) — and lingers
+// ~2.6 s, dissolving by opacity + a 3px rise ONLY (p3fade: opacity
+// .30 at the risen position). WAAPI transform/opacity, like the
+// other residual chips; all paint is static CSS. Called ONLY for
+// battle destruction from the fxProcessInner destroy pass (the
+// destroy event's battle flag, or a destruction the batch's
+// attack scene owns) — effect destruction never reaches here.
+function fxResultChip(key, code) {
+  const el = fxSlotEl(key); if (!el) return null;
+  const r = fxRel(el);
+  // fxNode centres the box on (cx, cy): left = r.x + r.w - 8 and
+  // top = r.y + r.h - 12 for a 44x18 chip give the centres below
+  const d = fxNode('fx3-resultchip', r.x + r.w + 14, r.y + r.h - 3, 44, 18);
+  if (!d) return null;
+  d.textContent = '破壊';
+  d.dataset.resultKind = 'destroy';
+  if (code != null) d.dataset.code = String(code);
+  fxAnim(d, [
+    { transform: 'translateY(0px)', opacity: 0 },
+    { transform: 'translateY(0px)', opacity: 1, offset: 0.06 },
+    { transform: 'translateY(-2px)', opacity: 1, offset: 0.75 },
+    { transform: 'translateY(-3px)', opacity: 0 },
+  ], { duration: 2600, easing: 'ease-out' });
+  fxKill(d, 2640);
+  return d;
+}
 function fxVanish(key, code, faceDown) { // deck returns: gone in place, no flight (supplement)
   const el = fxSlotEl(key); if (!el) return;
   const r = fxRel(el);
@@ -1373,33 +1404,90 @@ function fxPhaseFamily(ph) {
   if (/BATTLE|DAMAGE/.test(ph)) return 'battle';
   return null;
 }
-let fxBannerEl = null, fxBannerScene = null;
+let fxBannerEl = null, fxBannerScene = null, fxPhaseSweepEl = null, fxPhaseHairlineEl = null;
+// Redesign E (proto 案5): the settled remnant of a phase sweep —
+// a 1px gold hairline (opacity 0.30) that stays ON the mid bar as
+// pure decoration (the bar's layout never changes). It lives as a
+// child of #midbar, so it is NOT wiped with #fxlayer; it is
+// created lazily by the banner, re-shown at each settle, and
+// removed only by a duel reset (fxPhaseClearSeated).
+function fxPhaseHairline() {
+  const mb = $('midbar'); if (!mb) return null;
+  if (fxPhaseHairlineEl && fxPhaseHairlineEl.parentElement === mb) return fxPhaseHairlineEl;
+  const h = document.createElement('div');
+  h.className = 'fx-phase-hairline';
+  h.style.opacity = '0';
+  mb.appendChild(h);
+  fxPhaseHairlineEl = h;
+  return h;
+}
+function fxPhaseClearSeated() { // duel reset: no seated phase, no hairline
+  const pi = $('phaseinfo'); if (pi) pi.classList.remove('fx-seated');
+  if (fxPhaseHairlineEl) { try { fxPhaseHairlineEl.remove(); } catch (e) {} fxPhaseHairlineEl = null; }
+}
 function fxPhaseBanner(fam) {
   const info = FX_PHASES[fam]; if (!info) return;
   const layer = fxLayerEl(); if (!layer) return;
   if (fxBannerEl) { try { fxBannerEl.remove(); } catch (e) {} fxBannerEl = null; }
   if (fxBannerScene && !fxBannerScene.dead) fxBannerScene.dead = true;
+  if (fxPhaseSweepEl) { try { fxPhaseSweepEl.remove(); } catch (e) {} fxPhaseSweepEl = null; }
+  // a new transition un-seats the previous phase: the readout is
+  // plain again and the old hairline hides until THIS sweep settles
+  const pi = $('phaseinfo'); if (pi) pi.classList.remove('fx-seated');
+  const hair = fxPhaseHairline(); if (hair) hair.style.opacity = '0';
   const d = document.createElement('div');
+  // the battle class is kept for record compatibility, but its
+  // paint is gold like every other phase (prototype over variant)
   d.className = 'fx-phase' + (info.battle ? ' battle' : '');
-  d.innerHTML = '<span class="lbl">' + info.label + '</span><div class="rule"></div>';
+  d.innerHTML = '<span class="lbl">' + info.label + '</span>';
   d.style.opacity = '0';
   layer.appendChild(d);
   fxBannerEl = d;
-  const rule = d.querySelector('.rule');
-  // V4-6: a scene on the shared clock, not a WAAPI one-off — snap
-  // entry (160 ms), the gold rule draws under the label (200-380),
-  // and the exit is a short accelerating pass (700-820, total span
-  // unchanged at ~820 ms).
+  // ---- the sweep segment: a 2px gold line (gradient + bright
+  // leading tip, CSS .fx-phase-sweep) that runs left -> right
+  // across the TOP of the mid bar (prototype offset: bar top + 3px,
+  // so the 2px line's centre sits at +4). It is an overlay in
+  // #fxlayer computed from the bar's painted rect — the bar
+  // itself never moves. Travel is transform-only: the segment is
+  // laid at the bar's left edge and translates from fully off the
+  // left end to fully off the right end over 0-650 ms.
+  const mb = $('midbar');
+  const mr = mb ? fxRel(mb) : null;
+  const ar = $('app') ? fxRel($('app')) : null;
+  const barW = mr && mr.w > 0 ? mr.w : (ar ? ar.w : 0);
+  const barX = mr ? mr.x : 0;
+  const barY = mr ? mr.y : (ar ? ar.y + ar.h * 0.38 : 0);
+  const segW = Math.max(44, Math.round(barW * 0.45));
+  const sweep = fxNode('fx-phase-sweep', barX + segW / 2, barY + 4, segW, 2);
+  if (sweep) { sweep.style.opacity = '0'; sweep.style.transform = 'translateX(' + (-segW) + 'px)'; fxPhaseSweepEl = sweep; }
+  const travel = barW + segW;
+  // Redesign E timeline (one scene on the shared clock, total
+  // span unchanged at ~820 ms): the phase name snaps in standing
+  // (0-160) while the sweep runs (0-650); the sweep then dissolves
+  // into the hairline (650-820, hairline fading up to its settled
+  // 0.30), the name makes its short exit pass (700-820), and at
+  // settle the name "sits" in #phaseinfo (gold + bold, the
+  // fx-seated class) while the hairline remains on the bar.
   fxBannerScene = fxAddScene({
     kind: 'phase', dur: 820,
     render(t) {
       const inU = FXE.snap(fxSeg(t, 0, 160));
       const outU = FXE.inQuad(fxSeg(t, 700, 820));
       d.style.opacity = String(Math.min(inU, 1 - outU));
-      d.style.transform = 'translateX(' + ((1 - inU) * -7 + outU * 7).toFixed(2) + '%)';
-      if (rule) rule.style.transform = 'scaleX(' + FXE.snap(fxSeg(t, 200, 380)).toFixed(3) + ')';
+      d.style.transform = 'translateY(' + ((1 - inU) * 4).toFixed(2) + 'px)';
+      if (sweep) {
+        const u = FXE.outCubic(fxSeg(t, 0, 650));
+        sweep.style.transform = 'translateX(' + (-segW + travel * u).toFixed(1) + 'px)';
+        sweep.style.opacity = String(Math.min(1, fxSeg(t, 0, 60) * 4) * (1 - fxSeg(t, 650, 820)));
+      }
+      if (hair) hair.style.opacity = String(0.30 * fxSeg(t, 650, 820));
     },
-    onDone() { try { d.remove(); } catch (e) {} if (fxBannerEl === d) fxBannerEl = null; },
+    onDone() {
+      try { d.remove(); } catch (e) {} if (fxBannerEl === d) fxBannerEl = null;
+      if (sweep) { try { sweep.remove(); } catch (e) {} if (fxPhaseSweepEl === sweep) fxPhaseSweepEl = null; }
+      if (hair) hair.style.opacity = '0.30'; // the hairline remains
+      const pi2 = $('phaseinfo'); if (pi2) pi2.classList.add('fx-seated'); // the name sits in the bar
+    },
   });
   fxRecord('phase', { phase: fam });
 }
@@ -1782,6 +1870,10 @@ function fxResetFoundation() {
   fxStopUntilWall = 0; fxTimeMs = 0; fxLastWall = 0;
   fxAceSceneRef = null; fxFinisherSceneRef = null; fxAceRecent = null; // stage 3 scene refs (hosts are wiped by fxResetDuel)
   fxChainWordScene = null; fxBannerScene = null; // V4 scene refs
+  // redesign E: the sweep's leftovers live outside #fxlayer (the
+  // hairline is a #midbar child, the seated state a #phaseinfo
+  // class) — clear them explicitly so no gold survives a reset
+  fxPhaseSweepEl = null; fxPhaseClearSeated();
   try { fxChainLanded.clear(); } catch (e) {} // redesign B: landed flags never survive a duel reset
   const appEl = $('app'); if (appEl) appEl.style.transform = ''; // a finisher tilt must not survive the duel
   for (const id of ['fxcv', 'fxcvTop']) { const c = $(id); if (c && c.getContext) { const x = c.getContext('2d'); if (x) x.clearRect(0, 0, c.width, c.height); } }
@@ -2037,8 +2129,19 @@ function fxProcessInner(evs, state) {
     if (ev.kind !== 'destroy') continue;
     const dep = departed.find(d => d.entry.code === ev.code && d.key.split(':').map(Number)[0] === ev.con);
     if (dep) {
-      if (atkTargetKeys.has(dep.key)) fxRecord('destroyflash', { code: ev.code, via: 'scene' });
+      const viaScene = atkTargetKeys.has(dep.key);
+      if (viaScene) fxRecord('destroyflash', { code: ev.code, via: 'scene' });
       else { fxWhiteFlash(dep.key); fxRecord('destroyflash', { code: ev.code }); }
+      // Redesign C (proto 案3): the result chip is for BATTLE
+      // destruction only — the destroy event's battle flag
+      // (engine: reason & 0x20), or a destruction this batch's
+      // attack scene owns (its target zone). Effect destruction
+      // (battle flag clear, no attack scene) gets NO chip: its
+      // grammar stays the white flash + flight above.
+      if (ev.battle || viaScene) {
+        fxResultChip(dep.key, ev.code);
+        fxRecord('resultchip', { code: ev.code, key: dep.key, battle: !!ev.battle, via: viaScene ? 'scene' : 'battle' });
+      }
     }
   }
   // ---- in-place changes: xyz detach / attach, stat changes, flips (round B hook)
@@ -2598,15 +2701,24 @@ function fxOppTagsFromEvents(evs, state) {
 }
 // ---- V3 stage 3: the finisher scene (proposal 1.3). Lives INSIDE
 // the layer table (#fxcutin, z35); the result display is separated
-// from it by TIME (a gate at scene-local 2300 ms, see the start
-// handler), never by stacking above it. The wash is a radial bloom
-// FROM the defender's LP plate — it has an origin and a direction.
+// from it by TIME (a gate at scene-local 2450 ms — redesign G, see
+// fxFinisherGateMs — never by stacking above it. The wash is a
+// radial bloom FROM the defender's LP plate — it has an origin
+// and a direction.
 let fxFinisherSceneRef = null;
 function fxFinisherGateMs() {
   const sc = fxFinisherSceneRef;
   if (!sc || sc.dead) return 0;
-  const remain = (sc.t0 + 2300) - fxTimeMs;
-  return Math.max(0, Math.min(2400, remain));
+  // Redesign G (audit A-07): the gate sits at scene-local 2450 ms,
+  // AFTER the wash is fully gone (its last paint is at 2400 ms,
+  // fxFinisherSceneV3 drawTop). The old 2300 ms let the result
+  // (z60) stand under the wash's 2300-2400 ms tail (drawn on the
+  // z65 canvas) for a beat; 2450 leaves a 50 ms clear margin so
+  // the result always stands after the veil recedes. Sole caller:
+  // the duel-end handler below, which awaits this before showing
+  // the result — nothing else in the flow reads the gate.
+  const remain = (sc.t0 + 2450) - fxTimeMs;
+  return Math.max(0, Math.min(2450, remain));
 }
 function fxFinisherSceneV3(attr) {
   const host = $('fxcutin'); if (!host) return;
@@ -3589,6 +3701,8 @@ window.__fx = {
   // harnesses verify the render() output against the flag itself
   chainLanded: () => [...fxChainLanded.keys()].sort((a, b) => a - b),
   markChainLanded: (n, code) => fxChainMarkLanded(n, code),
+  finisherGateMs: () => fxFinisherGateMs(), // redesign G: the result gate, readable for verification
+  phaseSeated: () => { const pi = $('phaseinfo'); return !!pi && pi.classList.contains('fx-seated'); }, // redesign E: the settled phase state
   clearChainLanded: () => fxChainLanded.clear(),
   // V3 stage 1 foundation surface: the shared clock, the scene
   // registry, the particle budget and the hit-stop — so harnesses
@@ -5575,9 +5689,11 @@ function wireSeg(id, apply) {
     const st = duel.state;
     render(st);
     // V3 stage 3: the result waits for the finisher's result beat
-    // (scene-local 2300 ms, when the wash is fully gone) — the
-    // separation is by TIME inside the layer table, so the result
-    // is never seen under an active wash (the round-B defect).
+    // (scene-local 2450 ms — redesign G: the wash's last paint is
+    // at 2400 ms, so the gate sits 50 ms AFTER it is fully gone) —
+    // the separation is by TIME inside the layer table, so the
+    // result is never seen under an active wash (the round-B
+    // defect; audit A-07 was the 2300-2400 ms tail overlap).
     const gateMs = fxFinisherGateMs();
     if (gateMs > 0) await new Promise(r => setTimeout(r, gateMs));
     setBgmScene(st.winner === HP ? 'win' : 'lose', true);
