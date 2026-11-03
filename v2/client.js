@@ -140,6 +140,27 @@ function locLabel(e) {
   }
 }
 function isMonster(code) { const d = cardData(code); return d && (d.type & 0x1); }
+// card-kind (original frame) key, derived mechanically from the core
+// type bitmask in data.json (cards[code].type) — no per-card hand
+// assignment, so every card in the pool is covered (user request
+// 2026-11-03: kind colors on the name band). Priority: spell/trap,
+// then the extra-deck kinds, ritual, plain normal (TYPE_NORMAL
+// without TYPE_EFFECT); any other monster is an effect monster.
+// '' when the card is unknown, so unclassed bands keep today's look.
+function cardKind(code) {
+  const d = cardData(code); if (!d) return '';
+  const t = d.type | 0;
+  if (t & 0x2) return 'spell';
+  if (t & 0x4) return 'trap';
+  if (t & 0x40) return 'fusion';
+  if (t & 0x2000) return 'synchro';
+  if (t & 0x800000) return 'xyz';
+  if (t & 0x80) return 'ritual';
+  if ((t & 0x10) && !(t & 0x20)) return 'normal';
+  if (t & 0x1) return 'effect';
+  return '';
+}
+function kindCls(code) { const k = cardKind(code); return k ? ' k-' + k : ''; }
 function statsLine(code) {
   const d = cardData(code); if (!d || !(d.type & 0x1)) return '';
   return '攻' + d.atk + '／守' + d.def;
@@ -1116,7 +1137,7 @@ function fxGhostEl(code, faceDown, w, h, deckKey) {
   const d = document.createElement('div');
   d.className = 'fx fx-ghost' + (faceDown ? ' back' : '');
   d.style.width = w + 'px'; d.style.height = h + 'px';
-  if (!faceDown && code != null) { artApply(d, code, false, deckKey); d.innerHTML = '<div class="nm">' + cardName(code) + '</div>'; }
+  if (!faceDown && code != null) { artApply(d, code, false, deckKey); d.innerHTML = '<div class="nm' + kindCls(code) + '">' + cardName(code) + '</div>'; }
   return d;
 }
 function fxPlaceGhost(code, faceDown, pt, w, h, deckKey) {
@@ -2308,7 +2329,7 @@ function fxFinisherSceneV3(attr) {
   const card = hmk('bigcard');
   card.style.width = cw + 'px'; card.style.height = chh + 'px'; card.style.opacity = '0';
   artApply(card, la.code, true, la.aKey ? deckKeyOfSeat(+la.aKey.split(':')[0]) : null);
-  card.innerHTML = '<div class="nm">' + cardName(la.code) + '</div>';
+  card.innerHTML = '<div class="nm' + kindCls(la.code) + '">' + cardName(la.code) + '</div>';
   // beam: attacker -> defender LP plate (fxcutin shares the app coordinate space)
   const dx = lpPt.cx - la.aPt.cx, dy = lpPt.cy - la.aPt.cy, len = Math.hypot(dx, dy);
   const ang = Math.atan2(dy, dx) * 180 / Math.PI;
@@ -2718,13 +2739,13 @@ function fxAceSceneV3(o) {
   const vw = Math.min(window.innerWidth || 390, 430);
   const cw = Math.round(Math.min(250, vw * 0.62)), chh = Math.round(cw * 1.38);
   const after1 = hmk('bigcard'); after1.style.width = cw + 'px'; after1.style.height = chh + 'px'; after1.style.opacity = '0'; after1.style.filter = 'brightness(1.5) saturate(1.3)'; // L9 V4 afterimages, 55/120 ms behind the card
-  after1.innerHTML = '<div class="nm">' + cardName(o.code) + '</div>';
+  after1.innerHTML = '<div class="nm' + kindCls(o.code) + '">' + cardName(o.code) + '</div>';
   const after2 = hmk('bigcard'); after2.style.width = cw + 'px'; after2.style.height = chh + 'px'; after2.style.opacity = '0'; after2.style.filter = 'brightness(1.5) saturate(1.3)';
-  after2.innerHTML = '<div class="nm">' + cardName(o.code) + '</div>';
+  after2.innerHTML = '<div class="nm' + kindCls(o.code) + '">' + cardName(o.code) + '</div>';
   const card = hmk('bigcard'); card.style.width = cw + 'px'; card.style.height = chh + 'px'; card.style.opacity = '0'; // L9
   artApply(after1, o.code, true, deckKeyOfSeat(o.con)); artApply(after2, o.code, true, deckKeyOfSeat(o.con)); artApply(card, o.code, true, deckKeyOfSeat(o.con));
   card.style.boxShadow = '0 0 42px ' + cols[0] + '77, 0 6px 24px #000c'; // static frame shadow, set once; the breathing glow is canvas now (V4)
-  card.innerHTML = '<div class="nm">' + cardName(o.code) + '</div>';
+  card.innerHTML = '<div class="nm' + kindCls(o.code) + '">' + cardName(o.code) + '</div>';
   const banner = hmk('banner'); banner.style.opacity = '0'; // L12/L13
   banner.innerHTML = '<div class="cn">' + cardName(o.code) + '</div><div class="rule"></div><div class="cs"></div>';
   const ruleEl = banner.querySelector('.rule');
@@ -2881,7 +2902,7 @@ function fxCutinShow(code, deckKey) {
   const vw = Math.min(window.innerWidth || 390, 430);
   const w = Math.round(Math.min(250, vw * 0.62)), h = Math.round(w * 1.38);
   host.innerHTML = '<div class="scrim"></div>' +
-    '<div class="bigcard" style="width:' + w + 'px;height:' + h + 'px;' + artCss(code, true, deckKey) + '"><div class="nm">' + cardName(code) + '</div></div>' +
+    '<div class="bigcard" style="width:' + w + 'px;height:' + h + 'px;' + artCss(code, true, deckKey) + '"><div class="nm' + kindCls(code) + '">' + cardName(code) + '</div></div>' +
     '<div class="banner"><div class="cn">' + cardName(code) + '</div>' +
     '<div class="cs">' + (d && (d.type & 0x1) ? 'ATK ' + d.atk + ' ／ DEF ' + d.def : '') + '</div></div>';
   host.className = 'on';
@@ -3111,7 +3132,7 @@ function tileHTML(card, con, actKey, loc) {
     // tile reads as two overlapping cards (user report 2026-11-03).
     '<div class="inner"><div class="art"' + (showFace && card.code != null ? artInline(card.code, false, deckKeyOfSeat(con)) : '') + '></div>' +
     (ownSet ? '<div class="veil"></div>' : '') +
-    (nm ? '<div class="nm">' + nm + '</div>' : '') +
+    (nm ? '<div class="nm' + kindCls(card.code) + '">' + nm + '</div>' : '') +
     '</div></div>';
 }
 // ATK/DEF strip rendered at the SLOT level — outside the card frame, with
@@ -3315,7 +3336,7 @@ function render(state) {
       : '<div class="hstats"></div>';
     return '<div class="hcard' + act + '" data-act="' + key + '"' + (c.code != null ? ' data-code="' + c.code + '"' : '') + '>' +
       (c.code != null && handCounts[c.code] > 1 ? '<div class="cnt">×' + handCounts[c.code] + '</div>' : '') +
-      '<div class="himg"' + (c.code != null ? artInline(c.code, false, deckKeyOfSeat(HP)) : '') + '><div class="nm">' + (c.code != null ? cardName(c.code) : '？') + '</div></div>' + st + '</div>';
+      '<div class="himg"' + (c.code != null ? artInline(c.code, false, deckKeyOfSeat(HP)) : '') + '><div class="nm' + (c.code != null ? kindCls(c.code) : '') + '">' + (c.code != null ? cardName(c.code) : '？') + '</div></div>' + st + '</div>';
   }).join('');
   // opponent hand = backs in topbar only (count); chain bar
   const cb = $('chainbar');
@@ -4034,7 +4055,7 @@ function gridSheet(o) {
       // already lives on the disabled confirm button's label.)
       (tray ? '<div id="tray">' + tray + '</div>' : '<div id="tray"></div>') +
       '<div class="grid">' + o.cards.map((c, i) =>
-        '<div class="gcard' + (o.selected.has(i) ? ' sel' : '') + '" data-grid="' + i + '"' + artInline(c.code, false, c.ref && c.ref.con != null ? deckKeyOfSeat(c.ref.con) : deckKeyOfSeat(HP)) + '><button class="gdetail" data-gdetail="' + i + '">詳細</button><div class="loc">' + c.locLabel + '</div><div class="nm">' + cardName(c.code) + (c.extra ? ' ' + c.extra : '') + '</div>' +
+        '<div class="gcard' + (o.selected.has(i) ? ' sel' : '') + '" data-grid="' + i + '"' + artInline(c.code, false, c.ref && c.ref.con != null ? deckKeyOfSeat(c.ref.con) : deckKeyOfSeat(HP)) + '><button class="gdetail" data-gdetail="' + i + '">詳細</button><div class="loc">' + c.locLabel + '</div><div class="nm' + kindCls(c.code) + '">' + cardName(c.code) + (c.extra ? ' ' + c.extra : '') + '</div>' +
         (statsLine(c.code) ? '<div class="stats">' + statsLine(c.code) + '</div>' : '') +
         (o.showText && cardText(c.code) ? '<div class="itext">' + cardText(c.code) + '</div>' : '') + '</div>').join('') + '</div>' +
       '<div class="btnrow"><button class="bigbtn" id="grid-confirm" ' + (o.valid() ? '' : 'disabled') + '>' + (o.valid() ? (o.confirmLabel || '決定') : (o.needLabel ? o.needLabel() : (o.confirmLabel || '決定'))) + '</button>' +
@@ -4121,7 +4142,7 @@ function uiUnselect(prompt, state) {
   if (prompt.finishable && selCount > 0) hint += 'やめる場合は選択をすべて外してください。';
   sheetOpen('<div class="ttl">カードの選択</div><div class="sub">' + prompt.min + '〜' + prompt.max + ' 枚（現在 ' + selCount + ' 枚選択中）。タップで選択／解除します。' + (hint ? ' ' + hint : '') + '</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
     '<div class="grid">' + combined.map((x, k) =>
-      '<div class="gcard' + (x.sel ? ' sel' : '') + '" data-unselect="' + x.idx + '"' + artInline(x.c.code, false, deckKeyOfSeat(x.c.con)) + '><button class="gdetail" data-uinfo="' + k + '">詳細</button><div class="loc">' + locLabel(x.c) + '</div><div class="nm">' + cardName(x.c.code) + '</div>' +
+      '<div class="gcard' + (x.sel ? ' sel' : '') + '" data-unselect="' + x.idx + '"' + artInline(x.c.code, false, deckKeyOfSeat(x.c.con)) + '><button class="gdetail" data-uinfo="' + k + '">詳細</button><div class="loc">' + locLabel(x.c) + '</div><div class="nm' + kindCls(x.c.code) + '">' + cardName(x.c.code) + '</div>' +
       (statsLine(x.c.code) ? '<div class="stats">' + statsLine(x.c.code) + '</div>' : '') +
       (cardText(x.c.code) ? '<div class="itext">' + cardText(x.c.code) + '</div>' : '') + '</div>').join('') + '</div>' +
     '<div class="btnrow">' +
@@ -4376,7 +4397,7 @@ function uiAnnounceCard(prompt, state) {
   const draw = () => {
     sheetOpen('<div class="ttl">カードの宣言</div>' + contextLineHTML(prompt) +
       '<div class="sub">宣言するカードをタップで選び、「宣言する」を押してください。</div>' + retryWarn(prompt) +
-      '<div class="grid">' + pool.map(code => '<div class="gcard' + (chosen === code ? ' sel' : '') + '" data-code="' + code + '"' + artInline(code, false, deckKeyOfCode(code)) + '><button class="gdetail" data-acinfo="' + code + '">詳細</button><div class="nm">' + cardName(code) + '</div></div>').join('') + '</div>' +
+      '<div class="grid">' + pool.map(code => '<div class="gcard' + (chosen === code ? ' sel' : '') + '" data-code="' + code + '"' + artInline(code, false, deckKeyOfCode(code)) + '><button class="gdetail" data-acinfo="' + code + '">詳細</button><div class="nm' + kindCls(code) + '">' + cardName(code) + '</div></div>').join('') + '</div>' +
       '<div class="btnrow"><button class="bigbtn" id="announce-ok" ' + (chosen == null ? 'disabled' : '') + '>' + (chosen == null ? '宣言する' : '《' + cardName(chosen) + '》を宣言する') + '</button></div>');
     $('sheet').querySelectorAll('[data-code]').forEach(g => g.addEventListener('click', (ev) => {
       if (ev.target.closest('[data-acinfo]')) return;
@@ -4981,7 +5002,7 @@ function renderPreview() {
   if (sig === previewState.sig) return; // no DOM churn on unrelated re-renders
   previewState.sig = sig;
   el.innerHTML = '<div class="pv-art"' + artInline(previewState.code, false, previewState.deckKey) + '></div><div class="pv-body">' +
-    '<div class="pv-top"><span class="pv-name">' + cardName(previewState.code) + '</span>' +
+    '<div class="pv-top"><span class="pv-name' + kindCls(previewState.code) + '">' + cardName(previewState.code) + '</span>' +
     (stats ? '<span class="pv-stats">' + stats + '</span>' : '') +
     (compact && previewState.reason ? '<span class="pv-reason-inline">' + previewState.reason + '</span>' : '') + '</div>' +
     '<div class="pv-meta">' + cardMetaLine(previewState.code, card ? (card.materials || 0) : null) + '</div>' +

@@ -4702,6 +4702,40 @@ pin CA13g. cap-deckart.js now runs all three sisters;
 shots-deckart/ holds the trio's real-play frames at
 390x620/700 (tile + preview styles pin the scoped files).
 
+## Card-kind colors — variant A shipped (2026-11-03)
+
+User pick after the two-variant prototype (branch proto/type-color,
+typecolor-report.md): variant A — the whole name band takes the
+card-kind color — adopted; the accent variant B was removed, not
+kept as a toggle. Kinds are derived mechanically from the core
+type bitmask in data.json (client cardKind()/kindCls(); priority
+spell > trap > fusion > synchro > xyz > ritual > normal > effect);
+all 63 pool cards classify, 0 unclassified, unknown codes get no
+class and keep the default #000a band. The palette is the original
+frame hues (--k-*) with a deepened set (--k-*-d) for band
+backgrounds so cream text stays readable; synchro keeps the
+original silver with dark text. The class rides every name band
+that is visible under the normal rules: board tiles, hand,
+resident preview (name pill), the three selection grids
+(gridSheet / unselect / announce), FX ghosts, the finisher and
+ace-appearance big cards and the cut-in big card — the FX spots
+were out of the prototype's scope and were folded in here via the
+same helper. Face-down visibility is unchanged: an opponent's
+set card renders no .nm at all, and the owner's set card keeps
+its name + veil treatment (its band takes the kind color like
+any owner-visible band). Board TILES still show no band (the art
+layer covers it) — coloring the tiles themselves is a separate
+user decision with its own prototypes (branch proto/tile-color).
+Pinned by test-typecolor.js (33 checks: pool-wide agreement with
+an independent derivation, DOM classes on a fabricated board,
+opponent face-down nameless, stylesheet contract). Capture:
+cap-typecolor-a.js -> shots-typecolor-a/ (fabricated mixed board
+via render(), real gridSheet, computed colors in styles.json).
+Merged over the DECK_ART line (ac90e65): the eight same-line
+collisions were resolved by keeping BOTH changes — deck-scoped
+art resolution (artInline/artCss/artApply deck arguments) and
+the kind class on the band.
+
 ## Per-card illustrations, 14th delivery (2026-11-03): Vernusylph Flower Crown — plain art AND a deck-scoped variant
 
 《春化精の花冠》 14108995 — passcode verified against
