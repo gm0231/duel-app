@@ -3418,4 +3418,203 @@ Unmeasured as before: sound feel, real-device WKWebView.
   script announces a number and confirms per deck, so each look
   is shown right after its own number choice — the game's own
   order.
+## Pool-wide coverage (2026-11-03): clarity mechanisms over all 63 cards
+
+User direction: the clarity fixes (which-effect identification on
+confirmation prompts; "cannot activate" reasons on the field
+sheet) must cover the WHOLE pool by mechanism, not per incident.
+Anything not coverable is enumerated here with counts — never
+silently dropped. Gate: v2/test-poolcov.js re-derives coverage
+from data.json + the scripts on every run and fails if a card,
+a described desc idx, an undescribed activatable block, or a
+lingering restriction is unclassified (a future pool addition
+trips it until classified). Generator-side, gen-fxmap.js now
+prints an UNACCOUNTED line for any SetDescription idx it cannot
+place (currently zero).
+
+### 1. Which-effect identification (YESNO / EFFECTYN / SELECT_CHAIN / SELECT_OPTION)
+
+Classification of the 63 (test-poolcov prints the full table):
+- 番号特定 (desc resolves via identity or audited map): 45
+- 番号特定 via scope/yn/bare tables: 3 (Minerva, Zorga, Hyperion)
+- 単一効果/発動慣例 (single printed effect; S/T activation names
+  segment ① via the act convention): 11
+- 番号対象なし (no numbered activatable effect exists to pin): 4
+  - 闇の護封剣 (12923641): activation = ① by convention; its
+    self-destruct link carries no number by design.
+  - 闇の守護神－ダーク・ガーディアン (26746975): printed ①② are
+    continuous; its only desc is the special-summon procedure.
+  - メデューサ・ワーム (2694423) / カオスポッド (79106360):
+    the official texts themselves carry NO circled numbers
+    (old-style / flip text). There is no number to pin; the
+    sheet shows the full text. NOT fixable by construction.
+- 未カバー: 0
+
+New mechanism pieces this round:
+- gen-fxmap described-block scan widened: Vernusylph
+  AddSpSummonEffect helper descs and Fusion.CreateSummonEff
+  descs are now collected (天至る叛逆 ① was previously
+  invisible to the scan and is now an identity resolution).
+- Hand-audited overrides (script-read, per card): Trilosucuta
+  {0:①,1:②} (idx2 is ②'s EX-summon restriction, never an
+  entry), Horus {0,1,2:①} (three material variants of one
+  printed effect), Pluto {1:①}, Heavy Magical Tank {1:③}
+  (idx0 is the summon procedure's registration — registered
+  as KNOWN_NON_ACTIVATABLE), Corolla {0:②}, 森と目覚
+  {0:②,1:①}, 花と野原 {0:①}, Chaos Hunter {0:①},
+  沼地の魔道王 {0:①}.
+- pmap (one desc idx, two effects of disjoint types, split by
+  prompt scope): Hyperion idx0 = ① idle / ② chain.
+- yn table (a SelectYesNo idx inside an effect's operation
+  pins that effect as the follow-up parent): Minerva
+  {0:②}, Heavy Magical Tank {2:③}, Agido {3:②}.
+- bare table (effects with NO usable description, pinned by
+  location+scope — the location leaves exactly one candidate):
+  Minerva idle/MZONE→①, chain/GRAVE→②; Pluto idle/GRAVE→②;
+  Zorga idle/HAND→①, chain/GRAVE→②. NOTE: "no description"
+  includes small non-Stringid desc values — Minerva's real
+  EFFECTYN arrives with desc=221 (captured from the core,
+  cap-minerva2.js), and scopedEffect's bare branch keys on
+  "desc does not decode to this card's Stringid", not desc==0.
+- foreign follow-up: the Vernusylph shared helper asks its
+  optional-summon YESNO with Stringid(9350312,1) — a code
+  outside the pool. When a YESNO's desc does not decode in the
+  pool and the resolving link's desc resolves to an effect
+  with a 「その後、…できる」 step clause, the question renders
+  as that effect's follow-up. ORDER MATTERS (browser-found):
+  this check must run BEFORE resolving the context desc,
+  because the context always resolves and shadowed it — the
+  question rendered as an activation confirmation.
+- resolveEffect now consults map/id BEFORE the follow-up
+  count rule (Pluto idx1 collided: described count 1 made it
+  look like a follow-up of ①; it is ① itself).
+- Latent bug found & fixed: openActionSheet decided "an
+  activation is offered" by exact label match ('効果を発動'),
+  but identified effects carry numbered labels — offered
+  activations were missed and a spurious greyed row could
+  appear. Detection now uses the act entry's own flag.
+
+### 2. "Cannot activate" reasons on the field sheet
+
+Generalised: the greyed row now covers face-up MZONE and SZONE
+(was MZONE only), with reason priority (a) attribute lock
+(monsters), (b) 死者蘇生 rider (monsters), (c) once-per-turn
+usage, (d) Xyz detach cost / mill vs deck count (monsters),
+(e) generic 「今は発動できません」 when the card provably has
+a field-activatable effect (fieldCandidates). Silence remains
+where no reason is mechanically certain.
+
+- (c) is new: usage is tracked from the human's own chain
+  links (trackUsedFx, fed by onUpdate). The OPT clause is
+  parsed from the official text: covered numbers + SHARED
+  (「いずれか１つしか使用できない」 — Castel, Karbon; or the
+  whole-card form) vs PER-EFFECT (「それぞれ…」 or a single
+  named effect). The reason is stated only when it fully
+  explains the missing offer: every field candidate is
+  clause-covered AND the clause is spent (shared: any
+  candidate used; per-effect: every candidate used).
+  fieldCandidates excludes trigger-phrased effects (a
+  condition clause 〜場合、/〜時、 before 発動できる), grave/
+  hand/banished-bound effects, and hand effects whose cost
+  discards the card itself (Vernusylph ①s). pmap usage
+  attribution: a pmap card's chain-opening link is its
+  ignition, later links its quick effect (chain array is in
+  formation order — engine pushes links).
+  PRODUCTION BUG found by this round: the engine's getState
+  chain projection dropped `desc`, so no usage could ever be
+  recorded in the real client (vm tests fed synthetic links
+  WITH desc and passed). desc is now projected.
+- (b) is new: 死者蘇生's rider ("the revived monster cannot
+  activate its effects this turn") is latched by
+  noteReviveFromEvents. Presentation events arrive in
+  per-process batches and the activation and its summon
+  NEVER share one (chain windows intervene — a same-batch
+  design could never fire in production; found by this
+  round's batch analysis). The latch is therefore ARMED by
+  the human's 死者蘇生 activation and fires on the next own
+  special summon while armed （死者蘇生 summons exactly one;
+  in this pool nothing else summons to the human's field
+  while a chain resolves). The arm dies when the chain has
+  fully closed in an earlier batch without a summon
+  (negated), when the human activates something else first
+  (a conservative miss), on an ambiguous multi-summon batch,
+  or when the turn moves on: silence, never a wrong claim.
+- (a) unchanged mechanism (Vernusylph pair, name-carrying
+  latch from the Minerva round).
+
+### 3. Lingering-restriction scan (all 63 texts, pattern-derived)
+
+test-poolcov D asserts the scan finds EXACTLY this set:
+- 属性ロック (this turn, no monster effects except one
+  attribute): 森と目覚の春化精 36745317, 花と野原の春化精
+  62133026 → latch + named reason (existing).
+- 死者蘇生 rider (28958464): revived monster cannot activate
+  → latch + named reason (this round).
+- Trilosucuta (21368273): EX-summon type restriction this
+  turn → NOT COVERED for reason display: the surface is the
+  EX-summon prompt, not the field sheet. Enumerated.
+- Horus (36898537) attack rider on the targeted monster;
+  光の護封霊剣 (78625592) opponent direct-attack lock →
+  attack surface, not activation. Enumerated, out of scope.
+- 巨神封じの矢 (67037924): its grave effect cannot activate
+  the turn it was sent to the grave → surface is the grave
+  pile sheet. NOT COVERED. Enumerated (1 card).
+- Card-name activation limits: 現世と冥界の逆転 (once per
+  duel), 死者蘇生 / おろかな副葬 / 七星の宝刀 (once per
+  turn) → surface is the HAND sheet, not the field sheet.
+  NOT COVERED for reason display. Enumerated (4 cards).
+
+### Verification (this round)
+
+- test-poolcov.js (new): A fxmap-target sanity, B described-
+  idx resolution-or-exception (6 enumerated exception idxs:
+  Dark Guardian procedure, 沼地 name-substitute, Trilosucuta
+  restriction, Medusa ×2, Chaos Pod — all non-prompt or
+  numberless by construction), C undescribed-block
+  classification (S/T activation convention / bare / 9
+  enumerated non-prompt machinery cards), D restriction-scan
+  set equality, E lock-set equality, F behaviour spot-checks
+  (yn pins, pmap scopes incl. real desc=221 shape, OPT
+  shared/per-effect semantics, revive latch incl. ambiguous
+  batch). ALL PASS.
+- test-fxidentify: FX8d/FX17c/FX17d expectations updated to
+  the newly PROVEN facts (Horus/Pluto now pin; Heavy Tank
+  YESNO pins ③; Minerva YESNO pins ②) — same strictness,
+  audited values. ALL PASS. All other suites (node/explore/
+  phase2/genesis/overlay/facedown/cpu/cpu-tune/cpu-tune2/
+  ggfusion/swap/investigate + jsdom ui/bgm/fx/layout/
+  minerva3) pass.
+- Engine-level capture (cap-minerva2.js, rigged decks):
+  Minerva ② prompt = SELECT_EFFECTYN, code 30100551,
+  loc GRAVE, desc 221 — matches the bare assumption exactly.
+- Real-browser render probes (probe-render.js, 390x620,
+  live page, real uiYesNo): (A) the Vernusylph follow-up
+  shape captured from live play renders as 「…の効果の続き
+  です。次も行いますか？」 with ① pinned and 行う/行わない;
+  (D) the Minerva EFFECTYN shape renders title の効果② with
+  only ②'s text pinned. Screenshots in the worktree
+  (spotshots/probe-a.png, probe-d.png), eyeballed.
+- Real-browser play (spot-poolcov.js, live duels vs the CPU):
+  (B) Castel used ①, then tapping Castel the same turn shows
+  the greyed row 「このターン既に使用済みです」 (390x700,
+  screenshot eyeballed) — the full chain-desc projection →
+  usage tracking → shared-clause path works in production.
+  (D, opportunistic) Minerva destroyed on the opponent's
+  turn produced the real EFFECTYN (loc GRAVE, desc 221) and
+  the sheet pinned ② in situ, twice.
+  (A) The Vernusylph follow-up shape was captured from live
+  play (desc Stringid(9350312,1)); its rendering is verified
+  by probe (above). A fully natural in-duel capture of the
+  follow-up sheet after the ordering fix was attempted but
+  the line is draw-dependent; the shape's provenance is the
+  live capture and the helper source (spop).
+  (C) A natural Reborn line did not materialise in 10
+  attempts (1 copy in 44; the Minerva half completed in 2 of
+  them). The revive reason is instead verified through the
+  production path itself (probe-revive.js, 390x620): the
+  engine's real event shapes pushed into the real GameState
+  queue in two separate drains, real drainSeEvents →
+  noteReviveFromEvents → real tile tap — the sheet shows
+  「《マジックカード「死者蘇生」》の効果で特殊召喚されたため、
+  このターンは効果を発動できません」 (screenshot eyeballed).
 - Still unmeasured: sound feel, real-device WKWebView.

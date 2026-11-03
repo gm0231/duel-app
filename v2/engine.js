@@ -930,7 +930,7 @@ function botView(state, me, data) {
     zones: [zones(0, me === 0), zones(1, me === 1)],
     turnPlayer: state.turnPlayer, turnCount: state.turnCount,
     phase: state.phase, phaseName: state.phaseName,
-    chain: state.chain.map(l => ({ code: l.code, con: l.con, player: l.player, loc: l.loc, tloc: l.tloc, seq: l.seq })),
+    chain: state.chain.map(l => ({ code: l.code, con: l.con, player: l.player, loc: l.loc, tloc: l.tloc, seq: l.seq, desc: l.desc })),
     lastAttack: state.lastAttack,
     myDeck: decks ? decks[me] : null,
     oppDeck: decks ? decks[opp] : null,

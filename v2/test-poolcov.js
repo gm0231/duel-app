@@ -1,0 +1,307 @@
+'use strict';
+/* test-poolcov.js — pool-wide coverage gate for the clarity
+   mechanisms (pool-coverage round, user direction 2026-11-03:
+   coverage of the WHOLE pool is the premise, not per-incident
+   patches; anything uncovered is enumerated here, with counts).
+   Loads the REAL client.js (vm + stub DOM, same technique as
+   test-fxidentify) against the REAL data.json / fxmap.json and
+   asserts, for all 63 cards:
+     A. every fxmap target (map / pmap / yn / bare) names an
+        existing printed segment of that card;
+     B. every described activatable desc idx resolves (via
+        resolveEffect or scopedEffect) or sits in EXCEPTIONS
+        with a stated reason;
+     C. every activatable script block WITHOUT a description is
+        either the S/T activation convention, bare-covered, or
+        enumerated as non-prompt machinery;
+     D. the lingering-restriction scan over all card texts finds
+        EXACTLY the enumerated set (a future pool card carrying
+        a new restriction fails here until it is classified);
+     E. the attribute-lock derivation equals the Vernusylph pair;
+     F. behaviour spot-checks: yn follow-ups, pmap scopes, bare
+        pinning, once-per-turn usage tracking, 死者蘇生 latch.
+   It also PRINTS the per-card classification table (the audit;
+   the same table lives in NOTES.md).                        */
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+const V2 = __dirname;
+const data = JSON.parse(fs.readFileSync(path.join(V2, 'data.json'), 'utf8'));
+const fxmap = JSON.parse(fs.readFileSync(path.join(V2, 'fxmap.json'), 'utf8'));
+
+function stubEl() {
+  const el = {
+    children: [], style: {}, dataset: {}, classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+    textContent: '', innerHTML: '', className: '', disabled: false, volume: 1,
+    addEventListener() {}, removeEventListener() {}, querySelector: () => null, querySelectorAll: () => [],
+    appendChild() {}, click() {}, animate: () => ({}), getBoundingClientRect: () => ({ top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 }),
+    setAttribute() {}, play: () => Promise.resolve(), pause() {}, load() {},
+  };
+  return el;
+}
+const els = {};
+const documentStub = {
+  getElementById: (id) => els[id] || (els[id] = stubEl()),
+  querySelector: () => null, querySelectorAll: () => [],
+  addEventListener() {}, createElement: () => stubEl(), body: stubEl(),
+};
+const sandbox = {
+  console, setTimeout, clearTimeout, setInterval, clearInterval, Promise, Math, JSON,
+  document: documentStub,
+  localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+  Audio: class { constructor() {} play() { return Promise.resolve(); } pause() {} },
+  fetch: async () => ({ ok: true, json: async () => data, arrayBuffer: async () => new ArrayBuffer(0) }),
+  performance: { now: () => 0 },
+  requestAnimationFrame: () => 0,
+  location: { href: 'http://localhost/v2/', search: '' },
+  navigator: { userAgent: 'node' },
+};
+sandbox.window = sandbox;
+sandbox.globalThis = sandbox;
+sandbox.Engine = require(path.join(V2, 'engine.js')); // client.js reads window.Engine at load
+vm.createContext(sandbox);
+const src = fs.readFileSync(path.join(V2, 'client.js'), 'utf8') +
+  '\n;globalThis.__T = { DATA: () => DATA, setDATA: (d) => { DATA = d; }, setFXMAP: (m) => { FXMAP = m; }, descEffect, effectSegments, resolveEffect, resolveYesNo, scopedEffect, entryEffect, foreignFollowFx, CIRCLED_NUM };';
+vm.runInContext(src, sandbox, { filename: 'client.js' });
+const T = sandbox.__T;
+T.setDATA(data);
+T.setFXMAP(fxmap);
+const PC = sandbox.__poolcov;
+const ML = sandbox.__mlock;
+const SID = (code, idx) => code * 1048576 + idx;
+
+let failures = 0;
+const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (!cond) failures++; };
+
+// ---------- independent re-derivation (mirrors gen-fxmap) ----------
+function describedBlocks(code) {
+  const s = data.scripts['c' + code + '.lua'];
+  if (!s) return null;
+  const out = new Set();
+  const starts = [...s.matchAll(/Effect\.CreateEffect/g)].map(m => m.index);
+  starts.forEach((st, i) => {
+    const b = s.slice(st, i + 1 < starts.length ? starts[i + 1] : s.length);
+    const sid = b.match(/SetDescription\(\s*aux\.Stringid\(id,(\d+)\)/);
+    if (!sid) return;
+    if (!/(SetTarget\(|SetOperation\(|SetCost\()/.test(b)) return;
+    out.add(+sid[1]);
+  });
+  for (const m of s.matchAll(/Vernusylph\.AddSpSummonEffect\(\s*c\s*,\s*id\s*,\s*(\d+)/g)) out.add(+m[1]);
+  for (const m of s.matchAll(/local\s+(\w+)\s*=\s*Fusion\.CreateSummonEff/g)) {
+    const re = new RegExp(m[1] + ':SetDescription\\(\\s*aux\\.Stringid\\(id,(\\d+)\\)');
+    const sid = s.match(re);
+    if (sid) out.add(+sid[1]);
+  }
+  return out;
+}
+function undescribedActivatable(code) {
+  const s = data.scripts['c' + code + '.lua'];
+  if (!s) return [];
+  const out = [];
+  const starts = [...s.matchAll(/Effect\.CreateEffect/g)].map(m => m.index);
+  starts.forEach((st, i) => {
+    const b = s.slice(st, i + 1 < starts.length ? starts[i + 1] : s.length);
+    const hasDesc = /SetDescription\(\s*aux\.Stringid\(id,/.test(b);
+    const hasOp = /(SetTarget\(|SetOperation\(|SetCost\()/.test(b);
+    if (!hasOp || hasDesc) return;
+    const typ = (b.match(/SetType\((EFFECT_TYPE_[A-Z_]+)\)/) || [])[1] || '-';
+    const rng = (b.match(/SetRange\((LOCATION_[A-Z_]+)\)/) || [])[1] || '-';
+    const ev = (b.match(/SetCode\((EVENT_[A-Z_0-9]+)\)/) || [])[1] || '-';
+    out.push({ typ, rng, ev });
+  });
+  return out;
+}
+
+// ---------- B: exceptions (described idx knowingly unresolvable) ----------
+const EXCEPTIONS = {
+  // summon procedure description — never an activation prompt;
+  // printed ①② are continuous (battle indestructible / immunity)
+  '26746975|0': '特殊召喚手続きの説明。発動プロンプトにはならない',
+  // SINGLE name-substitute continuous inside ①'s own text
+  '45223540|1': '①本文内の同名扱い持続効果。プロンプトにならない',
+  // EX-summon restriction FIELD effect — part of ②'s own text
+  '21368273|2': '②本文のEX召喚制限（持続）。発動エントリにならない',
+  // old-style texts carry NO circled numbers at all — there is
+  // no printed number to resolve to (full text is shown)
+  '2694423|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '2694423|1': '公式テキストに効果番号が存在しない（旧書式）',
+  '79106360|0': '公式テキストに効果番号が存在しない（リバース書式）',
+};
+// ---------- C: undescribed blocks knowingly not prompt-bearing ----------
+const NON_PROMPT = {
+  '12923641': '自己破壊トリガー（強制処理、選択エントリにならない）＋発動/持続',
+  '14108995': '①持続（タイプ扱い）。発動はS/T発動の慣例で表示',
+  '26746975': '特殊召喚成功時の登録処理（②免疫の付与）。発動ではない',
+  '35026117': '召喚成功時の登録処理（②攻撃制限の付与）。発動ではない',
+  '45409943': '①持続（破壊耐性）。発動エントリにならない',
+  '62133026': '②持続（対象耐性）。①はヘルパー経由で記述あり',
+  '86605515': '②の適用効果（罠の破壊耐性フィールド）。発動ではない',
+  '98715423': '①のロック機構（ドローイベント処理）。発動ではない',
+  '34771947': 'フィールド魔法の持続処理。発動ではない',
+};
+
+// ---------- A + B + classification table ----------
+const clsCount = { '番号特定': 0, '番号特定（スコープ/yn/bare）': 0, '単一効果/発動慣例': 0, '番号対象なし': 0, '未カバー': 0 };
+console.log('---- pool classification (63) ----');
+for (const code of Object.keys(data.cards)) {
+  const fx = fxmap[code];
+  const segs = T.effectSegments(+code);
+  const desc = describedBlocks(code) || new Set();
+  let cls;
+  if (fx && (fx.id || fx.map)) cls = '番号特定';
+  else if (fx && (fx.pmap || fx.yn || fx.bare)) cls = '番号特定（スコープ/yn/bare）';
+  else if (segs.length <= 1) cls = '単一効果/発動慣例';
+  else cls = '番号対象なし';
+  // A: fxmap targets exist
+  if (fx) {
+    const segNs = new Set(segs.map(s => s.n));
+    const targets = [];
+    if (fx.map) for (const k of Object.keys(fx.map)) targets.push(fx.map[k]);
+    if (fx.pmap) for (const k of Object.keys(fx.pmap)) targets.push(fx.pmap[k].idle, fx.pmap[k].chain);
+    if (fx.yn) for (const k of Object.keys(fx.yn)) targets.push(fx.yn[k]);
+    if (fx.bare) for (const b of fx.bare) targets.push(b.n);
+    ok(targets.every(n => segNs.has(n)), 'A ' + code + ' ' + data.names[code] + ': fxmap targets all name existing segments');
+  }
+  // B: every described idx resolves or is an exception
+  for (const idx of desc) {
+    const r = T.resolveEffect(+code, SID(+code, idx)) ||
+      T.scopedEffect(+code, SID(+code, idx), 4, 'idle') || T.scopedEffect(+code, SID(+code, idx), 4, 'chain') ||
+      T.scopedEffect(+code, SID(+code, idx), 16, 'idle') || T.scopedEffect(+code, SID(+code, idx), 16, 'chain');
+    if (!r && !EXCEPTIONS[code + '|' + idx]) {
+      ok(false, 'B ' + code + ' ' + data.names[code] + ': described idx ' + idx + ' neither resolves nor is an enumerated exception');
+      cls = '未カバー';
+    }
+  }
+  // C: undescribed activatable blocks are classified
+  const und = undescribedActivatable(code);
+  const bareCovers = (u) => {
+    if (!fx || !fx.bare) return false;
+    const locBit = { LOCATION_HAND: 2, LOCATION_MZONE: 4, LOCATION_SZONE: 8, LOCATION_GRAVE: 16 }[u.rng];
+    // event triggers may carry no SetRange (Minerva ②): the
+    // bare table's chain-scope entry is what covers them
+    return fx.bare.some(b => b.loc === locBit || (u.ev !== '-' && b.scope === 'chain'));
+  };
+  for (const u of und) {
+    const isActivation = u.typ === 'EFFECT_TYPE_ACTIVATE';
+    if (isActivation || bareCovers(u) || NON_PROMPT[code]) continue;
+    ok(false, 'C ' + code + ' ' + data.names[code] + ': undescribed activatable block ' + JSON.stringify(u) + ' is unclassified');
+    cls = '未カバー';
+  }
+  clsCount[cls] = (clsCount[cls] || 0) + 1;
+  console.log(code + ' | ' + data.names[code] + ' | segs=' + segs.length + ' | desc=' + [...desc].join(',') + ' | ' + cls);
+}
+console.log('classification counts:', JSON.stringify(clsCount));
+ok(Object.keys(data.cards).length === 63, 'pool is 63 cards');
+ok(clsCount['未カバー'] === 0, 'no card is left unclassified/uncovered without an enumerated reason');
+
+// ---------- D: lingering-restriction scan ----------
+const RESTRICTION_PATTERNS = [
+  { re: /このターン、自分は([地水炎風光闇神])属性以外のモンスターの効果を発動できない/, kind: '属性ロック（モンスター効果）', handling: 'ラッチ＋理由表示（対象：場のモンスター）' },
+  { re: /このターン、自分はSモンスターしかEXデッキから特殊召喚できない/, kind: 'EX召喚種別制限', handling: '未カバー（表面はEX召喚プロンプト — 理由表示の対象外として列挙）' },
+  { re: /この効果で特殊召喚したモンスターは攻撃できず、その効果は発動できない/, kind: '蘇生モンスターへの制約', handling: 'ラッチ＋理由表示（対象：そのモンスターのシート）' },
+  { re: /このターンそのモンスターは攻撃できない/, kind: '攻撃制限（相手モンスター）', handling: '対象外（攻撃の可否 — 発動シートの対象ではない）' },
+  { re: /このターン、相手モンスターは直接攻撃できない/, kind: '攻撃制限（相手全体）', handling: '対象外（攻撃の可否）' },
+  { re: /このカードが墓地へ送られたターンには発動できない/, kind: '墓地発動のタイミング制限', handling: '未カバー（表面は墓地パイルシート — 列挙して残す）' },
+  { re: /このカード名のカードはデュエル中に１枚しか発動できない/, kind: 'カード名発動制限（デュエル中1枚）', handling: '未カバー（表面は手札シート — 列挙して残す）' },
+  { re: /このカード名のカードは１ターンに１枚しか発動できない/, kind: 'カード名発動制限（1ターン1枚）', handling: '未カバー（表面は手札シート — 列挙して残す）' },
+];
+const found = [];
+for (const code of Object.keys(data.texts)) {
+  const t = data.texts[code].text || '';
+  for (const p of RESTRICTION_PATTERNS) if (p.re.test(t)) found.push(code + ':' + p.kind);
+}
+const EXPECTED_RESTRICTIONS = [
+  '36745317:属性ロック（モンスター効果）', '62133026:属性ロック（モンスター効果）',
+  '21368273:EX召喚種別制限', '28958464:蘇生モンスターへの制約',
+  '36898537:攻撃制限（相手モンスター）', '78625592:攻撃制限（相手全体）',
+  '67037924:墓地発動のタイミング制限',
+  '17484499:カード名発動制限（デュエル中1枚）',
+  '28958464:カード名発動制限（1ターン1枚）', '35726888:カード名発動制限（1ターン1枚）', '45725480:カード名発動制限（1ターン1枚）',
+];
+ok(JSON.stringify([...found].sort()) === JSON.stringify([...EXPECTED_RESTRICTIONS].sort()),
+  'D: restriction scan finds exactly the enumerated set (found: ' + found.join(' / ') + ')');
+
+// ---------- E: attribute-lock derivation ----------
+const lockSet = ML.cards().map(c => c.code).sort((a, b) => a - b);
+ok(JSON.stringify(lockSet) === JSON.stringify([36745317, 62133026]),
+  'E: lock derivation = {森と目覚の春化精, 花と野原の春化精} (' + lockSet.join(',') + ')');
+
+// ---------- F: behaviour spot-checks ----------
+// yn follow-ups
+ok(T.resolveYesNo(30100551, SID(30100551, 0)).n === 2, 'F1: Minerva YESNO idx0 = follow-up of ②');
+ok(T.resolveYesNo(35026117, SID(35026117, 2)).n === 3, 'F2: Heavy Tank YESNO idx2 = follow-up of ③');
+ok(T.resolveYesNo(62320425, SID(62320425, 3)).n === 2, 'F3: Agido YESNO idx3 = follow-up of ②');
+ok(T.resolveEffect(62320425, SID(62320425, 2)).follow === true, 'F4: Agido YESNO idx2 = count-rule follow-up');
+// pmap scopes
+ok(T.scopedEffect(63101468, SID(63101468, 0), 4, 'idle').n === 1 && T.scopedEffect(63101468, SID(63101468, 0), 4, 'chain').n === 2,
+  'F5: Hyperion idx0 = ① idle / ② chain');
+// bare pinning
+ok(T.entryEffect({ code: 30100551, desc: 0, loc: 4 }, 'idle').n === 1, 'F6: Minerva desc-less MZONE idle entry = ①');
+ok(T.entryEffect({ code: 30100551, desc: 0, loc: 16 }, 'chain').n === 2, 'F7: Minerva desc-less GRAVE chain entry = ②');
+ok(T.scopedEffect(30100551, 221, 16, 'chain').n === 2 && T.entryEffect({ code: 30100551, desc: 221, loc: 16 }, 'chain').n === 2,
+  'F7b: Minerva\'s REAL EFFECTYN shape (desc=221, a non-Stringid value captured from the core in cap-minerva2.js) still pins ② via the bare table');
+ok(T.entryEffect({ code: 37706769, desc: 0, loc: 16 }, 'idle').n === 2, 'F8: Pluto desc-less GRAVE idle entry = ②');
+ok(T.entryEffect({ code: 31525442, desc: 0, loc: 2 }, 'idle').n === 1 && T.entryEffect({ code: 31525442, desc: 0, loc: 16 }, 'chain').n === 2,
+  'F9: Zorga desc-less entries = ① (hand/idle) and ② (grave/chain)');
+// foreign follow-up (Vernusylph helper string table)
+const vernCtx = { code: 36745317, desc: SID(36745317, 1), loc: 2 };
+ok(!!T.foreignFollowFx(vernCtx, { desc: SID(9350312, 1) }), 'F10: Vernusylph follow-up (foreign desc 9350312) recognised via the resolving link');
+ok(T.foreignFollowFx(vernCtx, { desc: SID(36745317, 0) }) === null, 'F11: a decodable own desc is NOT forced into the follow-up form');
+// OPT parsing + candidates
+ok(JSON.stringify([...PC.optCovered(82633039)].sort()) === '[1,2]', 'F12: Castel OPT clause covers ①②');
+ok(JSON.stringify([...PC.optCovered(37706769)]) === '[2]', 'F13: Pluto OPT clause covers ② only');
+ok(JSON.stringify(PC.fieldCandidates(82633039)) === '[1,2]', 'F14: Castel field candidates = ①②');
+ok(JSON.stringify(PC.fieldCandidates(30100551)) === '[1]', 'F15: Minerva field candidates = ① (② is trigger-phrased)');
+ok(JSON.stringify(PC.fieldCandidates(31525442)) === '[]', 'F16: Zorga has no field candidate (hand ignition + grave trigger)');
+// usage tracking -> OPT reason
+PC.reset();
+ok(PC.optCoverage(82633039).shared === true, 'F17a: Castel clause is SHARED (いずれか１つしか使用できない)');
+ok(PC.optCoverage(98715423).shared === false, 'F17b: Gravekeeper\'s Trap clause is PER-EFFECT (それぞれ)');
+PC.trackUsedFx({ turnCount: 1, chain: [{ code: 82633039, con: 0, loc: 4, seq: 0, desc: SID(82633039, 0) }] });
+ok(PC.optUsedReason(82633039) === 'このターン既に使用済みです', 'F17: Castel after ① only -> OPT reason STATED (shared clause is spent by either effect)');
+PC.trackUsedFx({ turnCount: 2, chain: [] });
+ok(PC.optUsedReason(82633039) === null, 'F19: usage record expires with the turn');
+PC.reset();
+ok(JSON.stringify(PC.fieldCandidates(98715423)) === '[2]', 'F18a: Gravekeeper\'s Trap field candidates = ② only (③ is a draw-phase trigger: 発動する)');
+ok(JSON.stringify(PC.fieldCandidates(63101468)) === '[1]', 'F18b: Hyperion field candidates = ① only (② is a response-only quick effect, never a sheet activation)');
+PC.trackUsedFx({ turnCount: 1, chain: [{ code: 63101468, con: 0, loc: 4, seq: 0, desc: SID(63101468, 0) }] });
+ok(JSON.stringify(PC.usedFx().find(u => u.code === 63101468).n) === '[1]' && PC.optUsedReason(63101468) === 'このターン既に使用済みです',
+  'F18c: Hyperion chain-opening link attributes to ① (pmap idle) and the OPT reason fires (sole field candidate spent)');
+PC.reset();
+PC.trackUsedFx({ turnCount: 1, chain: [{ code: 99937011, con: 1, loc: 2, seq: 0, desc: SID(99937011, 0) }, { code: 63101468, con: 0, loc: 4, seq: 0, desc: SID(63101468, 0) }] });
+ok(JSON.stringify(PC.usedFx().find(u => u.code === 63101468).n) === '[2]' && PC.optUsedReason(63101468) === null,
+  'F18d: Hyperion responding link attributes to ② (pmap chain); OPT reason stays silent (① unspent)');
+// 死者蘇生 latch
+PC.reset();
+const fakeState = { turnCount: 3, players: [{ mzone: [null, { code: 82633039 }, null, null, null] }, { mzone: [] }] };
+PC.noteRevive([{ kind: 'activate', code: 28958464, con: 0 }, { kind: 'spsummon', code: 82633039, con: 0 }], fakeState);
+ok(PC.revivedReason(82633039, 4, 1, 3) === '《マジックカード「死者蘇生」》の効果で特殊召喚されたため、このターンは効果を発動できません',
+  'F20: revived Castel gets the named 死者蘇生 reason');
+ok(PC.revivedReason(82633039, 4, 1, 4) === null && PC.revivedReason(82633039, 4, 2, 3) === null,
+  'F21: revive reason is bound to the turn and the zone');
+PC.reset();
+PC.noteRevive([{ kind: 'activate', code: 28958464, con: 0 }, { kind: 'spsummon', code: 82633039, con: 0 }, { kind: 'spsummon', code: 99937011, con: 0 }], fakeState);
+ok(PC.revivedReason(82633039, 4, 1, 3) === null, 'F22: ambiguous batch (two own special summons) latches NOTHING');
+// cross-batch arming (production shape: activation and summon
+// arrive in DIFFERENT event batches — chain windows intervene)
+PC.reset();
+const stChain = { turnCount: 3, chain: [{}], players: fakeState.players };
+PC.noteRevive([{ kind: 'activate', code: 28958464, con: 0 }], stChain);
+ok(PC.revivedReason(82633039, 4, 1, 3) === null, 'F23a: activation alone does not latch yet');
+PC.noteRevive([{ kind: 'spsummon', code: 82633039, con: 0 }], { turnCount: 3, chain: [], players: fakeState.players });
+ok(PC.revivedReason(82633039, 4, 1, 3) === '《マジックカード「死者蘇生」》の効果で特殊召喚されたため、このターンは効果を発動できません',
+  'F23b: the next own special summon while armed latches across batches');
+PC.reset();
+PC.noteRevive([{ kind: 'activate', code: 28958464, con: 0 }], stChain);
+PC.noteRevive([], { turnCount: 3, chain: [], players: fakeState.players });
+PC.noteRevive([{ kind: 'spsummon', code: 82633039, con: 0 }], { turnCount: 3, chain: [], players: fakeState.players });
+ok(PC.revivedReason(82633039, 4, 1, 3) === null, 'F24: negated Reborn (chain closed summon-less) disarms — a later summon is NOT attributed');
+PC.reset();
+PC.noteRevive([{ kind: 'activate', code: 28958464, con: 0 }], stChain);
+PC.noteRevive([{ kind: 'activate', code: 99937011, con: 0 }], stChain);
+PC.noteRevive([{ kind: 'spsummon', code: 82633039, con: 0 }], { turnCount: 3, chain: [], players: fakeState.players });
+ok(PC.revivedReason(82633039, 4, 1, 3) === null, 'F25: an intervening own activation disarms (conservative miss, never a false claim)');
+
+console.log(failures ? failures + ' CHECK(S) FAILED' : 'ALL POOLCOV CHECKS PASSED');
+process.exit(failures ? 1 : 0);
