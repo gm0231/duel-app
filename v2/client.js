@@ -3113,15 +3113,19 @@ function openLogHistory() {
     // can be traced by eye.
     const entries = histEntries.slice(-240);
     const parts = [];
-    let lastTurn = null, lastPh = null, chainOpen = false;
-    const closeChain = () => { if (chainOpen) { parts.push('</div>'); chainOpen = false; } };
+    let lastTurn = null, lastPh = null, chainOpen = false, boxCid = 0;
+    const closeChain = () => { if (chainOpen) { parts.push('</div>'); chainOpen = false; boxCid = 0; } };
     for (const e of entries) {
       if (e.turn !== lastTurn) {
         closeChain();
         parts.push('<div class="logturn">ターン' + Math.max(1, e.turn) + '（' + (e.tp === HP ? '自分' : '相手') + 'のターン）</div>');
         lastTurn = e.turn; lastPh = null;
       }
-      if (e.cid) { if (!chainOpen) { parts.push('<div class="logchain">'); chainOpen = true; } }
+      // One box per chain EPISODE: back-to-back episodes in the
+      // same phase (trigger effects firing in sequence) merge
+      // into a single box if the box only follows "has cid" —
+      // the frame check showed three episodes in one frame.
+      if (e.cid) { if (!chainOpen || boxCid !== e.cid) { closeChain(); parts.push('<div class="logchain">'); chainOpen = true; boxCid = e.cid; } }
       else closeChain();
       if (e.ph && e.ph !== lastPh) { parts.push('<div class="logphase">' + phaseJa(e.ph) + '</div>'); lastPh = e.ph; }
       const cls = 'loghistrow' + (e.k === 'solve' ? ' solve' : '') + (e.k === 'neg' || e.k === 'dis' ? ' neg' : '') + (e.sol ? ' res' : '');

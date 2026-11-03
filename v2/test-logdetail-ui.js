@@ -114,6 +114,26 @@ async function main() {
   ok(/の効果[①-⑯]/.test(probe), 'D8b: numbered effects are stamped with their number (' + probe + ')');
   ok(/▼ 解決：リンク\d+/.test(txt), 'D9: resolution headers name their link');
   ok(!/(#0|undefined|NaN)/.test(txt), 'D10: no placeholder garbage in the sheet');
+  // Deterministic renderer probe: two back-to-back chain episodes
+  // (different episode ids, no plain entry between them) must get
+  // SEPARATE boxes — the frame check caught them merged into one.
+  ev('sheetClose()');
+  await new Promise(r => setTimeout(r, 500));
+  ev(`(() => {
+    histEntries = [
+      { turn: 1, tp: 0, ph: 'MAIN1', k: 'act', cid: 11, sol: 0, text: 'リンク1：自分 の A の効果①' },
+      { turn: 1, tp: 0, ph: 'MAIN1', k: 'solve', cid: 11, sol: 0, text: '▼ 解決：リンク1 A の効果①' },
+      { turn: 1, tp: 0, ph: 'MAIN1', k: 'act', cid: 12, sol: 0, text: 'リンク1：相手 の B の発動' },
+      { turn: 1, tp: 0, ph: 'MAIN1', k: 'solve', cid: 12, sol: 0, text: '▼ 解決：リンク1 B の発動' },
+      { turn: 1, tp: 0, ph: 'MAIN1', k: 'info', cid: 0, sol: 0, text: '自分：C を召喚（表側攻撃表示）' },
+    ];
+    if (!logHist.length) logHist = [{ turn: 1, text: 'x' }];
+    openLogHistory();
+    return 0;
+  })()`);
+  await new Promise(r => setTimeout(r, 150));
+  ok(doc.getElementById('sheet').querySelectorAll('.logchain').length === 2, 'D11: back-to-back episodes get separate boxes (' + doc.getElementById('sheet').querySelectorAll('.logchain').length + ')');
+  ok(doc.getElementById('sheet').querySelectorAll('.logturn').length === 1, 'D12: one turn heading for one turn');
   console.log(failures === 0 ? 'ALL LOGDETAIL-UI CHECKS PASSED' : failures + ' LOGDETAIL-UI CHECK(S) FAILED');
   window.close();
   process.exit(failures === 0 ? 0 : 1);
