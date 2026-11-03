@@ -3691,3 +3691,32 @@ engine purpose tag exists; client heuristics not yet trusted),
 W-27 phase-name granularity, W-28 close-label unification,
 BU-08 per-duel confirmation counting (no client counter exists),
 SELECT_COUNTER row details (prompt unreachable in this pool).
+
+### R3 — design axis (audit-design.md), scoped by ground truth
+- DS-01 FIXED: deck names wrapped mid-word, orphaning 「ン」 on
+  its own line (audit frames 01-start-620/700, eyeballed). .dn is
+  now 12px, one line, ellipsis backstop — the card-name rule
+  applied to deck names. Verified: all four .dn single-line,
+  scrollWidth == clientWidth at both heights (r3shots/start-*).
+- DS-04 FIXED (with R2's W-22 labels): seg sub-labels reserve two
+  lines (.seg button small min-height), so a seg row keeps one
+  height — measured 52/52/52 px on #seg-resp at both heights.
+- DS-03 REJECTED by direct observation: the audit inferred a
+  scroll-folded result screen from a structure (.rin) that does
+  not exist in the shipped markup, and took no frame of it. A
+  clicker duel driven to the result overlay at 390x620 shows the
+  title, reason, final LP and BOTH buttons fully inside the
+  screen (r3shots/result-620.png, eyeballed). No change.
+- DS-05 NOT REPRODUCIBLE: the named off-palette hexes (#2e7d4f /
+  #31567d) exist nowhere in the shipped code; the sort sheet uses
+  the standard .bigbtn / .bigbtn.sub. No change; recorded so the
+  claim is not re-audited from scratch.
+- DS-10 (placehint): already 12px in the shipped CSS — the
+  audit's 9.5px figure is stale. No change.
+- Enumerated, not done: DS-06 start-screen palette unification
+  (internal-only benefit, shade-shift risk — left for a dedicated
+  pass), DS-09 hand-sheet row unification (the audit's referent
+  sheet could not be identified unambiguously from its text),
+  DS-07 VS overlay see-through (audit itself left it
+  unseparated), DS-11 log modal reachability (product decision),
+  DS-02/DS-08 keep-as-is per the audit's own call.

@@ -407,11 +407,17 @@
   .seg{display:flex;gap:6px;justify-content:center;margin-top:4px;flex-wrap:wrap;}
   .seg button{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:13px;padding:9px 14px;cursor:pointer;}
   .seg button.sel{background:#3a2a10;color:#ffe9a8;font-weight:700;border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold);}
+  /* DS-04: seg sub-labels reserve two lines whether they wrap or
+     not, so a row of seg buttons keeps one height. */
+  .seg button small{display:block;font-size:10px;font-weight:400;margin-top:2px;line-height:1.2;min-height:2.4em;}
   #start .tagline{font-size:11.5px;color:#c9b586;margin-top:2px;margin-bottom:4px;}
   #start .deckgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;}
   #start .deck{position:relative;display:flex;gap:7px;align-items:center;text-align:left;background:#1d1508;border:1px solid #4a3a1c;border-radius:10px;padding:6px;min-height:48px;color:var(--txt);cursor:pointer;width:100%;}
   #start .deck img{width:26px;height:36px;object-fit:cover;border-radius:4px;flex:none;}
-  #start .deck .dn{display:block;font-size:13.5px;font-weight:700;line-height:1.3;}
+  /* DS-01: a deck name never wraps — a mid-word break orphaned
+     「ン」 on its own line. Same rule as card names: one line,
+     ellipsis as the backstop; 12px fits both current names. */
+  #start .deck .dn{display:block;font-size:12px;font-weight:700;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   #start .deck .dd{display:block;font-size:10.5px;color:var(--txt-dim);line-height:1.45;margin-top:2px;}
   #start .deck.sel{background:#3a2a10;border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold);}
   #start .deck.sel .dn{color:#ffe9a8;}
