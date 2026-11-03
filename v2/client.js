@@ -366,6 +366,66 @@ window.__bgm = {
   note(ev) { noteBgmEvent(ev); },
   sceneTo(scene) { setBgmScene(scene, true); },
 };
+// ---------------------------------------------------------------- activation locks (Minerva 3rd triage, 2026-11-03)
+// Some effects lock the activating player out of monster-effect
+// activations for the rest of the turn except one attribute — in
+// this pool the Vernusylph hand effects: 「このターン、自分は○属性
+// 以外のモンスターの効果を発動できない」. The core then CORRECTLY
+// omits a blocked ignition from SELECT_IDLECMD (a LIGHT Minerva
+// Xyz-summoned after a Vernusylph effect fired simply has no 発動
+// action — no engine or parser bug; the first two triages missed
+// it because their reproductions never played the Vernusylph
+// line). But the action sheet could only answer with the generic
+// 「今は発動できません」, because the reason lives in ANOTHER
+// card's text. The lock is mechanically knowable: the restricting
+// cards are derived from the pool's own card texts, and
+// activations arrive on the same presentation event stream BGM
+// uses. Track the human's lock for the turn and let the sheet
+// state the real reason. (The stage-4 rule stands: a reason is
+// shown only when it is mechanically certain — anything else
+// keeps the generic form.)
+const LOCK_ATTR_BY_KANJI = { '地': 1, '水': 2, '炎': 4, '風': 8, '光': 16, '闇': 32, '神': 64 };
+let _lockCards = null; // Map code -> {attr, kanji}, derived from DATA.texts on first use
+function lockCards() {
+  if (_lockCards) return _lockCards;
+  _lockCards = new Map();
+  if (DATA && DATA.texts) {
+    for (const code of Object.keys(DATA.texts)) {
+      const t = DATA.texts[code];
+      const m = t && t.text && t.text.match(/このターン、自分は([地水炎風光闇神])属性以外のモンスターの効果を発動できない/);
+      if (m) _lockCards.set(+code, { attr: LOCK_ATTR_BY_KANJI[m[1]], kanji: m[1] });
+    }
+  }
+  return _lockCards;
+}
+let monsterLock = null; // {attr, kanji, turnCount} — the human player's lock for this turn
+function noteMonsterLock(ev, state) {
+  if (ev.kind !== 'activate' || ev.con !== HP || !state) return;
+  const lk = lockCards().get(ev.code);
+  if (lk) monsterLock = { attr: lk.attr, kanji: lk.kanji, turnCount: state.turnCount };
+}
+// The reason the sheet may state for `code` right now, or null
+// when no tracked lock explains a missing activation. The turn
+// defaults to the live duel state; tests may pass it explicitly.
+function monsterLockReason(code, turnCount) {
+  if (!monsterLock) return null;
+  const tc = turnCount != null ? turnCount : (duelState ? duelState.turnCount : null);
+  if (tc == null || tc !== monsterLock.turnCount) return null;
+  const d = cardData(code);
+  if (!d || !(d.type & 0x1)) return null;            // monsters only
+  if (d.attribute === monsterLock.attr) return null; // the excepted attribute is unaffected
+  return 'このターンは' + monsterLock.kanji + '属性以外のモンスター効果を発動できません';
+}
+// Test surface (same spirit as window.__bgm): lets the jsdom harness
+// observe the derived lock set and drive the tracker with synthetic
+// events — the same functions the duel flow itself calls.
+window.__mlock = {
+  cards() { return [...lockCards().entries()].map(([code, v]) => ({ code, attr: v.attr, kanji: v.kanji })); },
+  note(ev, state) { noteMonsterLock(ev, state); },
+  reason(code, turnCount) { return monsterLockReason(code, turnCount); },
+  get active() { return monsterLock; },
+  reset() { monsterLock = null; },
+};
 // Drain the engine's presentation event queue into SE cues.
 const ATTR_SE = { 1: 'atk_earth', 2: 'atk_water', 4: 'atk_fire', 8: 'atk_wind', 16: 'atk_light', 32: 'atk_dark', 64: 'atk_light' };
 function drainSeEvents(state) {
@@ -380,6 +440,7 @@ function drainSeEvents(state) {
   const batchAtk = evs.find(e => e.kind === 'attack');
   for (const ev of evs) {
     noteBgmEvent(ev); // BGM key-card latch (see the BGM block above)
+    noteMonsterLock(ev, state); // activation-lock latch (Minerva 3rd triage block above)
     switch (ev.kind) {
       case 'set': playSe('set_card'); break;
       case 'activate': playSe('activate_card'); break;
@@ -2691,21 +2752,28 @@ function openActionSheet(key) {
   // offer gets a greyed row WITH the reason, instead of silence —
   // "cannot use" is shown by greying (the user's UI principle)
   // and the reason is readable right here in the sheet. Only
-  // mechanically derivable reasons are stated (detach cost vs
-  // live materials; a mill count vs the live deck); anything else
+  // mechanically derivable reasons are stated; anything else
   // stays with the generic form rather than a guessed reason.
+  // Reasons, in order of certainty: (a) a tracked activation
+  // lock from another card's lingering restriction (3rd triage —
+  // it blocks regardless of materials or deck, and applies to
+  // any monster, not just Xyz); (b) for Xyz monsters, the detach
+  // cost vs live materials / a mill count vs the live deck.
   let unusable = '';
-  if (zoneCode != null && loc === E.LOC.MZONE && isXyzCode(zoneCode) && !acts.some(a => a.label === '効果を発動')) {
-    const norm = txt.replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
-    const detach = norm.match(/X素材を(\d+)つ取り除/);
-    const mill = norm.match(/デッキの上からカードを(\d+)枚墓地へ送る/);
-    if (detach || mill) {
-      const mats = liveMats(con, loc, seq) || 0;
-      let reason = '今は発動できません';
-      if (detach && mats < +detach[1]) reason = '素材が足りません（現在×' + mats + '）';
-      else if (mill && duelState && duelState.players[con].deckCount < +mill[1]) reason = 'デッキが ' + mill[1] + ' 枚未満です';
-      unusable = '<div class="optbtn disabled">効果を発動<span class="reason">' + reason + '</span></div>';
+  if (zoneCode != null && con === HP && loc === E.LOC.MZONE && !acts.some(a => a.label === '効果を発動')) {
+    let reason = monsterLockReason(zoneCode);
+    if (!reason && isXyzCode(zoneCode)) {
+      const norm = txt.replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+      const detach = norm.match(/X素材を(\d+)つ取り除/);
+      const mill = norm.match(/デッキの上からカードを(\d+)枚墓地へ送る/);
+      if (detach || mill) {
+        const mats = liveMats(con, loc, seq) || 0;
+        reason = '今は発動できません';
+        if (detach && mats < +detach[1]) reason = '素材が足りません（現在×' + mats + '）';
+        else if (mill && duelState && duelState.players[con].deckCount < +mill[1]) reason = 'デッキが ' + mill[1] + ' 枚未満です';
+      }
     }
+    if (reason) unusable = '<div class="optbtn disabled">効果を発動<span class="reason">' + reason + '</span></div>';
   }
   // When this card has several offered effects, pin the texts: the
   // offered effects are highlighted one by one (full text stays
@@ -3921,6 +3989,7 @@ function wireSeg(id, apply) {
     dismissedChains = new Set();
     logHist = []; logPrev = []; // B-10 history restarts with the duel
     pendingTap = null; // triage-#2: no buffered tap survives into a new duel
+    monsterLock = null; // activation lock restarts with the duel (Minerva 3rd triage)
     dismissedDuel = new Map();
     duelNoConfirm = new Set(); // C-27 suppression restarts with the duel
     confirmTurn = -1; confirmSeq = 0; // per-turn confirmation counter restarts with the duel
