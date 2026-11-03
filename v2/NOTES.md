@@ -4365,3 +4365,15 @@ so the capture answers 発動しない / パス through the real UI
 before shooting the field), a fabricated six-arts board at
 390x620 (all six deliveries on field and in hand), cut-in via
 fxCutinShow as before.
+
+## Test-clicker wedge (found landing recipe v11, 2026-11-03)
+
+The live-duel clickers in test-fx / test-ui / test-layout /
+test-strot clicked `.optbtn` before `#sheet-cancel`. On a field
+monster's action sheet whose only effect button is DISABLED
+("今は発動できません" — e.g. a just-summoned Mudora), the clicker
+then clicked the dead button forever and the duel never advanced
+(FXL timeouts with single-digit fx records; a human just taps
+選択に戻る — not a product bug). The new deck's longer, Mudora-
+heavier trajectories made the wedge likely instead of rare. All
+four clickers now skip `.optbtn.disabled`. No assertion changed.
