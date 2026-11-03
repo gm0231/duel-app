@@ -5000,6 +5000,53 @@ stat lines read 生きる偲びのシルキィ 800/0; the plain
 'silky' remains what any non-Ishizu context sees
 (fixture-pinned, as with Kakan / Carbon before her).
 
+## Zero-option chain prompts auto-pass (2026-11-04, user report: 何も発動できるものなくても聞いてくるのは不毛)
+
+Measured first (probe, bot duels, both deck assignments): the core
+sends MSG_SELECT_CHAIN at every timing window unconditionally
+(playerop.cpp writes the message even when select_chains is
+empty), and **983 of 1692 chain prompts to the human seat carried
+0 entries (58%)** — passing is the only legal answer there.
+Prompts whose every candidate is dismissed (per-chain or duel)
+are the same shape after the client's own presentation filter.
+
+The decision now lives at the uiAnswer choke point, next to the
+response-mode 'off' auto-pass, as `chainPassDecision(prompt,
+state)`:
+- 'pass' — zero live options (no entries at all, or every
+  candidate chain-dismissed / mixed chain+duel dismissed):
+  uiAnswer resolves i32 -1 immediately. No prompt cycle at all:
+  currentPrompt is never set, no stats refresh round-trip, no
+  dock. (uiChain already auto-passed these deep in its own flow;
+  the guarantee is now structural and tested, and on the Worker
+  path the zero-option majority no longer pays a prompt cycle.)
+- 'flash' — every candidate duel-dismissed: unchanged, uiChain's
+  visible auto-pass owns it (自動パス flash + 450 ms), so the
+  player sees their dismissal setting fire.
+- 'show' — at least one live candidate, and ALL forced prompts
+  (passing is illegal there; mandatory responses, including the
+  spe_count/0x7f flows, are always shown). Response mode 'on'
+  （毎回） keeps ignoring dismissals exactly as before; mode 'off'
+  still passes every non-forced prompt earlier in uiAnswer.
+
+Answers are byte-identical to the old flow in every case (pass
+where pass was already the answer), so game progression cannot
+change; uiChain's internal guards remain as a backstop.
+
+Pinned by test-chainpass.js: Part A unit-tests the decision
+matrix (14 checks: zero entries / forced / live / each dismissal
+kind / mixed / resp 'on' / the per-chain dismissal reset).
+Part B runs 5 real engine duels with the REAL uiAnswer/uiChain
+answering every SELECT_CHAIN (bot plays the rest): 510 prompts,
+222 'pass' / 288 'show', decision-vs-display agreement for every
+prompt, 0 MSG_RETRY, all duels completed. Frames
+(cap-chainpass.js, shots-chainpass/, declared fabrication through
+the real code paths over a live board): dock with a live
+candidate + パス at 390x700/620; the 自動パス chip flash for a
+duel-dismissed candidate; a zero-entry prompt leaving the board
+untouched. test-logdetail-ui keeps its known load-flake on the
+pristine base too (0–9 failing checks across runs there, same
+failure modes; not this change).
 ## Per-card illustrations, 17th delivery (2026-11-04): 《メタファイズ・ホルス・ドラゴン》 — the first EXTRA-deck monster
 
 User art for 《メタファイズ・ホルス・ドラゴン》 36898537
@@ -5458,3 +5505,66 @@ page at 390x620 / 390x700, swapped-selection state, plus the
 10-deck scroll stress at 700; the summary wraps to two lines
 rather than truncating the turn choice (fixed after the first
 capture round).
+
+## Board-tile kind frame (user decision 2026-11-04, variant 1 shipped)
+
+Follow-up to the variant-A band colors: the user also wanted the
+kind color ON THE BOARD ("盤面の方にも欲しい"), where the name band
+is covered by the art and cannot carry it. Two placements were
+prototyped on branch proto/tile-color (tilecolor-report.md):
+variant 1 frames the whole tile edge; variant 2 put a small chip
+on the tile's bottom edge. The user picked variant 1 (2026-11-04);
+variant 2 was NOT shipped and no trace of it (body-class gating,
+.kchip element) remains in the tree.
+
+Implementation: tileHTML adds kindCls(code) to the .tile class
+list, gated on the faceUp position bit specifically. Face-down
+tiles get no kind class at all — an opponent's set card obviously,
+and the owner's own set card too (its owner-visible name band
+keeps the variant-A band color; the tile itself stays frameless
+under the veil, exactly as prototyped). The stylesheet draws the
+frame as .tile::after — a 2px border just inside the tile edge,
+colored with the full-strength frame color var(--kc), NOT the
+bands' deepened --kcd: the frame is a thin mark with no text on
+it, so it keeps the original frame hue. Two structural facts keep
+it robust: the class sits on .tile, which never rotates, so a
+defense tile's 90-degree .inner rotation leaves the frame
+upright; and the corner badges (.mats/.ctrs, z-index 2) paint
+above the ::after, as measured in the prototype. Opponent face-up
+tiles are framed too (public information, same as their bands).
+
+Pinned by test-typecolor.js (extended to 45 checks: TC0g/TC0h
+stylesheet contract — frame rule present, no prototype gating or
+chip remnants; TC22–TC31 fabricated-board tile classes — face-up
+tiles of every represented kind carry the class on .tile, the
+class never rides on .inner, own set and opponent face-down
+tiles carry no kind class). Impact suites green on the branch:
+cardart, setvis, facedown, layout, strot.
+
+Capture: cap-tileframe.js -> shots-tileframe/ (390x700) and
+shots-tileframe-620/ (390x620) — REAL play (human seat driven
+through the real UI: hand tap -> action sheet -> zone tap;
+position change through the action sheet on the next own turn;
+CPU plays its own turns). At 700 the full set landed: board-atk
+(face-up monster framed right after the summon), board-mixed
+(opponent face-up Spell framed green next to an own face-up
+Effect monster framed orange, captured mid CPU turn), board-def
+(face-up DEFENSE monster: computed ::after border 2px in the
+Effect color rgb(207,116,52) on the unrotated .tile while the
+.inner transform is a 90-degree rotation matrix; the owner's
+own set S/T beside it carries no frame). At 620, board-atk and
+board-mixed landed (same two frame colors visible, layout
+intact) but no board-def: across repeated attempts the CPU's
+turn did not return within the capture harness's 9-minute
+patience window, so the defense frame at 620 rests on the 700
+measurement plus the shared stylesheet. The successful run's
+styles.json has oppBack null — the CPU had no face-down card
+at that moment — so an opponent face-down tile's computed
+style is NOT measured; its framelessness is pinned by the
+fabricated-board class checks (TC29/TC30) and the faceUp gate
+itself. Normal and ritual monsters do not exist in the current
+pool (0 cards), so those two frame colors are verified on
+tiles only via the fabricated-board class contract and the
+band legend, not in real play. WKWebView on a real device
+remains unmeasured, as ever (capture environment is
+Chromium-class).
