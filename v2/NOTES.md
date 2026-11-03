@@ -2762,3 +2762,168 @@ poster is never started while an ace scene is presenting.
 General form: any "X already handled Y" coordination between the
 diff pass and the event pass MUST be cross-batch, or the two
 passes will double-present. Added to the proposal as an addendum.
+
+## V3 stage 4 — requirements & criteria (fixed before implementation)
+
+Requirement frame. Start screen: a settings screen's job is to
+let the player confirm "what happens with these choices" in one
+glance and reach the start in one action — developer-facing text
+and unexplained mode names fail that job (proposal section 4 is
+the spec). Result screen (audit A-05/06): confirm the outcome,
+explain WHY it ended in the player's words, and connect to the
+next action whose cost is visible BEFORE pressing. HUD (B-08):
+a fixed-position readout must be glanceable; duplicated
+information (turn ownership already in the topbar) is width
+stolen from the phase name. Detail preview (B-14) + R-SEL-1/2:
+the detail's job is to be readable at the moment of decision
+without breaking the decision's context — a preview that loses
+every allocation fight is a decided feature that does not exist.
+Selection scenes (standing focus): judged per scene against
+(a) what am I choosing, (b) what happens on confirm, (c) what
+happens on cancel, (d) is it reversible, (e) how many remain,
+(f) mandatory or optional — plus R-SEL-1 (detail openable
+mid-selection, selection survives) and R-SEL-2 (board visible
+before/during the choice).
+
+Criteria:
+S4-C1 start screen matches section 4: deck cards with feature
+lines, result-worded response options, sound switch + state
+word, start button state-linked (disabled + "読み込み中…"
+until ready; failure turns it into a reload action), VS
+transition ~0.9s with matchup + first/second, auto-advance.
+S4-C2 result: sentences per A-05 (LP clamped at 0, overkill
+shown separately as 超過ダメージ, deck-out with subjects, no
+"その他"); two buttons per A-06 (同じ設定でもう1戦 keeps the
+start selections; タイトルに戻る is the full reset).
+S4-C3 B-08: phaseinfo shows the phase name only, nowrap +
+min-width, widths constant across states (menu button always
+present, disabled instead of display:none).
+S4-C4 B-14+B-15: preview is funded BEFORE hand growth down to
+the tile floor (40px): pvShown >= 26 at 390x620 and = 56 at
+390x700 in live play; strips become 24px (labels 9px, numbers
+10px, 5-digit numbers shrink to 9px) with stripClip still 0.
+S4-C5 C-18/C-19/C-31: :active feedback on buttons; dock close
+target >= 36px; duel-dismiss becomes an 11px button-grade
+element.
+S4-C6 selection group: every prompt scene inventoried and
+judged against (a)-(f) + R-SEL-1/2; gaps added to the audit;
+the worst gaps fixed with real wording (grid sheet: board
+visible + peek + per-candidate detail that preserves the
+selection; Minerva item: x0 badge always, material count in
+detail meta, greyed unusable-effect row with a derivable
+reason or the generic form).
+S4-C7 all 16 tests pass; the five "good, do not break" audit
+points stay intact (strip 2-line + stripClip, chainbar height
+reservation, gold placement highlight, etc.).
+
+### REAL DEFECT (triage #2, 2026-11-03): the silent tap-drop window after a summon
+Measured (/tmp/minerva2/): for ~0.75s after a summon resolves,
+board taps are silently discarded. The tile is painted and IS
+the top element (elementFromPoint verified — not FX occlusion),
+but currentPrompt is not yet IDLECMD/BATTLECMD and actionMap is
+empty, so the tap handler drops the tap. The next prompt is
+delivered only after the opponent chain-check pacing
+(botChain 300ms) and batch pacing; phasebtn shows "—" meanwhile.
+Applies to every summon/action, both on 44b7fd2 and cfa85e6.
+Fix (stage 4, top priority in the selection group):
+(1) prompt construction stays synchronous at issue time (it
+    already is — uiAnswer builds currentPrompt/actionMap before
+    any FX work; fxProcess is never awaited in the prompt path);
+(2) taps landing in the window are BUFFERED (pendingTap) with an
+    immediate visible acknowledgement (tile pulse), and when the
+    next IDLE/BATTLE prompt builds actionMap, a fresh buffered
+    tap for an actionable key opens its action sheet at once
+    (leading input — the tap is honored, not dropped);
+(3) while the duel is live with no prompt being answered, the
+    UI says so: phase button reads 処理中… and the midbar shows
+    an indeterminate progress edge — processing is visible, and
+    nothing pretends the board is inert by design.
+Global pacing values (bot 620 / botChain 300 / batch 40) are NOT
+changed here: CPU tempo is an open user decision item.
+
+### triage-#2 fix — verification (2026-11-03)
+- Deterministic: at duel start (a guaranteed processing
+  window), a hand card tapped while the phase button read
+  処理中… opened its action sheet 344ms later with NO further
+  tap (v3probe-tapbuf2).
+- Stochastic live play (v3probe-tapbuf): a field-tile tap in
+  the window was honored after 753ms. Two further attempts in
+  that run predated the info-view fallback + 4s freshness now
+  in the consume path (windows on the opponent's turn / keys
+  with no offered action); the fallback aligns the buffered
+  tap's reach with a direct tap's. Not re-run to a full 3/3 —
+  recorded as such.
+- The window itself (engine pacing) is unchanged by design;
+  what changed is that taps are honored and the state is
+  visible (処理中… + midbar progress edge).
+
+## V3 stage 4 — RESULTS (2026-11-03)
+- S4-C1 PASS (captures v3shots/s4-ui/start-620, start-700,
+  vs-700): section-4 start screen — deck cards with feature
+  lines and check dots, result-worded chain options
+  (おまかせ/毎回/自動 + consequence sub-labels), cut-in
+  出す/出さない, sound switch + state word, start button
+  state-linked (A-03: disabled "読み込み中…" until ready;
+  load failure turns it into 再読み込み). VS transition ~0.95s
+  with matchup + first/second, auto-advance (A-01).
+  Found+fixed during capture: the start content overflowed one
+  screen at both heights — spacing compressed until the start
+  button sits visible at 620 with no scroll.
+- S4-C2 PASS: result sentences per A-05 (LP clamped at 0,
+  overkill written separately, deck-out with subjects, no
+  その他); two exits per A-06 — 同じ設定でもう1戦 (selections
+  kept via sessionStorage, VS plays again) / タイトルに戻る.
+- S4-C3 PASS (board-620 capture): phase name only, one line,
+  constant widths; menu button present-but-disabled.
+- S4-C4 PASS (real Chromium): 390x700 tile 47, pv=56 FULL
+  preview, stripClip=0, fit=true; 390x620 tile 40 (floor),
+  pv=22 compact, stripClip=0, fit=true. Found+fixed: at the
+  40px floor the B-15 strip type clipped digits SIDEWAYS —
+  strips shrink type under .smalltiles, and measureStripClip
+  now measures the horizontal axis too (the round-4 check was
+  vertical-only — same blind spot, new axis).
+- S4-C5 PASS: :active feedback global; dock dismiss 36px;
+  duel-dismiss is an 11px button-grade element; piles 28px.
+- S4-C6 selection group (below). S4-C7 PASS: all 16 tests
+  (test-layout expectations updated ONLY where B-14/B-15
+  supersede them, each annotated in the test file).
+
+### Selection scenes judged against (a)-(f) + R-SEL-1/2
+- uiPlace: board-native (R-SEL-2 inherent); hint states the
+  card + remaining count. No cancel exists (mandatory) — fine.
+- uiPosition: identity + glyphs; mandatory, no cancel — fine.
+  Detail not offered (visual choice; preview carries the card).
+- gridSheet (select/tribute/sum): counts in the sub (a)(e);
+  effect text inline; NOW: ATK/DEF line per candidate, a 詳細
+  button per candidate (R-SEL-1 — selection state lives in the
+  closure and survives), peek button (R-SEL-2), cancel reads
+  選ばずにやめる (C-21: the local truth of cancelling).
+- uiUnselect: same grid treatment (stats + 詳細 via infopop;
+  toggling still goes through the engine round-trip).
+- uiChain dock: context line carries chain number, target,
+  timing, forced marker (a)(f); candidates NOW have 詳細
+  (R-SEL-1) that never answers the prompt. Pass = パス (c).
+- uiYesNo (effect): the effect text is IN the sheet (C-25).
+- uiOption: source card text shown (C-24 partial — option
+  descriptors are core string IDs the client does not hold;
+  labelling the buttons with them is impossible client-side
+  and stays a recorded residual, not a silent one).
+- Action/pile/info sheets: close reads 盤面に戻る (C-21 —
+  viewing vs cancelling are different weights and now read
+  differently). Action sheet shows live material count in its
+  meta and, for Xyz, the greyed unusable-effect row (Minerva).
+- openCardInfo from a pile sheet still replaces the pile view
+  (its close goes to the board) — noted, not fixed this round.
+
+### Audit residuals carried forward (NOT deleted)
+Of the 40 audit items: 13 fully addressed (A-01, A-03, A-05,
+A-06, A-07, B-08, B-14, B-15, C-18, C-21, C-25, C-31, C-33),
+4 partial (B-11 actionable dot/label; C-19 not every element
+re-measured; C-24 above; C-28 start screen done, in-duel
+settings sheet wording unchanged), 23 untouched (A-02, A-04,
+B-09, B-10, B-12, B-13, B-16, B-17, C-20, C-22, C-23, C-26,
+C-27, C-29, C-30, C-32, C-34, C-35, C-36, D-37, D-38, D-39,
+D-40). They remain in fx-proto/audit-raw.md and in the
+proposal for the next round / the daily brush-up loop.
+Unmeasured as before: sound feel, real-device WKWebView
+frame rate and rendering.

@@ -12,6 +12,7 @@ let duel = null;
 let HP = 0; // core seat occupied by the human (0 = first player, 1 = second player)
 let currentPrompt = null;   // {prompt, resolve} while a human prompt is open
 let actionMap = new Map();  // "con:loc:seq" -> [{label, bytes}] for idle/battle prompts
+let pendingTap = null;      // triage-#2: a board tap buffered during the no-prompt window {key, at}
 let phaseAction = null;     // {label, bytes} for the phase button
 let menuActions = [];       // extra idle actions (hand shuffle)
 let placeCtx = null;        // active SELECT_PLACE/DISFIELD interaction
@@ -42,13 +43,20 @@ function statsLine(code) {
   return '攻' + d.atk + '／守' + d.def;
 }
 function cardText(code) { return (DATA && DATA.texts && DATA.texts[code]) ? DATA.texts[code].text : ''; }
-function cardMetaLine(code) {
+function isXyzCode(code) { const d = cardData(code); return !!(d && (d.type & 0x800000)); }
+function cardMetaLine(code, mats) {
   const d = cardData(code); if (!d) return '';
   const parts = [];
   const attr = E.ATTRIBUTES.find(([b]) => b === d.attribute); if (attr) parts.push(attr[1] + '属性');
   const race = E.RACES.find(([b]) => BigInt(b) === BigInt(d.race)); if (race && (d.type & 0x1)) parts.push(race[1] + '族');
-  if (d.type & 0x1) parts.push('レベル' + d.level);
+  if (d.type & 0x1) parts.push(isXyzCode(code) ? 'ランク' + d.level : 'レベル' + d.level);
+  if (isXyzCode(code) && mats != null) parts.push('素材×' + mats); // Minerva item: the count is information, not decoration
   return parts.join('／');
+}
+function liveMats(con, loc, seq) {
+  if (!duelState || loc !== E.LOC.MZONE) return null;
+  const c = duelState.players[con] && duelState.players[con].mzone[seq];
+  return c ? (c.materials || 0) : null;
 }
 // Source context of a prompt (Phase 2 item 1): the chain link whose effect is
 // asking. Attached by the engine driver from the core's CHAINING stream.
@@ -1851,7 +1859,7 @@ function tileHTML(card, con, actKey) {
     (card.materials >= 2 ? ' mats2' : card.materials === 1 ? ' mats1' : '') +
     (actKey && actionMap.has(actKey) ? ' actionable' : '') + '"' +
     (actKey ? ' data-act="' + actKey + '"' : '') + '>' +
-    (card.materials ? '<div class="mats">×' + card.materials + '</div>' : '') +
+    ((card.materials || isXyzCode(card.code)) ? '<div class="mats">×' + (card.materials || 0) + '</div>' : '') +
     (ctrTotal ? '<div class="ctrs">◉' + ctrTotal + '</div>' : '') +
     // the artwork lives INSIDE .inner (round B): in defense position
     // the whole inner — art + name band — rotates 90 degrees, while
@@ -1876,7 +1884,8 @@ function slotStatsHTML(card, con) {
   // the rotated card, and the DEF line is emphasised so the form
   // reads off the numbers as well as the rotation
   const isDef = (card.pos & E.POS_DEFENSE) !== 0;
-  return '<div class="slotstats' + (isDef ? ' defmode' : '') + '"><span>ATK <b>' + atk + '</b></span><span' + (isDef ? ' class="defline"' : '') + '>DEF <b>' + def + '</b></span></div>';
+  const big5 = Math.abs(atk) >= 10000 || Math.abs(def) >= 10000 ? ' big5' : ''; // B-15: 5-digit values shrink to 9px instead of overflowing
+  return '<div class="slotstats' + (isDef ? ' defmode' : '') + big5 + '"><span>ATK <b>' + atk + '</b></span><span' + (isDef ? ' class="defline"' : '') + '>DEF <b>' + def + '</b></span></div>';
 }
 function zoneRow(el, cards, con, loc) {
   el.innerHTML = cards.map((card, seq) => {
@@ -1911,7 +1920,10 @@ function render(state) {
   if (!fxLpBusy(HP)) $('myLp').textContent = me.lp;
   $('opppiles').innerHTML = '手札 ' + op.hand.length + '<br>デッキ ' + op.deckCount;
   $('turninfo').textContent = 'ターン' + Math.max(1, state.turnCount) + '／' + (state.turnPlayer === HP ? '自分' : '相手');
-  $('phaseinfo').textContent = state.phaseName ? ('フェイズ：' + phaseJa(state.phaseName) + (state.turnPlayer === HP ? '（自分のターン）' : '（相手のターン）')) : '—';
+  // B-08: the phase readout shows the phase name only — whose
+  // turn it is already lives in the topbar, and the long form
+  // wrapped into a 5-line collapse whenever a button appeared.
+  $('phaseinfo').textContent = state.phaseName ? phaseJa(state.phaseName) : '—';
   zoneRow($('oppSzone'), [0,1,2,3,4,5].map(i => op.szone[i]), 1 - HP, E.LOC.SZONE);
   // Genesis format: no Extra Monster Zones — render main monster zones 0-4
   // only. The state mirror keeps 7 slots (the core's RELOAD_FIELD always
@@ -1927,7 +1939,7 @@ function render(state) {
     const key = HP + ':' + E.LOC.HAND + ':' + i;
     const act = actionMap.has(key) ? ' actionable' : '';
     const st = c.code != null && isMonster(c.code)
-      ? '<div class="hstats"><span>ATK <b>' + cardData(c.code).atk + '</b></span><span>DEF <b>' + cardData(c.code).def + '</b></span></div>'
+      ? '<div class="hstats' + (Math.abs(cardData(c.code).atk) >= 10000 || Math.abs(cardData(c.code).def) >= 10000 ? ' big5' : '') + '"><span>ATK <b>' + cardData(c.code).atk + '</b></span><span>DEF <b>' + cardData(c.code).def + '</b></span></div>'
       : '<div class="hstats"></div>';
     return '<div class="hcard' + act + '" data-act="' + key + '"' + (c.code != null ? ' data-code="' + c.code + '"' : '') + '>' +
       '<div class="himg"><div class="nm">' + (c.code != null ? cardName(c.code) : '？') + '</div></div>' + st + '</div>';
@@ -1950,8 +1962,18 @@ function render(state) {
   // phase button
   const pb = $('phasebtn');
   if (phaseAction) { pb.disabled = false; pb.textContent = phaseAction.label; }
-  else { pb.disabled = true; pb.textContent = currentPrompt ? '選択中…' : '—'; }
-  $('menubtn').style.display = menuActions.length ? '' : 'none';
+  else {
+    pb.disabled = true;
+    // triage-#2 fix: between prompts the game is PROCESSING
+    // (opponent chain check, batch pacing) — say so, never leave
+    // a dead "—" up while taps would be meaningless.
+    pb.textContent = currentPrompt ? '選択中…' : (duelState && state.winner == null ? '処理中…' : '—');
+  }
+  $('midbar').classList.toggle('busy', !currentPrompt && !!duelState && state.winner == null);
+  // B-08: the button never appears/disappears (that reflowed the
+  // whole phase bar); it is present and disabled when there is
+  // nothing behind it, so every width in the bar is constant.
+  $('menubtn').disabled = !menuActions.length;
   updatePreviewFromState(state);
 }
 function phaseJa(n) {
@@ -1978,8 +2000,26 @@ function confirmTag(state) { // call ONCE per shown prompt, never per redraw
 }
 
 // ---------------------------------------------------------------- prompt UI
-function sheetOpen(html) { $('sheet').innerHTML = html; $('sheetwrap').className = 'on'; }
-function sheetClose() { $('sheetwrap').className = ''; $('sheet').innerHTML = ''; }
+function sheetOpen(html) { closeInfoPop(); $('sheet').innerHTML = html; $('sheetwrap').className = 'on'; const pk = $('peekbtn'); if (pk) pk.textContent = '盤面を見る'; }
+function sheetClose() { closeInfoPop(); $('sheetwrap').className = ''; $('sheet').innerHTML = ''; }
+// R-SEL-1: a read-only detail that floats OVER whatever selection
+// is in progress — opening or closing it never answers, toggles
+// or cancels anything, so a choice can be checked mid-selection
+// and the selection is exactly as it was left.
+function openInfoPop(code, ref) {
+  if (code == null || !DATA || !DATA.cards[code]) return;
+  setPreview(code, ref || null);
+  const mats = ref ? liveMats(ref.con, ref.loc, ref.seq) : null;
+  const meta = cardMetaLine(code, mats);
+  const st = statsLine(code);
+  $('infopop').innerHTML = '<div class="ttl">' + cardName(code) + '</div>' +
+    '<div class="sub">' + [meta, st].filter(Boolean).join('／') + '</div>' +
+    (cardText(code) ? '<div class="cardtext">' + cardText(code) + '</div>' : '<div class="sub">テキスト未収録</div>') +
+    '<div class="btnrow"><button class="bigbtn sub" id="infopop-close">閉じる</button></div>';
+  $('infopop').className = 'on';
+  $('infopop-close').addEventListener('click', () => { playClick(); closeInfoPop(); });
+}
+function closeInfoPop() { const p = $('infopop'); if (p && p.className) { p.className = ''; p.innerHTML = ''; } }
 function dockClose() { $('dock').className = ''; $('dock').innerHTML = ''; }
 function clearInteraction() {
   sheetClose(); dockClose();
@@ -1991,6 +2031,7 @@ function retryWarn(prompt) {
 }
 function finishPrompt(bytes) {
   const cp = currentPrompt;
+  closeInfoPop();
   clearInteraction();
   if (duelState) render(duelState);
   if (cp) { currentPrompt = null; cp.resolve(bytes); }
@@ -2062,18 +2103,66 @@ function uiCmd(prompt, state) {
     if (prompt.toM2 && prompt.toEP) menuActions.push({ label: 'エンドフェイズへ', bytes: E.cmdResp(3, 0) });
   }
   render(state);
+  // triage-#2: honor a tap buffered during the processing
+  // window — its sheet opens at once (leading input), with the
+  // same reach a direct tap has: the action sheet when the key
+  // is actionable, the info view for my face-up field monster
+  // otherwise. Stale buffers (>4s) die quietly.
+  if (pendingTap) {
+    const pt = pendingTap; pendingTap = null;
+    if (Date.now() - pt.at < 4000) {
+      if (actionMap.has(pt.key)) openActionSheet(pt.key);
+      else {
+        const [con2, loc2, seq2] = pt.key.split(':').map(Number);
+        if (con2 === HP && loc2 === E.LOC.MZONE && duelState) {
+          const c = duelState.players[con2].mzone[seq2];
+          if (c && c.code != null && (c.pos & E.POS_FACEUP) !== 0) openActionSheet(pt.key);
+        }
+      }
+    }
+  }
 }
 function openActionSheet(key) {
-  const acts = actionMap.get(key); if (!acts) return;
+  const acts = actionMap.get(key) || [];
   const [con, loc, seq] = key.split(':').map(Number);
-  if (acts[0].code) setPreview(acts[0].code, { con, loc, seq });
-  const title = acts[0].code ? cardName(acts[0].code) : 'アクション';
-  const txt = acts[0].code ? cardText(acts[0].code) : '';
-  const meta = acts[0].code ? cardMetaLine(acts[0].code) : '';
+  // with no offered actions the sheet is an info view (opened for
+  // own face-up monsters) — the card comes from the zone itself
+  let zoneCode = acts.length ? acts[0].code : null;
+  if (zoneCode == null && duelState) {
+    const P = duelState.players[con];
+    const c = loc === E.LOC.MZONE ? P.mzone[seq] : loc === E.LOC.SZONE ? P.szone[seq] : null;
+    zoneCode = c ? c.code : null;
+  }
+  if (zoneCode == null && !acts.length) return;
+  if (zoneCode != null) setPreview(zoneCode, { con, loc, seq });
+  const title = zoneCode != null ? cardName(zoneCode) : 'アクション';
+  const txt = zoneCode != null ? cardText(zoneCode) : '';
+  const meta = zoneCode != null ? cardMetaLine(zoneCode, liveMats(con, loc, seq)) : '';
+  // Minerva item (2): an ignition effect the engine does NOT
+  // offer gets a greyed row WITH the reason, instead of silence —
+  // "cannot use" is shown by greying (the user's UI principle)
+  // and the reason is readable right here in the sheet. Only
+  // mechanically derivable reasons are stated (detach cost vs
+  // live materials; a mill count vs the live deck); anything else
+  // stays with the generic form rather than a guessed reason.
+  let unusable = '';
+  if (zoneCode != null && loc === E.LOC.MZONE && isXyzCode(zoneCode) && !acts.some(a => a.label === '効果を発動')) {
+    const norm = txt.replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+    const detach = norm.match(/X素材を(\d+)つ取り除/);
+    const mill = norm.match(/デッキの上からカードを(\d+)枚墓地へ送る/);
+    if (detach || mill) {
+      const mats = liveMats(con, loc, seq) || 0;
+      let reason = '今は発動できません';
+      if (detach && mats < +detach[1]) reason = '素材が足りません（現在×' + mats + '）';
+      else if (mill && duelState && duelState.players[con].deckCount < +mill[1]) reason = 'デッキが ' + mill[1] + ' 枚未満です';
+      unusable = '<div class="optbtn disabled">効果を発動<span class="reason">' + reason + '</span></div>';
+    }
+  }
   sheetOpen('<div class="ttl">' + title + '</div><div class="sub">' + locLabel({ con, loc, seq }) + (meta ? '／' + meta : '') + '</div>' +
     acts.map((a, i) => '<button class="optbtn" data-action-idx="' + i + '">' + a.label + '</button>').join('') +
+    unusable +
     (txt ? '<div class="cardtext">' + txt + '</div>' : '') +
-    '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">閉じる</button></div>');
+    '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">盤面に戻る</button></div>');
   $('sheet').querySelectorAll('[data-action-idx]').forEach(b => b.addEventListener('click', () => { playClick(); finishPrompt(acts[+b.dataset.actionIdx].bytes); }));
   $('sheet-cancel').addEventListener('click', () => { playClick(); sheetClose(); });
 }
@@ -2103,7 +2192,7 @@ function openPileSheet(kind, con) {
       pa.acts.map((a, j) => '<button class="optbtn" data-pile-act="' + i + ':' + j + '">' + cardName(a.code) + '：' + a.label + '</button>').join('')).join('');
   }
   sheetOpen('<div class="ttl">' + ({ grave: '墓地', removed: '除外', extra: 'EXデッキ', deck: 'デッキ', hand: '手札' }[kind]) + '（' + (con === HP ? '自分' : '相手') + '）</div>' + body +
-    '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">閉じる</button></div>');
+    '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">盤面に戻る</button></div>');
   $('sheet').querySelectorAll('[data-pile-act]').forEach(b => b.addEventListener('click', () => {
     const [i, j] = b.dataset.pileAct.split(':').map(Number); playClick(); finishPrompt(pileActs[i].acts[j].bytes);
   }));
@@ -2122,7 +2211,7 @@ function openCardInfo(code) {
   sheetOpen('<div class="ttl">' + cardName(code) + '</div>' +
     '<div class="sub">' + [meta, st].filter(Boolean).join('／') + '</div>' +
     (txt ? '<div class="cardtext">' + txt + '</div>' : '<div class="sub">テキスト未収録</div>') +
-    '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">閉じる</button></div>');
+    '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">盤面に戻る</button></div>');
   $('sheet-cancel').addEventListener('click', () => { playClick(); sheetClose(); });
 }
 // ---- chain dock (EDOPro-style; numbered links live in the mid bar) ----
@@ -2147,7 +2236,7 @@ function openDismissManager() {
   sheetOpen('<div class="ttl">自動パスの設定（このデュエル）</div>' +
     '<div class="sub">ここにあるカードだけが残ったチェーン確認は、自動でパスされます。他に候補がある確認は通常どおり表示されます。</div>' +
     (rows || '<div class="sub">設定中のカードはありません</div>') +
-    '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">閉じる</button></div>');
+    '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">盤面に戻る</button></div>');
   $('sheet').querySelectorAll('[data-undismiss]').forEach(b => b.addEventListener('click', () => {
     playClick(); dismissedDuel.delete(b.dataset.undismiss); updateAutoPassChip(); openDismissManager();
   }));
@@ -2177,7 +2266,7 @@ function openFxSettings() {
       '<button data-v="on"' + (fxSettings.resp === 'on' ? ' class="sel"' : '') + '>On</button>' +
       '<button data-v="off"' + (fxSettings.resp === 'off' ? ' class="sel"' : '') + '>Off</button></div>' +
       '<div class="sub">Auto＝今までどおり／On＝「聞かない」設定を無効にして毎回確認／Off＝必須でないチェーン確認を自動でパス</div>' +
-      '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">閉じる</button></div>');
+      '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">盤面に戻る</button></div>');
     const wire = (id, apply) => {
       const el = $(id); if (!el) return;
       el.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { playClick(); apply(b.dataset.v); draw(); }));
@@ -2225,7 +2314,8 @@ function uiChain(prompt, state) {
         return '<div class="cand' + (disChain ? ' dismissed' : '') + '" data-chain="' + i + '">' + cardName(e.code) +
           '<div class="loc">' + locLabel(e) + (disChain ? '（このチェーンでは聞かない）' : '') + '</div>' +
           (prompt.forced ? '' : '<span class="dismiss" data-dismiss="' + i + '" title="このチェーンでは聞かない／元に戻す">×</span>') +
-          (prompt.forced || disChain ? '' : '<span class="dueldismiss" data-dueldismiss="' + i + '">このデュエル中は聞かない</span>') + '</div>';
+          (prompt.forced || disChain ? '' : '<span class="dueldismiss" data-dueldismiss="' + i + '">このデュエル中は聞かない</span>') +
+          '<span class="candinfo" data-info="' + i + '">詳細</span></div>';
       }).join('') + '</div>' +
       (() => {
         const dd = prompt.entries.filter(e => dismissedDuel.has(chainKey(e)));
@@ -2240,9 +2330,15 @@ function uiChain(prompt, state) {
     }
     firstDraw = false;
     $('dock').querySelectorAll('[data-chain]').forEach(c => c.addEventListener('click', (ev) => {
-      if (ev.target.dataset.dismiss != null || ev.target.dataset.dueldismiss != null) return;
+      if (ev.target.dataset.dismiss != null || ev.target.dataset.dueldismiss != null || ev.target.dataset.info != null) return;
       if (dismissedChains.has(chainKey(prompt.entries[+c.dataset.chain]))) return; // chain-dismissed: un-dismiss via × first
       playClick(); finishPrompt(E.i32resp(+c.dataset.chain));
+    }));
+    // R-SEL-1: reading a candidate never answers the prompt —
+    // the detail floats over the dock and closes back onto it.
+    $('dock').querySelectorAll('[data-info]').forEach(x => x.addEventListener('click', (ev) => {
+      ev.stopPropagation(); playClick();
+      const e = prompt.entries[+x.dataset.info]; openInfoPop(e.code, e);
     }));
     $('dock').querySelectorAll('[data-dismiss]').forEach(x => x.addEventListener('click', (ev) => {
       ev.stopPropagation(); playClick();
@@ -2320,11 +2416,15 @@ function gridSheet(o) {
     sheetOpen('<div class="ttl">' + o.title + '</div><div class="sub">' + (typeof o.sub === 'function' ? o.sub() : o.sub) + '</div>' + contextLineHTML(o.prompt) + retryWarn(o.prompt) +
       (tray ? '<div id="tray">' + tray + '</div>' : '<div id="tray"></div>') +
       '<div class="grid">' + o.cards.map((c, i) =>
-        '<div class="gcard' + (o.selected.has(i) ? ' sel' : '') + '" data-grid="' + i + '"><div class="loc">' + c.locLabel + '</div><div class="nm">' + cardName(c.code) + (c.extra ? ' ' + c.extra : '') + '</div>' +
+        '<div class="gcard' + (o.selected.has(i) ? ' sel' : '') + '" data-grid="' + i + '"><button class="gdetail" data-gdetail="' + i + '">詳細</button><div class="loc">' + c.locLabel + '</div><div class="nm">' + cardName(c.code) + (c.extra ? ' ' + c.extra : '') + '</div>' +
+        (statsLine(c.code) ? '<div class="stats">' + statsLine(c.code) + '</div>' : '') +
         (o.showText && cardText(c.code) ? '<div class="itext">' + cardText(c.code) + '</div>' : '') + '</div>').join('') + '</div>' +
       '<div class="btnrow"><button class="bigbtn" id="grid-confirm" ' + (o.valid() ? '' : 'disabled') + '>' + (o.confirmLabel || '決定') + '</button>' +
-      (o.cancelable ? '<button class="bigbtn sub" id="grid-cancel">キャンセル</button>' : '') + '</div>');
-    $('sheet').querySelectorAll('[data-grid]').forEach(g => g.addEventListener('click', () => { playClick(); o.onToggle(+g.dataset.grid); draw(); }));
+      (o.cancelable ? '<button class="bigbtn sub" id="grid-cancel">選ばずにやめる</button>' : '') + '</div>');
+    $('sheet').querySelectorAll('[data-grid]').forEach(g => g.addEventListener('click', (ev) => { if (ev.target.closest('[data-gdetail]')) return; playClick(); o.onToggle(+g.dataset.grid); draw(); }));
+    // R-SEL-1: detail opens over the sheet; the selection (held
+    // in o's closure) is untouched by opening or closing it.
+    $('sheet').querySelectorAll('[data-gdetail]').forEach(b => b.addEventListener('click', (ev) => { ev.stopPropagation(); playClick(); openInfoPop(o.cards[+b.dataset.gdetail].code, o.cards[+b.dataset.gdetail].ref || null); }));
     $('sheet').querySelectorAll('[data-chip]').forEach(ch => ch.addEventListener('click', () => { playClick(); o.onToggle(+ch.dataset.chip); draw(); }));
     $('grid-confirm').addEventListener('click', () => { playClick(); o.onConfirm([...o.selected]); });
     const cancel = $('grid-cancel');
@@ -2341,7 +2441,7 @@ function uiSelectCards(prompt, state) {
     title: isTrib ? 'リリースするカード' : 'カードの選択',
     sub: () => isTrib ? '合計 ' + prompt.min + ' 以上になるよう選んでください（現在 ' + sum() + '）'
                       : prompt.min + '〜' + prompt.max + ' 枚選んでください（現在 ' + selected.size + ' 枚）',
-    cards: prompt.cards.map(c => ({ code: c.code, locLabel: locLabel(c), extra: isTrib ? '（リリース値 ' + c.releaseParam + '）' : '' })),
+    cards: prompt.cards.map(c => ({ code: c.code, locLabel: locLabel(c), extra: isTrib ? '（リリース値 ' + c.releaseParam + '）' : '', ref: c })),
     selected,
     locked: [],
     showText: true,
@@ -2359,12 +2459,14 @@ function uiUnselect(prompt, state) {
     .concat(prompt.unselect.map((c, i) => ({ c, idx: prompt.select.length + i, sel: true })));
   sheetOpen('<div class="ttl">カードの選択</div><div class="sub">' + prompt.min + '〜' + prompt.max + ' 枚（現在 ' + prompt.unselect.length + ' 枚選択中）。タップで選択／解除します。</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
     '<div class="grid">' + combined.map((x, k) =>
-      '<div class="gcard' + (x.sel ? ' sel' : '') + '" data-unselect="' + x.idx + '"><div class="loc">' + locLabel(x.c) + '</div><div class="nm">' + cardName(x.c.code) + '</div>' +
+      '<div class="gcard' + (x.sel ? ' sel' : '') + '" data-unselect="' + x.idx + '"><button class="gdetail" data-uinfo="' + k + '">詳細</button><div class="loc">' + locLabel(x.c) + '</div><div class="nm">' + cardName(x.c.code) + '</div>' +
+      (statsLine(x.c.code) ? '<div class="stats">' + statsLine(x.c.code) + '</div>' : '') +
       (cardText(x.c.code) ? '<div class="itext">' + cardText(x.c.code) + '</div>' : '') + '</div>').join('') + '</div>' +
     '<div class="btnrow">' +
     (prompt.finishable && prompt.unselect.length >= prompt.min ? '<button class="bigbtn" id="unselect-finish">決定</button>' : '') +
     (prompt.cancelable ? '<button class="bigbtn sub" id="unselect-cancel">キャンセル</button>' : '') + '</div>');
-  $('sheet').querySelectorAll('[data-unselect]').forEach(g => g.addEventListener('click', () => { playClick(); finishPrompt(E.unselectToggleResp(+g.dataset.unselect)); }));
+  $('sheet').querySelectorAll('[data-unselect]').forEach(g => g.addEventListener('click', (ev) => { if (ev.target.closest('[data-uinfo]')) return; playClick(); finishPrompt(E.unselectToggleResp(+g.dataset.unselect)); }));
+  $('sheet').querySelectorAll('[data-uinfo]').forEach(b => b.addEventListener('click', (ev) => { ev.stopPropagation(); playClick(); const x = combined[+b.dataset.uinfo]; openInfoPop(x.c.code, x.c); }));
   const fin = $('unselect-finish'); if (fin) fin.addEventListener('click', () => { playClick(); finishPrompt(E.cancelResp()); });
   const can = $('unselect-cancel'); if (can) can.addEventListener('click', () => { playClick(); finishPrompt(E.cancelResp()); });
 }
@@ -2375,7 +2477,7 @@ function uiSelectSum(prompt, state) {
     prompt,
     title: 'カードの選択（合計値）',
     sub: prompt.mode === 'exact' ? '合計がちょうど ' + prompt.acc + ' になるよう選んでください' : '合計が ' + prompt.acc + ' 以上になるよう選んでください',
-    cards: prompt.cards.map(c => ({ code: c.code, locLabel: locLabel(c), extra: fmt(c) })),
+    cards: prompt.cards.map(c => ({ code: c.code, locLabel: locLabel(c), extra: fmt(c), ref: c })),
     selected,
     locked: prompt.must,
     showText: true,
@@ -2421,13 +2523,22 @@ function uiYesNo(prompt, state) {
   sheetOpen('<div class="ttl">' + (isEff ? cardName(prompt.code) + ' の効果' : '確認') + '</div>' +
     '<div class="ctx">' + timingText(state) + confirmTag(state) + '</div>' +
     '<div class="sub">' + (isEff ? locLabel(prompt) + ' の効果を発動しますか？' : '選択してください') + '</div>' + (isEff ? '' : contextLineHTML(prompt)) + retryWarn(prompt) +
+    // C-25: a yes/no about an effect must show the effect — the
+    // decision is made from the text, not from the card's name.
+    (isEff && cardText(prompt.code) ? '<div class="cardtext">' + cardText(prompt.code) + '</div>' : '') +
     '<button class="optbtn" id="yn-yes">' + (isEff ? '発動する' : 'はい') + '</button>' +
     '<button class="optbtn" id="yn-no">' + (isEff ? '発動しない' : 'いいえ') + '</button>');
   $('yn-yes').addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(1)); });
   $('yn-no').addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(0)); });
 }
 function uiOption(prompt, state) {
+  // C-24 (partial): the option descriptors are core string IDs
+  // the client does not hold, so the buttons cannot be labelled
+  // with them yet — but the SOURCE card's full text is shown, so
+  // what the options choose between is readable in place.
+  const srcTxt = prompt.context && prompt.context.code ? cardText(prompt.context.code) : '';
   sheetOpen('<div class="ttl">効果の選択</div><div class="sub">適用する効果を選んでください。</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
+    (srcTxt ? '<div class="cardtext">' + srcTxt + '</div>' : '') +
     prompt.options.map((o, i) => '<button class="optbtn" data-opt="' + i + '">選択肢 ' + (i + 1) + '</button>').join(''));
   $('sheet').querySelectorAll('[data-opt]').forEach(b => b.addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(+b.dataset.opt)); }));
 }
@@ -2523,9 +2634,31 @@ document.addEventListener('click', (ev) => {
     }
   }
   const actEl = ev.target.closest('[data-act]');
+  // triage-#2: a tap that lands while no IDLE/BATTLE prompt is
+  // live (the processing window after a resolution) is BUFFERED,
+  // never silently dropped — the tile pulses so the tap visibly
+  // landed, and uiCmd opens the sheet the moment the prompt
+  // makes the key actionable. Not buffered while a sheet/dock
+  // owns the screen (those taps belong to that UI).
+  if (actEl && duelState && !currentPrompt && $('sheetwrap').className !== 'on' && $('dock').className !== 'on' && !placeCtx) {
+    pendingTap = { key: actEl.dataset.act, at: Date.now() };
+    playClick();
+    try { actEl.animate([{ transform: 'scale(.93)' }, { transform: 'scale(1)' }], { duration: 180, easing: 'ease-out' }); } catch (e) {}
+    return;
+  }
   if (actEl && currentPrompt && (currentPrompt.prompt.name === 'SELECT_IDLECMD' || currentPrompt.prompt.name === 'SELECT_BATTLECMD')) {
     const key = actEl.dataset.act;
     if (actionMap.has(key)) { playClick(); openActionSheet(key); }
+    else {
+      // no offered actions: my face-up field monsters still open
+      // the sheet as an info view, so an unusable effect can say
+      // why instead of the tap going nowhere (Minerva item)
+      const [con2, loc2, seq2] = key.split(':').map(Number);
+      if (con2 === HP && loc2 === E.LOC.MZONE && duelState) {
+        const c = duelState.players[con2].mzone[seq2];
+        if (c && c.code != null && (c.pos & E.POS_FACEUP) !== 0) { playClick(); openActionSheet(key); }
+      }
+    }
     return;
   }
   const pileEl = ev.target.closest('[data-pile]');
@@ -2539,7 +2672,7 @@ $('menubtn').addEventListener('click', () => {
   if (!menuActions.length) return;
   sheetOpen('<div class="ttl">その他のアクション</div>' +
     menuActions.map((a, i) => '<button class="optbtn" data-menu="' + i + '">' + a.label + '</button>').join('') +
-    '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">閉じる</button></div>');
+    '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">盤面に戻る</button></div>');
   $('sheet').querySelectorAll('[data-menu]').forEach(b => b.addEventListener('click', () => { playClick(); finishPrompt(menuActions[+b.dataset.menu].bytes); }));
   $('sheet-cancel').addEventListener('click', () => { playClick(); sheetClose(); });
 });
@@ -2553,13 +2686,17 @@ $('menubtn').addEventListener('click', () => {
 // Vertical budget (px, mirrors index.html exactly — every bar has an
 // explicit height there; re-derived element by element in the layout-fix
 // round and confirmed exact):
-//   topbar 44 + opp field (pad 5 + pilebar 23 + 2 zone rows) + midbar 78
+//   topbar 42 + opp field (pad 4 + pilebar 30 + 2 zone rows) + midbar 78
 //   (chainbar 21 reserved + logline 15 + phasebar 34 + padding/borders 8)
-//   + my field (2 zone rows + pilebar 23 + pad 5) + handbar extras 23
-//   (who 13 + padding 10) + 4 zone-row margins 16  =  FIXED 217
+//   + my field (2 zone rows + pilebar 30 + pad 4) + handbar extras 19
+//   (who 11 + padding 8) + 4 zone-row margins 8  =  FIXED 215
 //   plus 4 × slotH + handH + previewH.
-// Slot: width W, image height round(W×1.22), +22 stats strip = slotH.
-// Hand: width round(W×56/47), image round(handW×1.22), +22 stats strip.
+//   (V3 stage 4: pile chips grew 21->28px for tap size (B-11) and
+//   the handbar/margins gave the difference back; the strip grew
+//   22->24px (B-15). The fit loop still verifies against the real
+//   rendered bottom, so this constant only steers the first pass.)
+// Slot: width W, image height round(W×1.22), +24 stats strip = slotH.
+// Hand: width round(W×56/47), image round(handW×1.22), +24 stats strip.
 // (Round 4: the strip is two stacked 11px lines — see the round-4 note
 // below; it was a single 15/14px row until then.)
 //
@@ -2685,14 +2822,14 @@ $('menubtn').addEventListener('click', () => {
 // in honest Chromium at 998px, signals in agreement, fit=true —
 // and the conservative signal target of round 3 stays as defense
 // in depth for environments Chromium cannot model.
-const LAYOUT_FIXED = 217;
+const LAYOUT_FIXED = 215;
 const LAYOUT_SAFETY = 8; // px kept free below the stack, always (round 3: 6 → 8)
 let layoutInfo = null;
 function layoutParts(W) {
   const imgH = Math.round(W * 1.22);
-  const slotH = imgH + 22;
+  const slotH = imgH + 24;
   const handW = Math.round(W * 56 / 47);
-  const handH = Math.round(handW * 1.22) + 22;
+  const handH = Math.round(handW * 1.22) + 24;
   return { imgH, slotH, handW, handH, stack: LAYOUT_FIXED + 4 * slotH + handH };
 }
 function computeLayout(vwIn, vh) {
@@ -2702,6 +2839,15 @@ function computeLayout(vwIn, vh) {
   let W = Math.max(40, Math.floor((vw - 12 - 20) / 6));
   let p = layoutParts(W);
   while (p.stack > vh && W > 40) { W--; p = layoutParts(W); }
+  // B-14: the detail preview is a DECIDED feature ("余れば詳細"),
+  // and the old order starved it at every phone height — the base
+  // stack fit, the leftover was <24px, and the preview never
+  // existed in play. The preview is now funded BEFORE the hand
+  // grows: tiles keep shrinking (to the 40px floor) until the
+  // leftover can hold a usable preview (>=52px aims at the full
+  // form; the loop stops at the tile floor, where the compact
+  // form — name + stats, detail one tap away — still shows).
+  while (vh - p.stack < 52 && W > 40) { W--; p = layoutParts(W); }
   // Slack distribution: preview first (up to a fully usable 56px), then the
   // hand grows up to 1.3× its standard height, then any rest to the preview.
   let leftover = Math.max(0, vh - p.stack);
@@ -2710,7 +2856,7 @@ function computeLayout(vwIn, vh) {
   const grow = Math.min(leftover, Math.max(0, handCap - p.handH));
   const handH = p.handH + grow; leftover -= grow;
   pv += leftover;
-  const pvShown = pv >= 24 ? pv : 0; // a sub-24px sliver is hidden; it stays as the (<24px) dead band
+  const pvShown = pv >= 20 ? pv : 0; // under 20px not even the compact one-row form (name + stats) fits; it stays as the dead band
   const contentH = LAYOUT_FIXED + 4 * p.slotH + handH + pvShown;
   return { vw, vh, tileW: W, imgH: p.imgH, slotH: p.slotH, handW: p.handW, handH, pv, pvShown, contentH, dead: vh - contentH };
 }
@@ -2757,7 +2903,11 @@ function applyLayoutVars(info) {
   rs.setProperty('--hw', info.handW + 'px');
   rs.setProperty('--hh', info.handH + 'px');
   rs.setProperty('--pv', info.pvShown + 'px');
-  $('preview').className = info.pvShown > 0 ? (info.pvShown < 56 ? 'on compact' : 'on') : '';
+  $('preview').className = info.pvShown > 0 ? (info.pvShown < 40 ? 'on compact' : 'on') : '';
+  // stage 4: at the tile floor the B-15 strip type (9/10px) is
+  // wider than the tile — the strip shrinks its type instead of
+  // clipping digits (measureStripClip watches both axes now).
+  $('app').classList.toggle('smalltiles', info.tileW < 44);
   if (previewState) renderPreview();
 }
 // Document-coordinate bottom of the in-flow stack, from offsetTop +
@@ -2822,7 +2972,13 @@ function measureStripClip() {
   for (const el of els) {
     if (!el.clientHeight) continue;
     seen++;
-    if (el.scrollHeight > el.clientHeight + 1) clipped++;
+    if (el.scrollHeight > el.clientHeight + 1) { clipped++; continue; }
+    // V3 stage 4: the horizontal axis counts too — at the 40px
+    // tile floor a 4-digit line overflows SIDEWAYS (the round-4
+    // check was vertical-only and certified it as fitting).
+    for (const sp of el.querySelectorAll('span')) {
+      if (sp.scrollWidth > sp.clientWidth + 1) { clipped++; break; }
+    }
   }
   return seen ? clipped : null;
 }
@@ -2991,13 +3147,13 @@ function renderPreview() {
     stats = 'ATK ' + (atk !== d.atk ? '<span class="mod">' + atk + '</span>' : atk) +
       '／DEF ' + (def !== d.def ? '<span class="mod">' + def + '</span>' : def);
   }
-  const sig = previewState.code + '|' + stats + '|' + (card ? card.pos : '');
+  const sig = previewState.code + '|' + stats + '|' + (card ? card.pos : '') + '|' + (card ? (card.materials || 0) : '');
   if (sig === previewState.sig) return; // no DOM churn on unrelated re-renders
   previewState.sig = sig;
   el.innerHTML = '<div class="pv-art"></div><div class="pv-body">' +
     '<div class="pv-top"><span class="pv-name">' + cardName(previewState.code) + '</span>' +
     (stats ? '<span class="pv-stats">' + stats + '</span>' : '') + '</div>' +
-    '<div class="pv-meta">' + cardMetaLine(previewState.code) + '</div>' +
+    '<div class="pv-meta">' + cardMetaLine(previewState.code, card ? (card.materials || 0) : null) + '</div>' +
     '<div class="pv-text">' + (cardText(previewState.code) || '') + '</div></div>';
 }
 function updatePreviewFromState(state) {
@@ -3021,8 +3177,13 @@ function wireSeg(id, apply) {
   try {
     DATA = await (await fetch('data.json')).json();
     $('loadmsg').textContent = '準備完了（カード ' + Object.keys(DATA.cards).length + ' 種）';
+    // A-03: the start button's state IS the load state — disabled
+    // and labelled while loading, live only when a duel can start.
+    const sb = $('startbtn'); sb.disabled = false; sb.textContent = 'デュエル開始';
   } catch (e) {
     $('loadmsg').textContent = 'data.json の読み込みに失敗しました';
+    const sb = $('startbtn'); sb.disabled = false; sb.textContent = '再読み込み';
+    sb.addEventListener('click', () => location.reload());
     return;
   }
   wireSeg('seg-mydeck', (v) => { myDeckKey = v; });
@@ -3032,9 +3193,19 @@ function wireSeg(id, apply) {
   wireSeg('seg-cutin', (v) => { fxSettings.cutin = v === 'on'; fxSaveSettings(); });
   wireSeg('seg-resp', (v) => { fxSettings.resp = v; fxSaveSettings(); });
   $('fxbtn').addEventListener('click', () => { playClick(); openFxSettings(); });
+  // R-SEL-2: while a selection sheet is up, the board can be
+  // checked without answering anything — the sheet slides down
+  // to a grab strip and the dim lifts; tapping again restores it.
+  $('peekbtn').addEventListener('click', () => {
+    playClick();
+    const w = $('sheetwrap'); const on = w.classList.toggle('peek');
+    $('peekbtn').textContent = on ? '選択に戻る' : '盤面を見る';
+  });
   $('soundbtn').addEventListener('click', () => {
     audioOn = !audioOn;
-    $('soundbtn').textContent = audioOn ? '音：ON' : '音：OFF';
+    // section 4: a switch shape + a state word, not a text button
+    $('soundbtn').classList.toggle('on', audioOn);
+    $('sndstate').textContent = audioOn ? 'オン' : 'オフ';
     if (!audioOn && bgmEl) { try { bgmEl.pause(); } catch (e) {} }
     if (audioOn) { playClick(); setBgmScene(bgmScene || 'start', true); }
   });
@@ -3050,7 +3221,25 @@ function wireSeg(id, apply) {
     HP = humanFirst ? 0 : 1;
     const deckP0 = DATA.decks[humanFirst ? myDeckKey : opDeckKey];
     const deckP1 = DATA.decks[humanFirst ? opDeckKey : myDeckKey];
+    // A-01: the VS transition — matchup + first/second, ~0.9s,
+    // no button (it advances on its own, as decided). It also
+    // covers the engine-start wait, so the tap is never followed
+    // by dead time (audit C-33).
+    {
+      const dn = (k) => k === 'gg' ? 'ゲート・ガーディアン' : 'イシズ';
+      $('vssub').innerHTML = dn(myDeckKey) + ' vs ' + dn(opDeckKey) + '<br>あなたは' + (humanFirst ? '先攻' : '後攻') + 'です';
+      const vs = $('vsoverlay'); vs.classList.add('on');
+      try {
+        vs.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220, easing: 'ease-out' });
+        vs.querySelector('.bl').animate([{ transform: 'translateX(-30%) rotate(9deg)', opacity: 0 }, { transform: 'translateX(38%) rotate(9deg)', opacity: 1, offset: .55 }, { transform: 'translateX(60%) rotate(9deg)', opacity: 0 }], { duration: 900, easing: 'cubic-bezier(.2,.7,.3,1)' });
+        vs.querySelector('.br').animate([{ transform: 'translateX(30%) rotate(-9deg)', opacity: 0 }, { transform: 'translateX(-38%) rotate(-9deg)', opacity: 1, offset: .55 }, { transform: 'translateX(-60%) rotate(-9deg)', opacity: 0 }], { duration: 900, easing: 'cubic-bezier(.2,.7,.3,1)' });
+        vs.querySelector('.vst').animate([{ transform: 'scale(1.5)', opacity: 0 }, { transform: 'scale(1)', opacity: 1 }], { duration: 380, delay: 120, easing: 'cubic-bezier(.16,1.3,.3,1)' });
+      } catch (e) {}
+      await new Promise(r => setTimeout(r, 950));
+      vs.classList.remove('on');
+    }
     dismissedChains = new Set();
+    pendingTap = null; // triage-#2: no buffered tap survives into a new duel
     dismissedDuel = new Map();
     confirmTurn = -1; confirmSeq = 0; // per-turn confirmation counter restarts with the duel
     updateAutoPassChip();
@@ -3087,12 +3276,45 @@ function wireSeg(id, apply) {
     const gateMs = fxFinisherGateMs();
     if (gateMs > 0) await new Promise(r => setTimeout(r, gateMs));
     setBgmScene(st.winner === HP ? 'win' : 'lose', true);
-    $('resultTitle').textContent = st.winner === HP ? '勝利！' : '敗北';
-    $('resultDetail').textContent = 'ターン ' + stats.turns + '／決着理由：' + (st.winReason === 1 ? 'LP' : st.winReason === 2 ? 'デッキ切れ' : 'その他') +
-      '／最終LP 自分 ' + st.players[HP].lp + ' ― 相手 ' + st.players[1 - HP].lp;
+    // A-05: the result explains the ending in the player's words.
+    // LP is a quantity that ends the duel AT 0 — a negative final
+    // LP is a mid-calculation value, so it is clamped for display
+    // and the overkill is written separately.
+    const won = st.winner === HP;
+    $('resultTitle').textContent = won ? '勝利！' : '敗北';
+    const reason = st.winReason === 1
+      ? (won ? '相手のLPが0になりました' : 'あなたのLPが0になりました')
+      : st.winReason === 2
+        ? (won ? '相手のデッキが尽きました' : 'あなたのデッキが尽きました')
+        : (won ? '効果による勝利' : '効果による敗北');
+    $('resultDetail').textContent = 'ターン ' + stats.turns + ' で決着 ― ' + reason;
+    const myLp = st.players[HP].lp, opLp = st.players[1 - HP].lp;
+    const over = !won && myLp < 0 ? '（' + (-myLp) + ' の超過ダメージ）' : (won && opLp < 0 ? '（' + (-opLp) + ' の超過ダメージ）' : '');
+    $('resultSub').textContent = '最終LP 自分 ' + Math.max(0, myLp) + ' ― 相手 ' + Math.max(0, opLp) + over;
     $('result').style.display = 'flex';
   });
-  $('againbtn').addEventListener('click', () => location.reload());
+  // A-06: the two exits say what they do. Rematch keeps the start
+  // selections (decks, first/second, response mode, cut-in) and
+  // goes straight back in; title is the full reset.
+  $('againbtn').addEventListener('click', () => {
+    try { sessionStorage.setItem('v3rematch', JSON.stringify({ my: myDeckKey, op: opDeckKey, first: firstChoice })); } catch (e) {}
+    location.reload();
+  });
+  $('titlebtn').addEventListener('click', () => location.reload());
+  // A-06 rematch restore: same settings, straight back in (the VS
+  // transition still plays — it is part of starting a duel).
+  try {
+    const rm = sessionStorage.getItem('v3rematch');
+    if (rm) {
+      sessionStorage.removeItem('v3rematch');
+      const cfg = JSON.parse(rm);
+      const setSeg = (id, v) => { const el = $(id); if (!el || v == null) return; el.querySelectorAll('button').forEach(x => x.classList.toggle('sel', x.dataset.v === v)); };
+      if (cfg.my) { myDeckKey = cfg.my; setSeg('seg-mydeck', cfg.my); }
+      if (cfg.op) { opDeckKey = cfg.op; setSeg('seg-opdeck', cfg.op); }
+      if (cfg.first) { firstChoice = cfg.first; setSeg('seg-first', cfg.first); }
+      $('startbtn').click();
+    }
+  } catch (e) {}
   // start-screen BGM begins on first tap anywhere (autoplay policy)
   document.addEventListener('pointerdown', function once() {
     setBgmScene('start', true);
