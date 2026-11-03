@@ -8,6 +8,15 @@
   :root{
     --gold:#c9a227; --gold-dim:#8a6d1f; --ink:#0d0b08; --panel:#1b1712; --panel2:#241e16;
     --tile:#2a2318; --tile-edge:#4a3d22; --txt:#e8dcc0; --txt-dim:#a89878; --bad:#e06666; --ok:#7fc97f;
+    /* card-kind (original frame) colors — user request 2026-11-03.
+       --k-* are the frame hues at full strength (accent use); the
+       --k-*-d set is deepened so cream text stays readable when a
+       whole name band takes the color. Synchro's frame is light
+       silver in the original, so its band takes dark text instead. */
+    --k-spell:#25b586; --k-trap:#d156a4; --k-normal:#d3ab55; --k-effect:#cf7434;
+    --k-ritual:#5b8fd6; --k-fusion:#9a6fc4; --k-synchro:#ececf0; --k-xyz:#aeb8c8;
+    --k-spell-d:#0d4a34; --k-trap-d:#6d2150; --k-normal-d:#6e5320; --k-effect-d:#713a12;
+    --k-ritual-d:#26456f; --k-fusion-d:#452a63; --k-synchro-d:#c9c9d2; --k-xyz-d:#26262f;
     /* layout sizes — recomputed by client.js applyLayout() at duel start and
        frozen for the whole duel; these are pre-duel fallbacks */
     --sw:47px; --sh:79px; --hw:56px; --hh:90px; --pv:0px;
@@ -501,6 +510,29 @@
      two lines at 390 wide — design audit frame 06-duel-late). */
   .resultbtns .startbtn{min-height:53px;font-size:15px;padding:14px 12px;white-space:nowrap;}
   .resultbtns .subbtn{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:14px;padding:14px 12px;cursor:pointer;white-space:nowrap;}
+  /* ---- card-kind colors: PROTOTYPE (2026-11-03, awaiting the user's
+     pick — nothing is visible until a variant class is set on body).
+     The kind class only ever rides on elements that already show the
+     card's name under today's rules, so face-down visibility is
+     unchanged: an opponent's set card renders no .nm at all, and the
+     owner's set card keeps exactly its current name/veil treatment.
+     A: body.tc-full   — the whole name band takes the kind color.
+     B: body.tc-accent — the band stays black; a kind-colored core at
+        its left edge and a hairline under it carry the color. */
+  .k-spell{--kc:var(--k-spell);--kcd:var(--k-spell-d);}
+  .k-trap{--kc:var(--k-trap);--kcd:var(--k-trap-d);}
+  .k-normal{--kc:var(--k-normal);--kcd:var(--k-normal-d);}
+  .k-effect{--kc:var(--k-effect);--kcd:var(--k-effect-d);}
+  .k-ritual{--kc:var(--k-ritual);--kcd:var(--k-ritual-d);}
+  .k-fusion{--kc:var(--k-fusion);--kcd:var(--k-fusion-d);}
+  .k-synchro{--kc:var(--k-synchro);--kcd:var(--k-synchro-d);}
+  .k-xyz{--kc:var(--k-xyz);--kcd:var(--k-xyz-d);}
+  .tc-full .nm{background:var(--kcd,#000a);}
+  .tc-full .nm.k-synchro{color:#211d14;}
+  .tc-full #preview .pv-name{background:var(--kcd,transparent);color:var(--txt);padding:1px 7px;border-radius:8px;}
+  .tc-full #preview .pv-name.k-synchro{color:#211d14;}
+  .tc-accent .nm{box-shadow:inset 3px 0 0 var(--kc,transparent),inset 0 -2px 0 var(--kc,transparent);}
+  .tc-accent #preview .pv-name{border-left:4px solid var(--kc,transparent);padding-left:6px;}
 </style>
 </head>
 <body>

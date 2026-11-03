@@ -92,6 +92,27 @@ function locLabel(e) {
   }
 }
 function isMonster(code) { const d = cardData(code); return d && (d.type & 0x1); }
+// card-kind (original frame) key, derived mechanically from the core
+// type bitmask in data.json (cards[code].type) — no per-card hand
+// assignment, so every card in the pool is covered (user request
+// 2026-11-03: kind colors on the name band). Priority: spell/trap,
+// then the extra-deck kinds, ritual, plain normal (TYPE_NORMAL
+// without TYPE_EFFECT); any other monster is an effect monster.
+// '' when the card is unknown, so unclassed bands keep today's look.
+function cardKind(code) {
+  const d = cardData(code); if (!d) return '';
+  const t = d.type | 0;
+  if (t & 0x2) return 'spell';
+  if (t & 0x4) return 'trap';
+  if (t & 0x40) return 'fusion';
+  if (t & 0x2000) return 'synchro';
+  if (t & 0x800000) return 'xyz';
+  if (t & 0x80) return 'ritual';
+  if ((t & 0x10) && !(t & 0x20)) return 'normal';
+  if (t & 0x1) return 'effect';
+  return '';
+}
+function kindCls(code) { const k = cardKind(code); return k ? ' k-' + k : ''; }
 function statsLine(code) {
   const d = cardData(code); if (!d || !(d.type & 0x1)) return '';
   return '攻' + d.atk + '／守' + d.def;
@@ -3038,7 +3059,7 @@ function tileHTML(card, con, actKey, loc) {
     // tile reads as two overlapping cards (user report 2026-11-03).
     '<div class="inner"><div class="art"' + (showFace && card.code != null ? artInline(card.code) : '') + '></div>' +
     (ownSet ? '<div class="veil"></div>' : '') +
-    (nm ? '<div class="nm">' + nm + '</div>' : '') +
+    (nm ? '<div class="nm' + kindCls(card.code) + '">' + nm + '</div>' : '') +
     '</div></div>';
 }
 // ATK/DEF strip rendered at the SLOT level — outside the card frame, with
@@ -3156,7 +3177,7 @@ function render(state) {
       : '<div class="hstats"></div>';
     return '<div class="hcard' + act + '" data-act="' + key + '"' + (c.code != null ? ' data-code="' + c.code + '"' : '') + '>' +
       (c.code != null && handCounts[c.code] > 1 ? '<div class="cnt">×' + handCounts[c.code] + '</div>' : '') +
-      '<div class="himg"' + (c.code != null ? artInline(c.code) : '') + '><div class="nm">' + (c.code != null ? cardName(c.code) : '？') + '</div></div>' + st + '</div>';
+      '<div class="himg"' + (c.code != null ? artInline(c.code) : '') + '><div class="nm' + (c.code != null ? kindCls(c.code) : '') + '">' + (c.code != null ? cardName(c.code) : '？') + '</div></div>' + st + '</div>';
   }).join('');
   // opponent hand = backs in topbar only (count); chain bar
   const cb = $('chainbar');
@@ -3875,7 +3896,7 @@ function gridSheet(o) {
       // already lives on the disabled confirm button's label.)
       (tray ? '<div id="tray">' + tray + '</div>' : '<div id="tray"></div>') +
       '<div class="grid">' + o.cards.map((c, i) =>
-        '<div class="gcard' + (o.selected.has(i) ? ' sel' : '') + '" data-grid="' + i + '"' + artInline(c.code) + '><button class="gdetail" data-gdetail="' + i + '">詳細</button><div class="loc">' + c.locLabel + '</div><div class="nm">' + cardName(c.code) + (c.extra ? ' ' + c.extra : '') + '</div>' +
+        '<div class="gcard' + (o.selected.has(i) ? ' sel' : '') + '" data-grid="' + i + '"' + artInline(c.code) + '><button class="gdetail" data-gdetail="' + i + '">詳細</button><div class="loc">' + c.locLabel + '</div><div class="nm' + kindCls(c.code) + '">' + cardName(c.code) + (c.extra ? ' ' + c.extra : '') + '</div>' +
         (statsLine(c.code) ? '<div class="stats">' + statsLine(c.code) + '</div>' : '') +
         (o.showText && cardText(c.code) ? '<div class="itext">' + cardText(c.code) + '</div>' : '') + '</div>').join('') + '</div>' +
       '<div class="btnrow"><button class="bigbtn" id="grid-confirm" ' + (o.valid() ? '' : 'disabled') + '>' + (o.valid() ? (o.confirmLabel || '決定') : (o.needLabel ? o.needLabel() : (o.confirmLabel || '決定'))) + '</button>' +
@@ -3962,7 +3983,7 @@ function uiUnselect(prompt, state) {
   if (prompt.finishable && selCount > 0) hint += 'やめる場合は選択をすべて外してください。';
   sheetOpen('<div class="ttl">カードの選択</div><div class="sub">' + prompt.min + '〜' + prompt.max + ' 枚（現在 ' + selCount + ' 枚選択中）。タップで選択／解除します。' + (hint ? ' ' + hint : '') + '</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
     '<div class="grid">' + combined.map((x, k) =>
-      '<div class="gcard' + (x.sel ? ' sel' : '') + '" data-unselect="' + x.idx + '"' + artInline(x.c.code) + '><button class="gdetail" data-uinfo="' + k + '">詳細</button><div class="loc">' + locLabel(x.c) + '</div><div class="nm">' + cardName(x.c.code) + '</div>' +
+      '<div class="gcard' + (x.sel ? ' sel' : '') + '" data-unselect="' + x.idx + '"' + artInline(x.c.code) + '><button class="gdetail" data-uinfo="' + k + '">詳細</button><div class="loc">' + locLabel(x.c) + '</div><div class="nm' + kindCls(x.c.code) + '">' + cardName(x.c.code) + '</div>' +
       (statsLine(x.c.code) ? '<div class="stats">' + statsLine(x.c.code) + '</div>' : '') +
       (cardText(x.c.code) ? '<div class="itext">' + cardText(x.c.code) + '</div>' : '') + '</div>').join('') + '</div>' +
     '<div class="btnrow">' +
@@ -4217,7 +4238,7 @@ function uiAnnounceCard(prompt, state) {
   const draw = () => {
     sheetOpen('<div class="ttl">カードの宣言</div>' + contextLineHTML(prompt) +
       '<div class="sub">宣言するカードをタップで選び、「宣言する」を押してください。</div>' + retryWarn(prompt) +
-      '<div class="grid">' + pool.map(code => '<div class="gcard' + (chosen === code ? ' sel' : '') + '" data-code="' + code + '"' + artInline(code) + '><button class="gdetail" data-acinfo="' + code + '">詳細</button><div class="nm">' + cardName(code) + '</div></div>').join('') + '</div>' +
+      '<div class="grid">' + pool.map(code => '<div class="gcard' + (chosen === code ? ' sel' : '') + '" data-code="' + code + '"' + artInline(code) + '><button class="gdetail" data-acinfo="' + code + '">詳細</button><div class="nm' + kindCls(code) + '">' + cardName(code) + '</div></div>').join('') + '</div>' +
       '<div class="btnrow"><button class="bigbtn" id="announce-ok" ' + (chosen == null ? 'disabled' : '') + '>' + (chosen == null ? '宣言する' : '《' + cardName(chosen) + '》を宣言する') + '</button></div>');
     $('sheet').querySelectorAll('[data-code]').forEach(g => g.addEventListener('click', (ev) => {
       if (ev.target.closest('[data-acinfo]')) return;
@@ -4819,7 +4840,7 @@ function renderPreview() {
   if (sig === previewState.sig) return; // no DOM churn on unrelated re-renders
   previewState.sig = sig;
   el.innerHTML = '<div class="pv-art"' + artInline(previewState.code) + '></div><div class="pv-body">' +
-    '<div class="pv-top"><span class="pv-name">' + cardName(previewState.code) + '</span>' +
+    '<div class="pv-top"><span class="pv-name' + kindCls(previewState.code) + '">' + cardName(previewState.code) + '</span>' +
     (stats ? '<span class="pv-stats">' + stats + '</span>' : '') +
     (compact && previewState.reason ? '<span class="pv-reason-inline">' + previewState.reason + '</span>' : '') + '</div>' +
     '<div class="pv-meta">' + cardMetaLine(previewState.code, card ? (card.materials || 0) : null) + '</div>' +

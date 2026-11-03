@@ -1,0 +1,210 @@
+{
+ "620": {
+  "tc-full": {
+   "tileEffect": {
+    "cls": "nm k-effect",
+    "bg": "rgb(113, 58, 18)",
+    "shadow": "none",
+    "color": "rgb(232, 220, 192)"
+   },
+   "tileFusion": {
+    "cls": "nm k-fusion",
+    "bg": "rgb(69, 42, 99)",
+    "shadow": "none",
+    "color": "rgb(232, 220, 192)"
+   },
+   "tileSynchro": {
+    "cls": "nm k-synchro",
+    "bg": "rgb(201, 201, 210)",
+    "shadow": "none",
+    "color": "rgb(33, 29, 20)"
+   },
+   "tileXyz": {
+    "cls": "nm k-xyz",
+    "bg": "rgb(38, 38, 47)",
+    "shadow": "none",
+    "color": "rgb(232, 220, 192)"
+   },
+   "tileSpell": {
+    "cls": "nm k-spell",
+    "bg": "rgb(13, 74, 52)",
+    "shadow": "none",
+    "color": "rgb(232, 220, 192)"
+   },
+   "tileTrap": {
+    "cls": "nm k-trap",
+    "bg": "rgb(109, 33, 80)",
+    "shadow": "none",
+    "color": "rgb(232, 220, 192)"
+   },
+   "oppDownNm": 0,
+   "handTrap": {
+    "cls": "nm k-trap",
+    "bg": "rgb(109, 33, 80)",
+    "shadow": "none",
+    "color": "rgb(232, 220, 192)"
+   },
+   "pvName": {
+    "cls": "pv-name k-fusion",
+    "bg": "rgb(69, 42, 99)",
+    "shadow": "none",
+    "color": "rgb(232, 220, 192)"
+   }
+  },
+  "tc-accent": {
+   "tileEffect": {
+    "cls": "nm k-effect",
+    "bg": "rgba(0, 0, 0, 0.667)",
+    "shadow": "rgb(207, 116, 52) 3px 0px 0px 0px inset, rgb(207, 116, 52) 0",
+    "color": "rgb(232, 220, 192)"
+   },
+   "tileFusion": {
+    "cls": "nm k-fusion",
+    "bg": "rgba(0, 0, 0, 0.667)",
+    "shadow": "rgb(154, 111, 196) 3px 0px 0px 0px inset, rgb(154, 111, 196)",
+    "color": "rgb(232, 220, 192)"
+   },
+   "tileSynchro": {
+    "cls": "nm k-synchro",
+    "bg": "rgba(0, 0, 0, 0.667)",
+    "shadow": "rgb(236, 236, 240) 3px 0px 0px 0px inset, rgb(236, 236, 240)",
+    "color": "rgb(232, 220, 192)"
+   },
+   "tileXyz": {
+    "cls": "nm k-xyz",
+    "bg": "rgba(0, 0, 0, 0.667)",
+    "shadow": "rgb(174, 184, 200) 3px 0px 0px 0px inset, rgb(174, 184, 200)",
+    "color": "rgb(232, 220, 192)"
+   },
+   "tileSpell": {
+    "cls": "nm k-spell",
+    "bg": "rgba(0, 0, 0, 0.667)",
+    "shadow": "rgb(37, 181, 134) 3px 0px 0px 0px inset, rgb(37, 181, 134) 0",
+    "color": "rgb(232, 220, 192)"
+   },
+   "tileTrap": {
+    "cls": "nm k-trap",
+    "bg": "rgba(0, 0, 0, 0.667)",
+    "shadow": "rgb(209, 86, 164) 3px 0px 0px 0px inset, rgb(209, 86, 164) 0",
+    "color": "rgb(232, 220, 192)"
+   },
+   "oppDownNm": 0,
+   "handTrap": {
+    "cls": "nm k-trap",
+    "bg": "rgba(0, 0, 0, 0.667)",
+    "shadow": "rgb(209, 86, 164) 3px 0px 0px 0px inset, rgb(209, 86, 164) 0",
+    "color": "rgb(232, 220, 192)"
+   },
+   "pvName": {
+    "cls": "pv-name k-fusion",
+    "bg": "rgba(0, 0, 0, 0)",
+    "shadow": "none",
+    "color": "rgb(201, 162, 39)"
+   }
+  }
+ },
+ "700": {
+  "tc-full": {
+   "tileEffect": {
+    "cls": "nm k-effect",
+    "bg": "rgb(113, 58, 18)",
+    "shadow": "none",
+    "color": "rgb(232, 220, 192)"
+   },
+   "tileFusion": {
+    "cls": "nm k-fusion",
+    "bg": "rgb(69, 42, 99)",
+    "shadow": "none",
+    "color": "rgb(232, 220, 192)"
+   },
+   "tileSynchro": {
+    "cls": "nm k-synchro",
+    "bg": "rgb(201, 201, 210)",
+    "shadow": "none",
+    "color": "rgb(33, 29, 20)"
+   },
+   "tileXyz": {
+    "cls": "nm k-xyz",
+    "bg": "rgb(38, 38, 47)",
+    "shadow": "none",
+    "color": "rgb(232, 220, 192)"
+   },
+   "tileSpell": {
+    "cls": "nm k-spell",
+    "bg": "rgb(13, 74, 52)",
+    "shadow": "none",
+    "color": "rgb(232, 220, 192)"
+   },
+   "tileTrap": {
+    "cls": "nm k-trap",
+    "bg": "rgb(109, 33, 80)",
+    "shadow": "none",
+    "color": "rgb(232, 220, 192)"
+   },
+   "oppDownNm": 0,
+   "handTrap": {
+    "cls": "nm k-trap",
+    "bg": "rgb(109, 33, 80)",
+    "shadow": "none",
+    "color": "rgb(232, 220, 192)"
+   },
+   "pvName": {
+    "cls": "pv-name k-fusion",
+    "bg": "rgb(69, 42, 99)",
+    "shadow": "none",
+    "color": "rgb(232, 220, 192)"
+   }
+  },
+  "tc-accent": {
+   "tileEffect": {
+    "cls": "nm k-effect",
+    "bg": "rgba(0, 0, 0, 0.667)",
+    "shadow": "rgb(207, 116, 52) 3px 0px 0px 0px inset, rgb(207, 116, 52) 0",
+    "color": "rgb(232, 220, 192)"
+   },
+   "tileFusion": {
+    "cls": "nm k-fusion",
+    "bg": "rgba(0, 0, 0, 0.667)",
+    "shadow": "rgb(154, 111, 196) 3px 0px 0px 0px inset, rgb(154, 111, 196)",
+    "color": "rgb(232, 220, 192)"
+   },
+   "tileSynchro": {
+    "cls": "nm k-synchro",
+    "bg": "rgba(0, 0, 0, 0.667)",
+    "shadow": "rgb(236, 236, 240) 3px 0px 0px 0px inset, rgb(236, 236, 240)",
+    "color": "rgb(232, 220, 192)"
+   },
+   "tileXyz": {
+    "cls": "nm k-xyz",
+    "bg": "rgba(0, 0, 0, 0.667)",
+    "shadow": "rgb(174, 184, 200) 3px 0px 0px 0px inset, rgb(174, 184, 200)",
+    "color": "rgb(232, 220, 192)"
+   },
+   "tileSpell": {
+    "cls": "nm k-spell",
+    "bg": "rgba(0, 0, 0, 0.667)",
+    "shadow": "rgb(37, 181, 134) 3px 0px 0px 0px inset, rgb(37, 181, 134) 0",
+    "color": "rgb(232, 220, 192)"
+   },
+   "tileTrap": {
+    "cls": "nm k-trap",
+    "bg": "rgba(0, 0, 0, 0.667)",
+    "shadow": "rgb(209, 86, 164) 3px 0px 0px 0px inset, rgb(209, 86, 164) 0",
+    "color": "rgb(232, 220, 192)"
+   },
+   "oppDownNm": 0,
+   "handTrap": {
+    "cls": "nm k-trap",
+    "bg": "rgba(0, 0, 0, 0.667)",
+    "shadow": "rgb(209, 86, 164) 3px 0px 0px 0px inset, rgb(209, 86, 164) 0",
+    "color": "rgb(232, 220, 192)"
+   },
+   "pvName": {
+    "cls": "pv-name k-fusion",
+    "bg": "rgba(0, 0, 0, 0)",
+    "shadow": "none",
+    "color": "rgb(201, 162, 39)"
+   }
+  }
+ }
+}
