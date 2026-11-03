@@ -3618,3 +3618,52 @@ test-poolcov D asserts the scan finds EXACTLY this set:
   「《マジックカード「死者蘇生」》の効果で特殊召喚されたため、
   このターンは効果を発動できません」 (screenshot eyeballed).
 - Still unmeasured: sound feel, real-device WKWebView.
+
+## Log-history button triage (2026-11-03): the 履歴 button was dead under any open prompt
+
+User report (real device): 履歴のログが見れない — the button is
+pressed and NOTHING happens; the modal never gets a chance to open.
+
+Reproduction (cap-loghist.js, real Chromium, 390x700, own main
+phase): the button is rendered in the idle chain bar,
+elementFromPoint at its centre IS #loghistbtn (nothing covers
+it), logHist.length > 0, sheet/dock closed — and a real
+touchscreen tap changes nothing. probe-guard.js isolates the
+single variable: openLogHistory() with a prompt open -> sheet
+stays closed; the same call in a no-prompt gap -> sheet opens
+with all rows.
+
+Root cause: openLogHistory() opened with
+`if (currentPrompt || !logHist.length) return;`. uiAnswer sets
+currentPrompt for EVERY human prompt, and SELECT_IDLECMD /
+SELECT_BATTLECMD stay open for the player's whole turn — so the
+guard silently swallowed the tap at every moment the button
+would actually be used. It only ever worked in the brief
+processing gaps between prompts, which is how the B-10 round
+verified it (test clickers run in gaps) while the real-device
+path was dead ~always. It is the only view sheet with such a
+guard: pile sheets and the menu sheet open over a live prompt.
+
+Fix (client.js):
+- openLogHistory no longer gates on currentPrompt. A view sheet
+  is read-only, overlays the board and never answers the pending
+  prompt; an arriving sheet prompt reclaims the sheet via
+  sheetOpen. Still blocked: no log entries yet, a sheet already
+  open, or the dock open (those prompts live there).
+- Tap target: the button alone is 40x19 px inside the frozen
+  21 px band. The whole log strip now opens the history — the
+  履歴 button, the previous-event text (.prevlog) in the idle
+  chain bar, and the latest log line (#logline). No layout
+  change (the band height is frozen by the board-fit contract).
+
+Regression: v2/test-loghist.js (jsdom) boots the real client,
+holds the human's first SELECT_IDLECMD with a non-empty log —
+the exact dead state — and asserts: button click opens the
+history sheet with rows; 盤面に戻る closes it; the idle prompt
+is still pending afterwards; the log line opens it too; the
+view-sheet x closes it; the duel continues. ALL PASS.
+Frame evidence (real Chromium, real taps): shots-logfix/ —
+repro-700-* (before fix: tap, nothing), fixed-700-* /
+fixed-620-* (after fix), deep2-700-* (11 rows, sheet eyeballed:
+title, 直近 11 件, turn-tagged rows newest-first, 盤面に戻る).
+Still unmeasured: real-device WKWebView tap behaviour.

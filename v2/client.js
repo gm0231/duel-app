@@ -2867,7 +2867,17 @@ function captureLog(state) {
   logPrev = cur.slice();
 }
 function openLogHistory() {
-  if (currentPrompt || !logHist.length) return;
+  // B-10 fix (2026-11-03, user report: 履歴ボタンが押しても何も
+  // 起きない): do NOT gate on currentPrompt. SELECT_IDLECMD /
+  // SELECT_BATTLECMD stay open for the player's whole turn, so the
+  // old blanket guard silently swallowed the tap at every moment
+  // it would actually be used. A view sheet is read-only, overlays
+  // the board and never answers the pending prompt — the pile
+  // sheets and the menu sheet already open over a live prompt the
+  // same way, and an arriving sheet prompt reclaims the sheet via
+  // sheetOpen. What still blocks: a sheet or the dock already
+  // owning the screen (those prompts live there).
+  if (!logHist.length) return;
   if ($('sheetwrap').classList.contains('on') || $('dock').className === 'on') return;
   const rows = logHist.slice(-30).reverse().map(e =>
     '<div class="loghistrow"><span class="lt">T' + Math.max(1, e.turn) + '</span>' + e.text + '</div>').join('');
@@ -3801,7 +3811,12 @@ function uiFallback(prompt, state) {
 $('autopass').addEventListener('click', () => { playClick(); openDismissManager(); });
 $('preview').addEventListener('click', () => { if (previewState) { playClick(); openCardInfo(previewState.code); } });
 document.addEventListener('click', (ev) => {
-  if (ev.target.closest('#loghistbtn')) { playClick(); openLogHistory(); return; }
+  // B-10: the whole log strip is the history target — the 履歴
+  // button, the previous-event text in the idle chain bar, and the
+  // latest log line below it. The button alone is a 40x19 px
+  // target; the strip is what the player actually sees as "the
+  // log", and taps landing on its text went nowhere.
+  if (ev.target.closest('#loghistbtn') || ev.target.closest('#logline') || ev.target.closest('#chainbar .prevlog')) { playClick(); openLogHistory(); return; }
   // preview follows the player's taps (hand cards always; field zones when
   // not placing) — it never consumes the tap, the handlers below still run
   const handEl = ev.target.closest('#hand .hcard');
