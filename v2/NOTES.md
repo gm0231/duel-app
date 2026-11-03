@@ -3126,6 +3126,36 @@ v4shots2/r3-finisher2 (charge/cut-in, impact bloom at the LP
 plate, wash decay, result after the gate — verified by eye).
 Zero pageerrors over a 480 s fusion-mirror run (v4err.js).
 
+## V4 polish — Round 4: rasterized backdrops + close-out (2026-11-03)
+
+The rotating conic backdrops (ace L8 + streaks, finisher swirl)
+and the finisher's 720 px wash were the repaint cost both the
+stage-0 and R3 distributions kept flagging: DOM gradient layers
+re-laid-out/repainted on every frame of their windows. They are
+now pre-rendered once per (colour, pattern) into offscreen
+rasters (fxConicRaster / fxDiscRaster, cached) and only drawn
+rotated / scaled on the FX canvas. Everything else about the
+scenes — envelopes, rates, colours — is unchanged, and the
+frame strips (v4shots2/r4-ace, r4-finisher) show the same look.
+Final measurement (mix 700, latest of three R4 samples;
+baseline >33.4ms 0.5%): attack 0.0%, portal 0.0%, chainpop and
+chainsolve ~0.5% (R2 run), finisher 2.6% (max 66.6; stage 0 was
+4.0% with ~350 ms spikes; the wash raster alone moved it from
+7.5% to 2.6% between two samples of the same day), ace 2.9%
+(max 83.4; stage 0: 7.0%). Run-to-run variance in this
+software-rendered harness is large (one R4 sample had a 1.6%
+baseline and proportionally worse scenes) and the two long
+scenes also absorb prompt/engine work that overlaps them, so
+the ace hold and the finisher drain remain above the 1% target
+ON THIS HARNESS; real-device (WKWebView, GPU-composited) fps is
+unmeasured by design and stays on the brushup loop's list.
+Still owed (capture luck, not defects): a monster-vs-monster
+attack strip (the destroyed-monster ghost cross-fade) and a
+link-2 chain-pop strip (CHAIN word + cord) — clicker duels
+produce direct attacks / prompt-suspended attacks and one-link
+chains only; both paths are covered structurally and by
+test-fx. All 18 suites pass.
+
 ### Merge with audit-27 (aafefea) — conflict resolution record
 feat/v4-polish (from f288d69) and audit-27 (also from f288d69)
 landed in parallel. client.js / index.html auto-merged (disjoint

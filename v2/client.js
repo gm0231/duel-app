@@ -904,6 +904,47 @@ function fxRingSprite(col, wf) {
   g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
   return c;
 }
+// V4 R4: rotating conic backdrops are pre-rendered ONCE into an
+// offscreen raster per (colour, pattern) and thereafter only
+// rotated on the canvas — the DOM versions forced a full repaint
+// of a 430-520 px gradient layer on every frame, which the stage-0
+// and R3 distributions both identified as the ace/finisher cost.
+const fxRasterCache = {};
+function fxConicRaster(col, size, onDeg, periodDeg, alpha) {
+  const key = col + '|' + size + '|' + onDeg + '|' + periodDeg + '|' + alpha;
+  if (fxRasterCache[key]) return fxRasterCache[key];
+  const cv = document.createElement('canvas'); cv.width = size; cv.height = size;
+  const c2 = cv.getContext && cv.getContext('2d');
+  if (c2) {
+    c2.fillStyle = col; c2.globalAlpha = alpha;
+    const cx = size / 2;
+    for (let a = 0; a < 360; a += periodDeg) { // CSS conic 'from 0deg' = from the top, clockwise
+      c2.beginPath(); c2.moveTo(cx, cx);
+      c2.arc(cx, cx, cx, (a - 90) * Math.PI / 180, (a + onDeg - 90) * Math.PI / 180);
+      c2.closePath(); c2.fill();
+    }
+  }
+  fxRasterCache[key] = cv; return cv;
+}
+function fxDrawRotRaster(ctx, cv, cx, cy, rotDeg, alpha) {
+  if (!(alpha > 0) || !cv || !cv.width) return;
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(rotDeg * Math.PI / 180);
+  ctx.globalAlpha = Math.min(1, alpha);
+  ctx.drawImage(cv, -cv.width / 2, -cv.height / 2);
+  ctx.restore(); ctx.globalAlpha = 1;
+}
+function fxDiscRaster(col, size) { // radial wash disc: solid to 30%, gone by 68%
+  const key = 'disc|' + col + '|' + size;
+  if (fxRasterCache[key]) return fxRasterCache[key];
+  const cv = document.createElement('canvas'); cv.width = size; cv.height = size;
+  const c2 = cv.getContext && cv.getContext('2d');
+  if (c2) {
+    const g = c2.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    g.addColorStop(0, col); g.addColorStop(.30, col); g.addColorStop(.68, 'rgba(0,0,0,0)');
+    c2.fillStyle = g; c2.fillRect(0, 0, size, size);
+  }
+  fxRasterCache[key] = cv; return cv;
+}
 function fxDrawGlow(ctx, x, y, r, col, alpha, additive) {
   if (!(r > 0) || !(alpha > 0)) return;
   if (additive !== false) ctx.globalCompositeOperation = 'lighter';
@@ -1640,9 +1681,7 @@ function fxFinisherSceneV3(attr) {
   host.innerHTML = ''; host.className = 'on';
   const hmk = (cls) => { const d = document.createElement('div'); d.className = cls; host.appendChild(d); nodes.push(d); return d; };
   const scrim = hmk('scrim'); scrim.style.opacity = '0';
-  const bg = hmk('fx3-acebg');
-  bg.style.background = 'repeating-conic-gradient(from 0deg,' + col + '2e 0deg 14deg,transparent 14deg 30deg)';
-  bg.style.opacity = '0';
+  // (the swirl backdrop is a rotating raster in drawTop, R4 — no DOM layer)
   const vw = Math.min(window.innerWidth || 390, 430);
   const cw = Math.round(Math.min(250, vw * 0.62)), chh = Math.round(cw * 1.38);
   const card = hmk('bigcard');
@@ -1656,12 +1695,10 @@ function fxFinisherSceneV3(attr) {
   beam.style.left = la.aPt.cx + 'px'; beam.style.top = la.aPt.cy + 'px'; beam.style.width = len + 'px'; beam.style.opacity = '0';
   beam.innerHTML = '<div class="gl"></div><div class="cl"></div>';
   host.appendChild(beam); nodes.push(beam);
-  const wash = hmk('fx3-wash');
-  wash.style.left = (lpPt.cx - 360) + 'px'; wash.style.top = (lpPt.cy - 360) + 'px'; wash.style.width = '720px'; wash.style.height = '720px';
-  wash.style.background = 'radial-gradient(circle,' + washCol + ' 0%,' + washCol + ' 30%,transparent 68%)'; wash.style.opacity = '0';
+  // (the wash is drawn in drawTop as a scaled disc raster, R4)
   const appEl = app;
   const sc = fxAddScene({
-    kind: 'finisher', dur: 2900, winTop: [[110, 720], [1400, 2400]],
+    kind: 'finisher', dur: 2900, winTop: [[110, 2400]],
     cues: [
       { at: 1200, fn: () => playSe((ATTR_SE && ATTR_SE[attr]) || 'atk_sword_big') },  // launch
       { at: 1420, fn: () => { fxHitStop(110); playSe('hit_critical'); } },          // impact
@@ -1670,6 +1707,9 @@ function fxFinisherSceneV3(attr) {
     // bloom, the wash's second source + the contracting last-light
     // ring, and the result's gold bloom — all on the top canvas.
     drawTop(ctx, t) {
+      // V4 R4: the rotating swirl backdrop as a pre-rendered raster
+      const bgA = .8 * fxSeg(t, 500, 900) * (1 - fxSeg(t, 2100, 2400));
+      if (bgA > 0) fxDrawRotRaster(ctx, fxConicRaster(col, 430, 14, 30, .18), ar.cx, ar.y + ar.h * 0.40, (t * 12 / 1000) % 360, bgA);
       const tier2 = fxSeg(t, 120, 420);
       if (tier2 > 0) fxDrawGlow(ctx, la.aPt.cx, la.aPt.cy, fxLerp(54, 84, tier2), col, .45 * tier2 * (1 - fxSeg(t, 500, 700)));
       if (t >= 1400 && t < 1700) { // impact bloom at the LP plate
@@ -1680,7 +1720,21 @@ function fxFinisherSceneV3(attr) {
           fxDrawGlow(ctx, lpPt.cx, lpPt.cy, 130, col, .32 * a);
         }
       }
-      if (t >= 1420 && t < 2400) { // the wash gets a second source at screen centre
+      if (t >= 1420 && t < 2400) {
+        // L6 wash (R4: a scaled disc raster — the DOM wash was a
+        // 720 px gradient repainted on every frame of its window)
+        let wa = 0;
+        if (t < 1530) wa = fxSeg(t, 1420, 1530);
+        else if (t < 1750) wa = 1;
+        else wa = 1 - FXE.washOut(fxSeg(t, 1750, 2400));
+        if (wa > 0) {
+          const ws = 0.55 + 0.45 * FXE.outCubic(fxSeg(t, 1420, 1900));
+          ctx.save(); ctx.translate(lpPt.cx, lpPt.cy); ctx.scale(ws, ws);
+          ctx.globalAlpha = wa * 0.95;
+          ctx.drawImage(fxDiscRaster(washCol, 720), -360, -360);
+          ctx.restore(); ctx.globalAlpha = 1;
+        }
+        // the wash gets a second source at screen centre
         const wu = fxSeg(t, 1420, 2400);
         fxDrawGlow(ctx, ar.cx, ar.y + ar.h * 0.45, 190, col, .30 * Math.pow(1 - wu, 1.6));
       }
@@ -1702,7 +1756,7 @@ function fxFinisherSceneV3(attr) {
       // translucent; opacity scales it), background swirl fades in
       // and turns, the card scales in (settle) by +250
       if (scrim) scrim.style.opacity = String(0.85 * fxSeg(t, 500, 750) * (1 - fxSeg(t, 2100, 2400)));
-      if (bg) { bg.style.opacity = String(0.8 * fxSeg(t, 500, 900) * (1 - fxSeg(t, 2100, 2400))); bg.style.transform = 'rotate(' + ((t * 12 / 1000) % 360).toFixed(1) + 'deg)'; }
+      // (backdrop: drawTop raster)
       if (card) {
         const u = FXE.settle(fxSeg(t, 500, 750));
         card.style.transform = 'translate(-50%,-50%) scale(' + (0.7 + 0.3 * u).toFixed(3) + ')';
@@ -1717,14 +1771,7 @@ function fxFinisherSceneV3(attr) {
       // L5: the impact flash is the drawTop three-tier bloom now
       // L6 wash 1420-2400: radial from the origin; peak 1530, held
       // to 1750, washOut decay to FULLY GONE at 2400
-      if (wash) {
-        let a = 0;
-        if (t >= 1420 && t < 1530) a = fxSeg(t, 1420, 1530);
-        else if (t >= 1530 && t < 1750) a = 1;
-        else if (t >= 1750 && t < 2400) a = 1 - FXE.washOut(fxSeg(t, 1750, 2400));
-        wash.style.opacity = String(a * 0.95);
-        wash.style.transform = 'scale(' + (0.55 + 0.45 * FXE.outCubic(fxSeg(t, 1420, 1900))).toFixed(3) + ')';
-      }
+      // (L6 wash: drawn in drawTop as a scaled disc raster, R4)
       // L7 tilt 1420-2050: V4 decaying recovery — the frame leans
       // 0.5 degrees, overshoots +0.10 the other way, and settles
       if (appEl) {
@@ -2044,8 +2091,7 @@ function fxAceSceneV3(o) {
   host.innerHTML = ''; host.className = 'on';
   const hmk = (cls) => { const n2 = document.createElement('div'); n2.className = cls; host.appendChild(n2); nodes.push(n2); return n2; };
   const scrim = hmk('scrim'); scrim.style.opacity = '0'; // L7
-  const bg = hmk('fx3-acebg'); bg.style.background = 'repeating-conic-gradient(from 0deg,' + cols[0] + '30 0deg 14deg,transparent 14deg 30deg)'; bg.style.opacity = '0'; // L8
-  const streaks = hmk('fx3-acestreaks'); streaks.style.background = 'repeating-conic-gradient(from 0deg,rgba(255,240,200,.14) 0deg 2deg,transparent 2deg 18deg)'; streaks.style.opacity = '0'; // L8
+  // L8 backdrop + streaks: V4 R4 — drawn as rotating rasters in drawTop, no DOM layers
   const vw = Math.min(window.innerWidth || 390, 430);
   const cw = Math.round(Math.min(250, vw * 0.62)), chh = Math.round(cw * 1.38);
   const after1 = hmk('bigcard'); after1.style.width = cw + 'px'; after1.style.height = chh + 'px'; after1.style.opacity = '0'; after1.style.filter = 'brightness(1.5) saturate(1.3)'; // L9 V4 afterimages, 55/120 ms behind the card
@@ -2066,7 +2112,7 @@ function fxAceSceneV3(o) {
   fxSpawnBurst('top', { seed: (Math.random() * 1e9) | 0, o: [ccx, ccy + 40], n: 26, t0: fxTimeMs + 1300, life: [1800, 2600], speed: [8, 26], ang: [-Math.PI / 2, .9], grav: -14, dragK: .4, size: [2, 5], cols: [cols[0], '#ffffff'], delayMax: 800, alpha: .55 }); // L14
   const portalAngle = (te) => { const ds = (te - 300) / 1000; if (ds <= 0) return 0; if (ds < 0.4) return 625 * ds * ds; return 100 + 500 * (ds - 0.4); };
   const sc = fxAddScene({
-    kind: 'ace', dur: 4600, winLow: [[140, 1200], [4150, 4600]], winTop: [[1400, 4600]],
+    kind: 'ace', dur: 4600, winLow: [[140, 1200], [4150, 4600]], winTop: [[740, 4600]],
     cues: [{ at: 700, fn: () => playSe('summon_big') }], // L6 is the SE sync point A (the landing sound of the special summon)
     // V4 (proposal 追記 V4-1): the light layers — funnel core + rim
     // at the zone, material heat, the 700 ms three-tier flash bloom
@@ -2097,6 +2143,15 @@ function fxAceSceneV3(o) {
     },
     drawTop(ctx, t) {
       const te = sc.skipLocal != null && t > sc.skipLocal ? 3900 + (t - sc.skipLocal) : t;
+      // V4 R4: the swirl backdrop + counter-rotating streaks as
+      // canvas rasters (they were DOM conic layers — the repaint
+      // cost the distributions kept flagging in the hold phase)
+      const bgIn = fxSeg(te, 750, 1100), bgOut = 1 - fxSeg(te, 3900, 4200);
+      if (bgIn > 0 && bgOut > 0) {
+        const rotTe = Math.min(te, 3900);
+        fxDrawRotRaster(ctx, fxConicRaster(cols[0], 430, 14, 30, .19), ccx, ccy, ((rotTe - 750) * 12 / 1000) % 360, .85 * bgIn * bgOut);
+        fxDrawRotRaster(ctx, fxConicRaster('#fff0c8', 520, 2, 18, .14), ccx, ccy, -((rotTe - 750) * 6 / 1000) % 360, .7 * bgIn * bgOut);
+      }
       if (te < 1400) return;
       const cardOp = fxSeg(te, 900, 1030) * (1 - fxSeg(te, 3900, 4200));
       if (cardOp <= 0) return;
@@ -2144,8 +2199,7 @@ function fxAceSceneV3(o) {
       const holdOut = 1 - fxSeg(te, 3900, 4200);
       const rotTe = Math.min(te, 3900);
       if (scrim) scrim.style.opacity = String(0.78 * fxSeg(te, 750, 1000) * (1 - fxSeg(te, 3980, 4200)));
-      if (bg) { bg.style.opacity = String(0.85 * fxSeg(te, 750, 1100) * holdOut); bg.style.transform = 'rotate(' + (((rotTe - 750) * 12 / 1000) % 360).toFixed(1) + 'deg)'; }
-      if (streaks) { streaks.style.opacity = String(0.7 * fxSeg(te, 750, 1100) * holdOut); streaks.style.transform = 'rotate(' + (-((rotTe - 750) * 6 / 1000) % 360).toFixed(1) + 'deg)'; }
+      // (the swirl backdrop is drawn in drawTop as rasters, R4)
       // L9/L15/L16: card settles in (its breathing glow is the
       // drawTop canvas now) and sinks 6 px as it exits
       if (card) {
