@@ -102,18 +102,90 @@ function resolveEffect(code, desc) {
   const m = FXMAP[code];
   if (!m) return null;
   const segs = effectSegments(code);
+  // A mapped/identity index names its effect outright — checked
+  // FIRST (pool-coverage round): a hand-audited map may sit on an
+  // index equal to m.n (Pluto's only described idx is 1 with n=1),
+  // and such an index is a real activation, never a follow-up.
+  let n = 0;
+  if (m.map) n = m.map[de.idx] || 0;
+  else if (m.id && de.idx < m.n) n = de.idx + 1;
+  if (n) {
+    const seg = segs.find(s => s.n === n);
+    if (seg) return { n: seg.n, body: seg.body };
+  }
   // follow-up yes/no (index == the card's described-effect count).
   // Only for cards whose mapped effects exist at all: when a card
   // has described-but-unnumbered indices (collisions, fxmap "n"
   // without id/map), an index at the boundary cannot be trusted
   // either, so it stays unidentified like every other index there.
   if (de.idx === m.n && (m.id || m.map)) return { follow: true };
-  let n = 0;
-  if (m.map) n = m.map[de.idx] || 0;
-  else if (m.id) n = de.idx + 1;
+  return null;
+}
+// Prompt-scoped resolution (pool-coverage round) — two audited
+// extensions resolveEffect deliberately does not guess at:
+//   pmap: one desc idx naming DIFFERENT effects per prompt scope
+//     (Masterflare Hyperion registers idx 0 twice — its IGNITION
+//     copy effect, only ever an idle/battle command entry, and
+//     its QUICK_O EVENT_CHAINING effect, only ever a chain
+//     candidate; the script's effect types keep the scopes
+//     disjoint by construction).
+//   bare: a desc-LESS entry pinned by (location, scope) when the
+//     script leaves exactly one activatable effect there
+//     (Minerva / Pluto / Zorga — fxmap "bare", hand-audited in
+//     gen-fxmap.js). scope is 'idle' (IDLECMD/BATTLECMD entries)
+//     or 'chain' (SELECT_CHAIN candidates and chain links).
+function scopedEffect(code, desc, loc, scope) {
+  const m = FXMAP[code];
+  if (!m) return null;
+  const segs = effectSegments(code);
+  const de = descEffect(desc);
+  if (de && de.code === code && m.pmap) {
+    const pm = m.pmap[de.idx];
+    const n = pm ? (pm[scope] || 0) : 0;
+    if (n) { const seg = segs.find(s => s.n === n); if (seg) return { n: seg.n, body: seg.body }; }
+  }
+  // bare pinning: the prompt/entry carries NO usable description
+  // — desc is 0, or a small non-Stringid value (Minerva's real
+  // EFFECTYN arrives with desc=221, captured from the core), or
+  // otherwise undecodable against this card. A desc that DOES
+  // decode to this card's own Stringid stands on its own merits
+  // (resolveEffect / pmap above) and never reaches here.
+  if (!de && m.bare) {
+    const b = m.bare.find(x => x.loc === loc && (x.scope === scope || x.scope === 'any'));
+    if (b) { const seg = segs.find(s => s.n === b.n); if (seg) return { n: seg.n, body: seg.body }; }
+  }
+  return null;
+}
+// A plain SELECT_YESNO whose desc the fxmap "yn" table pins to
+// the optional follow-up clause of one printed effect: the
+// script's only SelectYesNo carrying that idx lives inside that
+// effect's operation (Minerva ②'s optional destruction, Heavy
+// Magical Tank ③'s optional destruction, Agido ②'s second mill).
+function resolveYesNo(code, desc) {
+  const de = descEffect(desc);
+  if (!de || de.code !== code) return null;
+  const m = FXMAP[code];
+  if (!m || !m.yn) return null;
+  const n = m.yn[de.idx];
   if (!n) return null;
-  const seg = segs.find(s => s.n === n);
-  return seg ? { n: seg.n, body: seg.body } : null;
+  const seg = effectSegments(code).find(s => s.n === n);
+  return seg ? { follow: true, n: seg.n, body: seg.body } : null;
+}
+// A follow-up question whose desc belongs to a shared helper's
+// string table rather than to the asking card (the Vernusylph
+// family's resolution asks its optional special summon with
+// Stringid(9350312, 1)): the desc decodes to nothing in this
+// pool, but the RESOLVING link pins the parent effect, and the
+// parent's own text carries the 「その後、…できる」 step — the
+// only optional step a mid-resolution yes/no can ask about
+// inside that effect in this pool.
+function foreignFollowFx(ctx, prompt) {
+  if (!prompt.desc) return null;
+  if (descEffect(prompt.desc)) return null; // decodable descs stand or fall on their own merits
+  const parent = resolveEffect(ctx.code, ctx.desc);
+  if (!parent || !parent.n) return null;
+  if (!stepClause(ctx.code, parent.n)) return null;
+  return { follow: true };
 }
 // The clause a follow-up yes/no asks about: the 「その後、…できる」
 // sentence of the effect now resolving. Every follow-up observed
@@ -154,8 +226,8 @@ function fxExcerpt(fx) { // one-line preview of an effect body
 // fresh activation, and every effect activation carries a desc).
 // A Spell/Trap's activation effect is its FIRST numbered segment,
 // labelled as the activation rather than as a resolved number.
-function entryEffect(e) {
-  const fx = resolveEffect(e.code, e.desc);
+function entryEffect(e, scope) {
+  const fx = resolveEffect(e.code, e.desc) || scopedEffect(e.code, e.desc, e.loc, scope || 'idle');
   if (fx) return fx;
   if (!e.desc) {
     const d = cardData(e.code);
@@ -182,9 +254,12 @@ function fxBlockHTML(code, fx) {
 }
 // Name as the dismissal manager shows it: with the effect number
 // when the dismissed class is one specific effect of the card.
+// Dismissals live on chain prompts, so the resolution is
+// chain-scoped (Hyperion's dismissed class is its ②); a bare card
+// activation (fx.act) carries no number, as before.
 function dismissalName(e) {
-  const fx = resolveEffect(e.code, e.desc);
-  return cardName(e.code) + (fx && fx.n ? ' の効果' + CIRCLED_NUM[fx.n - 1] : '');
+  const fx = entryEffect(e, 'chain');
+  return cardName(e.code) + (fx && fx.n && !fx.act ? ' の効果' + CIRCLED_NUM[fx.n - 1] : '');
 }
 function isXyzCode(code) { const d = cardData(code); return !!(d && (d.type & 0x800000)); }
 function cardMetaLine(code, mats) {
@@ -437,11 +512,187 @@ window.__mlock = {
   get active() { return monsterLock; },
   reset() { monsterLock = null; },
 };
+// ---- pool-coverage round: cannot-activate reasons, generalized ----
+// The Minerva fix answered ONE card's silence. The same silence
+// covers every card whose activation the engine does not offer:
+// the sheet showed a greyed row only for the attribute lock and
+// for Xyz detach/mill patterns, and nothing at all otherwise.
+// The trackers below keep the same discipline — a reason is
+// stated only when it is mechanically certain — and generalize
+// the coverage to the whole pool:
+//   (1) activations the HUMAN chained this turn are recorded from
+//       the chain links themselves (desc-resolved, chain-scoped),
+//       so a card-name once-per-turn clause that is already spent
+//       can be stated as the reason (optUsedReason);
+//   (2) a monster special summoned by 《死者蘇生》 this turn is
+//       latched from the presentation event batch (its printed
+//       rider forbids its effects for the turn — and names the
+//       source, like the attribute lock does).
+// What stays UNSTATED, by design: "no valid target", phase and
+// timing windows, and any blocker whose evidence is not in the
+// client's own records. Those keep the generic row (shown when
+// the card provably HAS a field-activatable effect) or silence.
+let usedFxTurn = -1;
+const usedFxByCode = new Map(); // code -> {n:Set<number>, any:boolean}
+let usedFxChainEpoch = 0, usedFxSeen = new Set();
+function trackUsedFx(state) {
+  if (!state) return;
+  if (state.turnCount !== usedFxTurn) { usedFxTurn = state.turnCount; usedFxByCode.clear(); }
+  if (!state.chain || !state.chain.length) { usedFxSeen = new Set(); usedFxChainEpoch++; return; }
+  state.chain.forEach((l, i) => {
+    const key = usedFxChainEpoch + '|' + i + '|' + l.code + '|' + (l.desc || 0);
+    if (usedFxSeen.has(key)) return;
+    usedFxSeen.add(key);
+    if (l.con !== HP) return;
+    let rec = usedFxByCode.get(l.code);
+    if (!rec) { rec = { n: new Set(), any: false }; usedFxByCode.set(l.code, rec); }
+    rec.any = true;
+    // pmap cards (Hyperion) register one desc idx for two effects
+    // of disjoint types: the ignition always OPENS its chain
+    // (index 0), the quick effect always responds (index >= 1) —
+    // attribute by position. All other cards resolve chain-side.
+    const fxm = FXMAP[l.code];
+    const scope = fxm && fxm.pmap ? (i === 0 ? 'idle' : 'chain') : 'chain';
+    const fx = entryEffect({ code: l.code, desc: l.desc, loc: l.loc }, scope);
+    if (fx && fx.n && !fx.act) rec.n.add(fx.n);
+  });
+}
+// Printed numbers a card-name once-per-turn clause covers, parsed
+// from the official text (「このカード名の①②の効果はそれぞれ
+// １ターンに１度しか使用できない」 / 「…の②の効果は１ターンに
+// １度しか使用できない」 / 「このカード名の効果は１ターンに
+// １度しか使用できない」 = every numbered effect).
+// The card's own once-per-turn clause, parsed from the official
+// text: which printed numbers it covers, and whether the limit
+// is SHARED across them (「１ターンに１度、いずれか１つしか
+// 使用できない」, or the whole-card form このカード名の効果は…)
+// or PER-EFFECT (「それぞれ１ターンに１度しか使用できない」, or
+// a clause naming a single effect). Returns { set, shared } or
+// null when the card carries no such clause.
+function optCoverage(code) {
+  const t = cardText(code);
+  const all = new Set(effectSegments(code).map(s => s.n));
+  const set = new Set();
+  let shared = false, listed = false;
+  const re = /このカード名の([①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯]+)の効果は([^。]*?)使用できない/g;
+  let m;
+  while ((m = re.exec(t))) {
+    listed = true;
+    for (const ch of m[1]) { const n = CIRCLED_NUM.indexOf(ch) + 1; if (all.has(n)) set.add(n); }
+    if (/いずれか/.test(m[2])) shared = true;
+  }
+  if (listed) return set.size ? { set, shared } : null;
+  if (/このカード名の効果は１ターンに１度しか使用できない/.test(t)) {
+    return all.size ? { set: all, shared: true } : null;
+  }
+  return null;
+}
+function optCovered(code) { const c = optCoverage(code); return c ? c.set : new Set(); }
+// Numbered effects that can be activated while the card sits
+// face-up on the field: the segment says 発動できる, is not
+// trigger-phrased (場合に/時に発動できる), and is not bound to
+// another location (墓地のこのカード…, 手札…, 除外状態…).
+// Text-derived, so the pool test can enumerate it per card.
+function fieldCandidates(code) {
+  return effectSegments(code).filter(s => {
+    const at = s.body.indexOf('発動できる');
+    if (at < 0) return false;
+    if (/(場合|時)に発動できる/.test(s.body)) return false;
+    // a condition clause (〜場合、／〜時、) before the activation
+    // wording marks a trigger, not a field ignition (Trilosucuta
+    // ①, Luce ③, Sphinx ①③)
+    if (/(場合|時)、/.test(s.body.slice(0, at))) return false;
+    // an effect whose cost discards THIS card from the hand is a
+    // hand effect (the Vernusylph ①s), never usable from the field
+    if (/このカード[^。]*を手札から捨てて発動できる/.test(s.body)) return false;
+    if (/墓地のこのカード|このカードが墓地に存在|手札のこのカード|このカードが手札に存在|除外状態のこのカード|このカードが除外状態/.test(s.body)) return false;
+    return true;
+  }).map(s => s.n);
+}
+// "Already used this turn" is stated ONLY when it fully explains
+// the missing activation: every field candidate of the card is
+// covered by its once-per-turn clause AND the clause is spent —
+// for a per-effect clause that means every candidate is recorded
+// as chained this turn; for a shared clause (いずれか１つ), any
+// one of them. Anything less could mask a second, different
+// blocker, so it stays unstated.
+function optUsedReason(code) {
+  const cands = fieldCandidates(code);
+  if (!cands.length) return null;
+  const cov = optCoverage(code);
+  if (!cov || !cands.every(n => cov.set.has(n))) return null;
+  const rec = usedFxByCode.get(code);
+  if (!rec) return null;
+  // A shared clause is spent by ANY covered candidate; a
+  // per-effect clause only when EVERY candidate is spent.
+  const spent = cov.shared ? cands.some(n => rec.n.has(n)) : cands.every(n => rec.n.has(n));
+  return spent ? 'このターン既に使用済みです' : null;
+}
+const REVIVE_CODE = 28958464; // マジックカード「死者蘇生」
+let monsterRevived = null; // {seq, code, turnCount} — the human's monster 死者蘇生 brought back this turn
+// Attribution rule (documented boundary): presentation events
+// arrive in per-process batches, and 死者蘇生's activation and
+// its summon NEVER share one (chain windows intervene) — so the
+// latch is ARMED by the activation and fires on the next own
+// special summon while armed. 死者蘇生 summons exactly one
+// monster, and in this pool no other effect special summons to
+// the human's field while a chain is resolving. The arm dies
+// when the chain has fully closed in an earlier batch without
+// a summon (negated), when the human activates something else
+// first (a chained own effect also lands here — a conservative
+// miss), or when the turn moves on. When the evidence is short
+// of that shape, nothing is latched (silence, never a wrong
+// claim).
+let reviveArm = null; // {turnCount, batch}
+let reviveBatch = 0;
+function noteReviveFromEvents(evs, state) {
+  if (!state || !evs) return;
+  reviveBatch++;
+  const chainLen = state.chain ? state.chain.length : 0;
+  const ownAct = evs.filter(e => e.kind === 'activate' && e.con === HP);
+  if (ownAct.some(e => e.code === REVIVE_CODE)) {
+    reviveArm = { turnCount: state.turnCount, batch: reviveBatch };
+  } else if (reviveArm && reviveArm.batch < reviveBatch && ownAct.length) {
+    reviveArm = null;
+  }
+  if (reviveArm && state.turnCount === reviveArm.turnCount) {
+    const sums = evs.filter(e => e.kind === 'spsummon' && e.con === HP);
+    if (sums.length === 1) {
+      const P = state.players && state.players[HP];
+      const seq = P ? P.mzone.findIndex(c => c && c.code === sums[0].code) : -1;
+      if (seq >= 0) monsterRevived = { seq, code: sums[0].code, turnCount: state.turnCount };
+      reviveArm = null;
+    } else if (sums.length > 1) reviveArm = null;
+  }
+  // stale arm: its chain closed in an earlier batch (the
+  // resolution batch itself already shows an empty chain, which
+  // is why the summon check above runs first).
+  if (reviveArm && reviveArm.batch < reviveBatch && (chainLen === 0 || state.turnCount !== reviveArm.turnCount)) {
+    reviveArm = null;
+  }
+}
+function monsterRevivedReason(code, loc, seq, turnCount) {
+  if (!monsterRevived || loc !== E.LOC.MZONE) return null;
+  const tc = turnCount != null ? turnCount : (duelState ? duelState.turnCount : null);
+  if (tc == null || tc !== monsterRevived.turnCount) return null;
+  if (monsterRevived.code !== code || monsterRevived.seq !== seq) return null;
+  return '《' + cardName(REVIVE_CODE) + '》の効果で特殊召喚されたため、このターンは効果を発動できません';
+}
+// Test surface for the pool-coverage checks (same spirit as __mlock).
+window.__poolcov = {
+  resolveYesNo, scopedEffect, optCovered, optCoverage, fieldCandidates, optUsedReason,
+  trackUsedFx,
+  usedFx() { return [...usedFxByCode.entries()].map(([code, r]) => ({ code, n: [...r.n], any: r.any })); },
+  noteRevive(evs, state) { noteReviveFromEvents(evs, state); },
+  revivedReason(code, loc, seq, tc) { return monsterRevivedReason(code, loc, seq, tc); },
+  reset() { usedFxTurn = -1; usedFxByCode.clear(); usedFxSeen = new Set(); monsterRevived = null; reviveArm = null; reviveBatch = 0; },
+};
 // Drain the engine's presentation event queue into SE cues.
 const ATTR_SE = { 1: 'atk_earth', 2: 'atk_water', 4: 'atk_fire', 8: 'atk_wind', 16: 'atk_light', 32: 'atk_dark', 64: 'atk_light' };
 function drainSeEvents(state) {
   if (!state.events || !state.events.length) return;
   const evs = state.events.splice(0, state.events.length);
+  noteReviveFromEvents(evs, state); // 死者蘇生 rider latch (pool-coverage block above)
   // V3 stage 2 SE sync: battle damage arriving in the SAME batch as
   // its attack is one beat — its hit SE is held for the attack
   // scene's impact cue (t=280 on the FX clock). Damage arriving in a
@@ -2701,9 +2952,9 @@ function uiCmd(prompt, state) {
     if (!actionMap.has(key)) actionMap.set(key, []);
     // Activatable entries keep their desc: two effects of the same
     // card must not collapse into indistinguishable buttons.
-    const fx = label === '効果を発動' ? entryEffect(e) : null;
+    const fx = label === '効果を発動' ? entryEffect(e, 'idle') : null;
     const lab = fx && fx.n ? (fx.act ? 'カードを発動：' + fxExcerpt(fx) : '効果を発動：' + CIRCLED_NUM[fx.n - 1] + ' ' + fxExcerpt(fx)) : label;
-    actionMap.get(key).push({ label: lab, bytes: E.cmdResp(type, i), code: e.code, desc: e.desc });
+    actionMap.get(key).push({ label: lab, bytes: E.cmdResp(type, i), code: e.code, desc: e.desc, activate: label === '効果を発動' });
   });
   if (prompt.name === 'SELECT_IDLECMD') {
     add(prompt.summon, '通常召喚', 0);
@@ -2759,37 +3010,59 @@ function openActionSheet(key) {
   const title = zoneCode != null ? cardName(zoneCode) : 'アクション';
   const txt = zoneCode != null ? cardText(zoneCode) : '';
   const meta = zoneCode != null ? cardMetaLine(zoneCode, liveMats(con, loc, seq)) : '';
-  // Minerva item (2): an ignition effect the engine does NOT
-  // offer gets a greyed row WITH the reason, instead of silence —
-  // "cannot use" is shown by greying (the user's UI principle)
-  // and the reason is readable right here in the sheet. Only
-  // mechanically derivable reasons are stated; anything else
-  // stays with the generic form rather than a guessed reason.
-  // Reasons, in order of certainty: (a) a tracked activation
-  // lock from another card's lingering restriction (3rd triage —
-  // it blocks regardless of materials or deck, and applies to
-  // any monster, not just Xyz); (b) for Xyz monsters, the detach
-  // cost vs live materials / a mill count vs the live deck.
+  // Minerva item (2), generalized pool-wide (pool-coverage
+  // round): an effect the engine does NOT offer gets a greyed
+  // row WITH the reason, instead of silence — "cannot use" is
+  // shown by greying (the user's UI principle) and the reason
+  // is readable right here in the sheet. Only mechanically
+  // derivable reasons are stated; anything else stays with the
+  // generic form rather than a guessed reason. Reasons, in
+  // order of certainty: (a) a tracked activation lock from
+  // another card's lingering restriction (3rd triage — blocks
+  // regardless of materials or deck, any monster); (b) the
+  // 死者蘇生 rider on a monster it brought back this turn;
+  // (c) every field-activatable effect already spent under its
+  // once-per-turn clause (tracked from the chain links);
+  // (d) for Xyz monsters, the detach cost vs live materials /
+  // a mill count vs the live deck. When none is derivable but
+  // the card provably HAS a field-activatable effect, the row
+  // still appears with the generic form — silence was the
+  // original defect. (Offered-activation detection reads the
+  // act's own flag: identified effects carry numbered labels,
+  // so matching the bare label text missed them.)
   let unusable = '';
-  if (zoneCode != null && con === HP && loc === E.LOC.MZONE && !acts.some(a => a.label === '効果を発動')) {
-    let reason = monsterLockReason(zoneCode);
-    if (!reason && isXyzCode(zoneCode)) {
-      const norm = txt.replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
-      const detach = norm.match(/X素材を(\d+)つ取り除/);
-      const mill = norm.match(/デッキの上からカードを(\d+)枚墓地へ送る/);
-      if (detach || mill) {
-        const mats = liveMats(con, loc, seq) || 0;
-        reason = '今は発動できません';
-        if (detach && mats < +detach[1]) reason = '素材が足りません（現在×' + mats + '）';
-        else if (mill && duelState && duelState.players[con].deckCount < +mill[1]) reason = 'デッキが ' + mill[1] + ' 枚未満です';
+  if (zoneCode != null && con === HP && (loc === E.LOC.MZONE || loc === E.LOC.SZONE) && !acts.some(a => a.activate)) {
+    let faceup = true;
+    if (duelState) {
+      const P = duelState.players[con];
+      const zc = loc === E.LOC.MZONE ? P.mzone[seq] : P.szone[seq];
+      if (zc && zc.pos != null) faceup = (zc.pos & E.POS_FACEUP) !== 0;
+    }
+    let reason = null;
+    if (faceup) {
+      if (loc === E.LOC.MZONE) {
+        reason = monsterLockReason(zoneCode) || monsterRevivedReason(zoneCode, loc, seq);
       }
+      if (!reason) reason = optUsedReason(zoneCode);
+      if (!reason && loc === E.LOC.MZONE && isXyzCode(zoneCode)) {
+        const norm = txt.replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+        const detach = norm.match(/X素材を(\d+)つ取り除/);
+        const mill = norm.match(/デッキの上からカードを(\d+)枚墓地へ送る/);
+        if (detach || mill) {
+          const mats = liveMats(con, loc, seq) || 0;
+          reason = '今は発動できません';
+          if (detach && mats < +detach[1]) reason = '素材が足りません（現在×' + mats + '）';
+          else if (mill && duelState && duelState.players[con].deckCount < +mill[1]) reason = 'デッキが ' + mill[1] + ' 枚未満です';
+        }
+      }
+      if (!reason && fieldCandidates(zoneCode).length) reason = '今は発動できません';
     }
     if (reason) unusable = '<div class="optbtn disabled">効果を発動<span class="reason">' + reason + '</span></div>';
   }
   // When this card has several offered effects, pin the texts: the
   // offered effects are highlighted one by one (full text stays
   // readable below, R-SEL-1 style).
-  const offeredFx = [...new Set(acts.map(a => { const f = entryEffect(a); return f && f.n ? f.n : 0; }).filter(Boolean))].sort();
+  const offeredFx = [...new Set(acts.map(a => { const f = entryEffect(a, 'idle'); return f && f.n ? f.n : 0; }).filter(Boolean))].sort();
   const fxBlocks = zoneCode != null && offeredFx.length > 1
     ? offeredFx.map(n => { const seg = effectSegments(zoneCode).find(s => s.n === n); return seg ? fxBlockHTML(zoneCode, seg) : ''; }).join('')
     : '';
@@ -2953,7 +3226,7 @@ function uiChain(prompt, state) {
         // the candidate's own effect, named on the candidate itself
         // (a card with several chainable effects must not read as
         // one undifferentiated name)
-        const cfx = entryEffect(e);
+        const cfx = entryEffect(e, 'chain');
         return '<div class="cand' + (disChain ? ' dismissed' : '') + '" data-chain="' + i + '">' + cardName(e.code) +
           '<div class="loc">' + locLabel(e) + (disChain ? '（このチェーンでは聞かない）' : '') + '</div>' +
           (cfx && cfx.n ? '<div class="fxline">' + (cfx.act ? '発動：' : '効果' + CIRCLED_NUM[cfx.n - 1] + '：') + fxExcerpt(cfx) + '</div>' : '') +
@@ -2982,7 +3255,7 @@ function uiChain(prompt, state) {
     // the detail floats over the dock and closes back onto it.
     $('dock').querySelectorAll('[data-info]').forEach(x => x.addEventListener('click', (ev) => {
       ev.stopPropagation(); playClick();
-      const e = prompt.entries[+x.dataset.info]; openInfoPop(e.code, e, entryEffect(e));
+      const e = prompt.entries[+x.dataset.info]; openInfoPop(e.code, e, entryEffect(e, 'chain'));
     }));
     $('dock').querySelectorAll('[data-dismiss]').forEach(x => x.addEventListener('click', (ev) => {
       ev.stopPropagation(); playClick();
@@ -3211,8 +3484,19 @@ function uiYesNo(prompt, state) {
   // card's string id, the exact effect index being resolved.
   const ctx = !isEff && prompt.context && prompt.context.code ? prompt.context : null;
   const named = isEff ? { code: prompt.code } : ctx;
-  const fx = isEff ? resolveEffect(prompt.code, prompt.desc)
-                   : (ctx ? (resolveEffect(ctx.code, prompt.desc) || resolveEffect(ctx.code, ctx.desc)) : null);
+  // Resolution order (pool-coverage round): an EFFECTYN falls
+  // back to the prompt-scoped pinning (desc-less triggers whose
+  // location+scope leave one candidate — Minerva ② from the
+  // graveyard); a plain YESNO first tries the audited yn table
+  // (a follow-up whose desc index the count rule cannot see),
+  // then the shared-helper follow-up rule — BEFORE the asking
+  // link's own desc, because the context link always resolves
+  // and would shadow the follow-up (observed in the browser:
+  // the Vernusylph optional-summon question rendered as an
+  // activation confirmation) — then the desc itself, then the
+  // asking link's desc.
+  const fx = isEff ? (resolveEffect(prompt.code, prompt.desc) || scopedEffect(prompt.code, prompt.desc, prompt.loc, 'chain'))
+                   : (ctx ? (resolveYesNo(ctx.code, prompt.desc) || foreignFollowFx(ctx, prompt) || resolveEffect(ctx.code, prompt.desc) || resolveEffect(ctx.code, ctx.desc)) : null);
   const ttl = named
     ? cardName(named.code) + ' の効果' + (fx && fx.n ? CIRCLED_NUM[fx.n - 1] : '')
     : '確認';
@@ -3225,8 +3509,10 @@ function uiYesNo(prompt, state) {
     // The parent effect is the one the context (the solving chain
     // link) names: when its number is known, the question is pinned
     // to it and its own step clause is quoted; otherwise the clause
-    // is quoted from the card text as a whole.
-    const parentFx = resolveEffect(ctx.code, ctx.desc);
+    // is quoted from the card text as a whole. (The yn table pins
+    // the parent number on fx itself — the asking link's desc may
+    // be absent, e.g. Minerva's undescribed ②.)
+    const parentFx = (fx.n ? fx : null) || resolveEffect(ctx.code, ctx.desc) || scopedEffect(ctx.code, ctx.desc, ctx.loc, 'chain');
     const clause = (parentFx && parentFx.n ? stepClause(ctx.code, parentFx.n) : '')
       || followUpClause(ctx.code);
     sub = '「' + cardName(ctx.code) + '」の効果の続きです。' + (clause ? '次も行いますか？' : 'この効果の処理を続けますか？');
@@ -4001,6 +4287,7 @@ function wireSeg(id, apply) {
     logHist = []; logPrev = []; // B-10 history restarts with the duel
     pendingTap = null; // triage-#2: no buffered tap survives into a new duel
     monsterLock = null; // activation lock restarts with the duel (Minerva 3rd triage)
+    monsterRevived = null; reviveArm = null; reviveBatch = 0; usedFxTurn = -1; usedFxByCode.clear(); usedFxSeen = new Set(); // pool-coverage trackers restart
     dismissedDuel = new Map();
     duelNoConfirm = new Set(); // C-27 suppression restarts with the duel
     confirmTurn = -1; confirmSeq = 0; // per-turn confirmation counter restarts with the duel
@@ -4021,6 +4308,7 @@ function wireSeg(id, apply) {
         const fxEvs = state.events ? state.events.slice() : []; // presentation queue: copied before drainSeEvents consumes it
         fxCaptureDom(); // pre-render hand geometry for the FX reflow (FLIP)
         drainSeEvents(state);
+        trackUsedFx(state); // this turn's own activations, for cannot-activate reasons
         render(state);
         updateBgm(state);
         fxProcess(fxEvs, state); // presentation FX overlays (read-only; board geometry is final now)

@@ -49,7 +49,7 @@ sandbox.window = sandbox;
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 const src = fs.readFileSync(path.join(V2, 'client.js'), 'utf8') +
-  '\n;globalThis.__T = { DATA: () => DATA, setDATA: (d) => { DATA = d; }, setFXMAP: (m) => { FXMAP = m; }, descEffect, effectSegments, resolveEffect, followUpClause, stepClause, entryEffect, fxBlockHTML, dismissalName, CIRCLED_NUM };';
+  '\n;globalThis.__T = { DATA: () => DATA, setDATA: (d) => { DATA = d; }, setFXMAP: (m) => { FXMAP = m; }, descEffect, effectSegments, resolveEffect, resolveYesNo, scopedEffect, followUpClause, stepClause, entryEffect, fxBlockHTML, dismissalName, CIRCLED_NUM };';
 vm.runInContext(src, sandbox, { filename: 'client.js' });
 const T = sandbox.__T;
 T.setDATA(data);
@@ -101,8 +101,10 @@ const TRAP3 = T.resolveEffect(98715423, SID(98715423, 1));
 ok(TRAP3 && TRAP3.n === 3 && TRAP3.body.includes('宣言'), 'FX8b: Gravekeeper\'s Trap desc idx1 -> text ③ (declare), NOT the ② search');
 const LUCE2 = T.resolveEffect(45409943, SID(45409943, 0));
 ok(LUCE2 && LUCE2.n === 2 && LUCE2.body.includes('破壊する'), 'FX8c: Luce desc idx0 -> text ② (printed ① is the continuous protection)');
-ok(T.resolveEffect(36898537, SID(36898537, 0)) === null && T.resolveEffect(37706769, SID(37706769, 1)) === null && T.resolveEffect(63101468, SID(63101468, 0)) === null,
-  'FX8d: collision cards (Horus/Pluto/Hyperion) get NO number — full text instead of a wrong one');
+ok(T.resolveEffect(36898537, SID(36898537, 0)).n === 1 && T.resolveEffect(36898537, SID(36898537, 2)).n === 1 && T.resolveEffect(37706769, SID(37706769, 1)).n === 1,
+  'FX8d: Horus idx0/1/2 all name printed ① (its three material variants) and Pluto idx1 names ① — hand-audited overrides (pool-coverage round)');
+ok(T.resolveEffect(63101468, SID(63101468, 0)) === null && T.scopedEffect(63101468, SID(63101468, 0), 4, 'idle').n === 1 && T.scopedEffect(63101468, SID(63101468, 0), 4, 'chain').n === 2,
+  'FX8e: Hyperion idx0 stays unresolvable scope-free, but pins ① for idle entries and ② for chain candidates (duplicated registration, disjoint effect types)');
 const KARUDAN2 = T.resolveEffect(86605515, SID(86605515, 1));
 ok(KARUDAN2.body.includes('破壊されない'), 'FX9: Karudan desc idx1 -> text ② (trap protection)');
 
@@ -126,10 +128,10 @@ ok(blk.includes('聞かれている効果：②') && blk.includes('デッキに�
 // ---- follow-up sub-questions: parent pinned via the context desc
 ok(T.stepClause(99937011, 1).includes('墓守の罠'), 'FX17: Mudora ① own step clause is the Trap placement (parent-pinned quote)');
 ok(T.stepClause(25926710, 2).includes('セットできる'), 'FX17b: Kelbek ② own step clause is the Trap set');
-ok(T.resolveEffect(35026117, SID(35026117, 2)) === null && T.resolveEffect(35026117, SID(35026117, 1)) === null,
-  'FX17c: Heavy Tank YESNO (Stringid 2 = "apply the ③ effect?") stays UNNUMBERED — its ① owns a described non-effect registration, so the ask is not mechanically separable');
-ok(T.resolveEffect(30100551, SID(30100551, 0)) === null,
-  'FX17d: Minerva YESNO (Stringid 0 = follow-up of its undescribed ②) stays unnumbered — its effects own no descriptions at all');
+ok(T.resolveEffect(35026117, SID(35026117, 1)).n === 3 && T.resolveEffect(35026117, SID(35026117, 2)) === null && T.resolveYesNo(35026117, SID(35026117, 2)).n === 3,
+  'FX17c: Heavy Tank desc idx1 -> text ③ (its only ignition), and its YESNO (Stringid 2, asked inside ③\'s operation) is the follow-up of ③ — hand-audited (pool-coverage round)');
+ok(T.resolveEffect(30100551, SID(30100551, 0)) === null && T.resolveYesNo(30100551, SID(30100551, 0)).n === 2,
+  'FX17d: Minerva\'s activatable resolution stays desc-free, but its YESNO (Stringid 0, asked inside ②\'s operation) is the follow-up of ② — hand-audited (pool-coverage round)');
 
 // ---- desc-less Spell/Trap entries = the card activation itself
 const TRAPACT = T.entryEffect({ code: 98715423, desc: 0 });
