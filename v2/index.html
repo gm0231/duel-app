@@ -171,7 +171,7 @@
   #peekbtn{position:absolute;right:10px;bottom:calc(62dvh + 8px);z-index:51;display:none;background:#241a0e;color:var(--gold);border:1px solid var(--gold-dim);border-radius:8px;font-size:12px;padding:9px 12px;cursor:pointer;}
   #sheetwrap.on #peekbtn{display:block;}
   #sheetx{position:absolute;right:118px;bottom:calc(62dvh + 8px);z-index:51;display:none;width:40px;height:40px;background:#241a0e;color:var(--gold);border:1px solid var(--gold-dim);border-radius:8px;font-size:16px;cursor:pointer;}
-  #sheetwrap.on.view #sheetx{display:block;}
+  #sheetwrap.on[data-kind="view"] #sheetx{display:block;}
   #sheetwrap.peek #sheetx{bottom:auto;top:10px;}
   #sheetwrap.peek #peekbtn{bottom:auto;top:10px;}
   #sheet .seg button{min-height:39px;}

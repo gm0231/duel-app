@@ -2266,8 +2266,8 @@ const effectYnKey = (p) => p.code + '|' + p.desc;
 // ---------------------------------------------------------------- prompt UI
 let sheetKind = 'prompt';
 function sheetOpenView(html) { sheetOpen(html, 'view'); }
-function sheetOpen(html, kind) { sheetKind = kind || 'prompt'; closeInfoPop(); $('sheet').innerHTML = html; $('sheetwrap').className = 'on' + (sheetKind === 'view' ? ' view' : ''); const pk = $('peekbtn'); if (pk) pk.textContent = '盤面を見る'; }
-function sheetClose() { closeInfoPop(); $('sheetwrap').className = ''; $('sheet').innerHTML = ''; }
+function sheetOpen(html, kind) { sheetKind = kind || 'prompt'; closeInfoPop(); $('sheet').innerHTML = html; $('sheetwrap').className = 'on'; $('sheetwrap').dataset.kind = sheetKind; const pk = $('peekbtn'); if (pk) pk.textContent = '盤面を見る'; }
+function sheetClose() { closeInfoPop(); $('sheetwrap').className = ''; $('sheetwrap').removeAttribute('data-kind'); $('sheet').innerHTML = ''; }
 // R-SEL-1: a read-only detail that floats OVER whatever selection
 // is in progress — opening or closing it never answers, toggles
 // or cancels anything, so a choice can be checked mid-selection
