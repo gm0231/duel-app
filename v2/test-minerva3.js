@@ -27,7 +27,10 @@ const data = JSON.parse(fs.readFileSync(path.join(V2, 'data.json'), 'utf8'));
 const wasmBinary = fs.readFileSync(path.join(V2, 'build', 'ocgcore.wasm'));
 
 const MINERVA = 30100551, KALDAN = 86605515, MORI = 36745317, HANA = 62133026;
-const REASON = 'このターンは地属性以外のモンスター効果を発動できません';
+// The reason NAMES the card whose effect imposed the lock (user
+// direction 2026-11-03: 「〜の効果の制約で発動できません」).
+const REASON_MORI = '《森と目覚の春化精》の効果の制約で、このターンは地属性以外のモンスター効果を発動できません';
+const REASON_HANA = '《花と野原の春化精》の効果の制約で、このターンは地属性以外のモンスター効果を発動できません';
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -77,8 +80,8 @@ async function boot() {
   ok(M.active === null, 'M3-3: the OPPONENT firing a Vernusylph effect does not latch the human lock');
 
   M.note({ kind: 'activate', code: MORI, con: 0, loc: 2 }, { turnCount: 1 });
-  ok(!!M.active && M.active.turnCount === 1, 'M3-4: human Vernusylph activation latches the lock for the turn');
-  ok(M.reason(MINERVA, 1) === REASON, 'M3-5: LIGHT Minerva gets the real reason while locked');
+  ok(!!M.active && M.active.turnCount === 1 && M.active.code === MORI, 'M3-4: human Vernusylph activation latches the lock for the turn, WITH the imposing card recorded');
+  ok(M.reason(MINERVA, 1) === REASON_MORI, 'M3-5: LIGHT Minerva gets the real reason, naming 森と目覚の春化精');
   ok(M.reason(KALDAN, 1) === null, 'M3-6: EARTH Kaldan is the excepted attribute -> no reason');
   ok(M.reason(MINERVA, 2) === null, 'M3-7: the lock (and its reason) expires with the turn');
 
@@ -86,7 +89,7 @@ async function boot() {
   M.note({ kind: 'activate', code: 99937011, con: 0, loc: 2 }, { turnCount: 3 });
   ok(M.active === null, 'M3-8: an unrelated activation does not latch');
   M.note({ kind: 'activate', code: HANA, con: 0, loc: 2 }, { turnCount: 3 });
-  ok(M.reason(MINERVA, 3) === REASON, 'M3-9: 花と野原の春化精 latches the same lock');
+  ok(M.reason(MINERVA, 3) === REASON_HANA, 'M3-9: 花と野原の春化精 latches the same lock, and the reason names HER');
 
   window.close();
   console.log(failures ? 'TEST FAIL (' + failures + ')' : 'TEST PASS');

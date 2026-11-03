@@ -3287,3 +3287,17 @@ Unmeasured as before: sound feel, real-device WKWebView.
   40-card deck minus its opening hand, EX untouched). The
   user's own EX count is not what that bar displays.
 - Still unmeasured: sound feel, real-device WKWebView.
+- Follow-up (same day, user direction): the lock reason now
+  NAMES the imposing card — 「《森と目覚の春化精》の効果の制約で、
+  このターンは地属性以外のモンスター効果を発動できません」.
+  The latch record carries the source code (monsterLock.code),
+  so the name is as mechanically certain as the lock itself;
+  if a name ever fails to resolve, the unnamed form is kept
+  (never a raw code). The latch stays keyed on the activating
+  event + code, so a future opponent-imposed lock can ride the
+  same record. The Xyz detach/mill reasons are the card's OWN
+  costs (the sheet already shows that card) — out of scope for
+  naming. Verified: test-minerva3 updated (M3-4 latch carries
+  the code, M3-5/M3-9 expect each Vernusylph's own name) + all
+  suites pass; real-browser frame at 390x700 re-checked
+  (shots-lockreason/ in the fix worktree).

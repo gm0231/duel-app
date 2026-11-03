@@ -398,11 +398,11 @@ function lockCards() {
   }
   return _lockCards;
 }
-let monsterLock = null; // {attr, kanji, turnCount} — the human player's lock for this turn
+let monsterLock = null; // {attr, kanji, turnCount, code} — the human player's lock for this turn; code = the card whose effect imposed it
 function noteMonsterLock(ev, state) {
   if (ev.kind !== 'activate' || ev.con !== HP || !state) return;
   const lk = lockCards().get(ev.code);
-  if (lk) monsterLock = { attr: lk.attr, kanji: lk.kanji, turnCount: state.turnCount };
+  if (lk) monsterLock = { attr: lk.attr, kanji: lk.kanji, turnCount: state.turnCount, code: ev.code };
 }
 // The reason the sheet may state for `code` right now, or null
 // when no tracked lock explains a missing activation. The turn
@@ -414,7 +414,18 @@ function monsterLockReason(code, turnCount) {
   const d = cardData(code);
   if (!d || !(d.type & 0x1)) return null;            // monsters only
   if (d.attribute === monsterLock.attr) return null; // the excepted attribute is unaffected
-  return 'このターンは' + monsterLock.kanji + '属性以外のモンスター効果を発動できません';
+  // Name the source (user direction 2026-11-03): a bare restriction
+  // still leaves the player guessing WHICH card is holding them.
+  // The latch records the imposing card's code, so the name is as
+  // mechanically certain as the lock itself. If the name somehow
+  // does not resolve, keep the unnamed form rather than printing a
+  // raw code. (The latch is keyed on the activating event + code,
+  // so a future lock imposed by the OPPONENT's card can ride the
+  // same record — only the derivation/latch conditions would grow.)
+  const src = monsterLock.code != null ? cardName(monsterLock.code) : null;
+  const named = src && src[0] !== '#';
+  return (named ? '《' + src + '》の効果の制約で、' : '') +
+    'このターンは' + monsterLock.kanji + '属性以外のモンスター効果を発動できません';
 }
 // Test surface (same spirit as window.__bgm): lets the jsdom harness
 // observe the derived lock set and drive the tracker with synthetic
