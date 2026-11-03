@@ -201,7 +201,19 @@
      DOM is rebuilt per batch; the layer is not). #fxcutin sits above
      the board but below the chain dock so a response prompt is never
      covered by a cinematic. */
+  /* LAYER ORDER TABLE (V3 stage 1 — the single ordering authority;
+     mirrored in NOTES "V3 integration — Stage 1". No presentation
+     element may be created outside #fxlayer / #fxcutin; controls
+     always sit above every FX layer):
+       (flow) board/hand/midbar — the frozen duel layout
+       z25 #fxlayer  — grammar FX + board particles (#fxcv) + chain pops + phase banner
+       z30 #placehint — placement instruction banner
+       z35 #fxcutin  — ace / finisher scene host + top particles (#fxcvTop)
+       z40 #dock / z45 #autopass / z50 #sheetwrap — controls
+       z60 .overlay  — start / result
+       z65 .fx-finishwash — round B exception, removed in V3 stage 3 */
   #fxlayer{position:absolute;inset:0;z-index:25;pointer-events:none;overflow:hidden;}
+  #fxlayer canvas,#fxcutin canvas{position:absolute;inset:0;width:100%;height:100%;}
   #fxcutin{position:absolute;inset:0;z-index:35;pointer-events:none;overflow:hidden;display:none;}
   #fxcutin.on{display:block;}
   .fx{position:absolute;pointer-events:none;border-radius:5px;}
@@ -326,8 +338,8 @@
     <div class="who">自分の手札（<span id="handcount">0</span>）</div>
     <div id="hand"></div>
   </div>
-  <div id="fxlayer"></div>
-  <div id="fxcutin"></div>
+  <div id="fxlayer"><canvas id="fxcv"></canvas></div>
+  <div id="fxcutin"><canvas id="fxcvTop"></canvas></div>
   <div id="dock"></div>
   <div id="autopass"></div>
   <div id="sheetwrap"><div id="sheet"></div></div>
