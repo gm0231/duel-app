@@ -4061,3 +4061,214 @@ shows deck 40 after the opening draw, EX 15, recipe cards in
 hand). Card faces in those local captures show the fallback
 tablet art — the image host is not reachable from the capture
 sandbox; production image delivery is unchanged.
+## Per-card illustrations (decided + first delivery, 2026-11-03)
+
+Decision (user): instead of one shared placeholder for all 63
+cards, the user supplies an image per card and each is applied as
+it arrives. Unlisted cards keep the placeholder — the fallback IS
+the default and their markup stays byte-identical.
+
+Mechanism (client.js): `CARD_ART` maps passcode -> art slug.
+`cardArtFile(code, big)` resolves `../assets/card-art-<slug>-s.jpg`
+(small surfaces) or `../assets/card-art-<slug>.jpg` (the big
+cut-in card); `artInline` / `artCss` / `artApply` stamp it as an
+inline background on: board tile art (face-visible states ONLY —
+an inline image would outrank the .back stylesheet rule and leak
+an opponent's face-down card), hand cards, the resident preview,
+selection-grid cards, face-up FX ghosts, and all three bigcard
+builders (finisher, ace scene + afterimages, legacy cut-in).
+`preloadCardArt(deckKeys)` warms both sizes for every listed card
+in the chosen decks: called at boot, on deck-seg changes and on
+the start click (deck-select-time preload, no blank/'?' flash).
+
+Cropping rule (user, 2026-11-03, ALL cards): when the art does not
+fit a window, keep the TOP and cut from the bottom — never crop
+the head. Implemented twice over: the delivered files are
+top-anchored crops, and every stamp pins
+background-position:center top.
+
+First delivery: 《剣神官ムドラ》 99937011 (x3 in the Ishizu deck).
+Source: ~/workspace/duel-assets/mudora-user-20261103.jpg
+(1040x1513 full-body illustration). Small file = crop x100-990 /
+y0-890 -> 320x320 (37KB): face, crown, shoulder armour and the
+right-hand ring blade stay identifiable at tile size. Big file =
+full width x y0-1434 (the bigcard 250x345 ratio) -> 640x882
+(158KB): nearly full body; only the feet tips fall off, per the
+rule. Verified in real play (cap-cardart.js, shots-cardart/):
+Mudora drawn in the opening hand -> hand art + resident preview,
+then normal-summoned through the real sheet -> board tile art,
+at 390x620 and 390x700; the head is never cropped. The cut-in
+frame was captured via fxCutinShow(99937011) directly (declared
+substitution: Mudora is not a keycard, so no real-play path
+reaches a cut-in with her; the bigcard art path itself is the
+same code the finisher/ace scenes use).
+
+Regression: v2/test-cardart.js (CA0-CA19) — mapping, top-pin,
+fallback emptiness, preload contents, DOM contract on a
+fabricated board incl. the opponent-face-down no-leak case.
+## Brushup round 3 (backlog leftovers: BU-12 / BU-13 / DS-07 / DS-09)
+
+### BU-12 — engine processing bursts: localized, NOT force-fixed
+
+The FX audit's figures (process() self 567 ms, parseMessages
+483 ms) do not reproduce in isolation. Measured three ways:
+(a) Node driver probe over 30+ duels (threshold 8 ms, matchup
+rotation): worst single poc_process() = 56 ms; (b) the same
+probe inside a Chromium page: worst 37 ms; (c) a full in-situ
+UI duel under the CDP profiler: total WASM self time for the
+WHOLE duel ≈ 0.1–0.2 s, and the only long task ≥ 100 ms was
+276 ms at duel start, attributed mainly to the initial layout
+pass (viewportHeights / getBoundingClientRect), not the
+engine. GameState.apply (message application — the audit's
+"parseMessages"; no such function exists in the shipped code)
+is < 1 ms per batch in every measurement.
+The burst that does exist is one class: the single
+poc_process() call that completes a chain resolution and
+advances to the next command prompt (batches carrying only
+SELECT_IDLECMD / SELECT_BATTLECMD right after a SELECT_CHAIN
+answer; 8 of the 9 slowest calls in the 24-duel run). It is a
+single synchronous WASM call, proportional to chain size and
+board complexity; JS cannot split or yield inside it. The
+only structural cure is moving the engine to a Web Worker —
+an architecture change, returned to the backlog as an
+integration decision with these numbers, not taken here.
+Taken here, the one safe concession: Duel.run awaits sleep(0)
+after respond(bytes), so the tap feedback and the closing
+sheet get a paint before the heavy call. Uses the
+harness-provided sleep (stubbed test sleeps unchanged);
+processing order and results untouched.
+The 567/483 ms numbers were recorded under screenshot-burst
+capture on a shared VM; treat them as contention-inflated
+until a real-device profile says otherwise (still unmeasured:
+WKWebView on device).
+
+### BU-13 — care leftovers
+
+1. SELECT_CARD purpose (hand-limit discard): inferSelectPurpose
+   in client.js labels ONLY the provable case — END phase, no
+   chain, no asking effect, not cancelable, all candidates the
+   asked player's hand cards, min == max == hand − 6. The sheet
+   then reads 手札の上限 / 手札が上限（6枚）を超えています。
+   捨てるカードを N 枚選んでください / 捨てる（あとK枚） /
+   このカードを捨てる. Guards pinned by test-purpose.js (12
+   cases; every guard has a negative). Effect-driven selections
+   (costs, targets, materials) keep the generic title by
+   design. Driven proof (real Chromium, hoard duel, both
+   heights): sheet fired at turn 5 end phase with hand 7,
+   hand landed exactly 6 after answering
+   (shots-r3/handlimit-620.png / handlimit-700.png).
+2. Phase granularity (W-27): timingText now uses
+   phaseJaContext — BATTLE_START / BATTLE_STEP / BATTLE ->
+   バトルフェイズ; DAMAGE / DAMAGE_CAL -> ダメージ計算の確認;
+   others unchanged. The mid-bar phase READOUT keeps the fine
+   phaseJa names (display, not a context line; B-08 stands).
+   Driven proof: 相手のターン・バトルフェイズ｜効果への応答
+   (shots-r3/w27-context-700.png); unit pins in test-purpose.
+3. Close labels (W-28): 盤面に戻る is gone from every close
+   button. Selection-serving sheets (card actions, menu) say
+   選択に戻る; pure viewers （履歴， card info, dismiss manager,
+   settings, confirm sheet already) say 閉じる; the pile sheet
+   and the detail pop follow what closing does — pileActs
+   present / a prompt open -> 選択に戻る, else 閉じる.
+   Driven proof: shots-r3/w28-actionsheet-700.png (選択に戻る),
+   w28-pilesheet-700.png (閉じる). test-loghist updated.
+4. SELECT_COUNTER: re-verified unreachable in the current
+   pool — no pool card text mentions カウンター; the only two
+   scripts matching /ounter/ are 融合派兵 (activity counter,
+   internal) and 闇の護封剣 (turn counter), neither places or
+   removes card counters, so MSG_SELECT_COUNTER cannot be
+   issued. Left as a counted non-item; uiCounter stays as-is.
+
+### DS-07 — VS overlay see-through: REPRODUCED and fixed
+
+Root cause: the VS curtain was faded in as a whole element
+(WAAPI opacity 0->1, 220 ms) while the start screen was still
+displayed underneath, so the start screen bled through the
+"opaque" #070503 background for the whole fade. Transition
+burst frames (shots-r3/pre-*): start content legible at
++218 ms (620) / +226 ms (700); opaque only from ~+299 ms.
+Fix: the curtain never fades — it is opaque from the first
+painted frame; the matchup line (.vss) takes the small fade
+instead, and the beams / VS text keep their own entrances.
+Post-fix burst frames (shots-r3/post-*): deck-band mean abs
+diff vs the settled VS frame = 0.00 from the first frame at
+both heights; composition unchanged. Source pin in
+test-purpose (D1).
+
+### DS-09 — hand-sheet row unification: referent NOT identifiable
+
+Returned unimplemented, with the reason on the backlog: the
+design audit's §5 text (the item's only definition) is lost —
+the local audit-design.md is truncated mid-§4 and was never
+committed; the prior round reached the same wall. Candidate
+surfaces re-enumerated against the shipped code: pile /
+confirm / sort / dismiss rows all share .sortrow, action rows
+share .optbtn, selection grids share .gcard, and the hand
+pile sheet renders no rows at all (count only). No divergent
+row style remains among identifiable candidates. If the
+intended referent was the hand pile sheet (rows like the
+other piles), say so and it becomes a fresh, specified item —
+the own hand is already fully rendered on the board, so this
+was not guessed into existence.
+
+Second delivery: 《古衛兵アギド》 62320425 (x1 in the Ishizu
+deck). Source: ~/workspace/duel-assets/agido-user-20261103.jpg
+(1024x1536 — red sphere with the Eye of Horus, axe arms, temple
+hall). Small file = sphere-centred square crop x70-960 /
+y205-1095 -> 320x320 (30KB): the sphere sits at the window's
+centre with both axe blades and the bottom spike inside; the
+crop keeps the subject whole (the "top" of this subject IS the
+sphere — only ceiling background is sacrificed). Big file =
+full width x y0-1411 -> 640x882 (141KB), top-anchored as usual.
+One line in CARD_ART; test-cardart gained CA0c/CA7b/CA7c/CA11b.
+Real-play frames (cap-agido.js, shots-agido/): Agido drawn and
+normal-summoned at 390x700 (tile + preview carry the sphere,
+centred), a fabricated both-arts board at 390x620 (Mudora and
+Agido side by side on field and in hand), and the big-card
+cut-in via fxCutinShow (same declared substitution as Mudora).
+
+Third delivery: 《古尖兵ケルベク》 25926710 (x1 in the Ishizu
+deck). Source: ~/workspace/duel-assets/kelbek-user-20261103.jpg
+(1024x1536 — the body descends in the UPPER two-thirds under a
+storm sky; temple and soldiers fill the bottom). The top-anchor
+rule works in this art's favour: small file = top-anchored
+square crop x37-981 / y0-944 -> 320x320 (43KB) keeps the spiked
+head with the Eye, the blue torso, the wing blades and most of
+the great claw (claw tips are the sanctioned bottom cut). Big
+file = full width x y0-1411 -> 640x882 (180KB). One line in
+CARD_ART; test-cardart gained CA0d/CA7d/CA7e/CA11c (34 checks).
+Real-play frames (cap-kelbek.js, shots-kelbek/): Kelbek drawn
+and normal-summoned at 390x700 (tile + preview read clearly at
+tile size), a fabricated three-arts board at 390x620 (Mudora /
+Agido / Kelbek side by side on field and in hand), cut-in via
+fxCutinShow as before.
+
+Fourth delivery: 《宿神像ケルドウ》 63542003 (x3 in the Ishizu
+deck). Source: ~/workspace/duel-assets/keldo-user-20261103.jpg
+(1024x1536 — gold/teal guardian statue whose wing shields carry
+red eyes, temple hall). Small file = top-anchored full-width
+square crop x0-1024 / y0-1024 -> 320x320 (44KB): the statue's
+head sits at top centre with BOTH red shield-eyes inside the
+window; only the lower skirt and floor are cut, per the rule.
+Big file = full width x y0-1411 -> 640x882 (194KB). One line in
+CARD_ART; test-cardart gained CA0e/CA7f/CA7g/CA11d/CA14b
+(40 checks). Real-play frames (cap-keldo.js, shots-keldo/):
+Keldo drawn and normal-summoned through the real sheet at
+390x700 (tile + resident preview read clearly), a fabricated
+four-arts board at 390x620 (Mudora / Agido / Kelbek / Keldo on
+field and in hand), cut-in via fxCutinShow as before.
+
+## Merge note (recipe v11 x card-art round, 2026-11-03)
+
+The per-card illustration round landed while this branch was in
+flight and keyed the 2nd user delivery to 《古衛兵アギド》
+(62320425) — the card recipe v11 removes. The CARD_ART entry is
+left in place but dormant: preload follows deck membership, so
+the art is never loaded or shown, and the classic 《アギド》
+(16135253) shows the standard card image. Whether the 古衛兵 art
+should be retired or the user supplies art for the classic is
+the user's call (flagged in the round report, not decided here).
+test-cardart adapted accordingly: CA0c (deck composition), CA7c
+(Agido art is NOT preloaded now), and the fabricated board's
+fourth tile is Keldo instead of the departed Agido (CA11b);
+the mechanism checks (map/inline/asymmetry/ghost) are unchanged.
