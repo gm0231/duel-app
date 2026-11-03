@@ -1,0 +1,22 @@
+{
+ "620": {
+  "pvStyle": "background-image:url(../assets/card-art-horus-s.jpg);background-position:center top",
+  "pvName": "メタファイズ・ホルス・ドラゴン",
+  "exSheet": {
+   "ttl": "EXデッキ（自分）",
+   "horusRows": 2,
+   "rowCount": 15
+  },
+  "infoTitle": "メタファイズ・ホルス・ドラゴン"
+ },
+ "700": {
+  "pvStyle": "background-image:url(../assets/card-art-horus-s.jpg);background-position:center top",
+  "pvName": "メタファイズ・ホルス・ドラゴン",
+  "exSheet": {
+   "ttl": "EXデッキ（自分）",
+   "horusRows": 2,
+   "rowCount": 15
+  },
+  "infoTitle": "メタファイズ・ホルス・ドラゴン"
+ }
+}

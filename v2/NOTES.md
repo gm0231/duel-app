@@ -4880,6 +4880,244 @@ real the day a Neuron-imported deck runs the card.
 WKWebView on a real device remains unmeasured, as ever
 (capture environment is Chromium-class).
 
+Fifteenth delivery (user, 2026-11-04): 《地久神－カルボン》
+15079028 (carbon); source ~/workspace/duel-assets/
+carbon-user-20261103.jpg (1024x1536, the stone giant
+standing over the Earth). Standard top-anchored crops, no
+start adjustment: small = y0-1024 -> 320x320 (38.6KB), big =
+full width x y0-1411 -> 640x882 (175.7KB). The tile
+simulation (cover, centre top, 62x88 box) keeps the giant's
+face whole at upper centre, with the halo ring and the stone
+wings in frame. One line in CARD_ART — a plain registration,
+no DECK_ART entry.
+test-cardart: Carbon WAS the unlisted fallback exemplar, so
+the role moved Carbon -> 《生きる偲びのシルキィ》 55702233
+(x2 in the deck, no individual art; the classic Agido
+16135253 x1 was passed over so the exemplar stays clear of
+the dormant-Agido-art question). Carbon gained CA0p /
+CA7z15-CA7z16 / CA11x / CA13j / CA14q / CA16s / CA26 (the
+labels were renumbered at the merge with the 14th-delivery
+line, whose Kakan board already held CA11t/CA13h/CA14o/
+CA16p/CA24; both boards kept). Integrated tree: 193
+test-cardart checks, ALL PASSED. Affected suites on the
+branch: setvis / facedown / typecolor / layout / overlay /
+fx / swap / poolcov / recipe-v11 ALL PASSED; test-strot
+24/25 with only the known ST4 reachability flake (ST5
+passed).
+Real-play frames (cap-carbon.js, shots-carbon/): drawn,
+tapped (resident preview) and normal-summoned face-up
+through the real sheet at 390x620/700 — tile and preview
+carry the new art, name/stat lines read 地久神－カルボン
+1200/1200.
+
+The same delivery also brought an Ishizu-scoped variant
+(user, 2026-11-04): 《地久神－カルボン》 wears gold-and-
+hieroglyph regalia ONLY inside the Ishizu deck — the 5th
+DECK_ART entry and the first for a MONSTER. Source
+~/workspace/duel-assets/carbon-ishizu-user-20261103.jpg
+(1024x1536, the same giant in Egyptian regalia). Standard
+top-anchored crops, no start adjustment: small = y0-1024
+-> 320x320 (43.9KB), big = full width x y0-1411 -> 640x882
+(212.4KB). The tile simulation keeps the face whole at
+upper centre, the hieroglyph ring in frame. One line in
+DECK_ART (ishizu: 15079028 -> 'carbon-ishizu'); the plain
+'carbon' stays in CARD_ART for every other deck context.
+test-cardart: CA7z21-CA7z24 pin the map and both
+resolutions; the seat-0 board (CA11x/CA14q/CA16s) now
+expects the scoped art, and a flipped-seat fixture
+(CA27 / CA11y / CA11z / CA13k / CA14r / CA16t / CA16u)
+pins the plain fallback under a non-Ishizu context, the
+regalia on the Ishizu seat, and no art on a face-down
+Carbon even in Ishizu context — 206 checks in total on
+the integrated tree, ALL PASSED (setvis / typecolor /
+facedown also green). Real-play frames (cap-carbon.js,
+shots-carbon-ishizu/): the same flow in the Ishizu deck
+now resolves tile and preview to card-art-carbon-ishizu;
+the plain stone art remains what any non-Ishizu context
+sees (fixture-pinned, as with the sisters).
+
+## Per-card illustrations, 16th delivery (2026-11-04): 《生きる偲びのシルキィ》 — plain art AND a deck-scoped variant
+
+User art for 《生きる偲びのシルキィ》 55702233 (Ishizu deck
+x2, ATK 800 / DEF 0), in BOTH forms at once:
+
+- Plain art 'silky' — source
+  ~/workspace/duel-assets/silky-user-20261103.jpg (1062x1481,
+  translucent girl in a white dress holding a broom, in a
+  warm room).
+- Ishizu-scoped variant 'silky-ishizu' — source
+  ~/workspace/duel-assets/silky-ishizu-user-20261103.jpg
+  (1062x1482, the same girl in an Egyptian white dress with
+  a gold sash, at a temple). The 6th DECK_ART entry.
+
+Standard top-anchored crops for all four files, NO start
+adjustment: plain small = y0-1062 -> 320x320 (27.7KB),
+plain big = full width x y0-1464 -> 640x882 (122.6KB);
+ishizu small = y0-1062 -> 320x320 (36.6KB), ishizu big =
+full width x y0-1464 -> 640x882 (179.0KB). Both tile
+simulations (62x88, cover / center top) keep the face whole
+at upper centre — pink hair and purple eyes for the room
+painting, the gold collar and sash reading clearly for the
+temple one — and the real-play frames below confirm the
+bright translucent subject stays legible on the dark board
+(no wash-out into the tile background).
+
+One line in CARD_ART (55702233 -> 'silky'), one line in
+DECK_ART (ishizu: 55702233 -> 'silky-ishizu'). test-cardart:
+CA0s/CA0t pin the deck membership (Ishizu x2, GG none);
+CA7z25-CA7z30 pin the maps, both resolutions and both
+preloads; the seat-0 board (CA28 / CA11aa / CA13l / CA14s /
+CA16v) expects the scoped art on tile / hand / preview and
+NONE on an opponent face-down Silky; a flipped-seat fixture
+(CA29 / CA11ab / CA11ac / CA13m / CA14t / CA16w / CA16x)
+pins the plain fallback under a non-Ishizu context, the
+Egyptian art on the Ishizu seat, and no art on a face-down
+Silky even in Ishizu context.
+
+Registering Silky retired the fallback exemplar AGAIN —
+she had held the role since Carbon's delivery. The role
+now sits with the deck's CLASSIC 《アギド》 16135253: the
+ONLY unlisted Ishizu main-deck monster left (verified by
+enumeration over data.json). The dormant CARD_ART 'agido'
+entry stays keyed to Ancient Guard Agido (62320425), a
+different card, so 16135253 itself resolves to the shared
+placeholder on every fallback surface (CA0o now counts its
+single copy; CA6 and the main fabricated board exercise it
+as before).
+
+230 checks in total, ALL PASSED. Affected suites on the
+integrated tree: setvis / facedown / layout / overlay /
+poolcov / fx / swap / strot / phase2 / ui / typecolor all
+green in one batch; logdetail-ui dropped 2 checks inside
+that batch under load and passed cleanly on a solo re-run
+(known load-flake pattern, not this change — the delivery
+touches only the art maps). Real-play frames (cap-silky.js,
+shots-silky/): Silky drawn in the opening hand, tapped
+(resident preview) and normal-summoned face-up through the
+real sheet at 390x620/700 — tile, hand and preview all
+resolve to card-art-silky-ishizu in the Ishizu deck, name /
+stat lines read 生きる偲びのシルキィ 800/0; the plain
+'silky' remains what any non-Ishizu context sees
+(fixture-pinned, as with Kakan / Carbon before her).
+
+## Per-card illustrations, 17th delivery (2026-11-04): 《メタファイズ・ホルス・ドラゴン》 — the first EXTRA-deck monster
+
+User art for 《メタファイズ・ホルス・ドラゴン》 36898537
+(Ishizu EXTRA deck x2, Synchro, Lv6, ATK 2300 / DEF 1600) —
+source ~/workspace/duel-assets/horus-user-20261103.jpg
+(1024x1536, the silver mechanical dragon with three heads
+and spread wings, hovering over the moonlit Nile). Plain
+registration 'horus' in CARD_ART; NO DECK_ART entry.
+
+Standard top-anchored crops, no start adjustment: small =
+y0-1024 -> 320x320 (43.2KB), big = full width x y0-1411 ->
+640x882 (191.9KB) — the same numbers as Carbon's delivery
+(identical source dimensions). The tile simulation
+(62x88, cover / centre top) keeps the central head whole at
+mid-frame with both wings spanning the width and the moon
+in the top corner; the two side heads sit at the frame
+edges and are cover-cropped on the narrow tile, as with
+any wide subject. NO crop adjustment: the user's rule
+(keep the top, cut the bottom) is followed as-is and the
+head at ~30% height is never at risk.
+
+test-cardart: CA0u/CA0v pin the deck membership (Ishizu
+EXTRA x2, GG none); CA7z31-CA7z34 pin the map, both
+resolutions, the boot preload (EXTRA-deck membership warms
+the art from deck-select time) and the absence of a
+deck-scoped override; a fabricated post-summon board
+(CA30 / CA11ad / CA11ae / CA13n / CA16y) pins the new art
+on an own face-up tile, on an opponent FACE-UP tile
+(public), on the resident preview — and NO art on an
+opponent FACE-DOWN Horus (asymmetry binds EX monsters
+too). 243 checks in total, ALL PASSED. Affected suites:
+setvis / facedown / layout / overlay / poolcov / fx /
+swap / phase2 / ui / typecolor all green (strot dropped
+one sampling check on the first run and passed cleanly
+on two re-runs — the known duel-flow flake, not this
+change; the delivery touches only the art map and the
+two new asset files).
+
+Real-play frames (cap-horus.js, shots-horus/): a real
+duel as the Ishizu deck — the own EXデッキ pile sheet
+lists Horus x2 among the 15; tapping a Horus row opens
+the card info (メタファイズ・ホルス・ドラゴン, 光属性／
+幻竜族／レベル6／攻2300／守1600, full official text) and
+sets the resident preview, whose strip shows the dragon
+painting with the silver Synchro name band and
+ATK 2300／DEF 1600, at 390x620/700. The post-summon field
+tile is fixture-pinned (CA11ad), as the deck-scoped
+deliveries pinned their non-Ishizu surfaces by fixture.
+
+## Cannot-attack reasons (2026-11-04, user report: バロメットが召喚したターンに攻撃できなかった)
+
+Investigation (~/workspace/duel-app-baromett-investigation/) proved
+the ruling was CORRECT: the opponent's 《ラビリンス・ウォール・
+シャドウ》 (34771947) bars monsters summoned that turn from
+attacking, except original-Level-5+; Baromett is an Xyz monster
+and has no Level, so the exception never applies to it. The
+defect was display-only: the core simply never offered the attack
+and the sheet said nothing — the cannot-activate reasons had no
+attack twin.
+
+Fix (client.js, "cannot-attack reasons" block; test surface
+window.__atkblock; gate test-atkblock.js, 21 checks): while a
+SELECT_BATTLECMD is live, an own face-up attack-position monster
+with no offered 攻撃 action gets the greyed 攻撃 row WITH the
+reason (the cannot-activate row's exact form), and the same
+reason rides the persistent preview. Monsters WITH an attack
+action are untouched, as is every other sheet. Derivations are
+text-derived from the pool, evidence is the client's own
+records, and a reason is stated only when it fully explains the
+missing command:
+
+  (1) FIELD summon-turn block — a face-up field spell (szone[5],
+      either player; the effect ranges over both fields) whose
+      text bars this-turn summons except original Level N+.
+      Derivation == {34771947: 5}. "Summoned this turn" is a
+      zone-diff arrival tracker (trackFieldSummons, fed the
+      presentation-event copy in onUpdate): normal summon, set
+      and special summon all arrive; a set flipped face-up by an
+      effect keeps its arrival turn (STATUS_SUMMON_TURN parity);
+      a flip summon of a monster set on an EARLIER turn arrives
+      via the flipsummon event, marked only when exactly one
+      zone turned face-up with that observation (ambiguity =
+      silence). Identity-less previous occupants mint no claim.
+  (2) SELF summon-turn block — the monster's own printed clause
+      「このカードは召喚したターンには攻撃できない」, armed only
+      by a kind-attributed normal summon / set (its script hooks
+      SUMMON_SUCCESS). Derivation == {《迷宮の重魔戦車》35026117}.
+      It sits in the GG deck, so today it can only ever matter
+      under a future control change; the derivation is pool-
+      general regardless.
+  (3) The revive rider's attack half — rides the existing
+      monsterRevived latch (same proof, attack wording). NO pool
+      card carries the rider today (audit C1), so this arms only
+      for a future pool card.
+
+Enumerated NOT covered (pool audit, test-atkblock B/C): the pool
+holds exactly 4 attack-barring clauses. The other two:
+  - 《メタファイズ・ホルス・ドラゴン》's Pendulum-material rider
+    (a stolen monster cannot attack this turn) — UNREACHABLE:
+    the pool holds zero Pendulum monsters, so the branch can
+    never arm; it is also the pool's only control-change text.
+  - 《光の護封霊剣》② (this turn the opponent's monsters cannot
+    direct attack) — the card sits only in the HUMAN's deck, so
+    the blocked side is always the CPU, which has no sheet; the
+    human's attack surface can never be its surface.
+Watcher for future pools: SELECT_COUNTER-style re-audit — if a
+Pendulum monster, an opponent-played direct-attack block, or a
+control-change card enters the pool, B1 fails until the case is
+classified and (where reachable) covered.
+
+Real frames (cap-atkblock.js, shots-atkblock/): rigged decks
+(40x Mudora + Baromett vs 40x Shadow) played through the real
+UI — T1 NS Mudora, CPU T2 Shadow, T3 NS + Xyz Baromett, BP, tap
+Baromett at 390x620/700. The sheet shows the greyed 攻撃 row:
+《ラビリンス・ウォール・シャドウ》の効果で、召喚したターンの
+モンスターは攻撃できません, and the preview carries the same
+reason (asserted from the DOM and read off the frames).
+
 ## Board-tile kind frame (user decision 2026-11-04, variant 1 shipped)
 
 Follow-up to the variant-A band colors: the user also wanted the

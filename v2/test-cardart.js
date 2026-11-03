@@ -28,8 +28,23 @@
      to their plain art. The 4th entry is the sisters' spell,
      《春化精の花冠》 (14108995, 14th delivery): plain art 'kakan'
      (the forest painting) in CARD_ART, 'kakan-ishizu' (the
-     Egyptian variant) in DECK_ART under ishizu. The opponent
+     Egyptian variant) in DECK_ART under ishizu. The 5th entry
+     is 《地久神－カルボン》 (15079028, 15th delivery): plain art
+     'carbon' (the bare stone giant) in CARD_ART, 'carbon-ishizu'
+     (the gold-and-hieroglyph regalia) in DECK_ART under ishizu
+     — the first MONSTER with an override. The 6th entry is
+     《生きる偲びのシルキィ》 (55702233, 16th delivery): plain
+     art 'silky' (the translucent girl in a room) in CARD_ART,
+     'silky-ishizu' (the same girl in Egyptian dress at a
+     temple) in DECK_ART under ishizu. The opponent
      face-down rule binds the overrides exactly like the base art.
+   - The 17th delivery (2026-11-04) is 《メタファイズ・
+     ホルス・ドラゴン》 (36898537): plain art 'horus' (the
+     silver mechanical dragon over the moonlit Nile) in
+     CARD_ART, NO deck-scoped override — and the first
+     EXTRA-deck monster to carry individual art, so its home
+     surfaces are the EX pile sheet / card info / resident
+     preview and any field tile after a Synchro summon.
    Method: boot the real client in jsdom (harness as test-setvis),
    paint a fabricated board through the client's own render() and
    assert the DOM contract in one synchronous eval. */
@@ -46,14 +61,19 @@ const wasmBinary = fs.readFileSync(path.join(V2, 'build', 'ocgcore.wasm'));
 let failures = 0;
 const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (!cond) failures++; };
 
-const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317, KAKAN = 14108995;
+const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317, KAKAN = 14108995, CARBON = 15079028, SILKY = 55702233, HORUS = 36898537;
 // The unlisted exemplar moved Zolga -> Sphinx (5th delivery) ->
-// Mori (after the 7th), and Mori gained art in the 13th delivery
-// (the Vernusylph trio), so the role now sits with
-// 《地久神－カルボン》 15079028: a real Ishizu main-deck monster
-// (x3) with no individual art, usable on every fallback surface
-// (tile / hand / preview / ghost).
-const UNLISTED = 15079028;
+// Mori (after the 7th) -> Carbon (after the 13th) -> Shilkey
+// (after the 15th), and Shilkey gained art in the 16th
+// delivery, so the role now sits with the deck's CLASSIC
+// 《アギド》 16135253: a real Ishizu main-deck monster (x1)
+// with no individual art — the dormant CARD_ART 'agido' entry
+// is keyed to Ancient Guard Agido (62320425), a different
+// card — and, after the 16th delivery, the ONLY unlisted
+// monster left in the deck. Usable on every fallback surface
+// (tile / hand / preview / ghost), like every exemplar
+// before it.
+const UNLISTED = 16135253;
 
 // ---- delivered art files (existence + top-anchored dimensions) ----
 for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.jpg', 640, 882],
@@ -73,7 +93,12 @@ for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.
                          ['card-art-hana-ishizu-s.jpg', 320, 320], ['card-art-hana-ishizu.jpg', 640, 882],
                          ['card-art-oka-ishizu-s.jpg', 320, 320], ['card-art-oka-ishizu.jpg', 640, 882],
                          ['card-art-kakan-s.jpg', 320, 320], ['card-art-kakan.jpg', 640, 882],
-                         ['card-art-kakan-ishizu-s.jpg', 320, 320], ['card-art-kakan-ishizu.jpg', 640, 882]]) {
+                         ['card-art-kakan-ishizu-s.jpg', 320, 320], ['card-art-kakan-ishizu.jpg', 640, 882],
+                         ['card-art-carbon-s.jpg', 320, 320], ['card-art-carbon.jpg', 640, 882],
+                         ['card-art-carbon-ishizu-s.jpg', 320, 320], ['card-art-carbon-ishizu.jpg', 640, 882],
+                         ['card-art-silky-s.jpg', 320, 320], ['card-art-silky.jpg', 640, 882],
+                         ['card-art-silky-ishizu-s.jpg', 320, 320], ['card-art-silky-ishizu.jpg', 640, 882],
+                         ['card-art-horus-s.jpg', 320, 320], ['card-art-horus.jpg', 640, 882]]) {
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
@@ -92,9 +117,14 @@ ok(data.decks.ishizu.main.filter(c => c === CHAOSPOD).length === 2, 'CA0k: the I
 ok(data.decks.ishizu.main.filter(c => c === OKA).length === 1, 'CA0l: the Ishizu deck runs 1 copy of Oka');
 ok(data.decks.ishizu.main.filter(c => c === HANA).length === 2, 'CA0m: the Ishizu deck runs 2 copies of Hana');
 ok(data.decks.ishizu.main.filter(c => c === MORI).length === 3, 'CA0n: the Ishizu deck runs 3 copies of Mori');
-ok(data.decks.ishizu.main.filter(c => c === UNLISTED).length === 3, 'CA0o: the Ishizu deck runs 3 copies of the unlisted exemplar (Carbon)');
-ok(data.decks.ishizu.main.filter(c => c === KAKAN).length === 1, 'CA0p: the Ishizu deck runs 1 copy of Kakan (Vernusylph Flower Crown)');
-ok(!data.decks.gg.main.includes(KAKAN) && !data.decks.gg.extra.includes(KAKAN), 'CA0q: the GG deck does NOT run Kakan (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
+ok(data.decks.ishizu.main.filter(c => c === UNLISTED).length === 1, 'CA0o: the Ishizu deck runs 1 copy of the unlisted exemplar (classic Agido)');
+ok(data.decks.ishizu.main.filter(c => c === CARBON).length === 3, 'CA0p: the Ishizu deck runs 3 copies of Carbon');
+ok(data.decks.ishizu.main.filter(c => c === KAKAN).length === 1, 'CA0q: the Ishizu deck runs 1 copy of Kakan (Vernusylph Flower Crown)');
+ok(!data.decks.gg.main.includes(KAKAN) && !data.decks.gg.extra.includes(KAKAN), 'CA0r: the GG deck does NOT run Kakan (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
+ok(data.decks.ishizu.main.filter(c => c === SILKY).length === 2, 'CA0s: the Ishizu deck runs 2 copies of Silky');
+ok(!data.decks.gg.main.includes(SILKY) && !data.decks.gg.extra.includes(SILKY), 'CA0t: the GG deck does NOT run Silky (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
+ok(data.decks.ishizu.extra.filter(c => c === HORUS).length === 2, 'CA0u: the Ishizu EXTRA deck runs 2 copies of Horus (17th delivery — the first EX monster with individual art)');
+ok(!data.decks.gg.main.includes(HORUS) && !data.decks.gg.extra.includes(HORUS), 'CA0v: the GG deck does NOT run Horus (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -185,6 +215,26 @@ async function boot() {
     kakanIshizuBig: cardArtFile(${KAKAN}, true, 'ishizu'),
     kakanIshizuInline: artInline(${KAKAN}, false, 'ishizu'),
     kakanGg: cardArtFile(${KAKAN}, false, 'gg'),
+    carbonSlug: CARD_ART[${CARBON}],
+    carbonInline: artInline(${CARBON}),
+    deckArtCarbon: DECK_ART.ishizu && DECK_ART.ishizu[${CARBON}],
+    carbonIshizuSmall: cardArtFile(${CARBON}, false, 'ishizu'),
+    carbonIshizuBig: cardArtFile(${CARBON}, true, 'ishizu'),
+    carbonIshizuInline: artInline(${CARBON}, false, 'ishizu'),
+    carbonGg: cardArtFile(${CARBON}, false, 'gg'),
+    silkySlug: CARD_ART[${SILKY}],
+    silkyInline: artInline(${SILKY}),
+    deckArtSilky: DECK_ART.ishizu && DECK_ART.ishizu[${SILKY}],
+    silkyIshizuSmall: cardArtFile(${SILKY}, false, 'ishizu'),
+    silkyIshizuBig: cardArtFile(${SILKY}, true, 'ishizu'),
+    silkyIshizuInline: artInline(${SILKY}, false, 'ishizu'),
+    silkyGg: cardArtFile(${SILKY}, false, 'gg'),
+    horusSlug: CARD_ART[${HORUS}],
+    horusInline: artInline(${HORUS}),
+    horusSmall: cardArtFile(${HORUS}, false),
+    horusBig: cardArtFile(${HORUS}, true),
+    horusDeckArt: DECK_ART.ishizu && DECK_ART.ishizu[${HORUS}],
+    horusIshizu: cardArtFile(${HORUS}, false, 'ishizu'),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.kelbekSlug === 'kelbek' && helpers.kelbekInline.includes('card-art-kelbek-s.jpg') && helpers.kelbekInline.includes('background-position:center top'), 'CA7d: Kelbek maps and stamps like the others');
@@ -230,12 +280,28 @@ async function boot() {
   ok(helpers.okaIshizuSmall === '../assets/card-art-oka-ishizu-s.jpg' && helpers.okaIshizuBig === '../assets/card-art-oka-ishizu.jpg', 'CA7z12: Ishizu context resolves Oka to the Egyptian art (small + big)');
   ok(helpers.okaGg === '../assets/card-art-oka-s.jpg', 'CA7z13: GG context resolves Oka to the plain art');
   ok(helpers.preloaded.includes('../assets/card-art-oka-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-oka-ishizu.jpg'), 'CA7z14: boot preloads the deck-scoped Oka art too');
+  ok(helpers.carbonSlug === 'carbon' && helpers.carbonInline.includes('card-art-carbon-s.jpg') && helpers.carbonInline.includes('background-position:center top'), 'CA7z15: Carbon maps and stamps like the others (15th delivery)');
+  ok(helpers.preloaded.includes('../assets/card-art-carbon-s.jpg') && helpers.preloaded.includes('../assets/card-art-carbon.jpg'), 'CA7z16: boot preloads Carbon too (same deck)');
+  ok(helpers.deckArtCarbon === 'carbon-ishizu', 'CA7z21: DECK_ART registers Carbon -> carbon-ishizu for the Ishizu deck (5th entry, first MONSTER with an override)');
+  ok(helpers.carbonIshizuSmall === '../assets/card-art-carbon-ishizu-s.jpg' && helpers.carbonIshizuBig === '../assets/card-art-carbon-ishizu.jpg' && helpers.carbonIshizuInline.includes('card-art-carbon-ishizu-s.jpg'), 'CA7z22: Ishizu context resolves Carbon to the regalia art (small + big)');
+  ok(helpers.carbonGg === '../assets/card-art-carbon-s.jpg', 'CA7z23: GG context resolves Carbon to the plain stone art');
+  ok(helpers.preloaded.includes('../assets/card-art-carbon-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-carbon-ishizu.jpg'), 'CA7z24: boot preloads the deck-scoped Carbon art too');
+  ok(helpers.silkySlug === 'silky' && helpers.silkyInline.includes('card-art-silky-s.jpg') && helpers.silkyInline.includes('background-position:center top'), 'CA7z25: Silky maps and stamps like the others (16th delivery)');
+  ok(helpers.preloaded.includes('../assets/card-art-silky-s.jpg') && helpers.preloaded.includes('../assets/card-art-silky.jpg'), 'CA7z26: boot preloads Silky too (same deck)');
+  ok(helpers.deckArtSilky === 'silky-ishizu', 'CA7z27: DECK_ART registers Silky -> silky-ishizu for the Ishizu deck (6th entry)');
+  ok(helpers.silkyIshizuSmall === '../assets/card-art-silky-ishizu-s.jpg' && helpers.silkyIshizuBig === '../assets/card-art-silky-ishizu.jpg' && helpers.silkyIshizuInline.includes('card-art-silky-ishizu-s.jpg'), 'CA7z28: Ishizu context resolves Silky to the Egyptian-dress art (small + big)');
+  ok(helpers.silkyGg === '../assets/card-art-silky-s.jpg', 'CA7z29: GG context resolves Silky to the plain room art');
+  ok(helpers.preloaded.includes('../assets/card-art-silky-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-silky-ishizu.jpg'), 'CA7z30: boot preloads the deck-scoped Silky art too');
+  ok(helpers.horusSlug === 'horus' && helpers.horusInline.includes('card-art-horus-s.jpg') && helpers.horusInline.includes('background-position:center top'), 'CA7z31: Horus maps and stamps like the others (17th delivery)');
+  ok(helpers.horusSmall === '../assets/card-art-horus-s.jpg' && helpers.horusBig === '../assets/card-art-horus.jpg', 'CA7z32: Horus art files resolve (small + big)');
+  ok(helpers.preloaded.includes('../assets/card-art-horus-s.jpg') && helpers.preloaded.includes('../assets/card-art-horus.jpg'), 'CA7z33: boot preloads Horus too (EXTRA-deck membership warms the art from deck-select time)');
+  ok(helpers.horusDeckArt === undefined && helpers.horusIshizu === '../assets/card-art-horus-s.jpg', 'CA7z34: Horus has NO deck-scoped override — plain registration, Ishizu context keeps the base art');
   ok(helpers.kakanSlug === 'kakan' && helpers.kakanInline.includes('card-art-kakan-s.jpg') && helpers.kakanInline.includes('background-position:center top'), 'CA7aa: Kakan maps and stamps like the others (plain art = the forest painting)');
   ok(helpers.preloaded.includes('../assets/card-art-kakan-s.jpg') && helpers.preloaded.includes('../assets/card-art-kakan.jpg'), 'CA7ab: boot preloads Kakan too (same deck)');
-  ok(helpers.deckArtKakan === 'kakan-ishizu', 'CA7z15: DECK_ART registers Kakan -> kakan-ishizu for the Ishizu deck (4th entry, first SPELL with an override)');
-  ok(helpers.kakanIshizuSmall === '../assets/card-art-kakan-ishizu-s.jpg' && helpers.kakanIshizuBig === '../assets/card-art-kakan-ishizu.jpg' && helpers.kakanIshizuInline.includes('card-art-kakan-ishizu-s.jpg'), 'CA7z16: Ishizu context resolves Kakan to the Egyptian art (small + big)');
-  ok(helpers.kakanGg === '../assets/card-art-kakan-s.jpg', 'CA7z17: GG context resolves Kakan to the plain forest art');
-  ok(helpers.preloaded.includes('../assets/card-art-kakan-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-kakan-ishizu.jpg'), 'CA7z18: boot preloads the deck-scoped Kakan art too');
+  ok(helpers.deckArtKakan === 'kakan-ishizu', 'CA7z17: DECK_ART registers Kakan -> kakan-ishizu for the Ishizu deck (4th entry, first SPELL with an override)');
+  ok(helpers.kakanIshizuSmall === '../assets/card-art-kakan-ishizu-s.jpg' && helpers.kakanIshizuBig === '../assets/card-art-kakan-ishizu.jpg' && helpers.kakanIshizuInline.includes('card-art-kakan-ishizu-s.jpg'), 'CA7z18: Ishizu context resolves Kakan to the Egyptian art (small + big)');
+  ok(helpers.kakanGg === '../assets/card-art-kakan-s.jpg', 'CA7z19: GG context resolves Kakan to the plain forest art');
+  ok(helpers.preloaded.includes('../assets/card-art-kakan-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-kakan-ishizu.jpg'), 'CA7z20: boot preloads the deck-scoped Kakan art too');
 
   doc.getElementById('startbtn').click();
   for (let i = 0; i < 120 && doc.querySelectorAll('.slot').length < 10; i++)
@@ -251,7 +317,7 @@ async function boot() {
       const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
       b.players[0].mzone[0] = mon(${MUDORA}, 0x1);  // own face-up ATK Mudora
       b.players[0].mzone[1] = mon(${MUDORA}, 0x4);  // own face-up DEF Mudora (2nd copy)
-      b.players[0].mzone[2] = mon(${UNLISTED}, 0x1); // own face-up Carbon (no art)
+      b.players[0].mzone[2] = mon(${UNLISTED}, 0x1); // own face-up unlisted exemplar (no art)
       b.players[0].mzone[3] = mon(${KELDO}, 0x1);   // own face-up Keldo (4th delivery; the 2nd-delivery Agido left the pool in recipe v11, so it can no longer be fabricated from DATA)
       b.players[0].mzone[4] = mon(${KELBEK}, 0x1);  // own face-up Kelbek (3rd delivery)
       b.players[1].mzone[0] = mon(${MUDORA}, 0x1);  // opp face-up Mudora (public: art shows)
@@ -567,6 +633,157 @@ async function boot() {
   `);
   ok(res5b === '' && !String(res5b).includes('oka'), 'CA13g: opponent FACE-DOWN Oka gets NO art even in Ishizu context (asymmetry binds the 3rd override too)');
 
+  // ---- Carbon board (15th delivery): until now Carbon WAS the
+  // unlisted exemplar, so he gets the full-surface treatment on
+  // his own fabricated board — own face-up tile, hand and
+  // preview carry the art, and an opponent face-down Carbon
+  // must NOT (asymmetry, as ever). Seat 0 plays the Ishizu
+  // deck in this boot, so his surfaces carry the DECK-SCOPED
+  // regalia art; the flipped-seat fixture below pins the
+  // plain stone fallback for other deck contexts ----
+  const res8 = window.eval(`
+    (() => {
+      const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
+      const P = () => ({ mzone: [null,null,null,null,null,null,null], szone: [null,null,null,null,null,null], grave: [], removed: [], extra: [], hand: [], deckCount: 38, lp: 8000 });
+      const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
+      b.players[0].mzone[0] = mon(${CARBON}, 0x1);  // own face-up ATK Carbon
+      b.players[1].mzone[0] = mon(${CARBON}, 0x8);  // opp face-down DEF Carbon (MUST stay hidden)
+      b.players[0].hand = [{ code: ${CARBON} }];
+      render(b);
+      const artOf = (zone) => {
+        const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
+        const a = slot && slot.querySelector('.tile .art');
+        return a ? (a.getAttribute('style') || '') : null;
+      };
+      const h = document.querySelector('#hand .hcard[data-code="${CARBON}"] .himg');
+      setPreview(${CARBON}, null);
+      const pv = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      return { ownUp: artOf('0:4:0'), oppDown: artOf('1:4:0'), hand: h ? (h.getAttribute('style') || '') : null, pv };
+    })()
+  `);
+  ok(res8.ownUp !== null && res8.oppDown !== null, 'CA26: non-vacuity — Carbon board rendered');
+  ok(res8.ownUp.includes('card-art-carbon-ishizu-s.jpg'), 'CA11x: Carbon tile in the Ishizu deck (seat 0) shows the DECK-SCOPED regalia art');
+  ok(res8.oppDown === '' && !String(res8.oppDown).includes('carbon'), 'CA13j: opponent FACE-DOWN Carbon gets NO art (asymmetry / no leak)');
+  ok(res8.hand !== null && res8.hand.includes('card-art-carbon-ishizu-s.jpg'), 'CA14q: hand Carbon (Ishizu deck) shows the deck-scoped art');
+  ok(res8.pv.includes('card-art-carbon-ishizu-s.jpg'), 'CA16s: resident preview shows the deck-scoped art for Carbon (unique deck membership: Ishizu)');
+
+  // ---- Carbon, flipped seats (fixture): the 5th override
+  // under the same lens — a Carbon instance owned by a
+  // NON-Ishizu deck context falls back to the plain stone art
+  // on the tile, the hand and the preview, while the Ishizu
+  // seat keeps the regalia variant; the Ishizu seat's
+  // face-down Carbon stays invisible (asymmetry binds the
+  // 5th override too). (Fabricated: the GG deck does not run
+  // Carbon, exactly like the sisters' fixture above.) ----
+  const res9 = window.eval(`
+    (() => {
+      const saved = seatDeckKeys;
+      seatDeckKeys = ['gg', 'ishizu']; // seat 0 now "plays" GG; seat 1 plays Ishizu
+      const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
+      const P = () => ({ mzone: [null,null,null,null,null,null,null], szone: [null,null,null,null,null,null], grave: [], removed: [], extra: [], hand: [], deckCount: 38, lp: 8000 });
+      const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
+      b.players[0].mzone[0] = mon(${CARBON}, 0x1);  // Carbon under a GG deck context (fixture)
+      b.players[1].mzone[0] = mon(${CARBON}, 0x1);  // Carbon in the Ishizu deck (seat 1)
+      b.players[1].mzone[1] = mon(${CARBON}, 0x8);  // opp face-down Carbon, Ishizu context (MUST stay hidden)
+      b.players[0].hand = [{ code: ${CARBON} }];
+      render(b);
+      const artOf = (zone) => {
+        const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
+        const a = slot && slot.querySelector('.tile .art');
+        return a ? (a.getAttribute('style') || '') : null;
+      };
+      const h = document.querySelector('#hand .hcard[data-code="${CARBON}"] .himg');
+      setPreview(${CARBON}, { con: 0, loc: E.LOC.MZONE, seq: 0 });
+      const pvSeat0 = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      setPreview(${CARBON}, { con: 1, loc: E.LOC.MZONE, seq: 0 });
+      const pvSeat1 = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      seatDeckKeys = saved;
+      return { ggTile: artOf('0:4:0'), ishizuTile: artOf('1:4:0'), ishizuDown: artOf('1:4:1'), hand: h ? (h.getAttribute('style') || '') : null, pvSeat0, pvSeat1 };
+    })()
+  `);
+  ok(res9.ggTile !== null && res9.ishizuTile !== null && res9.ishizuDown !== null, 'CA27: non-vacuity — flipped-seat Carbon board rendered');
+  ok(res9.ggTile.includes('card-art-carbon-s.jpg') && !res9.ggTile.includes('carbon-ishizu'), 'CA11y: Carbon under a non-Ishizu deck context falls back to the plain stone art (tile)');
+  ok(res9.ishizuTile.includes('card-art-carbon-ishizu-s.jpg'), 'CA11z: Carbon in the Ishizu deck shows the regalia art even on the opponent’s seat (deck, not chair)');
+  ok(res9.ishizuDown === '' && !String(res9.ishizuDown).includes('carbon'), 'CA13k: opponent FACE-DOWN Carbon gets NO art even in Ishizu context (asymmetry binds the 5th override too)');
+  ok(res9.hand !== null && res9.hand.includes('card-art-carbon-s.jpg') && !res9.hand.includes('carbon-ishizu'), 'CA14r: hand Carbon under a non-Ishizu deck context falls back to the plain art');
+  ok(res9.pvSeat0.includes('card-art-carbon-s.jpg') && !res9.pvSeat0.includes('carbon-ishizu'), 'CA16t: preview of a GG-context Carbon (instance ref) shows the plain art');
+  ok(res9.pvSeat1.includes('card-art-carbon-ishizu-s.jpg'), 'CA16u: preview of an Ishizu-context Carbon (instance ref) shows the regalia art');
+
+  // ---- Silky board (16th delivery): until now Silky WAS the
+  // unlisted exemplar, so she gets the full-surface treatment
+  // on her own fabricated board — own face-up tile, hand and
+  // preview carry the art, and an opponent face-down Silky
+  // must NOT (asymmetry, as ever). Seat 0 plays the Ishizu
+  // deck in this boot, so her surfaces carry the DECK-SCOPED
+  // Egyptian-dress art; the flipped-seat fixture below pins
+  // the plain room-art fallback for other deck contexts ----
+  const res10 = await window.eval(`
+    (() => {
+      const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
+      const P = () => ({ mzone: [null,null,null,null,null,null,null], szone: [null,null,null,null,null,null], grave: [], removed: [], extra: [], hand: [], deckCount: 38, lp: 8000 });
+      const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
+      b.players[0].mzone[0] = mon(${SILKY}, 0x1);  // own face-up ATK Silky
+      b.players[1].mzone[0] = mon(${SILKY}, 0x8);  // opp face-down DEF Silky (MUST stay hidden)
+      b.players[0].hand = [{ code: ${SILKY} }];
+      render(b);
+      const artOf = (zone) => {
+        const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
+        const a = slot && slot.querySelector('.tile .art');
+        return a ? (a.getAttribute('style') || '') : null;
+      };
+      const h = document.querySelector('#hand .hcard[data-code="${SILKY}"] .himg');
+      setPreview(${SILKY}, null);
+      const pv = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      return { ownUp: artOf('0:4:0'), oppDown: artOf('1:4:0'), hand: h ? (h.getAttribute('style') || '') : null, pv };
+    })()
+  `);
+  ok(res10.ownUp !== null && res10.oppDown !== null, 'CA28: non-vacuity — Silky board rendered');
+  ok(res10.ownUp.includes('card-art-silky-ishizu-s.jpg'), 'CA11aa: Silky tile in the Ishizu deck (seat 0) shows the DECK-SCOPED Egyptian-dress art');
+  ok(res10.oppDown === '' && !String(res10.oppDown).includes('silky'), 'CA13l: opponent FACE-DOWN Silky gets NO art (asymmetry / no leak)');
+  ok(res10.hand !== null && res10.hand.includes('card-art-silky-ishizu-s.jpg'), 'CA14s: hand Silky (Ishizu deck) shows the deck-scoped art');
+  ok(res10.pv.includes('card-art-silky-ishizu-s.jpg'), 'CA16v: resident preview shows the deck-scoped art for Silky (unique deck membership: Ishizu)');
+
+  // ---- Silky, flipped seats (fixture): the 6th override
+  // under the same lens — a Silky instance owned by a
+  // NON-Ishizu deck context falls back to the plain room art
+  // on the tile, the hand and the preview, while the Ishizu
+  // seat keeps the Egyptian variant; the Ishizu seat's
+  // face-down Silky stays invisible (asymmetry binds the
+  // 6th override too). (Fabricated: the GG deck does not run
+  // Silky, exactly like Carbon's fixture above.) ----
+  const res11 = await window.eval(`
+    (() => {
+      const saved = seatDeckKeys;
+      seatDeckKeys = ['gg', 'ishizu']; // seat 0 now "plays" GG; seat 1 plays Ishizu
+      const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
+      const P = () => ({ mzone: [null,null,null,null,null,null,null], szone: [null,null,null,null,null,null], grave: [], removed: [], extra: [], hand: [], deckCount: 38, lp: 8000 });
+      const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
+      b.players[0].mzone[0] = mon(${SILKY}, 0x1);  // Silky under a GG deck context (fixture)
+      b.players[1].mzone[0] = mon(${SILKY}, 0x1);  // Silky in the Ishizu deck (seat 1)
+      b.players[1].mzone[1] = mon(${SILKY}, 0x8);  // opp face-down Silky, Ishizu context (MUST stay hidden)
+      b.players[0].hand = [{ code: ${SILKY} }];
+      render(b);
+      const artOf = (zone) => {
+        const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
+        const a = slot && slot.querySelector('.tile .art');
+        return a ? (a.getAttribute('style') || '') : null;
+      };
+      const h = document.querySelector('#hand .hcard[data-code="${SILKY}"] .himg');
+      setPreview(${SILKY}, { con: 0, loc: E.LOC.MZONE, seq: 0 });
+      const pvSeat0 = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      setPreview(${SILKY}, { con: 1, loc: E.LOC.MZONE, seq: 0 });
+      const pvSeat1 = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      seatDeckKeys = saved;
+      return { ggTile: artOf('0:4:0'), ishizuTile: artOf('1:4:0'), ishizuDown: artOf('1:4:1'), hand: h ? (h.getAttribute('style') || '') : null, pvSeat0, pvSeat1 };
+    })()
+  `);
+  ok(res11.ggTile !== null && res11.ishizuTile !== null && res11.ishizuDown !== null, 'CA29: non-vacuity — flipped-seat Silky board rendered');
+  ok(res11.ggTile.includes('card-art-silky-s.jpg') && !res11.ggTile.includes('silky-ishizu'), 'CA11ab: Silky under a non-Ishizu deck context falls back to the plain room art (tile)');
+  ok(res11.ishizuTile.includes('card-art-silky-ishizu-s.jpg'), 'CA11ac: Silky in the Ishizu deck shows the Egyptian art even on the opponent’s seat (deck, not chair)');
+  ok(res11.ishizuDown === '' && !String(res11.ishizuDown).includes('silky'), 'CA13m: opponent FACE-DOWN Silky gets NO art even in Ishizu context (asymmetry binds the 6th override too)');
+  ok(res11.hand !== null && res11.hand.includes('card-art-silky-s.jpg') && !res11.hand.includes('silky-ishizu'), 'CA14t: hand Silky under a non-Ishizu deck context falls back to the plain art');
+  ok(res11.pvSeat0.includes('card-art-silky-s.jpg') && !res11.pvSeat0.includes('silky-ishizu'), 'CA16w: preview of a GG-context Silky (instance ref) shows the plain art');
+  ok(res11.pvSeat1.includes('card-art-silky-ishizu-s.jpg'), 'CA16x: preview of an Ishizu-context Silky (instance ref) shows the Egyptian art');
   // ---- Kakan, flipped seats (fixture): the 4th override under
   // the same lens as the sisters — a Kakan instance owned by a
   // NON-Ishizu deck context falls back to the plain forest art
@@ -610,6 +827,40 @@ async function boot() {
   ok(res7.hand !== null && res7.hand.includes('card-art-kakan-s.jpg') && !res7.hand.includes('kakan-ishizu'), 'CA14p: hand Kakan under a non-Ishizu deck context falls back to the plain art');
   ok(res7.pvSeat0.includes('card-art-kakan-s.jpg') && !res7.pvSeat0.includes('kakan-ishizu'), 'CA16q: preview of a GG-context Kakan (instance ref) shows the plain art');
   ok(res7.pvSeat1.includes('card-art-kakan-ishizu-s.jpg'), 'CA16r: preview of an Ishizu-context Kakan (instance ref) shows the Egyptian art');
+
+  // ---- Horus board (17th delivery): the first EXTRA-deck
+  // monster with individual art. A plain CARD_ART registration
+  // (no override), so every deck context resolves to the same
+  // 'horus' painting. Fabricated post-summon board: own
+  // face-up tile and the resident preview carry the art, an
+  // opponent face-up Horus (public information) carries it
+  // too, and an opponent FACE-DOWN Horus must NOT (asymmetry,
+  // as ever — an EX monster's identity is hidden while it is
+  // face-down exactly like any other card). ----
+  const res12 = await window.eval(`
+    (() => {
+      const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
+      const P = () => ({ mzone: [null,null,null,null,null,null,null], szone: [null,null,null,null,null,null], grave: [], removed: [], extra: [], hand: [], deckCount: 38, lp: 8000 });
+      const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
+      b.players[0].mzone[0] = mon(${HORUS}, 0x1);  // own face-up ATK Horus (post-Synchro)
+      b.players[1].mzone[0] = mon(${HORUS}, 0x1);  // opp face-up Horus (public: art shows)
+      b.players[1].mzone[1] = mon(${HORUS}, 0x8);  // opp face-down DEF Horus (MUST stay hidden)
+      render(b);
+      const artOf = (zone) => {
+        const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
+        const a = slot && slot.querySelector('.tile .art');
+        return a ? (a.getAttribute('style') || '') : null;
+      };
+      setPreview(${HORUS}, null);
+      const pv = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      return { ownUp: artOf('0:4:0'), oppUp: artOf('1:4:0'), oppDown: artOf('1:4:1'), pv };
+    })()
+  `);
+  ok(res12.ownUp !== null && res12.oppUp !== null && res12.oppDown !== null, 'CA30: non-vacuity — Horus board rendered');
+  ok(res12.ownUp.includes('card-art-horus-s.jpg'), 'CA11ad: own face-up Horus tile shows the new art (17th delivery)');
+  ok(res12.oppUp.includes('card-art-horus-s.jpg'), 'CA11ae: opponent FACE-UP Horus shows the art too (public information)');
+  ok(res12.oppDown === '' && !String(res12.oppDown).includes('horus'), 'CA13n: opponent FACE-DOWN Horus gets NO art (asymmetry / no leak)');
+  ok(res12.pv.includes('card-art-horus-s.jpg'), 'CA16y: resident preview shows the Horus art (unique deck membership: Ishizu)');
 
   window.close();
   console.log(failures === 0 ? 'ALL CARDART CHECKS PASSED' : failures + ' CARDART CHECK(S) FAILED');
