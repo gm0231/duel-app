@@ -1,0 +1,242 @@
+{
+ "callout-summon-me@620": {
+  "baselineLog": [],
+  "trigger": {
+   "newLog": [
+    {
+     "kind": "place",
+     "how": "summon",
+     "code": 31525442
+    },
+    {
+     "kind": "summoncall",
+     "code": 31525442,
+     "how": "summon",
+     "con": 0
+    }
+   ],
+   "scenes": [
+    {
+     "kind": "summoncall",
+     "t0": 0,
+     "dur": 900
+    }
+   ]
+  },
+  "frameLocalMs": {
+   "f01": 150,
+   "f02": 417
+  }
+ },
+ "callout-summon-opp@620": {
+  "baselineLog": [],
+  "trigger": {
+   "newLog": [
+    {
+     "kind": "place",
+     "how": "summon",
+     "code": 25926710
+    },
+    {
+     "kind": "summoncall",
+     "code": 25926710,
+     "how": "summon",
+     "con": 1
+    }
+   ],
+   "scenes": [
+    {
+     "kind": "summoncall",
+     "t0": 0,
+     "dur": 1060
+    }
+   ]
+  },
+  "frameLocalMs": {
+   "f01": 117,
+   "f02": 417
+  }
+ },
+ "callout-spsummon@620": {
+  "baselineLog": [],
+  "trigger": {
+   "newLog": [
+    {
+     "kind": "portal",
+     "method": "generic",
+     "code": 16135253
+    },
+    {
+     "kind": "summoncall",
+     "code": 16135253,
+     "how": "spsummon",
+     "con": 0
+    }
+   ],
+   "scenes": [
+    {
+     "kind": "portal",
+     "t0": 0,
+     "dur": 840
+    },
+    {
+     "kind": "summoncall",
+     "t0": 0,
+     "dur": 900
+    }
+   ]
+  },
+  "frameLocalMs": {
+   "f01": 117,
+   "f02": 400
+  }
+ },
+ "callout-flipsummon@620": {
+  "baselineLog": [],
+  "trigger": {
+   "newLog": [
+    {
+     "kind": "summoncall",
+     "code": 31525442,
+     "how": "flipsummon",
+     "con": 0
+    },
+    {
+     "kind": "flip",
+     "code": 31525442
+    }
+   ],
+   "scenes": [
+    {
+     "kind": "summoncall",
+     "t0": 0,
+     "dur": 900
+    }
+   ]
+  },
+  "frameLocalMs": {
+   "f01": 117,
+   "f02": 417
+  }
+ },
+ "callout-summon-me@700": {
+  "baselineLog": [],
+  "trigger": {
+   "newLog": [
+    {
+     "kind": "place",
+     "how": "summon",
+     "code": 31525442
+    },
+    {
+     "kind": "summoncall",
+     "code": 31525442,
+     "how": "summon",
+     "con": 0
+    }
+   ],
+   "scenes": [
+    {
+     "kind": "summoncall",
+     "t0": 0,
+     "dur": 900
+    }
+   ]
+  },
+  "frameLocalMs": {
+   "f01": 183,
+   "f02": 500
+  }
+ },
+ "callout-summon-opp@700": {
+  "baselineLog": [],
+  "trigger": {
+   "newLog": [
+    {
+     "kind": "place",
+     "how": "summon",
+     "code": 25926710
+    },
+    {
+     "kind": "summoncall",
+     "code": 25926710,
+     "how": "summon",
+     "con": 1
+    }
+   ],
+   "scenes": [
+    {
+     "kind": "summoncall",
+     "t0": 0,
+     "dur": 1060
+    }
+   ]
+  },
+  "frameLocalMs": {
+   "f01": 167,
+   "f02": 567
+  }
+ },
+ "callout-spsummon@700": {
+  "baselineLog": [],
+  "trigger": {
+   "newLog": [
+    {
+     "kind": "portal",
+     "method": "generic",
+     "code": 16135253
+    },
+    {
+     "kind": "summoncall",
+     "code": 16135253,
+     "how": "spsummon",
+     "con": 0
+    }
+   ],
+   "scenes": [
+    {
+     "kind": "portal",
+     "t0": 0,
+     "dur": 840
+    },
+    {
+     "kind": "summoncall",
+     "t0": 0,
+     "dur": 900
+    }
+   ]
+  },
+  "frameLocalMs": {
+   "f01": 167,
+   "f02": 800
+  }
+ },
+ "callout-flipsummon@700": {
+  "baselineLog": [],
+  "trigger": {
+   "newLog": [
+    {
+     "kind": "summoncall",
+     "code": 31525442,
+     "how": "flipsummon",
+     "con": 0
+    },
+    {
+     "kind": "flip",
+     "code": 31525442
+    }
+   ],
+   "scenes": [
+    {
+     "kind": "summoncall",
+     "t0": 0,
+     "dur": 900
+    }
+   ]
+  },
+  "frameLocalMs": {
+   "f01": 117,
+   "f02": 801
+  }
+ }
+}

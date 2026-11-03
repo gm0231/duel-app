@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>トトと簡易デュエル</title>
+<title>MILLENNIUM DUELISTS</title>
 <style>
   :root{
     --gold:#c9a227; --gold-dim:#8a6d1f; --ink:#0d0b08; --panel:#1b1712; --panel2:#241e16;
@@ -283,7 +283,9 @@
      response mode) — at short viewports the column can exceed the
      screen, so the START overlay (not the duel board) may scroll */
   #start{justify-content:flex-start;overflow-y:auto;padding:6px 20px 8px;}
-  #start h1{font-size:20px;margin:2px 0 2px;}
+  #start h1{font-size:26px;font-weight:800;letter-spacing:.14em;line-height:1.3;margin:4px 0 2px;}
+  #start h1 span{display:block;}
+  #start .subtitle{font-size:12px;letter-spacing:.34em;color:var(--gold-dim);margin:1px 0 3px;}
   #start .startbtn{margin-top:auto;}
   /* placement hint is an overlay banner under the top bar — it must never
      push the board down when it appears mid-duel */
@@ -443,6 +445,7 @@
   .fx3-chainword{position:absolute;transform:translate(-50%,-50%);font-size:20px;font-weight:800;letter-spacing:.3em;color:#59d8f2;text-shadow:0 2px 8px #000,0 0 18px #59d8f288;pointer-events:none;z-index:7;white-space:nowrap;}
   .fx3-chainword span{display:inline-block;}
   .fx3-goldframe{position:absolute;border-radius:6px;box-shadow:0 0 0 2px rgba(255,217,77,.95),0 12px 34px rgba(0,0,0,.55);pointer-events:none;}
+  .fx3-lapisframe{position:absolute;border-radius:6px;box-shadow:0 0 0 2px rgba(89,216,242,.95),0 12px 34px rgba(0,0,0,.55);pointer-events:none;}
   .fx3-goldglow{position:absolute;border-radius:50%;box-shadow:0 0 24px 6px rgba(201,162,39,.7);pointer-events:none;}
   .fx3-grayframe{position:absolute;border-radius:6px;box-shadow:0 0 0 2px rgba(170,170,170,.9),0 12px 34px rgba(0,0,0,.55);pointer-events:none;}
   .fx-chainpop.solving .no{color:var(--gold);}
@@ -584,7 +587,8 @@
   <div id="sheetwrap"><button id="sheetx" title="閉じる">×</button><button id="peekbtn">盤面を見る</button><div id="sheet"></div></div>
   <div id="infopop"></div>
   <div class="overlay" id="start">
-    <h1>トトと簡易デュエル</h1>
+    <h1><span>MILLENNIUM</span><span>DUELISTS</span></h1>
+    <p class="subtitle">for GENESYS</p>
     <p class="tagline">CPUとの1対1。デッキと先攻を選んで開始。</p>
     <div class="segrow">自分のデッキ</div>
     <div class="deckgrid seg" id="seg-mydeck">
