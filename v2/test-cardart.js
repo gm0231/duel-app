@@ -43,14 +43,14 @@ const wasmBinary = fs.readFileSync(path.join(V2, 'build', 'ocgcore.wasm'));
 let failures = 0;
 const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (!cond) failures++; };
 
-const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317;
+const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317, CARBON = 15079028;
 // The unlisted exemplar moved Zolga -> Sphinx (5th delivery) ->
-// Mori (after the 7th), and Mori gained art in the 13th delivery
-// (the Vernusylph trio), so the role now sits with
-// 《地久神－カルボン》 15079028: a real Ishizu main-deck monster
-// (x3) with no individual art, usable on every fallback surface
-// (tile / hand / preview / ghost).
-const UNLISTED = 15079028;
+// Mori (after the 7th) -> Carbon (after the 13th), and Carbon
+// gained art in the 15th delivery, so the role now sits with
+// 《生きる偲びのシルキィ》 55702233: a real Ishizu main-deck
+// monster (x2) with no individual art, usable on every fallback
+// surface (tile / hand / preview / ghost).
+const UNLISTED = 55702233;
 
 // ---- delivered art files (existence + top-anchored dimensions) ----
 for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.jpg', 640, 882],
@@ -68,7 +68,8 @@ for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.
                          ['card-art-mori-s.jpg', 320, 320], ['card-art-mori.jpg', 640, 882],
                          ['card-art-mori-ishizu-s.jpg', 320, 320], ['card-art-mori-ishizu.jpg', 640, 882],
                          ['card-art-hana-ishizu-s.jpg', 320, 320], ['card-art-hana-ishizu.jpg', 640, 882],
-                         ['card-art-oka-ishizu-s.jpg', 320, 320], ['card-art-oka-ishizu.jpg', 640, 882]]) {
+                         ['card-art-oka-ishizu-s.jpg', 320, 320], ['card-art-oka-ishizu.jpg', 640, 882],
+                         ['card-art-carbon-s.jpg', 320, 320], ['card-art-carbon.jpg', 640, 882]]) {
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
@@ -87,7 +88,8 @@ ok(data.decks.ishizu.main.filter(c => c === CHAOSPOD).length === 2, 'CA0k: the I
 ok(data.decks.ishizu.main.filter(c => c === OKA).length === 1, 'CA0l: the Ishizu deck runs 1 copy of Oka');
 ok(data.decks.ishizu.main.filter(c => c === HANA).length === 2, 'CA0m: the Ishizu deck runs 2 copies of Hana');
 ok(data.decks.ishizu.main.filter(c => c === MORI).length === 3, 'CA0n: the Ishizu deck runs 3 copies of Mori');
-ok(data.decks.ishizu.main.filter(c => c === UNLISTED).length === 3, 'CA0o: the Ishizu deck runs 3 copies of the unlisted exemplar (Carbon)');
+ok(data.decks.ishizu.main.filter(c => c === UNLISTED).length === 2, 'CA0o: the Ishizu deck runs 2 copies of the unlisted exemplar (Shilkey)');
+ok(data.decks.ishizu.main.filter(c => c === CARBON).length === 3, 'CA0p: the Ishizu deck runs 3 copies of Carbon');
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -170,6 +172,8 @@ async function boot() {
     okaIshizuSmall: cardArtFile(${OKA}, false, 'ishizu'),
     okaIshizuBig: cardArtFile(${OKA}, true, 'ishizu'),
     okaGg: cardArtFile(${OKA}, false, 'gg'),
+    carbonSlug: CARD_ART[${CARBON}],
+    carbonInline: artInline(${CARBON}),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.kelbekSlug === 'kelbek' && helpers.kelbekInline.includes('card-art-kelbek-s.jpg') && helpers.kelbekInline.includes('background-position:center top'), 'CA7d: Kelbek maps and stamps like the others');
@@ -215,6 +219,8 @@ async function boot() {
   ok(helpers.okaIshizuSmall === '../assets/card-art-oka-ishizu-s.jpg' && helpers.okaIshizuBig === '../assets/card-art-oka-ishizu.jpg', 'CA7z12: Ishizu context resolves Oka to the Egyptian art (small + big)');
   ok(helpers.okaGg === '../assets/card-art-oka-s.jpg', 'CA7z13: GG context resolves Oka to the plain art');
   ok(helpers.preloaded.includes('../assets/card-art-oka-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-oka-ishizu.jpg'), 'CA7z14: boot preloads the deck-scoped Oka art too');
+  ok(helpers.carbonSlug === 'carbon' && helpers.carbonInline.includes('card-art-carbon-s.jpg') && helpers.carbonInline.includes('background-position:center top'), 'CA7z15: Carbon maps and stamps like the others (15th delivery)');
+  ok(helpers.preloaded.includes('../assets/card-art-carbon-s.jpg') && helpers.preloaded.includes('../assets/card-art-carbon.jpg'), 'CA7z16: boot preloads Carbon too (same deck)');
 
   doc.getElementById('startbtn').click();
   for (let i = 0; i < 120 && doc.querySelectorAll('.slot').length < 10; i++)
@@ -230,7 +236,7 @@ async function boot() {
       const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
       b.players[0].mzone[0] = mon(${MUDORA}, 0x1);  // own face-up ATK Mudora
       b.players[0].mzone[1] = mon(${MUDORA}, 0x4);  // own face-up DEF Mudora (2nd copy)
-      b.players[0].mzone[2] = mon(${UNLISTED}, 0x1); // own face-up Carbon (no art)
+      b.players[0].mzone[2] = mon(${UNLISTED}, 0x1); // own face-up unlisted exemplar (no art)
       b.players[0].mzone[3] = mon(${KELDO}, 0x1);   // own face-up Keldo (4th delivery; the 2nd-delivery Agido left the pool in recipe v11, so it can no longer be fabricated from DATA)
       b.players[0].mzone[4] = mon(${KELBEK}, 0x1);  // own face-up Kelbek (3rd delivery)
       b.players[1].mzone[0] = mon(${MUDORA}, 0x1);  // opp face-up Mudora (public: art shows)
@@ -508,6 +514,37 @@ async function boot() {
     })()
   `);
   ok(res5b === '' && !String(res5b).includes('oka'), 'CA13g: opponent FACE-DOWN Oka gets NO art even in Ishizu context (asymmetry binds the 3rd override too)');
+
+  // ---- Carbon board (15th delivery): until now Carbon WAS the
+  // unlisted exemplar, so he gets the full-surface treatment on
+  // his own fabricated board — own face-up tile, hand and
+  // preview carry the art, and an opponent face-down Carbon
+  // must NOT (asymmetry, as ever) ----
+  const res6 = window.eval(`
+    (() => {
+      const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
+      const P = () => ({ mzone: [null,null,null,null,null,null,null], szone: [null,null,null,null,null,null], grave: [], removed: [], extra: [], hand: [], deckCount: 38, lp: 8000 });
+      const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
+      b.players[0].mzone[0] = mon(${CARBON}, 0x1);  // own face-up ATK Carbon
+      b.players[1].mzone[0] = mon(${CARBON}, 0x8);  // opp face-down DEF Carbon (MUST stay hidden)
+      b.players[0].hand = [{ code: ${CARBON} }];
+      render(b);
+      const artOf = (zone) => {
+        const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
+        const a = slot && slot.querySelector('.tile .art');
+        return a ? (a.getAttribute('style') || '') : null;
+      };
+      const h = document.querySelector('#hand .hcard[data-code="${CARBON}"] .himg');
+      setPreview(${CARBON}, null);
+      const pv = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      return { ownUp: artOf('0:4:0'), oppDown: artOf('1:4:0'), hand: h ? (h.getAttribute('style') || '') : null, pv };
+    })()
+  `);
+  ok(res6.ownUp !== null && res6.oppDown !== null, 'CA24: non-vacuity — Carbon board rendered');
+  ok(res6.ownUp.includes('card-art-carbon-s.jpg'), 'CA11t: Carbon tile shows its own art');
+  ok(res6.oppDown === '' && !String(res6.oppDown).includes('carbon'), 'CA13h: opponent FACE-DOWN Carbon gets NO art (asymmetry / no leak)');
+  ok(res6.hand !== null && res6.hand.includes('card-art-carbon-s.jpg'), 'CA14o: hand Carbon shows the art');
+  ok(res6.pv.includes('card-art-carbon-s.jpg'), 'CA16p: resident preview shows the art for Carbon');
 
   window.close();
   console.log(failures === 0 ? 'ALL CARDART CHECKS PASSED' : failures + ' CARDART CHECK(S) FAILED');

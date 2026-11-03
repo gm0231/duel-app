@@ -4735,3 +4735,29 @@ Merged over the DECK_ART line (ac90e65): the eight same-line
 collisions were resolved by keeping BOTH changes — deck-scoped
 art resolution (artInline/artCss/artApply deck arguments) and
 the kind class on the band.
+
+Fifteenth delivery (user, 2026-11-04): 《地久神－カルボン》
+15079028 (carbon); source ~/workspace/duel-assets/
+carbon-user-20261103.jpg (1024x1536, the stone giant
+standing over the Earth). Standard top-anchored crops, no
+start adjustment: small = y0-1024 -> 320x320 (38.6KB), big =
+full width x y0-1411 -> 640x882 (175.7KB). The tile
+simulation (cover, centre top, 62x88 box) keeps the giant's
+face whole at upper centre, with the halo ring and the stone
+wings in frame. One line in CARD_ART — a plain registration,
+no DECK_ART entry.
+test-cardart: Carbon WAS the unlisted fallback exemplar, so
+the role moved Carbon -> 《生きる偲びのシルキィ》 55702233
+(x2 in the deck, no individual art; the classic Agido
+16135253 x1 was passed over so the exemplar stays clear of
+the dormant-Agido-art question). Carbon gained CA0p /
+CA7z15-CA7z16 / CA11t / CA13h / CA14o / CA16p / CA24 — 168
+checks in total, ALL PASSED. Affected suites on the branch:
+setvis / facedown / typecolor / layout / overlay / fx /
+swap / poolcov / recipe-v11 ALL PASSED; test-strot 24/25
+with only the known ST4 reachability flake (ST5 passed).
+Real-play frames (cap-carbon.js, shots-carbon/): drawn,
+tapped (resident preview) and normal-summoned face-up
+through the real sheet at 390x620/700 — tile and preview
+carry the new art, name/stat lines read 地久神－カルボン
+1200/1200.
