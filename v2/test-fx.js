@@ -315,6 +315,82 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     window.close();
   }
 
+  // ================= Part 1C: FX coverage — summon callouts =================
+  // Every summon that no bigger scene owns names its card: a normal
+  // summon was only a puff, a generic special summon / revival only a
+  // portal glow. The callout record fixes the coverage; fusion / Xyz
+  // (converge + portal), the ace scene and face-down arrivals must
+  // NOT gain one (owned elsewhere / not public information).
+  {
+    const window = await boot();
+    const fx = window.__fx;
+    fx.reset();
+    const step = (st, evs) => { const before = fx.log.length; fx.process(evs || [], st); return fx.log.slice(before); };
+    const has = (recs, kind, pred) => recs.some(r => r.kind === kind && (!pred || pred(r)));
+
+    step(fakeState()); // silent baseline
+
+    // own normal summon: placement beat + callout
+    let st = fakeState(s => { s.players[0].mzone[0] = mon(NORMAL); });
+    let recs = step(st, [{ kind: 'summon', code: NORMAL, con: 0 }]);
+    ok(has(recs, 'place', r => r.how === 'summon'), 'FXC1: a normal summon keeps its placement beat');
+    ok(has(recs, 'summoncall', r => r.how === 'summon' && r.code === NORMAL && r.con === 0), 'FXC1b: a normal summon names its card (callout)');
+
+    // opponent normal summon: callout on their seat too
+    st = fakeState(s => { s.players[0].mzone[0] = mon(NORMAL); s.players[1].mzone[0] = mon(NORMAL2); });
+    recs = step(st, [{ kind: 'summon', code: NORMAL2, con: 1 }]);
+    ok(has(recs, 'summoncall', r => r.how === 'summon' && r.con === 1), 'FXC2: an opponent normal summon names its card');
+
+    // generic special summon from the hand: portal + callout
+    st = fakeState(s => { s.players[0].mzone[0] = mon(NORMAL); s.players[0].mzone[1] = mon(NORMAL2); s.players[1].mzone[0] = mon(NORMAL2); });
+    recs = step(st, [{ kind: 'spsummon', code: NORMAL2, con: 0 }]);
+    ok(has(recs, 'portal', r => r.method === 'generic'), 'FXC3: a generic special summon keeps its portal');
+    ok(has(recs, 'summoncall', r => r.how === 'spsummon' && r.code === NORMAL2), 'FXC3b: a generic special summon names its card');
+
+    // revival from the grave: portal + callout
+    fx.reset();
+    step(fakeState(s => { s.players[0].grave = [NORMAL]; }));
+    st = fakeState(s => { s.players[0].mzone[0] = mon(NORMAL); });
+    recs = step(st, [{ kind: 'spsummon', code: NORMAL, con: 0 }]);
+    ok(has(recs, 'portal', r => r.method === 'revive'), 'FXC4: a revival keeps its revive portal');
+    ok(has(recs, 'summoncall', r => r.how === 'revive'), 'FXC4b: a revival names its card');
+
+    // fusion summon: converge + portal own it — no callout on top
+    fx.reset();
+    step(fakeState(s => { s.players[0].mzone[0] = mon(NORMAL); s.players[0].mzone[1] = mon(NORMAL2); }));
+    st = fakeState(s => { s.players[0].mzone[2] = mon(FUSION); s.players[0].grave = [NORMAL, NORMAL2]; });
+    recs = step(st, [{ kind: 'spsummon', code: FUSION, con: 0 }]);
+    ok(has(recs, 'portal', r => r.method === 'fusion'), 'FXC5: a fusion summon keeps its portal');
+    ok(!recs.some(r => r.kind === 'summoncall'), 'FXC5b: a fusion summon gets NO callout (converge + portal own it)');
+
+    // set monster: placement beat only, never a callout (not public)
+    fx.reset();
+    step(fakeState());
+    st = fakeState(s => { s.players[0].mzone[0] = { code: NORMAL, pos: 8, materials: 0, curAtk: data.cards[NORMAL].atk, curDef: data.cards[NORMAL].def }; });
+    recs = step(st, [{ kind: 'set', code: NORMAL, con: 0, loc: 4 }]);
+    ok(has(recs, 'place', r => r.how === 'set'), 'FXC6: a set monster keeps its placement beat');
+    ok(!recs.some(r => r.kind === 'summoncall'), 'FXC6b: a set monster gets NO callout (face-down is not public)');
+
+    // face-down special-summon arrival: no callout either
+    st = fakeState(s => {
+      s.players[0].mzone[0] = { code: NORMAL, pos: 8, materials: 0, curAtk: data.cards[NORMAL].atk, curDef: data.cards[NORMAL].def };
+      s.players[0].mzone[1] = { code: NORMAL2, pos: 8, materials: 0, curAtk: data.cards[NORMAL2].atk, curDef: data.cards[NORMAL2].def };
+    });
+    recs = step(st, [{ kind: 'spsummon', code: NORMAL2, con: 0 }]);
+    ok(!recs.some(r => r.kind === 'summoncall'), 'FXC7: a face-down special summon gets NO callout');
+
+    // flip summon: the flip beat + the callout
+    st = fakeState(s => {
+      s.players[0].mzone[0] = mon(NORMAL);
+      s.players[0].mzone[1] = { code: NORMAL2, pos: 8, materials: 0, curAtk: data.cards[NORMAL2].atk, curDef: data.cards[NORMAL2].def };
+    });
+    recs = step(st, [{ kind: 'flipsummon', code: NORMAL, con: 0 }]);
+    ok(has(recs, 'flip', r => r.code === NORMAL), 'FXC8: a flip summon keeps its flip beat');
+    ok(has(recs, 'summoncall', r => r.how === 'flipsummon' && r.code === NORMAL), 'FXC8b: a flip summon names its card');
+    ok(fx.error === null, 'FXC9: fxError stayed null through every coverage step (got: ' + fx.error + ')');
+    window.close();
+  }
+
   // ================= Part 2: live duels =================
   if (process.env.FX_SYNTH_ONLY) { console.log(failures === 0 ? 'ALL FX SYNTHETIC CHECKS PASSED' : failures + ' FAILED'); process.exit(failures ? 1 : 0); }
   const tally = {};

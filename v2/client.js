@@ -1432,6 +1432,50 @@ function fxPuff(key) { // normal summons & sets: a small placement beat only
   fxAnim(d, [{ opacity: 0 }, { opacity: 0.9, offset: 0.3 }, { opacity: 0 }], { duration: 430, easing: 'ease-out' });
   fxKill(d, 470);
 }
+// ---- summon callout (FX coverage round): every summon that no
+// bigger scene owns still NAMES its card. The summoned card's image
+// stamps in over its own zone — settle-in, a seat rim (gold = the
+// human seat, lapis = the opponent, the redesign colour grammar),
+// a readable hold (longer for the opponent, whose actions run on
+// the CPU's pace), then an ease-out. It claims no input window and
+// sits in the FX layer, so it can never cover a prompt or the
+// result; a face-down arrival never calls out (its identity is not
+// public yet), and the ace scene's summons stand down via the
+// arrival branch order (they are consumed before reaching here).
+function fxSummonCallout(key, code, con, pos) {
+  if (code == null || (pos != null && (pos & E.POS_FACEUP) === 0)) return;
+  const el = fxSlotEl(key); if (!el) return;
+  const app = $('app'); if (!app) return;
+  const ar = fxRel(app);
+  const r = fxRel(el);
+  const W = Math.round(r.w * 1.5), H = Math.round(W * 1.36);
+  let cx = r.cx, cy = r.y + (r.h - 24) / 2;
+  cx = Math.max(W / 2 + 2, Math.min(ar.w - W / 2 - 2, cx));
+  cy = Math.max(H / 2 + 2, Math.min(ar.h - H / 2 - 2, cy));
+  const card = fxPlaceGhost(code, false, { cx, cy }, W, H, deckKeyOfSeat(con));
+  if (!card) return;
+  card.style.zIndex = 6; card.style.opacity = '0';
+  const rim = fxNode(con === HP ? 'fx3-goldframe' : 'fx3-lapisframe', cx, cy, W, H);
+  if (rim) { rim.style.opacity = '0'; rim.style.zIndex = 7; }
+  const hold = con === HP ? 640 : 800, dur = hold + 260;
+  fxAddScene({
+    kind: 'summoncall', dur,
+    render(t) {
+      const s = 0.7 + 0.3 * FXE.settle(fxSeg(t, 0, 200));
+      card.style.transform = 'scale(' + s.toFixed(3) + ')';
+      card.style.opacity = String(Math.min(fxSeg(t, 0, 90), 1 - fxSeg(t, hold, dur)));
+      if (rim) {
+        // ignition flash (0-460), then a low seat-coloured floor for
+        // the rest of the hold — the frame is what makes the stamp
+        // read as a presentation rather than a merely bigger tile
+        const ri = t < 80 ? t / 80 : Math.max(0.38, 1 - fxSeg(t, 240, 460));
+        rim.style.transform = card.style.transform;
+        rim.style.opacity = String(0.95 * ri * (1 - fxSeg(t, hold, dur)));
+      }
+    },
+    onDone() { try { card.remove(); } catch (e) {} if (rim) { try { rim.remove(); } catch (e) {} } },
+  });
+}
 function fxWhiteFlash(key) { // destruction: flash white, gone (restrained)
   const el = fxSlotEl(key); if (!el) return;
   const r = fxRel(el);
@@ -2057,6 +2101,10 @@ function fxProcessInner(evs, state) {
     if (fromGrave || fromRemoved) { // revival / return: NO flight — the zone lights and it appears
       fxPortal(ar.key, 'revive', 700); // V4-5: the zone glow is folded into the portal scene
       fxRecord('portal', { method: 'revive', code });
+      if ((ar.entry.pos & E.POS_FACEUP) !== 0) { // FX coverage: a revival names its card too
+        fxSummonCallout(ar.key, code, con, ar.entry.pos);
+        fxRecord('summoncall', { code, how: 'revive', con });
+      }
       consumedArr.add(ar.key);
       continue;
     }
@@ -2091,6 +2139,10 @@ function fxProcessInner(evs, state) {
     }
     if (isNormal || isSetMon) {
       fxPuff(ar.key); fxRecord('place', { how: isNormal ? 'summon' : 'set', code });
+      if (isNormal && (ar.entry.pos & E.POS_FACEUP) !== 0) { // FX coverage: the plainest summon in the game was the one with no card presentation at all
+        fxSummonCallout(ar.key, code, con, ar.entry.pos);
+        fxRecord('summoncall', { code, how: 'summon', con });
+      }
       // Round B (B10): an advance (tribute) summon's tributes leave the
       // way fusion/Xyz materials do — they glow and converge into the
       // summon point instead of flying to the graveyard — and the
@@ -2107,6 +2159,10 @@ function fxProcessInner(evs, state) {
     // other special summons (from hand / deck / extra): zone glows first
     fxPortal(ar.key, method, 600); // V4-5: glow folded in
     fxRecord('portal', { method, code });
+    if ((ar.entry.pos & E.POS_FACEUP) !== 0) { // FX coverage: the portal lights the zone; the callout names the card (never for a face-down arrival — not public yet)
+      fxSummonCallout(ar.key, code, con, ar.entry.pos);
+      fxRecord('summoncall', { code, how: 'spsummon', con });
+    }
     consumedArr.add(ar.key);
   }
   // arrivals on the spell/trap zone (sets): a small placement beat
@@ -2151,6 +2207,22 @@ function fxProcessInner(evs, state) {
     if (dep) {
       if (atkTargetKeys.has(dep.key)) fxRecord('destroyflash', { code: ev.code, via: 'scene' });
       else { fxWhiteFlash(dep.key); fxRecord('destroyflash', { code: ev.code }); }
+    }
+  }
+  // ---- flip summons (FX coverage): the flip itself is animated by
+  // the changed-diff below (round B); the callout names the card —
+  // a flip summon is a summon, and every summon presents its card.
+  for (const ev of evs) {
+    if (ev.kind !== 'flipsummon' || ev.code == null) continue;
+    for (const key of Object.keys(cur.z)) {
+      const ze = cur.z[key], parts = key.split(':').map(Number);
+      if (ze && ze.code === ev.code && parts[0] === ev.con && parts[1] === E.LOC.MZONE) {
+        if ((ze.pos & E.POS_FACEUP) !== 0) {
+          fxSummonCallout(key, ev.code, ev.con, ze.pos);
+          fxRecord('summoncall', { code: ev.code, how: 'flipsummon', con: ev.con });
+        }
+        break;
+      }
     }
   }
   // ---- in-place changes: xyz detach / attach, stat changes, flips (round B hook)
