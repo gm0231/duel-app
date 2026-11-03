@@ -418,6 +418,25 @@
   .fx3-portal.synchro .r2{background:radial-gradient(circle,rgba(207,232,216,.3) 0,transparent 60%)}
   .fx3-portal.generic .r1{background:conic-gradient(from 0deg,rgba(232,213,183,.75),transparent 42%,rgba(232,213,183,.75) 58%,transparent 92%)}
   .fx3-portal.generic .r2{background:radial-gradient(circle,rgba(232,213,183,.28) 0,transparent 60%)}
+  /* synchro grammar (proposal S / proto 案6): material lights, level
+     pips, the engraved total and the stone ring. Every glow is a
+     preset static layer here — the scenes only ever animate
+     transform / opacity on these nodes. Lapis = tuner / information,
+     gold = the rest / the confirmed total (principle 4). */
+  .fx3-syntuner{border:2px solid #5b8dd9;border-radius:50%;box-shadow:inset 0 0 12px rgba(38,97,156,.55),0 0 10px rgba(91,141,217,.35);pointer-events:none;}
+  .fx3-syngold{border:2px solid #c9a227;border-radius:6px;background:rgba(230,200,119,.08);box-shadow:0 0 14px rgba(230,200,119,.45),inset 0 0 12px rgba(230,200,119,.30);pointer-events:none;}
+  .fx3-syntag{background:#12233f;color:#9db8e8;border:1px solid #5b8dd9;border-radius:3px;font-size:9px;letter-spacing:.08em;text-align:center;line-height:15px;pointer-events:none;}
+  .fx3-synpip{border-radius:50%;pointer-events:none;}
+  .fx3-synpip.lapis{background:#7fa8e0;box-shadow:0 0 6px rgba(127,168,224,.8);}
+  .fx3-synpip.gold{background:#e6c877;box-shadow:0 0 6px rgba(230,200,119,.8);}
+  .fx3-synpip.outline{background:transparent;border:1.5px solid #8a7a4d;box-shadow:none;}
+  .fx3-synnum{text-align:center;font-weight:800;color:#e6c877;text-shadow:0 2px 8px rgba(0,0,0,.85);pointer-events:none;line-height:40px;}
+  .fx3-synnum .n{font-size:30px;}
+  .fx3-synnum .tot{font-size:13px;font-weight:700;color:#a89878;margin-left:2px;}
+  .fx3-synring{border-radius:50%;pointer-events:none;background:repeating-conic-gradient(from -90deg,#8a7648 0deg 34deg,#5a4a2a 34deg 40deg,#7d6a3e 40deg 74deg,#5a4a2a 74deg 80deg);box-shadow:inset 0 0 0 3px #241c0e,0 0 18px rgba(0,0,0,.55);}
+  .fx3-synring .core{position:absolute;inset:9px;border-radius:50%;background:radial-gradient(circle,#0d1a2e 30%,#060a14 75%);box-shadow:inset 0 0 16px rgba(91,141,217,.55);}
+  .fx3-synring .seam{position:absolute;left:50%;top:-3px;width:3px;height:10px;margin-left:-1.5px;background:#fff2c0;box-shadow:0 0 7px #ffe98a;}
+  .fx3-synrim{border:2px solid #ffd94d;border-radius:6px;box-shadow:0 0 18px rgba(255,217,77,.45);pointer-events:none;}
   .fx3-chainrim{position:absolute;border-radius:6px;box-shadow:0 0 0 2px rgba(255,255,255,.95),0 12px 34px rgba(0,0,0,.55);pointer-events:none;}
   .fx3-chainword{position:absolute;transform:translate(-50%,-50%);font-size:20px;font-weight:800;letter-spacing:.3em;color:#59d8f2;text-shadow:0 2px 8px #000,0 0 18px #59d8f288;pointer-events:none;z-index:7;white-space:nowrap;}
   .fx3-chainword span{display:inline-block;}

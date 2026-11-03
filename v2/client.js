@@ -1119,6 +1119,207 @@ function fxConverge(fromKey, toKey) { // materials: glow (red when chosen) -> va
   ], { duration: 400, easing: 'ease-in' });
   fxKill(d, 440);
 }
+// ------------------------------------------------------------ synchro grammar
+// Proposal S / proto 案6: a synchro summon must READ as one — the
+// materials light (tuner = a lapis ring + tag, the rest = gold light,
+// principle 4), their levels stand as pips, the pips flow into the
+// summon zone and accumulate (the count only ever rises as pips land,
+// principle 2), a stone ring closes on the total, and the summoned
+// card settles onto its real tile. The decor builder below is shared
+// by the standalone scene (non-cutin synchros) and the ace scene
+// (cut-in synchros) so both paths speak the same grammar
+// (principle 7); only the timing windows differ.
+// Returns null when the materials cannot be read honestly (no
+// materials, an unknown code, or a level that is not a number >= 1 —
+// e.g. a token): the caller then falls back to the generic portal
+// and the materials fly individually, exactly as before. The FX
+// layer never invents a level it could not read.
+function fxSynchroInfo(mats) {
+  if (!mats || !mats.length) return null;
+  const list = [], tunerCodes = [];
+  let total = 0;
+  for (const m of mats) {
+    if (!m || m.code == null) return null;
+    const d = cardData(m.code);
+    if (!d) return null;
+    const lv = d.level;
+    if (typeof lv !== 'number' || !isFinite(lv) || lv < 1) return null;
+    const tuner = (d.type & 0x1000) !== 0;
+    list.push({ key: m.key, code: m.code, level: lv, tuner });
+    total += lv;
+    if (tuner) tunerCodes.push(m.code);
+  }
+  if (total < 1) return null;
+  return { list, total, tunerCodes };
+}
+// Builds the shared decor DOM for one synchro presentation: per
+// material a light layer (+ tuner tag), per level a pip that starts
+// over its material and lands on the accumulation row over the
+// summon zone (stone outlines mark the not-yet-landed slots), and
+// the engraved count at the zone. All glow is preset in CSS; the
+// render only ever writes transform / opacity (textContent changes
+// only when the landed count itself changes).
+// destCx/rowY: the accumulation row; numPt: the count's centre.
+function fxSynchroDecor(info, destCx, rowY, numPt) {
+  const pts = [];
+  for (const e of info.list) {
+    // geometry fallback, same contract as the ace scene's nominal
+    // zone rect: with no painted slot (synthetic drives) a nominal
+    // rect under the accumulation row stands in — the LEVELS are
+    // always the real read values; only the geometry degrades.
+    pts.push(fxPtOfKey(e.key) || { cx: destCx, cy: rowY + 60, x: destCx - 28, y: rowY + 22, w: 56, h: 76 });
+  }
+  const nodes = [], matsDecor = [], pips = [];
+  info.list.forEach((e, i) => {
+    const pt = pts[i];
+    const glow = fxNode(e.tuner ? 'fx3-syntuner' : 'fx3-syngold', pt.cx, pt.cy, pt.w + 4, pt.h + 4);
+    if (glow) { glow.style.opacity = '0'; nodes.push(glow); }
+    let tag = null;
+    if (e.tuner) {
+      tag = fxNode('fx3-syntag', pt.cx, pt.y - 26, 58, 15);
+      if (tag) { tag.textContent = 'チューナー'; tag.style.opacity = '0'; nodes.push(tag); }
+    }
+    matsDecor.push({ glow, tag });
+  });
+  const outlines = [];
+  for (let k = 0; k < info.total; k++) {
+    const dx = destCx + (k - (info.total - 1) / 2) * 12;
+    const ol = fxNode('fx3-synpip outline', dx, rowY, 10, 10);
+    if (ol) { ol.style.opacity = '0'; nodes.push(ol); outlines.push(ol); }
+  }
+  let k = 0;
+  info.list.forEach((e, i) => {
+    const pt = pts[i];
+    for (let j = 0; j < e.level; j++, k++) {
+      const home = { x: pt.cx + (j - (e.level - 1) / 2) * 12, y: pt.y - 10 };
+      const dest = { x: destCx + (k - (info.total - 1) / 2) * 12, y: rowY };
+      const el = fxNode('fx3-synpip ' + (e.tuner ? 'lapis' : 'gold'), home.x, home.y, 10, 10);
+      if (el) { el.style.opacity = '0'; nodes.push(el); }
+      pips.push({ el, home, dest, k });
+    }
+  });
+  const numEl = fxNode('fx3-synnum', numPt.cx, numPt.cy, 76, 40);
+  let numSpan = null;
+  if (numEl) {
+    numEl.innerHTML = '<span class="n">0</span><span class="tot">/ ' + info.total + '</span>';
+    numEl.style.opacity = '0';
+    nodes.push(numEl);
+    numSpan = numEl.querySelector('.n');
+  }
+  let shown = -1;
+  // T: {appearBase, appearStep, flyBase, flyStep, flyDur, glowIn,
+  // glowOut, tagOut, outlineIn, outlineOut, pipFade, numOut} — the
+  // two call sites pass their own windows on the same grammar.
+  function render(t, T) {
+    const glowOp = fxSeg(t, T.glowIn[0], T.glowIn[1]) * (1 - fxSeg(t, T.glowOut[0], T.glowOut[1]));
+    const tagOp = fxSeg(t, T.glowIn[0], T.glowIn[1]) * (1 - fxSeg(t, T.tagOut[0], T.tagOut[1]));
+    for (const md of matsDecor) {
+      if (md.glow) md.glow.style.opacity = String(glowOp);
+      if (md.tag) md.tag.style.opacity = String(tagOp);
+    }
+    const olOp = 0.9 * fxSeg(t, T.outlineIn[0], T.outlineIn[1]) * (1 - fxSeg(t, T.outlineOut[0], T.outlineOut[1]));
+    for (const ol of outlines) ol.style.opacity = String(olOp);
+    const pipFade = 1 - fxSeg(t, T.pipFade[0], T.pipFade[1]);
+    let arrived = 0;
+    for (const p of pips) {
+      const flyStart = T.flyBase + p.k * T.flyStep, flyEnd = flyStart + T.flyDur;
+      if (t >= flyEnd) arrived++;
+      if (!p.el) continue;
+      const appearAt = T.appearBase + p.k * T.appearStep;
+      const op = fxSeg(t, appearAt, appearAt + 80) * pipFade;
+      let tr;
+      if (t < flyStart) {
+        const s = FXE.settle(fxSeg(t, appearAt, appearAt + 110));
+        tr = 'scale(' + Math.max(0.01, s).toFixed(3) + ')';
+      } else {
+        const u = FXE.inOut(fxSeg(t, flyStart, flyEnd));
+        tr = 'translate(' + ((p.dest.x - p.home.x) * u).toFixed(1) + 'px,' +
+          ((p.dest.y - p.home.y) * u - Math.sin(Math.PI * u) * 10).toFixed(1) + 'px)';
+      }
+      p.el.style.transform = tr;
+      p.el.style.opacity = String(op);
+    }
+    if (numEl) {
+      if (arrived !== shown) { shown = arrived; if (numSpan) numSpan.textContent = String(arrived); }
+      numEl.style.opacity = String((arrived > 0 ? 1 : 0) * (1 - fxSeg(t, T.numOut[0], T.numOut[1])));
+    }
+  }
+  return { nodes, render, numEl };
+}
+// Standalone synchro scene (~1900 ms, the proto strip's six beats)
+// for synchros the ace cut-in does not own. Returns the scene, or
+// null when the presentation cannot be built (no layer / no zone
+// geometry / unreadable materials) — the caller falls back.
+function fxSynchroSceneV3(o) {
+  const layer = fxLayerEl(); if (!layer) return null;
+  const info = o.info || fxSynchroInfo(o.mats);
+  if (!info) return null;
+  const app = $('app'); if (!app) return null;
+  const ar = fxRel(app);
+  const slotEl = fxSlotEl(o.key);
+  const zr = slotEl ? fxRel(slotEl) : { cx: ar.cx, cy: ar.y + ar.h * (o.con === HP ? 0.60 : 0.28), w: 56, h: 76, x: ar.cx - 28, y: ar.y + ar.h * (o.con === HP ? 0.60 : 0.28) - 38 };
+  const ringD = Math.max(zr.w, zr.h) * 1.12;
+  const nodes = [];
+  // the materials are already gone from the board at diff time, so
+  // — exactly as the ace scene does — ghosts stand in for them
+  // while they light; they are consumed quietly as the pips leave.
+  // DOM order is paint order: ghosts, then the decor (lights/pips),
+  // then the ring, the count re-stacked over the ring's core, and
+  // the summoned ghost last so nothing ever covers the card.
+  const matGhosts = [];
+  for (const e of info.list) {
+    const pt = fxPtOfKey(e.key); if (!pt) continue;
+    const g = fxPlaceGhost(e.code, false, pt, Math.max(10, pt.w - 2), Math.max(10, pt.h - 24));
+    if (g) { matGhosts.push(g); nodes.push(g); }
+  }
+  // the accumulation row rides just INSIDE the ring's top edge
+  // (proto p6d): anchored above the zone it lands in the midbar —
+  // only ~3px separate the midbar's bottom from the mzone's top at
+  // both app heights, so an above-zone row strikes the phase buttons.
+  const decor = fxSynchroDecor(info, zr.cx, zr.cy - ringD / 2 + 14, { cx: zr.cx, cy: zr.cy });
+  if (!decor) { for (const n of nodes) { try { n.remove(); } catch (e) {} } return null; }
+  for (const n of decor.nodes) nodes.push(n);
+  const ring = fxNode('fx3-synring', zr.cx, zr.cy, ringD, ringD);
+  if (ring) { ring.innerHTML = '<div class="core"></div><div class="seam"></div>'; ring.style.opacity = '0'; nodes.push(ring); }
+  if (decor.numEl) layer.appendChild(decor.numEl); // the count stands ON the ring's dark core (proto p6d)
+  const gw = Math.max(10, zr.w - 2), gh = Math.max(10, zr.h - 24);
+  const rim = fxNode('fx3-synrim', zr.cx, zr.cy, gw + 4, gh + 4);
+  if (rim) { rim.style.opacity = '0'; nodes.push(rim); }
+  const ghost = fxPlaceGhost(o.code, false, zr, gw, gh);
+  if (ghost) { ghost.style.opacity = '0'; nodes.push(ghost); }
+  const flyStep = info.total > 1 ? Math.min(65, 500 / (info.total - 1)) : 0;
+  const T = {
+    appearBase: 200, appearStep: 25, flyBase: 450, flyStep, flyDur: 380,
+    glowIn: [0, 140], glowOut: [430, 620], tagOut: [430, 600],
+    outlineIn: [450, 550], outlineOut: [1000, 1200], pipFade: [1400, 1600], numOut: [1380, 1560],
+  };
+  const sc = fxAddScene({
+    kind: 'synchro', dur: 1900,
+    render(t) {
+      for (const g of matGhosts) {
+        const u = fxSeg(t, 480, 720);
+        g.style.opacity = String(1 - u);
+        g.style.transform = 'scale(' + (1 - 0.18 * u).toFixed(3) + ')';
+      }
+      decor.render(t, T);
+      if (ring) {
+        const base = fxSeg(t, 1000, 1150);
+        const remnant = (1 - 0.6 * fxSeg(t, 1450, 1650)) * (1 - fxSeg(t, 1720, 1900));
+        ring.style.opacity = String(base * remnant);
+        ring.style.transform = 'scale(' + (0.72 + 0.28 * FXE.outCubic(fxSeg(t, 1000, 1350))).toFixed(3) + ')';
+      }
+      const gOp = fxSeg(t, 1350, 1470) * (1 - fxSeg(t, 1700, 1850));
+      const gScale = 1.18 - 0.18 * FXE.settle(fxSeg(t, 1350, 1780));
+      if (ghost) { ghost.style.opacity = String(gOp); ghost.style.transform = 'scale(' + gScale.toFixed(3) + ')'; }
+      if (rim) {
+        rim.style.opacity = String(fxSeg(t, 1350, 1470) * (1 - fxSeg(t, 1580, 1780)));
+        rim.style.transform = 'scale(' + gScale.toFixed(3) + ')';
+      }
+    },
+    onDone() { for (const n of nodes) { try { n.remove(); } catch (e) {} } },
+  });
+  return sc;
+}
 function fxPeel(key) { // an Xyz material leaves: the stack visibly thins first
   const el = fxSlotEl(key); if (!el) return;
   const r = fxRel(el);
@@ -1737,6 +1938,23 @@ function fxProcessInner(evs, state) {
       fxRecord('portal', { method, code });
       consumedArr.add(ar.key);
       continue;
+    }
+    if (method === 'synchro') {
+      // Proposal S: a synchro gets its own scene (materials light,
+      // levels accumulate, the stone ring closes) instead of the
+      // generic portal — but ONLY when every material's level can
+      // be read. Otherwise fall through to the generic portal below
+      // and let the materials fly individually: the presentation
+      // never invents a level it could not read.
+      const mats = matDepsOf(con);
+      const info = fxSynchroInfo(mats.map(m => ({ key: m.key, code: m.entry.code })));
+      const sc = info ? fxSynchroSceneV3({ code, key: ar.key, con, info }) : null;
+      if (sc) {
+        for (const m of mats) { consumedDep.add(m.key); fxRecord('converge', { code: m.entry.code, via: 'synchro' }); }
+        fxRecord('synchro', { code, total: info.total, tunerCodes: info.tunerCodes });
+        consumedArr.add(ar.key);
+        continue;
+      }
     }
     if (isNormal || isSetMon) {
       fxPuff(ar.key); fxRecord('place', { how: isNormal ? 'summon' : 'set', code });
@@ -2581,6 +2799,28 @@ function fxAceSceneV3(o) {
       matGhosts.push({ el: g, hot, tr1, tr2, pt }); nodes.push(g);
     }
   }
+  // Proposal S (ace path): a SYNCHRO ace also speaks the synchro
+  // grammar on the zone side — the materials light (tuner = lapis
+  // ring, the rest gold), their level pips ride the converge, and
+  // the total stands at the zone, readable before the scrim covers
+  // the board (~1000 ms). The 4600 ms timeline and the cut-in body
+  // are untouched, and there is no second presentation: this decor
+  // lives entirely inside the ace scene's own zone phase. When the
+  // materials' levels cannot be read, nothing is added (the ace
+  // scene runs exactly as before).
+  let synDecor = null;
+  if (o.method === 'synchro' && o.mats && o.mats.length) {
+    const synInfo = fxSynchroInfo(o.mats);
+    if (synInfo) {
+      synDecor = fxSynchroDecor(synInfo, zr.cx, zr.cy - 30, { cx: zr.cx, cy: zr.cy });
+      if (synDecor) for (const n of synDecor.nodes) nodes.push(n);
+    }
+  }
+  const SYN_T_ACE = {
+    appearBase: 40, appearStep: 20, flyBase: 150, flyStep: 30, flyDur: 280,
+    glowIn: [0, 250], glowOut: [500, 560], tagOut: [480, 560],
+    outlineIn: [150, 260], outlineOut: [560, 700], pipFade: [720, 900], numOut: [880, 1000],
+  };
   // L17 landing rings are soft rings on the low canvas now (V4)
   const zoneGlowL = fxNode('fx3-emph', zr.cx, zr.cy, zr.w, zr.h); // L17 zone glow
   if (zoneGlowL) { zoneGlowL.style.borderColor = cols[0]; zoneGlowL.style.opacity = '0'; nodes.push(zoneGlowL); }
@@ -2681,6 +2921,11 @@ function fxAceSceneV3(o) {
           tp[0].style.opacity = String(tp[2] * op * trailIn);
         }
       }
+      // Proposal S (ace path): the synchro decor rides the same
+      // zone phase — lights with the 0-250 ms glow, pips converge
+      // with the material ghosts (150-560 ms), the total is read
+      // and gone before the scrim finishes rising (750-1000 ms)
+      if (synDecor) synDecor.render(te, SYN_T_ACE);
       // L3: the zone lights before the portal opens
       if (preglow) preglow.style.opacity = String(0.85 * fxSeg(te, 250, 380) * (1 - fxSeg(te, 480, 800)));
       // L4: rotation RAMPS 0 -> 500 deg/s (300-700), inner ring counter-rotates at -1.6x

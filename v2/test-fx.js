@@ -314,6 +314,69 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     window.close();
   }
 
+  // ================= Part 1C: synchro grammar (proposal S) =================
+  {
+    const window = await boot();
+    const doc = window.document;
+    const fx = window.__fx;
+    fx.reset();
+    const step = (st, evs) => { const before = fx.log.length; fx.process(evs || [], st); return fx.log.slice(before); };
+    const has = (recs, kind, pred) => recs.some(r => r.kind === kind && (!pred || pred(r)));
+    const TUNER = 55702233;   // 生きる偲びのシルキィ: Lv2 tuner (type & 0x1000)
+    const NONTUN = 25926710;  // 古尖兵ケルベク: Lv4 non-tuner
+    const SYNC = 21368273;    // マナドゥム・トリロスークタ: Lv6 synchro, NOT on the cut-in roster
+    const HORUS = 36898537;   // メタファイズ・ホルス・ドラゴン: Lv6 synchro ON the cut-in roster
+    ok(!!data.cards[TUNER] && (data.cards[TUNER].type & 0x1000) !== 0 && data.cards[TUNER].level === 2, 'FXS0: tuner fixture is a Lv2 tuner in the pool');
+    ok(!!data.cards[SYNC] && (data.cards[SYNC].type & 0x2000) !== 0 && !(window.__fx && [8505920, 97783338, 34904525, 61398234, 26746975, 45409943, 46148485, 36898537].includes(SYNC)), 'FXS0b: synchro fixture is a non-cutin Lv6 synchro');
+
+    // own synchro: tuner Lv2 + non-tuner Lv4 -> Lv6, materials to grave
+    step(fakeState(s => { s.players[0].mzone[1] = mon(TUNER); s.players[0].mzone[3] = mon(NONTUN); }));
+    let st = fakeState(s => { s.players[0].mzone[2] = mon(SYNC); s.players[0].grave = [TUNER, NONTUN]; });
+    let recs = step(st, [{ kind: 'spsummon', code: SYNC, con: 0 }]);
+    ok(has(recs, 'synchro', r => r.code === SYNC && r.total === 6), 'FXS1: synchro summon records the level total (2+4=6)');
+    ok(has(recs, 'synchro', r => Array.isArray(r.tunerCodes) && r.tunerCodes.length === 1 && r.tunerCodes[0] === TUNER), 'FXS1b: the synchro record names the tuner code');
+    ok(recs.filter(r => r.kind === 'converge').length === 2, 'FXS2: both synchro materials are consumed as materials (converge x2)');
+    ok(!recs.some(r => r.kind === 'flight' && (r.code === TUNER || r.code === NONTUN)), 'FXS3: synchro materials do NOT fly to the graveyard individually');
+    ok(!has(recs, 'portal', r => r.code === SYNC), 'FXS3b: the synchro scene replaces the generic portal');
+    ok(!!doc.querySelector('.fx3-synring'), 'FXS4: the stone ring node is in #fxlayer');
+    ok(!!doc.querySelector('.fx3-syntuner') && !!doc.querySelector('.fx3-syngold'), 'FXS4b: tuner wears lapis, non-tuner wears gold');
+    ok(doc.querySelectorAll('.fx3-synpip').length >= 6, 'FXS4c: level pips + stone outlines are in #fxlayer (got ' + doc.querySelectorAll('.fx3-synpip').length + ')');
+    const tag = doc.querySelector('.fx3-syntag');
+    ok(!!tag && tag.textContent === 'チューナー', 'FXS4d: the tuner tag reads チューナー');
+
+    // opponent synchro: the same scene fires on the other side
+    fx.reset();
+    step(fakeState(s => { s.players[1].mzone[0] = mon(TUNER); s.players[1].mzone[1] = mon(NONTUN); }));
+    st = fakeState(s => { s.players[1].mzone[2] = mon(SYNC); s.players[1].grave = [TUNER, NONTUN]; });
+    recs = step(st, [{ kind: 'spsummon', code: SYNC, con: 1 }]);
+    ok(has(recs, 'synchro', r => r.code === SYNC && r.total === 6), 'FXS5: opponent synchro summon gets the same scene (total=6)');
+    ok(!recs.some(r => r.kind === 'flight' && (r.code === TUNER || r.code === NONTUN)), 'FXS5b: opponent materials do not fly individually either');
+
+    // fallback: a material whose level cannot be read (unknown code,
+    // e.g. a token) — no invented total, generic portal, materials fly
+    fx.reset();
+    step(fakeState(s => { s.players[0].mzone[0] = mon(TUNER); s.players[0].mzone[1] = { code: 99999999, pos: 1, materials: 0, curAtk: 0, curDef: 0 }; }));
+    st = fakeState(s => { s.players[0].mzone[2] = mon(SYNC); s.players[0].grave = [TUNER, 99999999]; });
+    recs = step(st, [{ kind: 'spsummon', code: SYNC, con: 0 }]);
+    ok(!has(recs, 'synchro'), 'FXS6: unreadable material level -> NO synchro record (no invented total)');
+    ok(has(recs, 'portal', r => r.method === 'synchro' && r.code === SYNC), 'FXS6b: fallback is the generic synchro portal');
+    ok(recs.some(r => r.kind === 'flight' && r.code === TUNER) && recs.some(r => r.kind === 'flight' && r.code === 99999999), 'FXS6c: fallback materials fly to the graveyard individually, as before');
+
+    // ace path: a cut-in synchro (Horus) keeps its cut-in and gains
+    // the level grammar on the zone side (pips in the layer, no
+    // second synchro scene, no standalone 'synchro' record)
+    fx.reset();
+    step(fakeState(s => { s.players[0].mzone[1] = mon(TUNER); s.players[0].mzone[3] = mon(NONTUN); }));
+    st = fakeState(s => { s.players[0].mzone[2] = mon(HORUS); s.players[0].grave = [TUNER, NONTUN]; });
+    recs = step(st, [{ kind: 'spsummon', code: HORUS, con: 0 }]);
+    ok(has(recs, 'cutin', r => r.code === HORUS && r.via === 'acescene'), 'FXS7: cut-in synchro still fires its ace scene');
+    ok(!has(recs, 'synchro'), 'FXS7b: no standalone synchro scene/record on the ace path (no double presentation)');
+    ok(doc.querySelectorAll('.fx3-synpip').length >= 6, 'FXS7c: level pips ride the ace scene zone phase (got ' + doc.querySelectorAll('.fx3-synpip').length + ')');
+    ok(!!doc.querySelector('.fx3-syntuner'), 'FXS7d: the ace-path tuner wears the lapis ring');
+    ok(fx.error === null, 'FXS8: fxError stayed null through every synchro step (got: ' + fx.error + ')');
+    window.close();
+  }
+
   // ================= Part 2: live duels =================
   if (process.env.FX_SYNTH_ONLY) { console.log(failures === 0 ? 'ALL FX SYNTHETIC CHECKS PASSED' : failures + ' FAILED'); process.exit(failures ? 1 : 0); }
   const tally = {};
