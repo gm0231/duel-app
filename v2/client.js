@@ -434,21 +434,34 @@ function fxPhaseFamily(ph) {
   if (/BATTLE|DAMAGE/.test(ph)) return 'battle';
   return null;
 }
-let fxBannerEl = null;
+let fxBannerEl = null, fxBannerScene = null;
 function fxPhaseBanner(fam) {
   const info = FX_PHASES[fam]; if (!info) return;
   const layer = fxLayerEl(); if (!layer) return;
   if (fxBannerEl) { try { fxBannerEl.remove(); } catch (e) {} fxBannerEl = null; }
+  if (fxBannerScene && !fxBannerScene.dead) fxBannerScene.dead = true;
   const d = document.createElement('div');
   d.className = 'fx-phase' + (info.battle ? ' battle' : '');
-  d.textContent = info.label;
+  d.innerHTML = '<span class="lbl">' + info.label + '</span><div class="rule"></div>';
+  d.style.opacity = '0';
   layer.appendChild(d);
   fxBannerEl = d;
-  fxAnim(d, [
-    { transform: 'translateX(-7%)', opacity: 0 }, { transform: 'translateX(0)', opacity: 1, offset: 0.18 },
-    { transform: 'translateX(0)', opacity: 1, offset: 0.78 }, { transform: 'translateX(7%)', opacity: 0 },
-  ], { duration: 820, easing: 'ease-out' });
-  fxKill(d, 860);
+  const rule = d.querySelector('.rule');
+  // V4-6: a scene on the shared clock, not a WAAPI one-off — snap
+  // entry (160 ms), the gold rule draws under the label (200-380),
+  // and the exit is a short accelerating pass (700-820, total span
+  // unchanged at ~820 ms).
+  fxBannerScene = fxAddScene({
+    kind: 'phase', dur: 820,
+    render(t) {
+      const inU = FXE.snap(fxSeg(t, 0, 160));
+      const outU = FXE.inQuad(fxSeg(t, 700, 820));
+      d.style.opacity = String(Math.min(inU, 1 - outU));
+      d.style.transform = 'translateX(' + ((1 - inU) * -7 + outU * 7).toFixed(2) + '%)';
+      if (rule) rule.style.transform = 'scaleX(' + FXE.snap(fxSeg(t, 200, 380)).toFixed(3) + ')';
+    },
+    onDone() { try { d.remove(); } catch (e) {} if (fxBannerEl === d) fxBannerEl = null; },
+  });
   fxRecord('phase', { phase: fam });
 }
 // ------------------------------------------------------------ V3 stage 1: FX foundation
@@ -785,6 +798,7 @@ function fxResetFoundation() {
   fxScenes = []; fxBursts = [];
   fxStopUntilWall = 0; fxTimeMs = 0; fxLastWall = 0;
   fxAceSceneRef = null; fxFinisherSceneRef = null; fxAceRecent = null; // stage 3 scene refs (hosts are wiped by fxResetDuel)
+  fxChainWordScene = null; fxBannerScene = null; // V4 scene refs
   const appEl = $('app'); if (appEl) appEl.style.transform = ''; // a finisher tilt must not survive the duel
   for (const id of ['fxcv', 'fxcvTop']) { const c = $(id); if (c && c.getContext) { const x = c.getContext('2d'); if (x) x.clearRect(0, 0, c.width, c.height); } }
   fxCanvasDirty.low = fxCanvasDirty.top = false;
@@ -1509,6 +1523,34 @@ function fxChainChipEl(n) {
   const chips = document.querySelectorAll('#chainbar .link');
   return chips && chips[n - 1] ? chips[n - 1] : null;
 }
+// V4-3: from the 2nd link, the word CHAIN stands up above the pop,
+// letter by letter (30 ms stagger), and stays while the chain is
+// the foreground event.
+let fxChainWordScene = null;
+function fxChainWord(cx, cy) {
+  const layer = fxLayerEl(); if (!layer) return;
+  if (fxChainWordScene && !fxChainWordScene.dead) { fxChainWordScene.dead = true; if (fxChainWordScene.cleanup) fxChainWordScene.cleanup(); }
+  const d = document.createElement('div');
+  d.className = 'fx3-chainword';
+  d.style.left = cx + 'px'; d.style.top = cy + 'px'; d.style.opacity = '0';
+  d.innerHTML = '<span>C</span><span>H</span><span>A</span><span>I</span><span>N</span>';
+  layer.appendChild(d);
+  const spans = [...d.children];
+  const sc = fxAddScene({
+    kind: 'chainword', dur: 1500,
+    render(t) {
+      d.style.opacity = String(Math.min(fxSeg(t, 130, 250), 1 - fxSeg(t, 1250, 1500)));
+      spans.forEach((sp, i) => {
+        const u = FXE.settle(fxSeg(t, 150 + i * 30, 310 + i * 30));
+        sp.style.transform = 'translateY(' + (10 * (1 - u)).toFixed(1) + 'px) scale(' + (0.6 + 0.4 * u).toFixed(3) + ')';
+        sp.style.opacity = String(u);
+      });
+    },
+    onDone() { try { d.remove(); } catch (e) {} if (fxChainWordScene === sc) fxChainWordScene = null; },
+  });
+  sc.cleanup = () => { try { d.remove(); } catch (e) {} };
+  fxChainWordScene = sc;
+}
 function fxChainSceneV3(n, code) {
   const layer = fxLayerEl(); if (!layer) return;
   const app = $('app'); if (!app) return;
@@ -1517,32 +1559,55 @@ function fxChainSceneV3(n, code) {
   const card = fxPlaceGhost(code, false, { cx, cy }, W, H);
   if (!card) return;
   card.style.zIndex = 6;
-  const ring = document.createElement('div'); ring.className = 'fx3-chainring'; ring.style.opacity = '0'; card.appendChild(ring);
+  // V4: the white rim is a preset-shadow overlay that only ever
+  // changes opacity/transform — the card itself gets no per-frame
+  // boxShadow write.
+  const rimEl = fxNode('fx3-chainrim', cx, cy, W, H);
+  if (rimEl) { rimEl.style.opacity = '0'; rimEl.style.zIndex = 7; }
   const no = document.createElement('div'); no.className = 'fx3-chainno'; no.textContent = n; card.appendChild(no);
   // landing target: this link's own chip (fall back to the bar centre)
   let tx = cx, ty = cy, chip = fxChainChipEl(n);
   if (chip) { const r = fxRel(chip); if (r.w > 0) { tx = r.cx; ty = r.cy; } }
   if (tx === cx && ty === cy) { const bar = $('chainbar'); if (bar) { const r = fxRel(bar); if (r.w > 0) { tx = r.cx; ty = r.cy; } } }
   const dx = tx - cx, dy = ty - cy;
-  // L5: from the 2nd link, a dashed connector draws between the
-  // previous chip and the new one while the pop holds
-  let linkLine = null;
+  // L5: from the 2nd link, a glowing cord + a travelling pulse join
+  // the previous chip to the new one (V4: canvas, in drawLow)
+  let linkPts = null;
   if (n >= 2) {
     const prevChip = fxChainChipEl(n - 1);
     if (prevChip && chip) {
       const r1 = fxRel(prevChip), r2 = fxRel(chip);
-      const lx = r2.cx - r1.cx, ly = r2.cy - r1.cy, ll = Math.hypot(lx, ly);
-      if (ll > 4) {
-        linkLine = document.createElement('div');
-        linkLine.className = 'fx fx3-linkline';
-        linkLine.style.left = r1.cx + 'px'; linkLine.style.top = (r1.cy - 1) + 'px'; linkLine.style.width = ll + 'px';
-        linkLine.style.transform = 'rotate(' + (Math.atan2(ly, lx) * 180 / Math.PI) + 'deg) scaleX(0)';
-        layer.appendChild(linkLine);
-      }
+      if (Math.hypot(r2.cx - r1.cx, r2.cy - r1.cy) > 4) linkPts = { x1: r1.cx, y1: r1.cy, x2: r2.cx, y2: r2.cy };
     }
+    fxChainWord(cx, cy - H / 2 - 40);
   }
   fxAddScene({
-    kind: 'chainpop', dur: 950,
+    kind: 'chainpop', dur: 950, winLow: [[0, 950]],
+    drawLow(ctx, t) {
+      if (t < 150) { // rim light runs once around the popped card
+        const u = fxSeg(t, 0, 150), a0 = -Math.PI / 2 + u * Math.PI * 2;
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+        ctx.globalAlpha = .9 * (1 - .4 * u);
+        ctx.beginPath(); ctx.arc(cx, cy, 58, a0 - .5, a0 + .5); ctx.stroke();
+        ctx.restore();
+      }
+      const ru = fxSeg(t, 60, 300); // soft ring behind the slamming number
+      if (ru > 0 && ru < 1) fxDrawSoftRing(ctx, cx, cy + H / 2 + 1, 26 * (0.6 + 0.75 * FXE.outCubic(ru)), '#59d8f2', .8 * (1 - ru), .12);
+      if (linkPts) {
+        const du = fxSeg(t, 150, 400), la = .85 * (1 - fxSeg(t, 800, 950));
+        if (du > 0 && la > 0) {
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.strokeStyle = '#59d8f2'; ctx.lineWidth = 2.4; ctx.lineCap = 'round';
+          ctx.globalAlpha = .55 * la;
+          ctx.beginPath(); ctx.moveTo(linkPts.x1, linkPts.y1); ctx.lineTo(fxLerp(linkPts.x1, linkPts.x2, du), fxLerp(linkPts.y1, linkPts.y2, du)); ctx.stroke();
+          ctx.restore();
+          if (t >= 150) { const pu = ((t - 150) % 600) / 600; fxDrawGlow(ctx, fxLerp(linkPts.x1, linkPts.x2, pu * du), fxLerp(linkPts.y1, linkPts.y2, pu * du), 10, '#59d8f2', .8 * la); }
+        }
+      }
+    },
     render(t) {
       // L1: the card arrives by 220 ms (settle curve overshoots, then rests); white rim ignites in 80 ms
       const s = 0.7 + 0.3 * FXE.settle(fxSeg(t, 0, 220));
@@ -1551,25 +1616,16 @@ function fxChainSceneV3(n, code) {
       const sc2 = fxLerp(s, Math.max(0.14, 26 / H), u);
       card.style.transform = 'translate(' + (dx * u).toFixed(1) + 'px,' + (dy * u).toFixed(1) + 'px) scale(' + sc2.toFixed(3) + ')';
       const rim = t < 80 ? t / 80 : 1 - fxSeg(t, 260, 480);
-      card.style.boxShadow = '0 0 0 2px rgba(255,255,255,' + (0.95 * rim).toFixed(2) + '), 0 12px 34px rgba(0,0,0,.55)';
+      if (rimEl) { rimEl.style.transform = card.style.transform; rimEl.style.opacity = String(0.95 * Math.max(0, rim) * (1 - fxSeg(t, 890, 950))); }
       card.style.opacity = String(1 - fxSeg(t, 890, 950));
-      // L2: the number slams 1.6 -> 1.0 over 60-220, ring pulse behind it
+      // L2: the number slams 1.6 -> 1.0 over 60-220 (its ring is the drawLow soft ring now)
       const ns = 1.6 - 0.6 * FXE.settle(fxSeg(t, 60, 220));
       no.style.transform = 'translateX(-50%) scale(' + ns.toFixed(3) + ')';
       no.style.opacity = String(1 - fxSeg(t, 890, 950));
-      const ru = fxSeg(t, 60, 300);
-      ring.style.transform = 'scale(' + (0.6 + 0.75 * FXE.outCubic(ru)).toFixed(3) + ')';
-      ring.style.opacity = String(0.8 * (1 - ru) * (t >= 60 ? 1 : 0));
-      if (linkLine) { // L5: dashes draw in over 250 ms, then crawl (the "connected" motion)
-        const du = fxSeg(t, 150, 400);
-        linkLine.style.transform = linkLine.style.transform.replace(/scaleX\([0-9.]+\)/, 'scaleX(' + du.toFixed(3) + ')');
-        linkLine.style.backgroundPositionX = (-t / 3).toFixed(1) + 'px';
-        linkLine.style.opacity = String(0.85 * (1 - fxSeg(t, 800, 950)));
-      }
     },
     onDone() {
       card.remove();
-      if (linkLine) linkLine.remove();
+      if (rimEl) rimEl.remove();
       if (chip) fxAnim(chip, [{ transform: 'scale(1.28)' }, { transform: 'scale(1)' }], { duration: 180, easing: 'ease-out' }); // the chip swells on landing
     },
   });
@@ -1578,33 +1634,52 @@ function fxChainSolveSceneV3(n, code, neg) {
   const layer = fxLayerEl(); if (!layer) return;
   const app = $('app'); if (!app) return;
   const ar = fxRel(app);
-  const card = fxPlaceGhost(code, false, { cx: ar.cx, cy: ar.y + ar.h * 0.34 }, 104, 142);
+  const cx = ar.cx, cy = ar.y + ar.h * 0.34, W = 104, H = 142;
+  // V4: the link FLIPs back from its own chip — it starts at the
+  // chip's rect (position + scale) and arrives centre at 180 ms
+  let sx = cx, sy = cy, s0 = 0.8;
+  const chip = fxChainChipEl(n);
+  if (chip) { const r = fxRel(chip); if (r.w > 0) { sx = r.cx; sy = r.cy; s0 = Math.max(0.1, r.h / H); } }
+  const card = fxPlaceGhost(code, false, { cx, cy }, W, H);
   if (!card) return;
   card.style.zIndex = 6;
   const no = document.createElement('div'); no.className = 'fx3-chainno'; no.textContent = n;
   if (neg) no.style.color = '#b9b9b9';
   card.appendChild(no);
-  const pt = fxRel(card);
+  // V4: frames/glow are preset-shadow overlays + a preset-filter
+  // gray copy — opacity cross-fades only, no per-frame writes of
+  // boxShadow / filter.
+  const glowEl = neg ? null : fxNode('fx3-goldglow', cx, cy, W, H);
+  if (glowEl) { glowEl.style.opacity = '0'; glowEl.style.zIndex = 7; }
+  const frameEl = fxNode(neg ? 'fx3-grayframe' : 'fx3-goldframe', cx, cy, W, H);
+  if (frameEl) { frameEl.style.opacity = '0'; frameEl.style.zIndex = 7; }
+  let grayCopy = null;
+  if (neg) { grayCopy = fxPlaceGhost(code, false, { cx, cy }, W, H); if (grayCopy) { grayCopy.style.filter = 'grayscale(1)'; grayCopy.style.opacity = '0'; grayCopy.style.zIndex = 7; } }
   fxAddScene({
     kind: 'chainsolve', dur: 450,
-    cues: neg ? [] : [{ at: 120, fn: () => fxSpawnBurst('low', { seed: (Math.random() * 1e9) | 0, o: [pt.cx, pt.cy], n: 8, life: [380, 620], speed: [14, 46], ang: [-Math.PI / 2, 0.8], grav: -50, size: [2.5, 5], cols: ['#ffd94d', '#ffe9a8'], alpha: .95 }) }],
+    cues: neg ? [] : [{ at: 200, fn: () => fxSpawnBurst('low', { seed: (Math.random() * 1e9) | 0, o: [cx, cy], n: 10, life: [380, 620], speed: [14, 46], ang: [-Math.PI / 2, 0.8], grav: -50, size: [2.5, 5], cols: ['#ffd94d', '#ffe9a8'], alpha: .95 }) }],
     render(t) {
-      // L7: the solving link returns to the foreground (scale-in 200 ms)
-      card.style.transform = 'scale(' + (0.8 + 0.2 * FXE.settle(fxSeg(t, 0, 200))).toFixed(3) + ')';
-      if (neg) { // L9 (negated): no gold — the frame grays and saturation drains before it leaves
-        const g = fxSeg(t, 120, 300);
-        card.style.boxShadow = '0 0 0 2px rgba(170,170,170,' + (0.9 * g).toFixed(2) + '), 0 12px 34px rgba(0,0,0,.55)';
-        card.style.filter = 'grayscale(' + g.toFixed(2) + ')';
-      } else { // L8: gold frame + outer glow ignite at 120-270
-        const g = fxSeg(t, 120, 270);
-        card.style.boxShadow = '0 0 0 2px rgba(255,217,77,' + (0.95 * g).toFixed(2) + '), 0 0 ' + Math.round(24 * g) + 'px rgba(201,162,39,.7), 0 12px 34px rgba(0,0,0,.55)';
+      const u = FXE.snap(fxSeg(t, 0, 180));
+      const sink = 8 * fxSeg(t, 300, 450);
+      const tr = 'translate(' + ((sx - cx) * (1 - u)).toFixed(1) + 'px,' + ((sy - cy) * (1 - u) + sink).toFixed(1) + 'px) scale(' + fxLerp(s0, 1, u).toFixed(3) + ')';
+      card.style.transform = tr;
+      const fade = 1 - fxSeg(t, 330, 450);
+      card.style.opacity = String(fade);
+      if (glowEl) { // V4: ignition moved back to 200-330; on exit the
+        // glow dies FIRST (330-400), then the card sinks away
+        glowEl.style.transform = tr;
+        glowEl.style.opacity = String(fxSeg(t, 200, 330) * (1 - fxSeg(t, 330, 400)));
       }
-      // L9: exit dimmed (and desaturated) 270-450 — "processed" stays readable while it leaves
-      const du = fxSeg(t, 270, 450);
-      if (!neg) card.style.filter = 'saturate(' + (1 - 0.75 * du).toFixed(2) + ') brightness(' + (1 - 0.25 * du).toFixed(2) + ')';
-      card.style.opacity = String(1 - fxSeg(t, 330, 450));
+      if (frameEl) {
+        frameEl.style.transform = tr;
+        frameEl.style.opacity = String((neg ? fxSeg(t, 120, 300) : fxSeg(t, 200, 330)) * fade);
+      }
+      if (grayCopy) { // negated: the gray copy takes over 120-300, no gold anywhere
+        grayCopy.style.transform = tr;
+        grayCopy.style.opacity = String(fxSeg(t, 120, 300) * fade);
+      }
     },
-    onDone() { card.remove(); },
+    onDone() { card.remove(); if (glowEl) glowEl.remove(); if (frameEl) frameEl.remove(); if (grayCopy) grayCopy.remove(); },
   });
 }
 // ---- set S/T activation (B9): the card tips into the chain
@@ -2265,9 +2340,62 @@ const effectYnKey = (p) => p.code + '|' + p.desc;
 
 // ---------------------------------------------------------------- prompt UI
 let sheetKind = 'prompt';
+let sheetAnimGen = 0, sheetCloseTimer = null, sheetBlockerOn = false;
+function sheetAnimCancel(el) { if (el && el.getAnimations) { try { for (const a of el.getAnimations()) a.cancel(); } catch (e) {} } }
 function sheetOpenView(html) { sheetOpen(html, 'view'); }
-function sheetOpen(html, kind) { sheetKind = kind || 'prompt'; closeInfoPop(); $('sheet').innerHTML = html; $('sheetwrap').className = 'on'; $('sheetwrap').dataset.kind = sheetKind; const pk = $('peekbtn'); if (pk) pk.textContent = '盤面を見る'; }
-function sheetClose() { closeInfoPop(); $('sheetwrap').className = ''; $('sheetwrap').removeAttribute('data-kind'); $('sheet').innerHTML = ''; }
+function sheetOpen(html, kind) {
+  sheetKind = kind || 'prompt';
+  closeInfoPop();
+  const wrap = $('sheetwrap'), sheet = $('sheet');
+  const wasOpen = wrap.classList.contains('on');
+  if (sheetCloseTimer) { clearTimeout(sheetCloseTimer); sheetCloseTimer = null; }
+  sheetAnimGen++;
+  delete wrap.dataset.closing;
+  sheetAnimCancel(sheet); sheetAnimCancel(wrap);
+  sheet.innerHTML = html;
+  wrap.className = 'on';
+  wrap.dataset.kind = sheetKind;
+  const pk = $('peekbtn'); if (pk) pk.textContent = '盤面を見る';
+  if (!wasOpen) {
+    // V4-6: opening is a motion, not a cut — the sheet slides up on
+    // the sheetIn curve (its overshoot IS the 4%), the scrim fades
+    // in over 180 ms, and content rows stagger up at 25 ms from
+    // +90 ms. Redraws of an already-open sheet never re-animate.
+    fxAnim(wrap, [{ backgroundColor: 'rgba(0,0,0,0)' }, { backgroundColor: 'rgba(0,0,0,0.53)' }], { duration: 180, easing: 'ease-out' });
+    fxAnim(sheet, [{ transform: 'translateY(100%)' }, { transform: 'translateY(0)' }], { duration: 280, easing: 'cubic-bezier(.16,1.12,.3,1)' });
+    const rows = sheet.children;
+    for (let i = 0; i < Math.min(rows.length, 8); i++)
+      fxAnim(rows[i], [{ opacity: '0', transform: 'translateY(8px)' }, { opacity: '1', transform: 'translateY(0)' }], { duration: 150, delay: 90 + i * 25, easing: 'cubic-bezier(.2,.9,.25,1)', fill: 'both' });
+  }
+}
+function sheetClose() {
+  closeInfoPop();
+  const wrap = $('sheetwrap'), sheet = $('sheet');
+  if (!wrap.classList.contains('on')) { wrap.removeAttribute('data-kind'); sheet.innerHTML = ''; return; }
+  if (wrap.dataset.closing) return; // a close motion is already in flight
+  const gen = ++sheetAnimGen;
+  sheetAnimCancel(sheet); sheetAnimCancel(wrap);
+  // the closing state rides in data-closing, NEVER the class list:
+  // className === 'on' is a load-bearing contract (test clickers,
+  // the pending-tap guard) and stays true until the motion lands.
+  wrap.dataset.closing = '1';
+  if (!sheetBlockerOn) { // while closing, the sheet's content is inert:
+    sheetBlockerOn = true; // a capture-phase blocker eats stale taps
+    sheet.addEventListener('click', (ev) => { if ($('sheetwrap').dataset.closing) { ev.stopPropagation(); ev.preventDefault(); } }, true);
+  }
+  const fromPeek = wrap.classList.contains('peek');
+  fxAnim(wrap, [{ backgroundColor: 'rgba(0,0,0,0.53)' }, { backgroundColor: 'rgba(0,0,0,0)' }], { duration: 180, easing: 'ease-in' });
+  fxAnim(sheet, [{ transform: fromPeek ? 'translateY(calc(100% - 44px))' : 'translateY(0)' }, { transform: 'translateY(100%)' }], { duration: 180, easing: 'cubic-bezier(.55,0,1,.45)', fill: 'forwards' });
+  if (sheetCloseTimer) clearTimeout(sheetCloseTimer);
+  sheetCloseTimer = setTimeout(() => {
+    sheetCloseTimer = null;
+    if (sheetAnimGen !== gen) return; // superseded by a newer open/close
+    wrap.className = '';
+    wrap.removeAttribute('data-kind');
+    delete wrap.dataset.closing;
+    sheet.innerHTML = '';
+  }, 185);
+}
 // R-SEL-1: a read-only detail that floats OVER whatever selection
 // is in progress — opening or closing it never answers, toggles
 // or cancels anything, so a choice can be checked mid-selection

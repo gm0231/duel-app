@@ -2982,6 +2982,48 @@ attack grammar verified end-to-end; monster-battle ghost stack
 verified structurally + by test-fx, its strip is still owed and
 scheduled with the R2/R3 captures). All 14 default tests pass.
 
+## V4 polish — Round 2: chain + transitions/sheets (2026-11-03)
+
+V4-3 chain: the pop's per-frame boxShadow became a preset-shadow
+rim overlay (opacity only) + a canvas rim-light sweep (0-150 ms);
+the number slam keeps its timing, its ring is now a canvas soft
+ring; the dashed DOM link line (with its per-frame
+backgroundPosition crawl) became a glowing cord + a travelling
+pulse dot (600 ms period) on the low canvas. From link 2, the
+word CHAIN stands up above the pop, letters staggered 30 ms
+(chainword scene, 1500 ms). The solve now FLIPs from the link's
+own chip rect (180 ms, snap) instead of scaling in at centre;
+gold ignition moved back to 200-330 (burst cue moved with it,
+n=10); frames/glow are preset-shadow overlays; on exit the glow
+dies first (330-400), then the card sinks 8 px. Negation uses a
+preset-filter gray copy cross-fade — no per-frame filter writes
+anywhere in either scene.
+
+V4-6 transitions/sheets: the phase banner is a scene on the
+shared clock (was WAAPI): snap entry 160 ms, gold rule draws
+200-380 under the label, exit accelerates out 700-820 (total
+unchanged). Sheets: opening (only on a closed->open transition)
+slides up 280 ms on the sheetIn bezier (its overshoot is the
+specified ~4%), scrim fades 180 ms, content rows stagger at
+25 ms from +90 ms; closing slides down 180 ms (inQuad bezier)
+with content kept visible but inert — the closing state rides
+in data-closing, never the class list (className === 'on' is
+load-bearing, see the audit-27 record above), a capture-phase
+click blocker eats stale taps during the 185 ms finalize, and
+sheetOpen supersedes any in-flight close. Peek reuses the same
+curve (CSS transition retimed). Switch knobs move by transform
+now, not left. Residual (recorded at stage 0, unchanged by the
+motion work): the ~133 ms sheet-open stall is dominated by the
+sheet content's innerHTML construction, not by the absence of
+animation; pre-building prompt content is a separate decision.
+
+Measured (v4probe, stage-0 protocol): mix 700 — chainpop
+>33.4ms 0.0% (max 33.3), chainsolve 0.0% (max 33.4; stage 0:
+0.7%); mix 620 — both 0.0%. Frame strips: v4shots2/r2-chain,
+r2-solve, r2-chain2 (link-1 pops + a gold-ignition solve frame
+verified by eye; a link-2 pop strip is still owed — two-link
+chains did not occur in the capture duels). All 16 suites pass.
+
 ### Merge with audit-27 (aafefea) — conflict resolution record
 feat/v4-polish (from f288d69) and audit-27 (also from f288d69)
 landed in parallel. client.js / index.html auto-merged (disjoint

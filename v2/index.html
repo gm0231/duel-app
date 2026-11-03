@@ -165,7 +165,8 @@
   /* ---------- sheet (modal selections) ---------- */
   #sheetwrap{position:absolute;inset:0;z-index:50;display:none;background:#0008;}
   #sheetwrap.on{display:block;}
-  #sheet{position:absolute;left:0;right:0;bottom:0;max-height:62dvh;overflow-y:auto;background:#1d1811;border-top:2px solid var(--gold);border-radius:12px 12px 0 0;padding:12px;transition:transform .25s ease;}
+  #sheet{position:absolute;left:0;right:0;bottom:0;max-height:62dvh;overflow-y:auto;background:#1d1811;border-top:2px solid var(--gold);border-radius:12px 12px 0 0;padding:12px;transition:transform .28s cubic-bezier(.16,1.12,.3,1);}
+  #sheetwrap[data-closing="1"] #sheet{pointer-events:none;}
   #sheetwrap.peek #sheet{transform:translateY(calc(100% - 44px));}
   #sheetwrap.peek{background:#0003;}
   #peekbtn{position:absolute;right:10px;bottom:calc(62dvh + 8px);z-index:51;display:none;background:#241a0e;color:var(--gold);border:1px solid var(--gold-dim);border-radius:8px;font-size:12px;padding:9px 12px;cursor:pointer;}
@@ -305,6 +306,8 @@
   /* phase banner: an overlay band, shown only at the transition */
   .fx-phase{position:absolute;left:0;right:0;top:38%;text-align:center;font-size:19px;font-weight:700;letter-spacing:.35em;padding:9px 0 9px .35em;color:#ffe9a8;background:linear-gradient(90deg,transparent,#2a2110ee 18%,#2a2110ee 82%,transparent);border-top:1px solid var(--gold-dim);border-bottom:1px solid var(--gold-dim);pointer-events:none;}
   .fx-phase.battle{color:#ffb3a0;background:linear-gradient(90deg,transparent,#4a140eee 18%,#4a140eee 82%,transparent);border-color:#a83a22;}
+  .fx-phase .rule{position:absolute;left:18%;right:18%;bottom:-1px;height:2px;background:linear-gradient(90deg,transparent,#c9a227,#ffe9a8,#c9a227,transparent);transform:scaleX(0);}
+  .fx-phase.battle .rule{background:linear-gradient(90deg,transparent,#a83a22,#ffb3a0,#a83a22,transparent);}
   /* attack declaration: thin cyan line + impact (round B, MD-style) */
   .fx-line{height:3px;background:linear-gradient(90deg,#aef3ff,#59d8f2);box-shadow:0 0 8px #59d8f2cc;border-radius:2px;transform-origin:0 50%;}
   .fx-impact{transform:translate(-50%,-50%);border-radius:50%;}
@@ -354,6 +357,12 @@
   .fx3-chainno{position:absolute;left:50%;bottom:-13px;transform:translateX(-50%);font-size:30px;font-weight:800;color:#59d8f2;text-shadow:0 2px 6px #000,0 0 16px #59d8f288;line-height:1;pointer-events:none;}
   .fx3-chainring{position:absolute;left:50%;bottom:-24px;width:52px;height:52px;margin-left:-26px;border:2px solid #59d8f2;border-radius:50%;pointer-events:none;}
   .fx3-linkline{position:absolute;height:3px;background:repeating-linear-gradient(90deg,#59d8f2 0 7px,transparent 7px 14px);pointer-events:none;transform-origin:0 50%;opacity:.85;}
+  .fx3-chainrim{position:absolute;border-radius:6px;box-shadow:0 0 0 2px rgba(255,255,255,.95),0 12px 34px rgba(0,0,0,.55);pointer-events:none;}
+  .fx3-chainword{position:absolute;transform:translate(-50%,-50%);font-size:20px;font-weight:800;letter-spacing:.3em;color:#59d8f2;text-shadow:0 2px 8px #000,0 0 18px #59d8f288;pointer-events:none;z-index:7;white-space:nowrap;}
+  .fx3-chainword span{display:inline-block;}
+  .fx3-goldframe{position:absolute;border-radius:6px;box-shadow:0 0 0 2px rgba(255,217,77,.95),0 12px 34px rgba(0,0,0,.55);pointer-events:none;}
+  .fx3-goldglow{position:absolute;border-radius:50%;box-shadow:0 0 24px 6px rgba(201,162,39,.7);pointer-events:none;}
+  .fx3-grayframe{position:absolute;border-radius:6px;box-shadow:0 0 0 2px rgba(170,170,170,.9),0 12px 34px rgba(0,0,0,.55);pointer-events:none;}
   .fx-chainpop.solving .no{color:var(--gold);}
   /* chain bar upgrades (round B): CHAIN label, newest link forward,
      resolved links dim */
@@ -397,9 +406,9 @@
   #start .srow .seg button small{display:block;font-size:9.5px;font-weight:400;color:var(--txt-dim);}
   #start .srow .seg button.sel small{color:#d8bc7a;}
   .switch{position:relative;width:52px;height:30px;flex:none;background:#171008;border:1px solid #3a2c12;border-radius:15px;cursor:pointer;padding:0;}
-  .switch .knob{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#6d5a30;transition:left .18s,background .18s;}
+  .switch .knob{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#6d5a30;transition:transform .18s,background .18s;}
   .switch.on{border-color:var(--gold);}
-  .switch.on .knob{left:25px;background:var(--gold);}
+  .switch.on .knob{transform:translateX(22px);background:var(--gold);}
   .sstate{font-size:12px;color:#c9b586;width:34px;text-align:left;}
   #start .startbtn{width:100%;min-height:52px;font-size:19px;letter-spacing:.14em;border-radius:12px;}
   #start .startbtn:disabled{background:#4a3d22;color:#8a7c55;}
