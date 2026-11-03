@@ -1,0 +1,621 @@
+Log in
+English
+日本語
+한글
+
+OCG
+
+日本語
+한글
+English(Asia)
+簡体字
+
+TCG
+
+English
+Deutsch
+Français
+Italiano
+Español
+Portugues
+Yu-Gi-Oh! Neuron(TRADING CARD GAME CARD DATABASE)
+Home
+Card Search
+ 
+Included in
+Sort by Release Date (Desc.)
+Sort by Category
+Deck Search
+Trends
+My Deck
+My Card List
+Forbidden & Limited ListForbidden &
+Limited List
+Log in
+Home
+Card Search
+ 
+Included in
+Sort by Release Date (Desc.)
+Sort by Category
+Deck Search
+Trends
+My Deck
+My Card List
+Forbidden & Limited ListForbidden &
+Limited List
+✕Close
+Alluring Heroines
+
+Favorites
+0
+Deck Type
+Deck
+Deck Playstyle
+Character
+Registered Category
+Amazoness Harpie
+Registered Tag
+GENESYS Xyz Synchro Fusion Informal tournament (private)
+Comment
+原作バトルシティ編の孔雀舞のデッキをイメージした、ジェネシスルールのキャラデッキです。 原作通りハーピィにアマゾネスを加えた混合構築になっています。 ハーピィの狩場でアマゾネスの急襲を割って蘇生に繋げたり、アマゾネス魔法等の速攻魔法をトリガーにハーピィ・レディSCのバウンスを狙ったり、鉄獣の凶襲（鳥獣族と獣族）で両テーマを行き来したりと、なかなか噛み合わない2テーマをなんとか繋げるようにしています。 ハーピィ・レディSCまたはアマゾネス女帝とホップ・イヤー飛行隊を合わせて相手ターンにバロネスをシンクロ召喚し、追加の妨害を構えることもできます。
+Deck Code
+Copied to Clipboard.
+Total in Main Deck
+44
+Total in Extra Deck
+15
+Total in Side Deck
+3
+Sort by Registration Date
+Sort by Name
+Sort by Level/Rank/Link Rating
+View as Detailed List
+View as List
+View as Gallery
+View as Detailed List
+View as List
+View as Gallery
+Monster Cards	23
+1		
+Amazoness Chain Master
+	1
+2		
+Amazoness Swords Woman
+	1
+3		
+Amazoness Tiger
+	2
+4		
+Amazoness War Chief
+	2
+5		
+Amazoness Princess
+	3
+6		
+Harpie Lady 1
+	2
+7		
+Cyber Harpie Lady
+	1
+8		
+Harpie Lady Sisters
+	1
+9		
+Harpie Harpist
+	1
+10		
+Harpie Perfumer
+	3
+11		
+Harpie Channeler
+	2
+12		
+Hop Ear Squadron
+	1
+13		
+ハーピィ・レディ－華麗なる分身－
+	3
+Spell Cards	14
+1		
+Elegant Egotist
+	1
+2		
+Harpie's Feather Duster
+
+Limited Cards
+
+Limited Cards
+	1
+3		
+Hysteric Sign
+	3
+4		
+Alluring Mirror Split
+	1
+5		
+Amazoness Call
+	3
+6		
+Amazoness Secret Arts
+	3
+7		
+Spell Card "Monster Reborn"
+	1
+8		
+Tri-Brigade Airborne Assault
+	1
+9	 
+10	 
+11	 
+12	 
+13	 
+Trap Cards	7
+1		
+Mirror Wall
+	1
+2		
+Hysteric Party
+	2
+3		
+Amazoness Onslaught
+	2
+4		
+Dramatic Rescue
+	1
+5		
+香水戦術
+	1
+6	 
+7	 
+8	 
+9	 
+10	 
+11	 
+12	 
+13	 
+Extra Deck	15
+1		
+Cyber Slash Harpie Lady
+	3
+2		
+XX-Saber Hyunlei
+	1
+3		
+Amazoness Pet Liger
+	1
+4		
+Amazoness Pet Liger King
+	2
+5		
+Amazoness Empress
+	2
+6		
+Amazoness Augusta
+	2
+7		
+Harpie's Pet Phantasmal Dragon
+	1
+8		
+Lightning Chidori
+	1
+9		
+Diamond Dire Wolf
+	1
+10		
+K9-17 "Ripper"
+	1
+11	 
+12	 
+13	 
+14	 
+15	 
+Side Deck	3
+1		
+Amazoness Fighter
+	1
+2		
+Amazoness Spellcaster
+	1
+3		
+Amazoness Archers
+	1
+4	 
+5	 
+6	 
+7	 
+8	 
+9	 
+10	 
+11	 
+12	 
+13	 
+14	 
+15	 
+Main Deck
+44
+Monster Cards
+23
+1
+Amazoness Chain Master
+X
+ EARTH  Level 4 [ Warrior / Effect ]
+ATK 1500 DEF 1300
+When this card is destroyed by battle and sent to the GY: You can pay 1500 LP; look at your opponent's hand, then add 1 monster from their hand to your hand.
+1
+2
+Amazoness Swords Woman
+X
+ EARTH  Level 4 [ Warrior / Effect ]
+ATK 1500 DEF 1600
+Your opponent takes any battle damage you would have taken from battles involving this card instead.
+1
+3
+Amazoness Tiger
+X
+ EARTH  Level 4 [ Beast / Effect ]
+ATK 1100 DEF 1500
+You can only control 1 "Amazoness Tiger". Gains 400 ATK for each "Amazoness" monster you control. Your opponent's monsters cannot attack "Amazoness" monsters, except this one.
+2
+4
+Amazoness War Chief
+X
+ EARTH  Level 5 [ Warrior / Effect ]
+ATK 1900 DEF 0
+If you control no monsters, or only "Amazoness" monsters: You can Special Summon this card from your hand. If this card is Normal or Special Summoned: You can Set 1 "Amazoness" Spell/Trap or 1 "Polymerization" directly from your Deck, also you can only attack with "Amazoness" monsters for the rest of this turn. You can only use each effect of "Amazoness War Chief" once per turn.
+2
+5
+Amazoness Princess
+X
+ EARTH  Level 3 [ Warrior / Effect ]
+ATK 1200 DEF 900
+This card's name becomes "Amazoness Queen" while on the field or in the GY. If this card is Normal or Special Summoned: You can add 1 "Amazoness" Spell/Trap from your Deck to your hand. You can only use this effect of "Amazoness Princess" once per turn. When this card declares an attack: You can send 1 other card from your hand or field to the GY; Special Summon 1 "Amazoness" monster from your Deck in Defense Position, except "Amazoness Princess".
+3
+6
+Harpie Lady 1
+X
+ WIND  Level 4 [ Winged Beast / Effect ]
+ATK 1300 DEF 1400
+(This card's name is always treated as "Harpie Lady".)<br>All WIND monsters on the field gain 300 ATK.
+2
+7
+Cyber Harpie Lady
+X
+ WIND  Level 4 [ Winged Beast / Effect ]
+ATK 1800 DEF 1300
+(This card's name is always treated as "Harpie Lady".)
+1
+8
+Harpie Lady Sisters
+X
+ WIND  Level 6 [ Winged Beast / Effect ]
+ATK 1950 DEF 2100
+Cannot be Normal Summoned/Set. Must first be Special Summoned with "Elegant Egotist".
+1
+9
+Harpie Harpist
+X
+ WIND  Level 4 [ Winged Beast / Effect ]
+ATK 1700 DEF 600
+This card's name becomes "Harpie Lady" while on the field or in the GY. You can only use each of these effects of "Harpie Harpist" once per turn.<br>●When this card is Normal Summoned: You can target 1 other Winged Beast monster you control and 1 face-up monster your opponent controls; return them to the hand.<br>●During the End Phase, if this card is in the GY because it was sent there this turn: You can add 1 Level 4 Winged Beast monster with 1500 or less ATK from your Deck to your hand.
+1
+10
+Harpie Perfumer
+X
+ WIND  Level 4 [ Winged Beast / Effect ]
+ATK 1400 DEF 1300
+This card's name becomes "Harpie Lady" while on the field or in the GY. If this card is Normal or Special Summoned: You can add 1 Spell/Trap from your Deck to your hand that mentions "Harpie Lady Sisters". If you controlled a Level 5 or higher "Harpie" monster when you activated this effect, you can also add a second such card, with a different name from the first. You can only use this effect of "Harpie Perfumer" once per turn.
+3
+11
+Harpie Channeler
+X
+ WIND  Level 4 [ Winged Beast / Effect ]
+ATK 1400 DEF 1300
+You can discard 1 "Harpie" card; Special Summon 1 "Harpie" monster from your Deck in Defense Position, except "Harpie Channeler". You can only use this effect of "Harpie Channeler" once per turn. While you control a Dragon monster, this card's Level becomes 7. This card's name becomes "Harpie Lady" while on the field or in the GY.
+2
+12
+Hop Ear Squadron
+X
+ WIND  Level 2 [ Beast / Tuner／Effect ]
+ATK 300 DEF 600
+During your opponent's Main Phase, if this card is in your hand (Quick Effect): You can target 1 face-up monster you control; Special Summon this card, then immediately after this effect resolves, Synchro Summon 1 Synchro Monster using only this card you control and that target. You can only use this effect of "Hop Ear Squadron" once per turn.
+1
+13
+ハーピィ・レディ－華麗なる分身－
+X
+ 風属性  Level 5 [ 鳥獣族 / 効果 ]
+ATK 2100 DEF 1800
+このカード名の②③の効果はそれぞれ１ターンに１度しか使用できない。<br>①：このカードのカード名は、フィールド・墓地に存在する限り「ハーピィ・レディ」として扱う。<br>②：このカードが手札に存在し、自分フィールドに風・地属性モンスターのいずれかが存在する場合に発動できる。このカードを特殊召喚する。<br>③：このカードが特殊召喚した場合に発動できる。自分の手札・デッキ・墓地からレベル５の「ハーピィ」モンスターを２体まで特殊召喚する。この効果の発動後、ターン終了時まで自分は風・地属性モンスターしか特殊召喚できない。
+3
+Spell Cards
+14
+1
+Elegant Egotist
+X
+ SPELL
+If "Harpie Lady" is on the field: Special Summon 1 "Harpie Lady" or "Harpie Lady Sisters" from your hand or Deck.
+1
+2
+
+Limited Cards
+
+Limited
+Harpie's Feather Duster
+X
+ SPELL
+Destroy all Spells and Traps your opponent controls.
+1
+3
+Hysteric Sign
+X
+ SPELL  Continuous
+When this card is activated: Add 1 "Elegant Egotist" from your Deck or GY to your hand. During the End Phase, if this card is in the GY because it was sent there from the hand or field this turn: Add up to 3 "Harpie" cards with different names from each other from your Deck to your hand. You can only use 1 "Hysteric Sign" effect per turn, and only once that turn.
+3
+4
+Alluring Mirror Split
+X
+ SPELL  Continuous
+When a "Harpie Lady" or "Harpie Lady Sisters" you control is destroyed by battle: You can Special Summon 1 "Harpie" monster from your Deck with a different original name than the destroyed monster. If this card you control is destroyed by a "Harpie" card's effect or your opponent's card effect: Target 1 "Harpie" monster in your GY; Special Summon it. You can only use each effect of "Alluring Mirror Split" once per turn.
+1
+5
+Amazoness Call
+X
+ SPELL  Quick-Play
+Take 1 "Amazoness" card from your Deck, except "Amazoness Call", and either add it to your hand or send it to the GY. During your Main Phase: You can banish this card from your GY, then target 1 "Amazoness" monster you control; this turn, that monster can attack all monsters your opponent controls, once each, also other monsters you control cannot attack. You can only activate 1 "Amazoness Call" per turn.
+3
+6
+Amazoness Secret Arts
+X
+ SPELL  Quick-Play
+Fusion Summon 1 "Amazoness" Fusion Monster from your Extra Deck, using monsters from your hand or field as Fusion Material. During your Main Phase: You can banish this card from your GY; once, if you Fusion Summon an "Amazoness" Fusion Monster this turn, you can also send 1 "Amazoness" monster from your Extra Deck to the GY as material. You can only use 1 "Amazoness Secret Arts" effect per turn, and only once that turn.
+3
+7
+Spell Card "Monster Reborn"
+X
+ SPELL  Quick-Play
+Target 1 monster in either GY; Special Summon it to your field, but for the rest of this turn, it cannot attack and neither player can activate its effects. You can only activate 1 "Spell Card "Monster Reborn"" per turn.
+1
+8
+Tri-Brigade Airborne Assault
+X
+ SPELL  Quick-Play
+Target 1 Beast, Beast-Warrior, or Winged Beast monster you control; Special Summon 1 Beast, Beast-Warrior, or Winged Beast monster from your Deck, in Defense Position, with a different Type and with ATK less than or equal to that monster, but its effects are negated until the end of this turn, also you cannot Special Summon monsters from the Extra Deck for the rest of this turn, except Link Monsters. You can only activate 1 "Tri-Brigade Airborne Assault" per turn.
+1
+Trap Cards
+7
+1
+Mirror Wall
+X
+ TRAP  Continuous
+Halve the ATK of your opponent's attacking monsters. Once per turn, during your Standby Phase, pay 2000 LP or destroy this card.
+1
+2
+Hysteric Party
+X
+ TRAP  Continuous
+Activate this card by discarding 1 card; Special Summon as many copies of "Harpie Lady" as possible from your GY. When this face-up card leaves the field, destroy those monsters.
+2
+3
+Amazoness Onslaught
+X
+ TRAP  Continuous
+Once per turn, during the Battle Phase: You can Special Summon 1 "Amazoness" monster from your hand, and if you do, it gains 500 ATK until the end of this turn (even if this card leaves the field). After damage calculation, if your "Amazoness" monster battled an opponent's monster while this card is already face-up in your Spell & Trap Zone: You can banish that opponent's monster. If this card on the field is destroyed and sent to the GY: You can target 1 "Amazoness" monster in your GY; Special Summon it.
+2
+4
+Dramatic Rescue
+X
+ TRAP
+When a card is activated that targets an "Amazoness" monster on the field: Return that targeted monster to the hand, and if you do, Special Summon 1 other monster from your hand.
+1
+5
+香水戦術
+X
+ 罠
+①：１ターンに１度、カード名を１つ宣言して発動できる。自分のデッキの一番上のカードをお互いに確認し、宣言したカードだった場合、その種類によって以下の効果を適用できる。違った場合、このカードを破壊する。<br>●モンスター：そのモンスターを特殊召喚する。<br>●魔法・罠：そのカードを自分フィールドにセットする。<br>②：このカードが効果で破壊された場合に発動できる。自分のデッキ・墓地から「ハーピィ」モンスター１体を特殊召喚する。
+1
+Extra Deck
+15
+1
+Cyber Slash Harpie Lady
+X
+ WIND  Level 8 [ Winged Beast / Synchro／Effect ]
+ATK 2600 DEF 1400
+1 Tuner + 1+ non-Tuner monsters<br>For this card's Synchro Summon, you can treat 1 "Harpie" monster you control as a Tuner. This card's name becomes "Harpie Lady" while on the field or in the GY. When a Spell/Trap Card or effect is activated (except during the Damage Step) (Quick Effect): You can target 1 monster your opponent controls or 1 "Harpie" monster you control; return it to the hand. You can only use this effect of "Cyber Slash Harpie Lady" once per turn.
+3
+2
+XX-Saber Hyunlei
+X
+ EARTH  Level 6 [ Warrior / Synchro／Effect ]
+ATK 2300 DEF 1300
+1 Tuner + 1+ non-Tuner "X-Saber" monsters<br>When this card is Synchro Summoned: You can target up to 3 Spells/Traps on the field; destroy them.
+1
+3
+Amazoness Pet Liger
+X
+ EARTH  Level 7 [ Beast / Fusion／Effect ]
+ATK 2500 DEF 2400
+"Amazoness Tiger" + 1 "Amazoness" monster<br>Once per battle, if this card attacks, during damage calculation: You can make this card gain 500 ATK during that damage calculation only. If your "Amazoness" monster attacked an opponent's monster, after damage calculation: You can target 1 face-up monster your opponent controls; it loses 800 ATK. Monsters your opponent controls cannot attack "Amazoness" monsters you control, except this one.
+1
+4
+Amazoness Pet Liger King
+X
+ EARTH  Level 9 [ Beast / Fusion／Effect ]
+ATK 2900 DEF 2800
+1 Level 5 or higher "Amazoness" monster + 1 "Amazoness" monster<br>Your opponent's monsters cannot attack any monsters, except this one. You can target 1 "Amazoness" card you control and 1 "Amazoness" Warrior monster in your GY; destroy that card on the field, and if you do, Special Summon that other monster from the GY. This card cannot attack the turn this effect is activated. You can only use this effect of "Amazoness Pet Liger King" once per turn.
+2
+5
+Amazoness Empress
+X
+ EARTH  Level 8 [ Warrior / Fusion／Effect ]
+ATK 2800 DEF 2400
+"Amazoness Queen" + 1 "Amazoness" monster<br>Other "Amazoness" cards you control cannot be destroyed by battle or card effects. If your "Amazoness" monster attacks a Defense Position monster, inflict piercing battle damage to your opponent. If this face-up Fusion Summoned card is destroyed by battle, or leaves the field because of an opponent's card effect while its owner controls it: You can Special Summon 1 "Amazoness Queen" from your hand, Deck, or GY.
+2
+6
+Amazoness Augusta
+X
+ EARTH  Level 10 [ Warrior / Fusion／Effect ]
+ATK 3200 DEF 2800
+1 "Amazoness" Fusion Monster + 1 "Amazoness" monster<br>Your opponent cannot target other "Amazoness" cards you control with card effects, also those cards cannot be destroyed by your opponent's card effects. If this card was Fusion Summoned using "Amazoness Empress" or "Amazoness Queen" as material, it can make a second attack during each Battle Phase. If this card is Fusion Summoned: You can Special Summon 1 "Amazoness" monster from your Deck. You can only use this effect of "Amazoness Augusta" once per turn.
+2
+7
+Harpie's Pet Phantasmal Dragon
+X
+ WIND  Rank 4 [ Dragon / Xyz／Effect ]
+ATK 2000 DEF 2500
+3 Level 4 WIND monsters<br>This card's effects can only be applied/resolved while it has material. This card can attack your opponent directly. Your opponent cannot target any "Harpie" monsters with effects or for attacks. During each of your End Phases: Detach 1 material from this card.
+1
+8
+Lightning Chidori
+X
+ WIND  Rank 4 [ Thunder / Xyz／Effect ]
+ATK 1900 DEF 1600
+2 Level 4 WIND monsters<br>If this card is Xyz Summoned: Target 1 Set card your opponent controls; return that target to the bottom of the Deck. Once per turn: You can detach 1 Xyz Material from this card, then target 1 face-up card your opponent controls; return that target to the top of the Deck.
+1
+9
+Diamond Dire Wolf
+X
+ EARTH  Rank 4 [ Beast / Xyz／Effect ]
+ATK 2000 DEF 1200
+2 Level 4 monsters<br>Once per turn: You can detach 1 material from this card, then target 1 Beast, Beast-Warrior, or Winged Beast monster you control and 1 other card on the field; destroy them.
+1
+10
+K9-17 "Ripper"
+X
+ WIND  Rank 5 [ Warrior / Xyz／Effect ]
+ATK 2300 DEF 1800
+2 Level 5 monsters<br>You can detach 1 material from this card; add 1 "K9" card from your Deck to your hand, then if your opponent has activated a monster effect this turn, you can Set 1 "K9" Quick-Play Spell from your Deck or GY. When your opponent activates a monster effect in the hand or GY (Quick Effect): You can detach 1 material from this card; negate that effect. You can only use each effect of "K9-17 "Ripper"" once per turn.
+1
+Side Deck
+3
+1
+Amazoness Fighter
+X
+ EARTH  Level 4 [ Warrior / Effect ]
+ATK 1500 DEF 1300
+You take no battle damage from attacks involving this card.
+1
+2
+Amazoness Spellcaster
+X
+ SPELL
+Target 1 "Amazoness" monster you control and 1 face-up monster your opponent controls; switch the original ATK of those targets until the end of this turn.
+1
+3
+Amazoness Archers
+X
+ TRAP
+When an opponent's monster declares an attack, while you control an "Amazoness" monster: Change all monsters your opponent currently controls to face-up Attack Position (Flip effects are not activated), they lose 500 ATK, also they must attack this turn, if able.
+1
+Main Deck
+44
+   
+Extra Deck
+15
+Side Deck
+3
+∧Yu-Gi-Oh! Neuron(TRADING CARD GAME CARD DATABASE)∧
+Yu-Gi-Oh! Neuron(TRADING CARD GAME CARD DATABASE)
+∧
+
+This is an official site for the Yu-Gi-Oh! Trading Card Game.
+You can search through all Yu-Gi-Oh! TCG cards, check detailed rules, and view the Forbidden & Limited List.
+You can also manage your own cards and Decks by registering them in My Deck, and search publicly available Deck Recipes to help you build your own Deck.
+
+ How to Play
+Card Search
+You can search through all Yu-Gi-Oh! TCG cards. You can also search for Decks containing a card via its Card Details page. Card info will be available starting from its release date.
+ 
+Included in
+You can view lists of Yu-Gi-Oh! TCG cards contained in different Packs or Boxes (Products, Perks, etc.).
+The latest info will become available starting from their release date.
+Deck Search
+You can search through Decks that have been posted for public viewing.
+You can search for a Tournament Championship Deck/Tournament Runner-Up Deck or Decks that contain a specific card.
+Trends
+The ranking is calculated based on newly created Decks and Decks used in tournaments.
+Here you can check the Decks that are currently trending.
+My Deck
+You can register your Deck Recipes and post them to show to other users. (Speed Duel Decks and DUEL LINKS Decks can be registered as well.) You can use this feature to organize and manage your Decks and cards.
+My Card List
+You can manage lists of cards you own and cards you want as Owned Cards and Wish List, respectively. Go to the Card Details page after logging in to add more cards to your lists.
+Forbidden & Limited List
+This is a list of cards whose usage in official tournaments is either prohibited or limited in terms of the number of cards with the same name allowed in a Deck. Check out the latest version.
+©2020 Studio Dice/SHUEISHA, TV TOKYO, KONAMI
+  
+
+Yu-Gi-Oh! TCG Official Support App
+
+This App has tons of features which are beneficial to any Duelist!
+
+Home
+Card Search
+ 
+Included in
+Sort by Release Date (Desc.)
+Sort by Category
+Deck Search
+Trends
+My Deck
+My Card List
+Forbidden & Limited ListForbidden &
+Limited List
+Contact
+Terms of Use
+Terms of Use
+Cookie 設定
+©2026 Konami Digital Entertainment
+
+Privacy Settings
+
+To use Yu-Gi-Oh! Neuron(TRADING CARD GAME CARD DATABASE), you must agree to the Terms of Use.
+If the Terms of Use are revised, you will need to re-agree to the updated content in order to continue using the service.
+
+Confirm
+
+Privacy Settings
+
+Privacy Notice
+
+The Privacy Notice is a document that defines how personal information is handled in connection with the use of this service. This service includes the smartphone applications and websites listed below.
+
+
+● Yu-Gi-Oh! Neuron
+● Yu-Gi-Oh! Neuron(KONAMI CARD GAME NETWORK)
+● Yu-Gi-Oh! Neuron(TRADING CARD GAME CARD DATABASE)
+● Yu-Gi-Oh! Neuron(RUSH DUEL CARD DATABASE)
+
+ Decline  Agree
+Regarding Features That Use Precise Geolocation Data
+
+This document outlines the handling of location information used in features such as store search and tournament search.
+
+ Decline  Agree
+OK
+
+Privacy Settings
+
+Is this setting okay?
+
+Privacy Notice
+
+Before Change : Agree Decline
+
+After Change : Agree Decline
+
+Regarding Features That Use Precise Geolocation Data
+
+Before Change : Agree Decline
+
+After Change : Agree Decline
+
+Cancel
+OK
+
+Withdrawal of Privacy Notice
+
+If you withdraw your consent to the Privacy Notice, Yu-Gi-Oh! Neuron will no longer be available.
+If you wish to withdraw, please proceed with the deletion process for your CARD GAME ID.
+
+To delete your ID, log in to Yu-Gi-Oh! Neuron(KONAMI CARD GAME NETWORK) and go to My Page > About CARD GAME ID deletion on this site to withdraw your consent to the Privacy Notice and delete your personal information.
+
+Back

@@ -8,10 +8,21 @@ GENESYS point list 202610, BabelCDB alias/type data, YGOPRODeck
 release dates, ygo.sqlite cid map). See NOTES.md "Neuron import
 Phase 1" for the dataset's provenance and known limits.
 
-Import paths (Phase 0 verdict: the app can NEVER fetch the
-official DB itself — CORS blocks it, verified in a real browser):
-the user brings the data. Accepted inputs:
-- the official deck page's HTML (text view, whole-page copy)
+Import paths. The official sites send no CORS headers, so the
+app cannot fetch them directly (verified in a real browser for
+db.yugioh-card.com AND neuron.konami.net, 2026-11-04). A Neuron
+share link or official deck-page URL (or a bare 7-character deck
+code) is therefore fetched through a chain of public CORS relays
+(client.js neuronFetchDeckHtml) and the returned HTML parsed
+here; if every fetch route fails, the user pastes instead.
+Accepted inputs:
+- a Neuron share link / official deck-page URL / deck code
+  (URL flow: fetch -> parse -> validate -> auto-save)
+- the official deck page's HTML (whole-page copy)
+- the deck page copied as rendered text — the shape a phone
+  browser's select-all copy yields, JA and EN pages (the Neuron
+  app itself has no text export; its "リスト保存" produces an
+  image registration sheet, which cannot be read)
 - a.ydk / passcode list (with or without #main/#extra/!side)
 - a YDKE URL (ydke://...)
 - a card-name list (名前 ×n lines)
@@ -26,11 +37,14 @@ const STORAGE_KEY = 'v2saveddecks';
 let GD = null; // raw genesys-data.json
 let points = new Map(), names = new Map(), alias = new Map(), cidMap = new Map();
 let lpSet = new Set(), exSet = new Set(), lateSet = new Set(), ngSet = new Set();
-let nameIndex = new Map(); // normalized Japanese name -> representative passcode
+let nameIndex = new Map(); // normalized JA/EN printed name -> representative passcode
 
 function normName(s) {
 return String(s || '')
 .replace(/[Ａ-Ｚａ-ｚ０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+.replace(/[‐‑‒–—―－]/g, '-')
+.replace(/[‘’]/g, "'")
+.replace(/[“”]/g, '"')
 .replace(/\s+/g, '')
 .toLowerCase();
 }
@@ -44,9 +58,18 @@ cidMap = new Map(Object.entries(gd.cid).map(([k, v]) => [+k, +v]));
 lpSet = new Set(gd.lp || []); exSet = new Set(gd.ex || []);
 lateSet = new Set(gd.late || []); ngSet = new Set(gd.ng || []);
 nameIndex = new Map();
-for (const [code, nm] of names) {
+const putIdx = (nm, rep) => {
 const key = normName(nm);
-if (key &&!nameIndex.has(key)) nameIndex.set(key, code);
+if (key &&!nameIndex.has(key)) nameIndex.set(key, normalizeCode(+rep));
+};
+if (gd.indexJa || gd.indexEn) {
+// name -> representative for EVERY printing (JA first): cards
+// alias-merged onto another name ("Harpie Lady 1" prints its own
+// name on the page) resolve only through these indexes.
+for (const [nm, rep] of Object.entries(gd.indexJa || {})) putIdx(nm, rep);
+for (const [nm, rep] of Object.entries(gd.indexEn || {})) putIdx(nm, rep);
+} else {
+for (const [code, nm] of names) putIdx(nm, code);
 }
 return true;
 }
@@ -211,6 +234,120 @@ if (sectionOf(l) || /^#/.test(l) || /^[\d\s,、]+$/.test(l)) coded++;
 }
 return coded === lines.length;
 }
+
+// ------------------------------------------------------------ visual page text
+// The official deck page copied as RENDERED text — what a phone
+// browser's select-all -> copy yields. The page prints the deck
+// twice (a compact list: section header with count, index, card
+// name, optional restriction note, copy count; and a detailed
+// list adding effect text before the count). One state machine
+// reads both: a line that resolves as a card name arms the entry,
+// the next bare-number line is its copy count, bare numbers with
+// no armed name are list indexes or page furniture and are
+// skipped. Parsing stops when the section sequence restarts
+// (main again after side, or extra/side twice), so a copy
+// containing both blocks never double-counts. Labels and totals
+// exist in JA and EN; names may mix both languages on one page
+// (the shared recipe pages print mostly EN names) and resolve
+// through the JA/EN name indexes. Page totals, when present,
+// must match the parsed sizes — a mismatch means the copy was
+// partial and is reported, not guessed around.
+const VIS_MAIN = ['モンスターカード', '魔法カード', '罠カード', 'Monster Cards', 'Spell Cards', 'Trap Cards'];
+const VIS_EXTRA = ['エクストラデッキ', 'Extra Deck'];
+const VIS_SIDE = ['サイドデッキ', 'Side Deck'];
+const VIS_HEADER_RE = /^(モンスターカード|魔法カード|罠カード|Monster Cards|Spell Cards|Trap Cards|エクストラデッキ|Extra Deck|サイドデッキ|Side Deck)(?:[\t ]+\d+)?\s*$/;
+const VIS_ANNOT = new Set(['制限カード', '禁止カード', '準制限カード', 'Limited Cards', 'Forbidden Cards', 'Semi-Limited Cards']);
+function visHeaderSec(line) {
+const m = VIS_HEADER_RE.exec(line);
+if (!m) return null;
+if (VIS_MAIN.includes(m[1])) return 'main';
+if (VIS_EXTRA.includes(m[1])) return 'extra';
+return 'side';
+}
+function visTotals(lines) {
+const tot = {};
+const pats = [[/^(メインデッキ合計|Total in Main Deck)$/, 'main'], [/^(エクストラデッキ合計|Total in Extra Deck)$/, 'extra'], [/^(サイドデッキ合計|Total in Side Deck)$/, 'side']];
+for (let i = 0; i < lines.length; i++) {
+for (const [re, sec] of pats) {
+if (!re.test(lines[i]) || tot[sec] != null) continue;
+for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
+const n = /^\s*(\d+)\s*$/.exec(lines[j]);
+if (n) { tot[sec] = +n[1]; break; }
+}
+}
+}
+return tot;
+}
+function visDeckName(lines) {
+for (let i = 0; i < lines.length; i++) {
+if (lines[i] !== 'お気に入り' && lines[i] !== 'Favorites') continue;
+for (let j = i - 1; j >= 0 && j >= i - 3; j--) {
+const t = lines[j].trim();
+if (t && t.length <= 80 && !/^(トップ|カード検索|デッキ検索|マイデッキ|Top|Card Search|Deck Search|My Deck|Trends)$/.test(t)) return t;
+}
+}
+return null;
+}
+function looksLikeVisual(text) {
+return /^(モンスターカード|魔法カード|罠カード|Monster Cards|Spell Cards|Trap Cards|エクストラデッキ|Extra Deck|サイドデッキ|Side Deck)[\t ]+\d+\s*$/m.test(text) ||
+/^(メインデッキ合計|エクストラデッキ合計|サイドデッキ合計|Total in Main Deck|Total in Extra Deck|Total in Side Deck)\s*$/m.test(text);
+}
+function parseVisualText(text) {
+const lines = String(text).split(/\r?\n/);
+const totals = visTotals(lines);
+const deck = { name: visDeckName(lines), main: [], extra: [], side: [], names: {} };
+const seen = new Set();
+let sec = null, pending = null;
+for (const raw of lines) {
+const line = raw.trim();
+const hs = visHeaderSec(line) || ((line === 'メインデッキ' || line === 'Main Deck')? 'main': null);
+if (hs) {
+if ((hs === 'extra' && seen.has('extra')) || (hs === 'side' && seen.has('side')) || (hs === 'main' && seen.has('side'))) break;
+if (pending) return { ok: false, errors: ['カード「' + pending.name + '」の枚数が読み取れませんでした。ページ全体をコピーし直してください'] };
+seen.add(hs); sec = hs; continue;
+}
+if (!line || VIS_ANNOT.has(line)) continue;
+if (/^\d{1,3}$/.test(line)) {
+if (pending && sec) {
+for (let i = 0; i < +line; i++) deck[sec].push(pending.rep);
+pending = null;
+}
+continue;
+}
+if (!sec) continue;
+const rep = nameIndex.get(normName(line));
+if (rep != null) {
+if (pending) return { ok: false, errors: ['カード「' + pending.name + '」の枚数が読み取れませんでした。ページ全体をコピーし直してください'] };
+pending = { rep, name: line };
+if (!deck.names[rep]) deck.names[rep] = line;
+}
+}
+if (pending) return { ok: false, errors: ['カード「' + pending.name + '」の枚数が読み取れませんでした。ページ全体をコピーし直してください'] };
+if (!deck.main.length &&!deck.extra.length &&!deck.side.length)
+return { ok: false, errors: ['デッキのカードが読み取れませんでした。公式デッキページ全体をコピーしてください'] };
+for (const s of ['main', 'extra', 'side']) {
+if (totals[s] != null && totals[s]!== deck[s].length)
+return { ok: false, errors: ['ページの合計（' + totals[s] + '枚）と読み取った枚数（' + deck[s].length + '枚）が一致しません。コピーが途中で切れている可能性があります'] };
+}
+return { ok: true, deck };
+}
+
+// ------------------------------------------------------------ URL / deck code
+// The URL flow's pure string work (fetching itself lives in
+// client.js: the official hosts send no CORS headers, so the app
+// goes through public relays there).
+function extractImportUrl(text) {
+const m = /https?:\/\/[^\s<>"'）】]+/.exec(String(text || ''));
+if (!m) return null;
+const u = m[0].replace(/[。、．）)]+$/, '');
+return /neuron\.konami\.net|db\.yugioh-card\.com/.test(u)? u: null;
+}
+function isDeckCode(text) {
+return /^[A-Za-z0-9]{7}$/.test(String(text || '').trim());
+}
+function deckCodeSearchUrl(code) {
+return 'https://www.db.yugioh-card.com/yugiohdb/deck_search.action?ope=1&deck_code=' + encodeURIComponent(String(code).trim()) + '&request_locale=ja';
+}
 // parseImport(text, parseHtml) — parseHtml: (htmlString) => Document
 function parseImport(text, parseHtml) {
 text = String(text || '');
@@ -221,10 +358,11 @@ if (text.includes('link_value') && text.includes('cid=')) {
 if (typeof parseHtml!== 'function') return { ok: false, errors: ['HTMLの解析ができませんでした']};
 const doc = parseHtml(text);
 const { deck, rows, unknown} = parseHtmlDeck(doc);
-if (!rows) return { ok: false, errors: ['デッキのカード行が見つかりませんでした。公式デッキページで「テキスト表示」を選んで、ページ全体をコピーしてください'], format: 'html'};
+if (!rows) return { ok: false, errors: ['デッキのカード行が見つかりませんでした。公式デッキページ全体をコピーし直してください'], format: 'html'};
 if (unknown.length) return { ok: false, errors: ['データに無いカードが含まれています：' + unknown.join('、')], format: 'html'};
 return { ok: true, deck, format: 'html'};
 }
+if (looksLikeVisual(text)) return Object.assign(parseVisualText(text), { format: 'visual'});
 if (looksLikeCodeList(text)) return Object.assign(parseCodeList(text), { format: 'codes'});
 return Object.assign(parseNameList(text), { format: 'names'});
 }
@@ -319,7 +457,9 @@ savedAt: new Date(now || Date.now()).toISOString(),
 }
 return {
 STORAGE_KEY, setData, dataReady, addPoolNames, normalizeCode, knownCode, displayName,
-parseImport, parseHtmlDeck, validateGenesis, poolCheck, countGroups,
+parseImport, parseHtmlDeck, parseVisualText, looksLikeVisual,
+extractImportUrl, isDeckCode, deckCodeSearchUrl,
+validateGenesis, poolCheck, countGroups,
 loadSavedDecks, storeSavedDecks, makeRecord, normName,
 _sets: () => ({ points, names, alias, cidMap, lpSet, exSet, lateSet, ngSet}),
 };

@@ -5751,3 +5751,107 @@ Frames: cap-cardview.js (grave / detail / keyact at 390x620
 and 390x700) in ~/workspace/duel-app-cardview-shots/.
 Unmeasured, as ever: real-device WKWebView look and feel, SE
 timing by ear.
+## Neuron import guidance fix + URL import (2026-11-04 訂正)
+
+CORRECTION of the Phase 1 section above. Its panel guidance told
+users to pick 「テキスト表示」 on "the Neuron deck page". That
+mode exists only on the official card-database WEBSITE's view
+switcher; the Neuron APP — where users actually keep their
+decks — has no such thing (the user's own screenshot of the
+app's My Deck screen shows exactly four buttons: コピー / 画像
+共有 / デッキコード / リスト保存, plus a comment field). The
+Phase 1 text conflated the app with the website. All
+「テキスト表示」 wording is removed from the panel, the parser's
+error messages and the code comments.
+
+Facts established this round (measured, not assumed):
+- 「リスト保存」 in the app produces the official deck
+  registration sheet as an IMAGE (大会提出用のデッキ登録シート;
+  the user confirms it lands on the clipboard as an image). It
+  is not text and the app cannot read it; the panel now says so
+  in one line. OCR import was considered and rejected as the
+  main route (quality).
+- A Neuron share link (https://neuron.konami.net/link/<id>)
+  behaves by user agent: mobile agents get a 535-byte app-launch
+  stub (no deck data); desktop agents get a 302 to the matching
+  www.db.yugioh-card.com member_deck page, whose HTML is the
+  same structure the Phase 1 HTML parser already reads (the
+  real link's page — "Alluring Heroines", dno=57 — parses to
+  44/15/3 with zero unknown cids).
+- CORS, measured in a real Chromium from the app's own origin
+  (https://gm0231.github.io): neuron.konami.net ALSO sends no
+  Access-Control-Allow-Origin (Phase 0 had only verified
+  db.yugioh-card.com). Direct fetch from the app is impossible
+  for both hosts; header checks agreed (no ACAO on link 200 /
+  link 302 / member_deck 200 responses).
+- The deck page copied as rendered text (select-all in a phone
+  browser) has a stable shape in both locales: totals lines,
+  section headers with counts, then per card an index line, the
+  printed name, an optional restriction note and a bare-number
+  count line; a detailed listing of the same deck follows. Real
+  captures are frozen as fixtures (test-neuron-visual-fixture
+  .txt = MILLENNIUM PROPHECY via deck code 2t9x91u;
+  test-neuron-share-fixture.txt/.html = the share link above).
+- The shared pages print most names in ENGLISH, with JA names
+  for OCG-only cards, mixed on one page. genesys-data.json now
+  carries name -> representative indexes for EVERY printing in
+  JA and EN (indexJa 12,218 / indexEn 14,738; file grows
+  0.80MB -> 1.73MB, still lazy-loaded only when the panel
+  opens). A rep-level map was not enough: "Harpie Lady 1" is
+  alias-merged onto "Harpie Lady" and exists only as a
+  printing-level name. 656 representatives still have no JA
+  name in any upstream dump (recent cards); three such printed
+  names verified against real pages are supplemented in the
+  generator (SUPPLEMENT_JA). A page containing an unsupple-
+  mented one fails the visual import's totals cross-check with
+  an explicit mismatch error — never a silently wrong deck —
+  and the URL/HTML path (cid-based) is unaffected.
+
+What shipped:
+- URL import is now the primary flow (user spec: "URLを貼る
+  だけで取り込めるように"): pasting a share link, a deck-page
+  URL, or a bare 7-character deck code fetches the deck page
+  (direct attempt, then public CORS relays in order:
+  allorigins /raw, allorigins /get, codetabs, allorigins /raw
+  once more; payloads are content-checked for link_value rows;
+  a deck-search hop follows the embedded member_deck URL),
+  parses, validates and AUTO-SAVES a Genesis-legal deck.
+  Pasting the link/code into the field starts the flow by
+  itself. A pasted HTML page is never mistaken for the URL
+  flow (the URL route requires the input to be essentially
+  just the URL). Total fetch failure shows why (CORS + relay
+  situation) and points at the copy-paste fallback.
+  DURABILITY CAVEAT: the fetch depends on free third-party
+  relays (allorigins measured working end-to-end 2026-11-04 —
+  the full member_deck HTML came back through it — but flaky:
+  roughly one attempt in three from this network; corsproxy.io
+  now requires an API key, cors.lol / cors.eu.org answered
+  rate-limited). They can stop without notice; the paste paths
+  below are the permanent fallback and are fully supported.
+- Visual-text import: neuron.js parseVisualText reads the
+  copied-page format (JA and EN, list and detailed blocks,
+  stops before the second listing so nothing double-counts,
+  cross-checks the page's own totals). Fixture tests prove the
+  visual parse is card-for-card identical to the HTML parse on
+  both real pages.
+- Guidance rewritten around the real steps; a deck-code field
+  with a "公式デッキページを開く" button was added for the
+  fallback route (opens the official search page in the user's
+  browser).
+- The shared "Alluring Heroines" deck is the standing
+  counterexample for verdict expectations: under the bundled
+  list 202610 it is NOT Genesis-legal — its ハーピィ・レディ
+  －華麗なる分身－ x3 and 香水戦術 x1 are first released in
+  ORIGINAL ARTWORK COLLECTION on 2026-09-26, after the list's
+  2026-03-01 cutoff — so the correct landing is "このデッキは
+  使えません" naming both cards (51pt, otherwise legal; it
+  also has 35 pool-unsupported cards). It becomes legal only
+  when a later list edition moves the cutoff forward.
+
+Tests: test-neuron extended (V1-V2e visual fixtures vs HTML
+ground truth; U0-U3 URL helpers, stubbed relay flows incl.
+two-hop code flow and total-failure honesty) — all pass.
+test-neuron-url.js is the real-network Chromium E2E (real
+share link + real deck code; retries the full flow up to 3x
+per case against relay flakiness). Frames: cap-neuron.js adds
+panel-guidance and import-visual shots (390x620 / 390x700).
