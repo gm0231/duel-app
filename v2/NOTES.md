@@ -3720,3 +3720,17 @@ SELECT_COUNTER row details (prompt unreachable in this pool).
   DS-07 VS overlay see-through (audit itself left it
   unseparated), DS-11 log modal reachability (product decision),
   DS-02/DS-08 keep-as-is per the audit's own call.
+- R3b (from the design child's formal report, which the summary
+  had dropped): the phase button's label wrapped to two lines and
+  its second line was clipped by the fixed 32px height — frame-
+  reproduced at both heights. #phasebtn is now nowrap at 12.5px,
+  and the width is funded by the phasebar itself (#phaseinfo
+  min-width 96->72, menubtn/fxbtn padding 8->6): measured
+  scrollWidth == clientWidth == 124 for 「エンドフェイズへ」 and
+  eyeballed fully readable (r3shots/duel-phasebtn-620). Result
+  buttons likewise keep one line (both labels wrapped before).
+  .gcard .itext 9px -> 10px (D-38: it is reading text, not a
+  badge). BU-03's measured state (620 preview is compact 22px
+  with text/image/meta hidden; 700 preview shows ~1 line with an
+  unaffordanced scroll) is a genuine allocation fork — options
+  A/B/C in audit-design.md; NOT decided here, left for the user.

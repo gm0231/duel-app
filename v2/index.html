@@ -99,13 +99,17 @@
   #logline{font-size:10px;color:var(--txt-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:15px;line-height:15px;}
   #phasebar{display:flex;align-items:center;gap:8px;height:34px;}
   #phasebar .lp{font-size:16px;font-weight:700;color:var(--gold);}
-  #phaseinfo{flex:0 1 auto;min-width:96px;font-size:13px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  #phaseinfo{flex:0 1 auto;min-width:72px;font-size:13px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   #menubtn,#fxbtn{flex:0 0 auto;min-height:30px;}
   #menubtn:disabled{opacity:.38;}
   #phasebtn{flex:1;min-width:96px;min-height:30px;}
-  #phasebtn{background:var(--gold);color:#191104;border:0;border-radius:6px;font-size:13px;font-weight:700;padding:0 10px;height:32px;min-width:104px;}
+  /* The phase button's label never wraps: at 13px 「エンドフェイズへ」
+     broke to a second line whose 「ズへ」 was clipped by the fixed
+     32px height (design audit, reproduced at both heights). One
+     line, ellipsis as backstop only. */
+  #phasebtn{background:var(--gold);color:#191104;border:0;border-radius:6px;font-size:12.5px;font-weight:700;padding:0 6px;height:32px;min-width:104px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   #phasebtn:disabled{background:#4a3d22;color:#8a7c55;}
-  #menubtn,#fxbtn{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:6px;font-size:12px;padding:0 8px;height:32px;}
+  #menubtn,#fxbtn{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:6px;font-size:12px;padding:0 6px;height:32px;}
   /* ---------- hand ---------- */
   #handbar{background:var(--panel);border-top:1px solid var(--gold-dim);padding:3px 4px 5px;}
   #handbar .who{font-size:10px;color:var(--txt-dim);padding:0 2px;height:11px;line-height:11px;}
@@ -243,7 +247,7 @@
   .gcard{position:relative;}
   .gcard .stats{font-size:10px;color:var(--gold);background:#000a;padding:0 3px;border-radius:2px;margin-top:2px;}
   .gcard .gdetail{position:absolute;top:3px;right:3px;font-size:10px;background:#000c;color:var(--gold);border:1px solid var(--gold-dim);border-radius:5px;padding:4px 7px;cursor:pointer;z-index:2;}
-  .gcard .itext{font-size:9px;line-height:1.45;color:var(--txt);background:#000a;padding:2px 3px;border-radius:2px;margin-top:2px;max-height:64px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;}
+  .gcard .itext{font-size:10px;line-height:1.45;color:var(--txt);background:#000a;padding:2px 3px;border-radius:2px;margin-top:2px;max-height:64px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;}
   .cand .dueldismiss{display:inline-block;margin-top:5px;font-size:11px;color:#f0c08a;background:#2a1c0d;border:1px solid #a86a2a;border-radius:6px;padding:6px 10px;cursor:pointer;}
   .cand .candinfo{display:inline-block;margin-top:5px;margin-left:6px;font-size:11px;color:var(--gold);background:#171208;border:1px solid var(--gold-dim);border-radius:6px;padding:6px 10px;cursor:pointer;}
   #dock .duelsection{font-size:10px;color:var(--txt-dim);margin-top:6px;}
@@ -448,8 +452,10 @@
   #vsoverlay .vst{font-size:30px;font-weight:900;color:#ffe9a8;letter-spacing:.3em;z-index:2;}
   #vsoverlay .vss{font-size:13px;color:#c9b586;margin-top:12px;z-index:2;line-height:1.7;}
   .resultbtns{display:flex;gap:12px;}
-  .resultbtns .startbtn{min-height:53px;}
-  .resultbtns .subbtn{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:15px;padding:14px 20px;cursor:pointer;}
+  /* Result buttons keep their labels on one line (both wrapped to
+     two lines at 390 wide — design audit frame 06-duel-late). */
+  .resultbtns .startbtn{min-height:53px;font-size:15px;padding:14px 12px;white-space:nowrap;}
+  .resultbtns .subbtn{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:14px;padding:14px 12px;cursor:pointer;white-space:nowrap;}
 </style>
 </head>
 <body>
