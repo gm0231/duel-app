@@ -2616,3 +2616,149 @@ in this stage; one requirement was confirmed by construction —
 the chain pop (950 ms) and the response dock never interact: the
 pop is presentation on the FX clock and the dock keeps input for
 the whole window. The dock's own copy/flow is a stage-4 target.
+
+## V3 integration — Stage 3: ace appearance + finisher (branch feat/v3-s3-ace-finisher)
+
+### Requirements for this stage (why pros build it this way)
+
+ACE. (1) A hold that does not move is a poster, not a scene: the
+round-B cut-in held a still image for ~4 s. Requirement: during
+the hold, SOMETHING with a period keeps moving (rotating
+background vortex/streaks, drifting particles, a breathing glow)
+— life is proven by frame pairs inside the hold, not by duration.
+(2) The number is the payload: the banner's ATK/DEF count-up
+exists because "who, and how strong" is what the presentation is
+FOR; a finished number shown statically wastes the one moment
+the eye is guaranteed to be on it. (3) Appearance and landing
+are separate beats: portal -> flash -> presentation -> LANDING
+on the board; without the landing beat the card teleports from
+presentation to tile. (4) Takeover must be total or not at all:
+if the scene owns an ace summon, the round-A converge/portal and
+the round-B cut-in for the same summon are suppressed — two
+presentations of one event read as a glitch. When the cut-in
+setting is OFF, nothing changes (round A/B behave as before).
+FINISHER. (5) Separation of the finisher and the result is by
+TIME, inside the layer table: the wash lives in #fxcutin (z35)
+and the result is gated until scene-local 2300 ms, when the
+wash is gone. The z-65 body-level exception is deleted, not
+worked around. (6) The wash has an ORIGIN (the defender's LP
+plate) and a direction — a flat full-screen tint is the
+amateur version this stage exists to replace.
+
+### Stage 3 acceptance criteria (fixed BEFORE implementation)
+
+- S3-C1 All 16 pre-existing test files pass, zero regressions
+  (FXB7's cut-in ON/OFF contract in particular).
+- S3-C2 Ace frame strip at FX-local ~200/450/750/1000/1300/1600/
+  2400/3200/4000/4400: materials glow + converge (450); portal
+  spinning WITH spiral particles and its rotation CHANGED
+  between two frames in the window (750 pair); converge flash
+  (700-820); scrim + big card + banner (1300); ATK mid-count —
+  a banner value strictly between 0 and final (1200-1600);
+  hold ALIVE: 2400 vs 3200 frames differ in background rotation
+  and drifting particles; exit (4000); landing ring at the
+  board zone (4400).
+- S3-C3 Finisher strip: charge (250); cut-in flash (800); beam
+  (~1300); impact + radial wash from the LP origin (1600);
+  wash fully gone while the result is NOT yet up (~2250);
+  result visible after the gate (~2400+). No frame shows the
+  result under an active wash (the audited defect, closed).
+- S3-C4 .fx-finishwash is gone: grep = 0 in client.js/index.html;
+  the layer table (NOTES + CSS comment) no longer lists the z65
+  exception.
+- S3-C5 fxError null in live duels; particle budget respected
+  during the ace (peaks: vortex 46 + burst 24 overlap ~950-1450;
+  drift 26 may be clipped by the cap — clipping is the budget
+  working, recorded if observed).
+- S3-C6 Tap skip: a pointerdown during the ace hold moves the
+  scene to its exit; the host is clear within ~900 ms of the tap.
+Residuals expected: revival summons of aces keep the round-B
+cut-in (the ace scene takes over non-revival arrivals); SE feel.
+Selection/cancel group: no direct contact this stage; the
+finisher's result gate lengthens the path to the result screen's
+buttons — noted for stage 4's A-05/06 work (the wait is scene
+time, and the buttons must not be tappable before they are
+readable; the gate guarantees exactly that).
+
+### Standing focus — two explicit requirements added (user, 2026-11-03; stage 4 must satisfy)
+
+R-SEL-1 DETAIL DURING SELECTION: while choosing (targets,
+materials, grid picks, discards), the user can open a candidate's
+(or a related card's) full detail — text, ATK/DEF, state —
+WITHOUT confirming or cancelling, and closing the detail returns
+to the selection with its state intact. Survey basis (MD notes,
+"Card detail view"): MD keeps a FIXED detail panel; selecting a
+card swaps only the panel — field and hand stay visible and the
+duel never stops. Any current scene where detail cannot open, or
+opening it destroys the selection, is an audit gap.
+R-SEL-2 BOARD VISIBILITY AROUND SELECTION: before and during a
+choice, the whole board must be visually checkable. A sheet/dock
+that covers the board and forces a blind choice is a gap; the
+fix direction is board-visible selection (partial-height sheet),
+or a peek mechanism (dismiss/translucify the sheet temporarily).
+Survey basis: MD's pile-choice UI is a list panel at the field's
+edge (8+ rows) with the field present; the detail panel never
+takes the field away. Stage 4 judges EVERY prompt scene against
+R-SEL-1/2 plus the (a)-(f) frame from the standing-focus section,
+and adds the gaps to the audit before fixing.
+
+### Audit addition (user report triage, 2026-11-03): unusable-effect invisibility (Minerva case)
+
+Triage conclusion: NO engine/prompt bug — the activation completes
+in the normal flow, and the reported symptom reproduces exactly
+under legitimate game states (0 materials — notably after a
+Monster Reborn revival / deck below 3 cards / already used this
+turn). The real defect is UX: THE REASON IT CANNOT ACTIVATE IS
+VISIBLE NOWHERE, which also violates the user's decided UI
+principle (unusable = greyed out; the reason lives in the detail).
+- At 0 materials the material badge itself disappears, so an Xyz
+  monster is indistinguishable from a non-Xyz.
+- The action sheet has no row for the un-offered ignition effect,
+  and the detail shows no material count.
+Fix proposal (from triage, stage 4 selection/info group):
+(1) Xyz monsters always show the badge, "×0" included; the
+detail/preview meta line shows the material count.
+(2) The field Xyz action sheet lists un-offered ignition effects
+as greyed-out rows; the reason (insufficient materials / deck
+below 3 / already used this turn) is written on the detail side;
+cases that cannot be determined stay with the generic form
+"今は発動できません".
+
+### V3 stage 3 — RESULTS (2026-11-03)
+- S3-C1 PASS: all 16 test files pass on the final stage-3 code.
+- S3-C2 PASS (frames v3shots/s3-after-ace): portal over the
+  materials at local 433; count-up MID-VALUES read on real frames
+  (1233ms: ATK 1473/DEF 1329 of 2550/2300; 1433ms: 2487/2243);
+  hold alive (2450 vs 3283: vortex wedges rotated, motes moved);
+  exit complete by 4483 and play continued.
+- S3-C3 PASS (frames v3shots/s3-after-fin): at 2133ms the wash
+  is gone, LP at 0, and NO result is shown yet; at 2367ms the
+  result is fully readable with nothing over it. No frame shows
+  the result under an active wash. (This capture's finisher
+  overlapped the tail of an ace presentation — the killer had
+  just been summoned; the composition still read correctly.)
+- S3-C4 PASS: .fx-finishwash grep = 0 in client.js and
+  index.html; the z65 exception row is gone from the layer table.
+- S3-C5 PASS: fxError null across the instrumented duels and the
+  full suite. One earlier uninstrumented sighting of a non-null
+  fxError (first ace probe) was never reproduced in two
+  instrumented duels + test-fx live duels; recorded as an
+  unconfirmed one-off, not hidden.
+- S3-C6 PASS: tap at ace local 2049ms -> host empty 760ms later
+  (incl. ~120ms polling granularity; criterion ~900ms).
+
+### NEW REQUIREMENT LEARNED (stage 3): presentation ownership is cross-batch
+The state diff and the engine event for the SAME summon land in
+DIFFERENT fxProcess batches. The first stage-3 build marked the
+ace takeover per-batch, so the later event batch fired the legacy
+cut-in, which overwrote the ace scene's host mid-flight (the
+first ace capture showed a static legacy poster with full stats
+at local 466 — a double presentation). Fix: the ownership marker
+(fxAceRecent {code, con, until}) outlives a single call; the
+arrivals pass stands down when the event pass owns the summon,
+and the event pass can take over itself (fxAceSceneV3 from the
+event, via 'acescene-event') when it beats the diff; a legacy
+poster is never started while an ace scene is presenting.
+General form: any "X already handled Y" coordination between the
+diff pass and the event pass MUST be cross-batch, or the two
+passes will double-present. Added to the proposal as an addendum.
