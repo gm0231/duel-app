@@ -135,7 +135,7 @@ const codesText = (main, extra, side) =>
     const window = await boot();
     const doc = window.document;
     doc.getElementById('todeck').click();
-    ok(!!doc.getElementById('deckimport') && !!doc.getElementById('seg-saved'), 'N3: deck page carries the import entry and the saved-decks region');
+    ok(!!doc.getElementById('deckimport') && !!doc.getElementById('seg-mydeck'), 'N3: deck page carries the import entry and the own-deck list');
     const res = await importText(window, fixture);
     ok(res.textContent.includes('MILLENNIUM PROPHECY') && res.textContent.includes('メイン（45枚）') &&
        res.textContent.includes('エクストラ（15枚）') && res.textContent.includes('サイド（9枚）'),
@@ -145,7 +145,7 @@ const codesText = (main, extra, side) =>
     const saveBtn = doc.getElementById('neuronsave');
     ok(saveBtn.style.display !== 'none' && saveBtn.textContent === '保存する', 'N4c: save is offered');
     saveBtn.click();
-    const savedEls = doc.querySelectorAll('#seg-saved .deck');
+    const savedEls = doc.querySelectorAll('#seg-mydeck .deck.saveditem');
     ok(savedEls.length === 1 && savedEls[0].querySelector('.dn').textContent === 'MILLENNIUM PROPHECY',
       'N5: the saved deck is listed under own decks');
     ok(savedEls[0].classList.contains('sel') && doc.getElementById('decksum').textContent.includes('自分：MILLENNIUM PROPHECY'),
@@ -160,7 +160,7 @@ const codesText = (main, extra, side) =>
     const window = await boot({ v2saveddecks: savedJson });
     const doc = window.document;
     doc.getElementById('todeck').click();
-    const savedEls = doc.querySelectorAll('#seg-saved .deck');
+    const savedEls = doc.querySelectorAll('#seg-mydeck .deck.saveditem');
     ok(savedEls.length === 1, 'N6: the saved deck survives a reboot');
     savedEls[0].click();
     ok(doc.getElementById('decksum').textContent.includes('自分：MILLENNIUM PROPHECY'), 'N6b: it can be selected after reboot');
@@ -225,7 +225,7 @@ const codesText = (main, extra, side) =>
     const saveBtn = doc.getElementById('neuronsave');
     ok(saveBtn.style.display !== 'none' && saveBtn.textContent.includes('対戦はまだできません'), 'N11b: save is offered with the cannot-play note');
     saveBtn.click();
-    const el = doc.querySelector('#seg-saved .deck');
+    const el = doc.querySelector('#seg-mydeck .deck.saveditem');
     ok(!!el && el.querySelector('.dd').textContent.includes('未対応カードあり（対戦不可）'), 'N11c: the list marks the deck unplayable');
     ok(el.classList.contains('sel') && doc.getElementById('startbtn').disabled === true &&
        doc.getElementById('startbtn').textContent.includes('未対応カードがあるため開始できません'),
@@ -234,9 +234,9 @@ const codesText = (main, extra, side) =>
     // delete (two-step)
     const del = el.querySelector('.deckdel');
     del.click();
-    ok(doc.querySelectorAll('#seg-saved .deck').length === 1 && del.textContent === '本当に削除', 'N12: first delete tap only arms the confirm');
+    ok(doc.querySelectorAll('#seg-mydeck .deck.saveditem').length === 1 && del.textContent === '本当に削除', 'N12: first delete tap only arms the confirm');
     del.click();
-    ok(doc.querySelectorAll('#seg-saved .deck').length === 0 && !window.localStorage.getItem('v2saveddecks')?.includes('sv'),
+    ok(doc.querySelectorAll('#seg-mydeck .deck.saveditem').length === 0 && !window.localStorage.getItem('v2saveddecks')?.includes('sv'),
       'N12b: second tap deletes the deck and its storage entry');
     window.close();
   }

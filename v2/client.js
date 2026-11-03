@@ -186,7 +186,14 @@ function updateDeckSum() {
 }
 function syncDeckSelection() {
   document.querySelectorAll('#seg-mydeck button.deck').forEach(b => b.classList.toggle('sel', b.dataset.v === myDeckKey));
-  document.querySelectorAll('#seg-saved .deck').forEach(b => b.classList.toggle('sel', b.dataset.k === myDeckKey));
+  document.querySelectorAll('#seg-mydeck .deck.saveditem').forEach(b => b.classList.toggle('sel', b.dataset.k === myDeckKey));
+  // a selected saved deck sits below the built-ins inside the
+  // list's own scroll region; bring its row into view so the
+  // selection is visible feedback, not just a summary line
+  if (myDeckKey && myDeckKey.indexOf('saved:') === 0) {
+    const row = document.querySelector('#seg-mydeck .deck.saveditem[data-k="' + myDeckKey + '"]');
+    if (row && row.scrollIntoView) { try { row.scrollIntoView({ block: 'nearest' }); } catch (e) {} }
+  }
 }
 function selectMyDeck(key) {
   myDeckKey = key;
@@ -196,12 +203,18 @@ function selectMyDeck(key) {
 }
 let delArm = null; // {key, until} — two-step delete confirm on the button itself
 function renderSavedDecks() {
-  const el = $('seg-saved'); if (!el) return;
-  el.innerHTML = '';
+  const el = $('seg-mydeck'); if (!el) return;
+  el.querySelectorAll('.saveditem').forEach(n => n.remove());
+  if (savedDeckList.length) {
+    const div = document.createElement('div');
+    div.className = 'saveddiv saveditem';
+    div.textContent = '保存したデッキ';
+    el.appendChild(div);
+  }
   for (const r of savedDeckList) {
     const key = 'saved:' + r.id;
     const d = document.createElement('div');
-    d.className = 'deck' + (myDeckKey === key ? ' sel' : '');
+    d.className = 'deck saved saveditem' + (myDeckKey === key ? ' sel' : '');
     d.dataset.k = key;
     d.innerHTML = '<img src="../assets/card-art-placeholder-s.jpg" alt=""><span><span class="dn"></span><span class="dd"></span></span><span class="check"></span><button class="deckdel">削除</button>';
     d.querySelector('.dn').textContent = r.name;
