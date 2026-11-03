@@ -3969,3 +3969,49 @@ WKWebView frame rates.
 - Real-browser frames eyeballed at 390x620 and 390x700 for
   every surface above (paths inline). BU-11's worst-case
   strip (defense position, 4-digit, 40px tile) is among them.
+
+## Per-card illustrations (decided + first delivery, 2026-11-03)
+
+Decision (user): instead of one shared placeholder for all 63
+cards, the user supplies an image per card and each is applied as
+it arrives. Unlisted cards keep the placeholder — the fallback IS
+the default and their markup stays byte-identical.
+
+Mechanism (client.js): `CARD_ART` maps passcode -> art slug.
+`cardArtFile(code, big)` resolves `../assets/card-art-<slug>-s.jpg`
+(small surfaces) or `../assets/card-art-<slug>.jpg` (the big
+cut-in card); `artInline` / `artCss` / `artApply` stamp it as an
+inline background on: board tile art (face-visible states ONLY —
+an inline image would outrank the .back stylesheet rule and leak
+an opponent's face-down card), hand cards, the resident preview,
+selection-grid cards, face-up FX ghosts, and all three bigcard
+builders (finisher, ace scene + afterimages, legacy cut-in).
+`preloadCardArt(deckKeys)` warms both sizes for every listed card
+in the chosen decks: called at boot, on deck-seg changes and on
+the start click (deck-select-time preload, no blank/'?' flash).
+
+Cropping rule (user, 2026-11-03, ALL cards): when the art does not
+fit a window, keep the TOP and cut from the bottom — never crop
+the head. Implemented twice over: the delivered files are
+top-anchored crops, and every stamp pins
+background-position:center top.
+
+First delivery: 《剣神官ムドラ》 99937011 (x3 in the Ishizu deck).
+Source: ~/workspace/duel-assets/mudora-user-20261103.jpg
+(1040x1513 full-body illustration). Small file = crop x100-990 /
+y0-890 -> 320x320 (37KB): face, crown, shoulder armour and the
+right-hand ring blade stay identifiable at tile size. Big file =
+full width x y0-1434 (the bigcard 250x345 ratio) -> 640x882
+(158KB): nearly full body; only the feet tips fall off, per the
+rule. Verified in real play (cap-cardart.js, shots-cardart/):
+Mudora drawn in the opening hand -> hand art + resident preview,
+then normal-summoned through the real sheet -> board tile art,
+at 390x620 and 390x700; the head is never cropped. The cut-in
+frame was captured via fxCutinShow(99937011) directly (declared
+substitution: Mudora is not a keycard, so no real-play path
+reaches a cut-in with her; the bigcard art path itself is the
+same code the finisher/ace scenes use).
+
+Regression: v2/test-cardart.js (CA0-CA19) — mapping, top-pin,
+fallback emptiness, preload contents, DOM contract on a
+fabricated board incl. the opponent-face-down no-leak case.
