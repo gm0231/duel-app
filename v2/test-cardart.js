@@ -34,14 +34,16 @@ const wasmBinary = fs.readFileSync(path.join(V2, 'build', 'ocgcore.wasm'));
 let failures = 0;
 const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (!cond) failures++; };
 
-const MUDORA = 99937011, ZOLGA = 31525442;
+const MUDORA = 99937011, AGIDO = 62320425, ZOLGA = 31525442;
 
 // ---- delivered art files (existence + top-anchored dimensions) ----
-for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.jpg', 640, 882]]) {
+for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.jpg', 640, 882],
+                         ['card-art-agido-s.jpg', 320, 320], ['card-art-agido.jpg', 640, 882]]) {
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
 ok(data.decks.ishizu.main.filter(c => c === MUDORA).length === 3, 'CA0b: the Ishizu deck runs 3 copies of Mudora');
+ok(data.decks.ishizu.main.filter(c => c === AGIDO).length === 1, 'CA0c: the Ishizu deck runs 1 copy of Agido');
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -85,13 +87,17 @@ async function boot() {
     unlistedFile: cardArtFile(${ZOLGA}, false),
     nullInline: artInline(null),
     preloaded: [...artPreloaded],
+    agidoSlug: CARD_ART[${AGIDO}],
+    agidoInline: artInline(${AGIDO}),
   }))()`);
+  ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.slug === 'mudora', 'CA2: CARD_ART maps Mudora -> mudora');
   ok(helpers.small === '../assets/card-art-mudora-s.jpg' && helpers.big === '../assets/card-art-mudora.jpg', 'CA3: art files resolve (small + big)');
   ok(helpers.inline.includes('card-art-mudora-s.jpg') && helpers.inline.includes('background-position:center top'), 'CA4: artInline pins the top (crop rule: keep top, cut bottom)');
   ok(helpers.inlineBig.includes('card-art-mudora.jpg') && !helpers.inlineBig.includes('-s.jpg'), 'CA5: big surface uses the big file');
   ok(helpers.unlistedInline === '' && helpers.unlistedFile === null && helpers.nullInline === '', 'CA6: unlisted/null codes fall back (empty = placeholder CSS untouched)');
   ok(helpers.preloaded.includes('../assets/card-art-mudora-s.jpg') && helpers.preloaded.includes('../assets/card-art-mudora.jpg'), 'CA7: boot preloads both sizes for the default decks');
+  ok(helpers.preloaded.includes('../assets/card-art-agido-s.jpg') && helpers.preloaded.includes('../assets/card-art-agido.jpg'), 'CA7c: boot preloads Agido too (same deck)');
 
   doc.getElementById('startbtn').click();
   for (let i = 0; i < 120 && doc.querySelectorAll('.slot').length < 10; i++)
@@ -106,6 +112,7 @@ async function boot() {
       b.players[0].mzone[0] = mon(${MUDORA}, 0x1);  // own face-up ATK Mudora
       b.players[0].mzone[1] = mon(${MUDORA}, 0x4);  // own face-up DEF Mudora (2nd copy)
       b.players[0].mzone[2] = mon(${ZOLGA}, 0x1);   // own face-up Zolga (no art)
+      b.players[0].mzone[3] = mon(${AGIDO}, 0x1);   // own face-up Agido (2nd delivery)
       b.players[1].mzone[0] = mon(${MUDORA}, 0x1);  // opp face-up Mudora (public: art shows)
       b.players[1].mzone[1] = mon(${MUDORA}, 0x8);  // opp face-down DEF Mudora (MUST stay hidden)
       b.players[0].hand = [{ code: ${MUDORA} }, { code: ${ZOLGA} }];
@@ -124,7 +131,7 @@ async function boot() {
       const ghostBack = fxGhostEl(${MUDORA}, true, 40, 55);
       const ghostUnlisted = fxGhostEl(${ZOLGA}, false, 40, 55);
       return {
-        ownAtk: artOf('0:4:0'), ownDef: artOf('0:4:1'), ownZolga: artOf('0:4:2'),
+        ownAtk: artOf('0:4:0'), ownDef: artOf('0:4:1'), ownZolga: artOf('0:4:2'), ownAgido: artOf('0:4:3'),
         oppUp: artOf('1:4:0'), oppDown: artOf('1:4:1'),
         handImgs, pvMudora, pvZolga,
         ghost: ghost.style.backgroundImage || '', ghostPos: ghost.style.backgroundPosition || '',
@@ -136,6 +143,7 @@ async function boot() {
   ok(res.ownAtk.includes('card-art-mudora-s.jpg'), 'CA9: own face-up Mudora tile shows the individual art');
   ok(res.ownDef.includes('card-art-mudora-s.jpg'), 'CA10: every copy is covered (2nd Mudora, face-up DEF)');
   ok(res.ownZolga === '', 'CA11: unlisted card tile keeps the placeholder (no inline art)');
+  ok(res.ownAgido !== null && res.ownAgido.includes('card-art-agido-s.jpg'), 'CA11b: Agido tile shows its own art (slug, not Mudora’s)');
   ok(res.oppUp.includes('card-art-mudora-s.jpg'), 'CA12: opponent face-up Mudora shows the art (public information)');
   ok(res.oppDown === '' && !String(res.oppDown).includes('mudora'), 'CA13: opponent FACE-DOWN Mudora gets NO art (asymmetry / no leak)');
   const hMudora = res.handImgs.find(h => h.code === String(MUDORA));

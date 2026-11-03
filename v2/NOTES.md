@@ -4119,3 +4119,19 @@ intended referent was the hand pile sheet (rows like the
 other piles), say so and it becomes a fresh, specified item —
 the own hand is already fully rendered on the board, so this
 was not guessed into existence.
+
+Second delivery: 《古衛兵アギド》 62320425 (x1 in the Ishizu
+deck). Source: ~/workspace/duel-assets/agido-user-20261103.jpg
+(1024x1536 — red sphere with the Eye of Horus, axe arms, temple
+hall). Small file = sphere-centred square crop x70-960 /
+y205-1095 -> 320x320 (30KB): the sphere sits at the window's
+centre with both axe blades and the bottom spike inside; the
+crop keeps the subject whole (the "top" of this subject IS the
+sphere — only ceiling background is sacrificed). Big file =
+full width x y0-1411 -> 640x882 (141KB), top-anchored as usual.
+One line in CARD_ART; test-cardart gained CA0c/CA7b/CA7c/CA11b.
+Real-play frames (cap-agido.js, shots-agido/): Agido drawn and
+normal-summoned at 390x700 (tile + preview carry the sphere,
+centred), a fabricated both-arts board at 390x620 (Mudora and
+Agido side by side on field and in hand), and the big-card
+cut-in via fxCutinShow (same declared substitution as Mudora).
