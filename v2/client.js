@@ -78,7 +78,7 @@ function deckKeyOfCode(code) {
   const found = new Set();
   for (let p = 0; p < 2; p++) {
     const k = seatDeckKeys[p]; if (!k) continue;
-    const d = DATA.decks[k]; if (!d) continue;
+    const d = deckListOf(k); if (!d) continue;
     if ((d.main || []).includes(code) || (d.extra || []).includes(code)) found.add(k);
   }
   return found.size === 1 ? [...found][0] : null;
@@ -116,7 +116,7 @@ function preloadCardArt(deckKeys) {
   if (!DATA || !DATA.decks) return;
   const files = new Set();
   for (const k of deckKeys) {
-    const d = DATA.decks[k]; if (!d) continue;
+    const d = deckListOf(k); if (!d) continue;
     for (const c of (d.main || []).concat(d.extra || [])) {
       if (!CARD_ART[c] && !(DECK_ART[k] || {})[c]) continue;
       for (const big of [false, true]) {
@@ -136,11 +136,181 @@ function preloadCardArt(deckKeys) {
 // deck-select page: display names + the live selection summary
 // above the start button (what is chosen, on one line, always
 // current — the page's seg handlers refresh it on every change).
-function deckDisplayName(k) { return k === 'gg' ? 'ゲート・ガーディアン' : 'MILLENNIUM PROPHECY'; }
+function deckDisplayName(k) {
+  if (SAVED_DECKS[k]) return SAVED_DECKS[k].name;
+  return k === 'gg' ? 'ゲート・ガーディアン' : 'MILLENNIUM PROPHECY';
+}
+// ----------------------------------------------------------------
+// Neuron import (Phase 1): decks the user imported and saved live
+// under keys 'saved:<id>' in SAVED_DECKS, persisted in localStorage
+// ('v2saveddecks', via NeuronLib). Built-in decks stay in
+// DATA.decks; deckListOf is the single lookup both worlds share, so
+// the start flow, the art preload and the deck-context resolution
+// never branch on where a deck came from. Saved decks are own-side
+// only (the opponent roster stays curated), and a saved deck whose
+// cards exceed the current 63-card pool is listed and selectable
+// but can never start a duel — refreshStartGate enforces that with
+// the reason on the summary line.
+const SAVED_DECKS = {};
+let savedDeckList = [];
+function deckListOf(k) {
+  if (!k) return null;
+  if (DATA && DATA.decks && DATA.decks[k]) return DATA.decks[k];
+  const r = SAVED_DECKS[k];
+  return r ? { main: r.main, extra: r.extra } : null;
+}
+function loadSavedDecks() {
+  savedDeckList = [];
+  try {
+    if (window.NeuronLib) savedDeckList = NeuronLib.loadSavedDecks(localStorage) || [];
+  } catch (e) { savedDeckList = []; }
+  for (const r of savedDeckList) SAVED_DECKS['saved:' + r.id] = r;
+}
+loadSavedDecks();
+let bootReady = false; // set when the boot load completes (start gate input)
+function refreshStartGate() {
+  const sb = $('startbtn'); if (!sb || !bootReady) return;
+  const rec = SAVED_DECKS[myDeckKey];
+  if (rec && !rec.poolOk) { sb.disabled = true; sb.textContent = '未対応カードがあるため開始できません'; }
+  else { sb.disabled = false; sb.textContent = 'デュエル開始'; }
+}
 function updateDeckSum() {
   const el = $('decksum'); if (!el) return;
   const turn = firstChoice === 'first' ? '先攻' : firstChoice === 'second' ? '後攻' : '先攻・後攻ランダム';
-  el.textContent = '自分：' + deckDisplayName(myDeckKey) + ' ／ 相手：' + deckDisplayName(opDeckKey) + ' ／ ' + turn;
+  let txt = '自分：' + deckDisplayName(myDeckKey) + ' ／ 相手：' + deckDisplayName(opDeckKey) + ' ／ ' + turn;
+  const rec = SAVED_DECKS[myDeckKey];
+  if (rec && !rec.poolOk && rec.unsupported && rec.unsupported.length)
+    txt += ' ／ 未対応：' + rec.unsupported.join('、');
+  el.textContent = txt;
+  refreshStartGate();
+}
+function syncDeckSelection() {
+  document.querySelectorAll('#seg-mydeck button.deck').forEach(b => b.classList.toggle('sel', b.dataset.v === myDeckKey));
+  document.querySelectorAll('#seg-saved .deck').forEach(b => b.classList.toggle('sel', b.dataset.k === myDeckKey));
+}
+function selectMyDeck(key) {
+  myDeckKey = key;
+  syncDeckSelection();
+  preloadCardArt([myDeckKey, opDeckKey]);
+  updateDeckSum();
+}
+let delArm = null; // {key, until} — two-step delete confirm on the button itself
+function renderSavedDecks() {
+  const el = $('seg-saved'); if (!el) return;
+  el.innerHTML = '';
+  for (const r of savedDeckList) {
+    const key = 'saved:' + r.id;
+    const d = document.createElement('div');
+    d.className = 'deck' + (myDeckKey === key ? ' sel' : '');
+    d.dataset.k = key;
+    d.innerHTML = '<img src="../assets/card-art-placeholder-s.jpg" alt=""><span><span class="dn"></span><span class="dd"></span></span><span class="check"></span><button class="deckdel">削除</button>';
+    d.querySelector('.dn').textContent = r.name;
+    d.querySelector('.dd').textContent = 'メイン' + r.main.length + '枚／EX' + r.extra.length + '枚・' + r.pt + 'pt' + (r.poolOk ? '' : '・未対応カードあり（対戦不可）');
+    d.addEventListener('click', () => { playClick(); selectMyDeck(key); });
+    const del = d.querySelector('.deckdel');
+    del.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const now = Date.now();
+      if (!delArm || delArm.key !== key || delArm.until < now) {
+        delArm = { key, until: now + 3000 };
+        del.textContent = '本当に削除'; del.classList.add('armed');
+        setTimeout(() => { if (delArm && delArm.key === key) { delArm = null; renderSavedDecks(); } }, 3200);
+        return;
+      }
+      delArm = null;
+      savedDeckList = savedDeckList.filter(x => 'saved:' + x.id !== key);
+      delete SAVED_DECKS[key];
+      try { if (window.NeuronLib) NeuronLib.storeSavedDecks(localStorage, savedDeckList); } catch (e) {}
+      if (myDeckKey === key) myDeckKey = 'ishizu';
+      renderSavedDecks(); syncDeckSelection(); updateDeckSum();
+    });
+    el.appendChild(d);
+  }
+}
+// genesys-data.json loads lazily — only the import panel needs it,
+// so the boot path and every other test never pay for it. Shape is
+// validated by NeuronLib.setData (foreign JSON leaves it unset).
+let genesysDataPromise = null;
+function ensureGenesysData() {
+  if (!window.NeuronLib) return Promise.resolve(false);
+  if (NeuronLib.dataReady()) return Promise.resolve(true);
+  if (!genesysDataPromise) {
+    genesysDataPromise = fetch('genesys-data.json').then(r => r.json()).then(gd => {
+      const okd = NeuronLib.setData(gd);
+      if (okd && DATA && DATA.names) NeuronLib.addPoolNames(DATA.names);
+      return okd;
+    }).catch(() => false);
+  }
+  return genesysDataPromise;
+}
+let neuronPending = null; // record candidate from the last successful parse
+function neuronProvisionalName() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return '取り込みデッキ ' + d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+function neuronGroupLines(codes, namesSnap) {
+  const order = [], count = new Map();
+  for (const c of codes) { if (!count.has(c)) { count.set(c, 0); order.push(c); } count.set(c, count.get(c) + 1); }
+  return order.map(c => {
+    const nm = (namesSnap && namesSnap[c]) || (window.NeuronLib ? NeuronLib.displayName(c) : '#' + c);
+    return nm + (count.get(c) > 1 ? ' ×' + count.get(c) : '');
+  });
+}
+function renderNeuronResult(deck, val, pool) {
+  const el = $('neuronresult');
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  let h = '<div class="np-name">' + esc(deck.name) + '</div>';
+  const secs = [['メイン', deck.main], ['エクストラ', deck.extra], ['サイド', deck.side]];
+  for (const [label, codes] of secs) {
+    if (!codes.length && label !== 'メイン') continue;
+    h += '<div class="np-sec">' + label + '（' + codes.length + '枚）</div><div class="np-cards">' +
+      neuronGroupLines(codes, deck.names).map(esc).join('、') + '</div>';
+  }
+  if (deck.side.length) h += '<div class="np-pt">※サイドデッキは対戦では使いませんが、ポイント判定には含めています</div>';
+  h += '<div class="np-pt">ポイント合計：' + val.totalPt + 'pt（上限100pt）</div>';
+  if (!val.ok) {
+    h += '<div class="np-ng">このデッキは使えません</div><ul>';
+    for (const v of val.violations) {
+      h += '<li>' + esc(v.text);
+      if (v.items && v.items.length) h += '<div class="np-items">' + v.items.map(esc).join('、') + '</div>';
+      h += '</li>';
+    }
+    h += '</ul>';
+  } else if (!pool.ok) {
+    h += '<div class="np-warn">Genesisには適合していますが、このアプリでは未対応のカードが含まれています（対戦はまだできません）</div>' +
+      '<div class="np-sec">未対応のカード</div><div class="np-items">' + pool.unsupported.map(u => esc(u.name)).join('、') + '</div>';
+  } else {
+    h += '<div class="np-ok">Genesis適合 ― そのまま対戦できます</div>';
+  }
+  el.innerHTML = h;
+}
+async function neuronDoParse() {
+  const resEl = $('neuronresult');
+  const saveBtn = $('neuronsave');
+  saveBtn.style.display = 'none'; neuronPending = null;
+  if (!window.NeuronLib) { resEl.innerHTML = '<div class="np-err">取り込み機能が読み込めていません</div>'; return; }
+  const parseBtn = $('neuronparse');
+  parseBtn.disabled = true; parseBtn.textContent = '読み込み中…';
+  const okd = await ensureGenesysData();
+  parseBtn.disabled = false; parseBtn.textContent = '読み込む';
+  if (!okd) { resEl.innerHTML = '<div class="np-err">カードデータ（genesys-data.json）を読み込めませんでした。通信環境を確認してください</div>'; return; }
+  if (!DATA) { resEl.innerHTML = '<div class="np-err">カードデータの読み込みが終わっていません</div>'; return; }
+  const parsed = NeuronLib.parseImport($('neurontext').value, (h) => new DOMParser().parseFromString(h, 'text/html'));
+  if (!parsed.ok) {
+    resEl.innerHTML = '<div class="np-err">読み込めませんでした</div><ul>' + parsed.errors.map(e => '<li>' + e.replace(/</g, '&lt;') + '</li>').join('') + '</ul>';
+    return;
+  }
+  const deck = parsed.deck;
+  if (!deck.name) deck.name = neuronProvisionalName();
+  const val = NeuronLib.validateGenesis(deck);
+  const pool = NeuronLib.poolCheck(deck, new Set(Object.keys(DATA.cards).map(Number)));
+  renderNeuronResult(deck, val, pool);
+  if (val.ok) {
+    neuronPending = NeuronLib.makeRecord(deck, val, pool);
+    saveBtn.textContent = pool.ok ? '保存する' : '保存する（対戦はまだできません）';
+    saveBtn.style.display = '';
+  }
 }
 function locLabel(e) {
   const who = e.con === HP ? '自分' : '相手';
@@ -5499,8 +5669,28 @@ function wireSeg(id, apply) {
   // retry button lives on the deck page).
   $('deckpage').style.display = 'none';
   updateDeckSum();
+  renderSavedDecks();
   $('todeck').addEventListener('click', () => { playClick(); $('start').style.display = 'none'; $('deckpage').style.display = 'flex'; });
   $('deckback').addEventListener('click', () => { playClick(); $('deckpage').style.display = 'none'; $('start').style.display = 'flex'; });
+  // neuron import panel (Phase 1): pure DOM wiring here; the data
+  // it needs (data.json + genesys-data.json) is fetched lazily by
+  // the parse action itself.
+  $('deckimport').addEventListener('click', () => { playClick(); $('neuronpanel').style.display = 'flex'; ensureGenesysData(); });
+  $('neuronback').addEventListener('click', () => { playClick(); $('neuronpanel').style.display = 'none'; });
+  $('neuronparse').addEventListener('click', () => { playClick(); neuronDoParse(); });
+  $('neuronsave').addEventListener('click', () => {
+    if (!neuronPending) return;
+    playClick();
+    let rec = neuronPending; neuronPending = null;
+    while (SAVED_DECKS['saved:' + rec.id]) rec = Object.assign({}, rec, { id: rec.id + 'x' });
+    savedDeckList.push(rec);
+    SAVED_DECKS['saved:' + rec.id] = rec;
+    try { if (window.NeuronLib) NeuronLib.storeSavedDecks(localStorage, savedDeckList); } catch (e) {}
+    $('neuronpanel').style.display = 'none';
+    $('neuronsave').style.display = 'none';
+    renderSavedDecks();
+    selectMyDeck('saved:' + rec.id);
+  });
   try {
     DATA = await (await fetch('data.json')).json();
     // fxmap.json: which printed effect a desc index names. A failed
@@ -5517,13 +5707,14 @@ function wireSeg(id, apply) {
     // A-03: the start button's state IS the load state — disabled
     // and labelled while loading, live only when a duel can start.
     const sb = $('startbtn'); sb.disabled = false; sb.textContent = 'デュエル開始';
+    bootReady = true; refreshStartGate(); // a restored unplayable saved deck must not re-enable start
   } catch (e) {
     $('loadmsg').textContent = 'カードデータの読み込みに失敗しました。通信環境を確認して、もう一度お試しください。';
     const sb = $('startbtn'); sb.disabled = false; sb.textContent = '再読み込み';
     sb.addEventListener('click', () => location.reload());
     return;
   }
-  wireSeg('seg-mydeck', (v) => { myDeckKey = v; preloadCardArt([myDeckKey, opDeckKey]); updateDeckSum(); });
+  wireSeg('seg-mydeck', (v) => { selectMyDeck(v); });
   wireSeg('seg-opdeck', (v) => { opDeckKey = v; preloadCardArt([myDeckKey, opDeckKey]); updateDeckSum(); });
   wireSeg('seg-first', (v) => { firstChoice = v; updateDeckSum(); });
   syncFxSegs(); // reflect any persisted round-B settings before wiring
@@ -5574,8 +5765,8 @@ function wireSeg(id, apply) {
     // second-player human takes seat 1 with the decks swapped.
     const humanFirst = firstChoice === 'first' ? true : firstChoice === 'second' ? false : Math.random() < 0.5;
     HP = humanFirst ? 0 : 1;
-    const deckP0 = DATA.decks[humanFirst ? myDeckKey : opDeckKey];
-    const deckP1 = DATA.decks[humanFirst ? opDeckKey : myDeckKey];
+    const deckP0 = deckListOf(humanFirst ? myDeckKey : opDeckKey);
+    const deckP1 = deckListOf(humanFirst ? opDeckKey : myDeckKey);
     // deck-scoped art (DECK_ART) resolves per seat from here on:
     // seat 0 plays deckP0's key, seat 1 plays deckP1's key.
     seatDeckKeys = [humanFirst ? myDeckKey : opDeckKey, humanFirst ? opDeckKey : myDeckKey];
@@ -5698,7 +5889,7 @@ function wireSeg(id, apply) {
       sessionStorage.removeItem('v3rematch');
       const cfg = JSON.parse(rm);
       const setSeg = (id, v) => { const el = $(id); if (!el || v == null) return; el.querySelectorAll('button').forEach(x => x.classList.toggle('sel', x.dataset.v === v)); };
-      if (cfg.my) { myDeckKey = cfg.my; setSeg('seg-mydeck', cfg.my); }
+      if (cfg.my) { myDeckKey = cfg.my; setSeg('seg-mydeck', cfg.my); if (SAVED_DECKS[cfg.my]) syncDeckSelection(); }
       if (cfg.op) { opDeckKey = cfg.op; setSeg('seg-opdeck', cfg.op); }
       if (cfg.first) { firstChoice = cfg.first; setSeg('seg-first', cfg.first); }
       updateDeckSum();

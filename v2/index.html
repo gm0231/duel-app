@@ -530,6 +530,36 @@
   .sstate{font-size:12px;color:#c9b586;width:34px;text-align:left;}
   #start .startbtn,#deckpage .startbtn{width:100%;min-height:52px;font-size:19px;letter-spacing:.14em;border-radius:12px;}
   #start .startbtn:disabled,#deckpage .startbtn:disabled{background:#4a3d22;color:#8a7c55;}
+  /* neuron import (Phase 1, 2026-11-04): saved imported decks live
+     under the own-deck list in their own scroll region of the same
+     section; the import panel is a fixed one-screen overlay whose
+     result area scrolls internally. */
+  #deckpage .savedrow{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  #deckimport{background:var(--panel2);color:var(--gold);border:1px solid var(--gold-dim);border-radius:8px;font-size:11.5px;padding:6px 10px;cursor:pointer;letter-spacing:.02em;}
+  #seg-saved{flex:0 1 auto;max-height:42%;}
+  #seg-saved:empty{display:none;}
+  #seg-saved .deck .deckdel{flex:none;background:#2a1414;color:#e8a0a0;border:1px solid #6d3030;border-radius:7px;font-size:10.5px;padding:6px 8px;cursor:pointer;margin-left:2px;}
+  #seg-saved .deck .deckdel.armed{background:#6d1f1f;color:#ffd9d9;border-color:#a04a4a;font-weight:700;}
+  #seg-saved .deck .check{right:66px;}
+  #neuronpanel{display:none;justify-content:flex-start;overflow:hidden;padding:10px 14px 12px;align-items:stretch;text-align:left;z-index:66;}
+  #neuronpanel .np-head{display:flex;align-items:center;gap:10px;width:100%;flex:0 0 auto;}
+  #neuronback{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:12.5px;padding:9px 12px;cursor:pointer;flex:0 0 auto;}
+  #neuronpanel .np-note{font-size:11px;color:var(--txt-dim);line-height:1.6;margin:8px 0 6px;flex:0 0 auto;}
+  #neurontext{width:100%;flex:0 0 22%;min-height:64px;background:#120d05;color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:12px;padding:8px;box-sizing:border-box;resize:none;}
+  #neuronresult{flex:1 1 auto;min-height:0;overflow-y:auto;margin:8px 0;font-size:12px;line-height:1.65;}
+  #neuronresult .np-name{font-size:14px;font-weight:700;color:#ffe9a8;}
+  #neuronresult .np-sec{font-weight:700;color:#c9b586;margin-top:7px;}
+  #neuronresult .np-cards{color:var(--txt);}
+  #neuronresult .np-pt{margin-top:7px;color:#c9b586;}
+  #neuronresult .np-ok{margin-top:8px;padding:8px 10px;border:1px solid #2a6f3a;background:#0f2013;color:#b9f2c4;border-radius:8px;font-weight:700;}
+  #neuronresult .np-warn{margin-top:8px;padding:8px 10px;border:1px solid #8a6d1f;background:#241b06;color:#ffe1a0;border-radius:8px;font-weight:700;}
+  #neuronresult .np-ng{margin-top:8px;padding:8px 10px;border:1px solid #6d3030;background:#220d0d;color:#ffb3b3;border-radius:8px;font-weight:700;}
+  #neuronresult .np-err{padding:8px 10px;border:1px solid #6d3030;background:#220d0d;color:#ffb3b3;border-radius:8px;font-weight:700;}
+  #neuronresult ul{margin:4px 0 0;padding-left:18px;}
+  #neuronresult .np-items{color:var(--txt-dim);font-size:11.5px;}
+  #neuronpanel .np-foot{flex:0 0 auto;display:flex;flex-direction:column;gap:8px;}
+  #neuronpanel .np-foot .startbtn{width:100%;min-height:46px;font-size:16px;letter-spacing:.1em;border-radius:12px;}
+  #neuronsave{background:#3a2a10;color:#ffe9a8;border:1px solid var(--gold);}
   #loadmsg{font-size:11px;color:var(--txt-dim);margin:0;}
   /* the VS curtain lives at #app level (above both pre-duel pages)
      since the deck-select split: the start button sits on the deck
@@ -623,6 +653,8 @@
           <button class="deck sel" data-v="ishizu"><img src="../assets/card-art-placeholder-s.jpg" alt=""><span><span class="dn">MILLENNIUM PROPHECY</span><span class="dd">45枚／イシズ・墓地を入れ替える逆転のデッキ</span></span><span class="check"></span></button>
           <button class="deck" data-v="gg"><img src="../assets/card-art-placeholder-s.jpg" alt=""><span><span class="dn">ゲート・ガーディアン</span><span class="dd">40枚／三魔神の合体と壁のデッキ</span></span><span class="check"></span></button>
         </div>
+        <div class="segrow savedrow"><span>保存したデッキ</span><button id="deckimport">＋ デッキを取り込む</button></div>
+        <div class="decklist" id="seg-saved"></div>
       </div>
       <div class="dp-sec">
         <div class="segrow">相手のデッキ</div>
@@ -662,6 +694,16 @@
       <button class="startbtn" id="startbtn" disabled>読み込み中…</button>
     </div>
   </div>
+  <div class="overlay" id="neuronpanel">
+    <div class="np-head"><button id="neuronback">← デッキ選択へ</button><div class="dp-title">デッキを取り込む</div></div>
+    <p class="np-note">ニューロン（公式カードデータベース）のデッキページで「テキスト表示」を選び、ページ全体をコピーして下に貼り付けてください。ほかに .ydk／パスコードのリスト／カード名のリストでも取り込めます。取り込んだデッキは Genesis（100pt）のルールで判定し、適合したものだけ保存できます。デッキコードからの自動取得は、公式サイトの仕様によりアプリからはできません。</p>
+    <textarea id="neurontext" placeholder="ここに貼り付け"></textarea>
+    <div id="neuronresult"></div>
+    <div class="np-foot">
+      <button class="startbtn" id="neuronsave" style="display:none">保存する</button>
+      <button class="startbtn" id="neuronparse">読み込む</button>
+    </div>
+  </div>
   <div id="vsoverlay"><div class="beam bl"></div><div class="beam br"></div><div class="vst">VS</div><div class="vss" id="vssub"></div></div>
   <div class="overlay" id="result">
     <h1 id="resultTitle">—</h1>
@@ -676,6 +718,7 @@
 <script src="build/ocgcore.js"></script>
 <script src="engine.js"></script>
 <script src="duel-worker.js"></script>
+<script src="neuron.js"></script>
 <script src="client.js"></script>
 </body>
 </html>
