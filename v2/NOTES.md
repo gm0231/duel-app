@@ -4365,6 +4365,82 @@ so the capture answers 発動しない / パス through the real UI
 before shooting the field), a fabricated six-arts board at
 390x620 (all six deliveries on field and in hand), cut-in via
 fxCutinShow as before.
+
+## Engine Web Worker separation (BU-12, 2026-11-03, feat/engine-worker)
+
+The ocgcore engine now runs off the main thread. Architecture:
+- v2/engine-worker.js (new): hosts Engine.Duel + the WASM module.
+  Browser: classic Worker via importScripts('build/ocgcore.js',
+  'engine.js'); the MODULARIZE factory is called with a locateFile
+  that prefixes 'build/' (the worker script lives in v2/, the wasm
+  in v2/build/). Node worker_threads is the second host (used by
+  test-worker.js): same file, require()d glue, parentPort transport.
+  engine.js and build/* are UNCHANGED.
+- v2/duel-worker.js (new): WorkerDuel proxy + createClientDuel
+  factory. state is one canonical object on the main thread;
+  worker snapshots (GameState own props minus names/cardData —
+  re-attached from local DATA — and graveResync) are merged into
+  it key-by-key, so client-held references stay live. The worker
+  wrapper refreshes field stats BEFORE posting each update and
+  each prompt (the exact points the client used to refresh after
+  onUpdate / before dispatch), and drains state.events into the
+  update post (the client's per-update drain semantics, preserved).
+  Prompts cross as {prompt, state}; answers return as Uint8Array.
+  refreshFieldStats() is an RPC only while a prompt is waiting
+  (the worker is idle then); at any other time the latest snapshot
+  is already refreshed worker-side, so it resolves immediately.
+- Fallback: where Worker is unavailable (jsdom suites), the
+  factory returns the in-process E.Duel exactly as before.
+- client.js changes are two hunks: duel construction via
+  createClientDuel, and uiAnswer awaiting the (possibly async)
+  refreshFieldStats() before dispatchPrompt. index.html gains
+  the duel-worker.js script tag; ocgcore.js stays for the fallback.
+
+Identity (the migration's hard requirement): v2/test-worker.js
+runs the same duel in-process vs through a real worker_threads
+Worker (same seed, same seeded shuffle-RNG stub on both sides,
+fast pace) and asserts byte identity of (1) the FNV-1a digest +
+count over every core message, (2) stats, (3) the final-state
+summary. 3 cases pass, including one where seat 0 is the "human"
+seat answered through the prompt transport with a refresh
+round-trip before every answer (the browser's exact path).
+
+Browser verification (headless Chromium, local static server):
+- Real UI: the page constructs Worker('engine-worker.js');
+  auto-played duels reach the result screen (turn 4 and turn 6
+  finishes observed), no page errors.
+- Longtask profile during real-paced UI play: pre-migration main
+  showed a 234 ms main-thread spike (duel start, in-process
+  engine) and 54-76 ms tasks; the worker build's worst in-duel
+  task was 86 ms, with the remaining 50-86 ms tasks clustered in
+  FX-heavy passages (client rendering/FX work, present in both
+  builds). No engine burst remains on the main thread during
+  play. Posting the 752 KB DATA bundle to the worker is a
+  one-time start cost inside the "preparing" phase (~53 ms task
+  observed in the real-UI run).
+
+Test-harness finding (NOT a product change): test-fx FXL2 /
+test-ui run 1 intermittently failed on live duels. Frozen-state
+capture showed the auto-play driver looping forever on a
+DISABLED .optbtn in a card action sheet (the sheet is a
+legitimate, closable UI state; the driver's selector matched
+disabled options and never fell through to #sheet-cancel).
+The freeze reproduces identically on a tree with the synchronous
+uiAnswer restored, i.e. it predates the migration's timing; it
+is a duel-development/timing race in the harness. Driver fix
+applied to the four suites sharing that playDuel loop
+(test-fx/test-ui/test-layout/test-strot): the option selector is
+now '.optbtn:not(.disabled)'. After the fix, test-fx and
+test-ui pass in full on the integrated tree. test-cardart /
+test-setvis (landed from main during this work) gained the same
+duel-worker.js script injection the other jsdom suites use.
+test-strot's ST3/ST4 non-vacuity reach gates remain
+duel-development luck (they fail intermittently on unmodified
+main too; the substantive ST5 check passes throughout).
+
+Full suite on the integrated tree (main 4eb7e51 + this branch):
+all suites pass (test-worker included). Remaining unmeasured:
+real-device WKWebView profiling.
 ## Log detail (2026-11-03, user report: 履歴ログが詳細でない)
 
 The history log carried headlines only — which effect activated,

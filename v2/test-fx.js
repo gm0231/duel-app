@@ -48,6 +48,7 @@ async function boot() {
   const origFactory = window.OcgCoreModule;
   window.OcgCoreModule = (opts) => origFactory(Object.assign({}, opts, { wasmBinary }));
   inject('engine.js');
+  inject('duel-worker.js');
   inject('client.js');
   for (let i = 0; i < 100 && !window.document.getElementById('loadmsg').textContent.includes('準備完了'); i++)
     await new Promise(r => setTimeout(r, 50));
