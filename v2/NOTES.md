@@ -5000,6 +5000,53 @@ stat lines read 生きる偲びのシルキィ 800/0; the plain
 'silky' remains what any non-Ishizu context sees
 (fixture-pinned, as with Kakan / Carbon before her).
 
+## Zero-option chain prompts auto-pass (2026-11-04, user report: 何も発動できるものなくても聞いてくるのは不毛)
+
+Measured first (probe, bot duels, both deck assignments): the core
+sends MSG_SELECT_CHAIN at every timing window unconditionally
+(playerop.cpp writes the message even when select_chains is
+empty), and **983 of 1692 chain prompts to the human seat carried
+0 entries (58%)** — passing is the only legal answer there.
+Prompts whose every candidate is dismissed (per-chain or duel)
+are the same shape after the client's own presentation filter.
+
+The decision now lives at the uiAnswer choke point, next to the
+response-mode 'off' auto-pass, as `chainPassDecision(prompt,
+state)`:
+- 'pass' — zero live options (no entries at all, or every
+  candidate chain-dismissed / mixed chain+duel dismissed):
+  uiAnswer resolves i32 -1 immediately. No prompt cycle at all:
+  currentPrompt is never set, no stats refresh round-trip, no
+  dock. (uiChain already auto-passed these deep in its own flow;
+  the guarantee is now structural and tested, and on the Worker
+  path the zero-option majority no longer pays a prompt cycle.)
+- 'flash' — every candidate duel-dismissed: unchanged, uiChain's
+  visible auto-pass owns it (自動パス flash + 450 ms), so the
+  player sees their dismissal setting fire.
+- 'show' — at least one live candidate, and ALL forced prompts
+  (passing is illegal there; mandatory responses, including the
+  spe_count/0x7f flows, are always shown). Response mode 'on'
+  （毎回） keeps ignoring dismissals exactly as before; mode 'off'
+  still passes every non-forced prompt earlier in uiAnswer.
+
+Answers are byte-identical to the old flow in every case (pass
+where pass was already the answer), so game progression cannot
+change; uiChain's internal guards remain as a backstop.
+
+Pinned by test-chainpass.js: Part A unit-tests the decision
+matrix (14 checks: zero entries / forced / live / each dismissal
+kind / mixed / resp 'on' / the per-chain dismissal reset).
+Part B runs 5 real engine duels with the REAL uiAnswer/uiChain
+answering every SELECT_CHAIN (bot plays the rest): 510 prompts,
+222 'pass' / 288 'show', decision-vs-display agreement for every
+prompt, 0 MSG_RETRY, all duels completed. Frames
+(cap-chainpass.js, shots-chainpass/, declared fabrication through
+the real code paths over a live board): dock with a live
+candidate + パス at 390x700/620; the 自動パス chip flash for a
+duel-dismissed candidate; a zero-entry prompt leaving the board
+untouched. test-logdetail-ui keeps its known load-flake on the
+pristine base too (0–9 failing checks across runs there, same
+failure modes; not this change).
 ## Per-card illustrations, 17th delivery (2026-11-04): 《メタファイズ・ホルス・ドラゴン》 — the first EXTRA-deck monster
 
 User art for 《メタファイズ・ホルス・ドラゴン》 36898537
@@ -5049,6 +5096,167 @@ ATK 2300／DEF 1600, at 390x620/700. The post-summon field
 tile is fixture-pinned (CA11ad), as the deck-scoped
 deliveries pinned their non-Ishizu surfaces by fixture.
 
+## Face-down selection leak fixed (2026-11-04, user report: 相手の裏側セットが選択画面で見えた)
+
+The user found in real play that a target-selection sheet
+showed the opponent's face-down set cards WITH name and art —
+and they could be picked. Root cause: the core writes real
+codes into every SELECT_* message unconditionally (correct
+engine behavior — the bot path already masked them through
+maskEntry/botView), but Duel.run handed the RAW prompt to
+the human answerer. The board renderer guarded its own
+tiles, so the leak lived only in prompt rendering:
+gridSheet (SELECT_CARD / SELECT_TRIBUTE / SELECT_SUM via
+uiSelectCards and uiSelectSum) rendered name, art, stats,
+full text, tray chips, must chips and a 詳細 button reaching
+openInfoPop for every candidate — including the opponent's
+face-down ones. uiUnselect (the un-select grid) and the
+uiSort / uiCounter name labels had the same hole.
+
+Reproduction (before the fix, real duel): a crafted deck
+(太陽の書 x20 + メドゥーサのワーム x20 vs an all-Worm CPU that
+always sets) reached 太陽の書's target prompt with the
+opponent's face-down Defense monster (con=1, loc=4, pos=8)
+inside — the prompt delivered to the human UI carried the
+real code 2694423 and the card name. Five such leaked
+candidates were recorded in one duel.
+
+Fix, two layers:
+1. engine.js — maskPromptForHuman(prompt, state), applied
+   in Duel.run immediately before humanAnswerer. Same view
+   semantics as the bot (view {me: prompt.player}, context
+   code from prompt.context so 《墓穴の道連れ》 16435215 keeps
+   the revealed hand visible — its effect reveals both hands
+   BY RULE). Candidate lists masked: cards / select /
+   unselect / must / entries / summon / spsummon / repos /
+   mset / sset / activate / attack. Entries whose pos is
+   null/0 recover the true position from the GameState
+   mirror (SELECT_TRIBUTE ships pos=0). Face-down EXTRA
+   entries are masked too (maskEntry had no EXTRA rule).
+   Selection legality is untouched: indices, counts and the
+   candidate set are identical; only identity fields of
+   hidden opponent cards become null. The stored prompt is
+   never mutated (copy semantics — a retry re-masks).
+2. client.js — defense in depth at render time.
+   selCardHidden(e, prompt): an opponent's face-down field
+   card, set S/T, hand card, deck card or face-down EXTRA
+   card renders as the card back with a generic label
+   (「裏側のモンスター（守備表示）」/「裏側のカード」/…) — no
+   art, no stats, no text, no 詳細 button — even if a real
+   code reaches the renderer. gridSheet, uiUnselect,
+   uiSort, uiCounter all route through it. New CSS:
+   .gcard.back paints the standard card-back art.
+
+Audit of the other surfaces (no leak found): pile sheets
+(grave/removed are public; opponent EXTRA and hand list
+counts only; deck shows only a revealed top card),
+contextLineHTML (the asked-about card is public at
+activation time), the chain dock (own entries only),
+ANNOUNCE_CARD catalog (a declaration list drawn from the
+public card DB by design), FX ghosts (face-down judged
+from position), board tiles and the resident preview
+(faceUp / ownership guards), dlog target names (face-up
+check in engine.js).
+
+test-facedown-select.js (22 checks): Part A engine unit
+pins — the mask matrix (opponent face-down field/set/hand/
+EXTRA lose their code; face-up, grave, and the HUMAN's OWN
+face-down keep theirs), con/loc/seq/pos preserved, copy
+semantics, the Hand Destruction exception, TRIBUTE pos
+recovery. Part B two real duels — 太陽の書 scenario (the
+masked candidate stays selectable and actually flips),
+墓穴の道連れ scenario (revealed hand stays named and
+selectable; no other leak). Part C jsdom rendering —
+masked grid cells are .gcard.back with the generic label
+and no detail button; tray chips labelled; a synthetic
+prompt carrying a REAL code for an opponent face-down card
+still renders masked (render-side guard); Hand Destruction
+context renders names; the un-select grid is guarded.
+ALL PASSED. Full-suite run on the branch: every suite
+green except test-logdetail-ui D11/D12, which fail
+IDENTICALLY on the pristine base f4365e2 in this
+environment (pre-existing; the probe touches history
+rendering only, unrelated to selection).
+
+Real frames (cap-facedown-select.js,
+shots-facedown-select/): a live page at 390x620 and
+390x700 shows the selection sheet with the opponent's set
+monster and set S/T as full card backs labelled
+「裏側のモンスター（守備表示）」「裏側のカード」, while the
+opponent's face-up Mudora and the player's own 太陽の書
+keep art, name, stats, text and the 詳細 button.
+## Opponent card info (user request, 2026-11-04): tap an opponent's card, see its public info
+
+The user asked to tap an opponent's monster (or any field
+card) and read its info — "face-up public info only". Audit
+of what already stood: in neutral board states the zone tap
+already fed the resident preview for opponent face-up cards,
+and the preview tap opened the full detail. The gaps were
+contextual: (1) while a selection sheet is up, the sheet
+wrap covers the board, so even peeking （盤面を見る) was
+look-only — no card could be tapped for its detail; (2)
+during SELECT_PLACE/DISFIELD placement, a tap on any zone
+the placement does not target was swallowed silently, so
+the opponent's board could not be checked mid-placement.
+
+What shipped, all behind ONE visibility guard:
+
+- boardCardAt(key) is now the single resolution point for
+  board info: a field card resolves iff it is face-up, or
+  it is the player's own card (own face-down cards ghost
+  through by design). An opponent's face-down card NEVER
+  resolves — the same rule the tile art and the stat strip
+  already obey, now shared by every info path. The neutral
+  zone tap was refactored onto it with no behaviour change.
+- Peek info taps (R-SEL-2 extension): while a prompt sheet
+  is peeked down, the wrap still covers the board, so a
+  backdrop tap on the wrap is forwarded by coordinates
+  (elementsFromPoint -> peekBoardTap -> peekInfoTap) to the
+  card under the point, and its read-only detail floats
+  over the board via openInfoPop (its close reads 選択に
+  戻る while a prompt is live). Only card surfaces answer
+  (zones, the preview strip, hand cards); phase/menu
+  buttons under the wrap stay unreachable, and the tap
+  never answers, toggles or cancels the pending selection.
+  A tap on an opponent face-down card is refused by the
+  guard and changes nothing.
+- Placement info taps: during placeCtx, a tap on a zone
+  the placement does not target now feeds the resident
+  preview through the same guard instead of being
+  swallowed; available-zone taps place exactly as before,
+  and the placement state (chosen set) is untouched by
+  looking.
+
+Operation design (why these shapes): candidates inside a
+selection stay selectable (grid tap / 詳細 button as
+before); non-candidate board cards are info-only, reached
+through the existing peek convention rather than a new
+mode — the same "look without committing" grammar as
+R-SEL-1/R-SEL-2. Own cards' taps and sheets are unchanged.
+
+Tests: test-oppinfo.js (new, 23 checks) pins the guard
+(face-up resolves / face-down refuses, both zones),
+preview + detail from real click dispatches, the
+mid-SELECT_CARD peek flow (select -> peek -> info on a
+NON-candidate opponent card -> selection intact, prompt
+still pending -> close -> confirm still works), and the
+placement info tap. Affected suites re-run green:
+cardart / facedown / setvis / layout / overlay /
+typecolor / purpose / logdetail-ui / ui / fx / strot /
+phase2.
+
+Real-browser frames (cap-oppinfo.js, shots-oppinfo/,
+genuine mouse hit-testing, 390x620/700): a real duel with
+a fabricated opponent board — tapping 雷魔神－サンガ's
+tile puts it in the resident preview (ATK 2600/DEF 2200,
+its text); mid-SELECT_CARD, peeking and tapping the
+opponent's face-up 《ラビリンス・ウォール・シャドウ》
+through the wrap floats its full detail over the board
+with the selection sheet still parked below （現在 1 枚
+selected, unanswered). Capture note: uiAnswer refreshes
+the board from the worker's real snapshot, so the rig
+fabricates the board AFTER the sheet opens (in real play
+the state is simply the real state).
 ## Cannot-attack reasons (2026-11-04, user report: バロメットが召喚したターンに攻撃できなかった)
 
 Investigation (~/workspace/duel-app-baromett-investigation/) proved
@@ -5117,6 +5325,186 @@ Baromett at 390x620/700. The sheet shows the greyed 攻撃 row:
 《ラビリンス・ウォール・シャドウ》の効果で、召喚したターンの
 モンスターは攻撃できません, and the preview carries the same
 reason (asserted from the DOM and read off the frames).
+
+## FX coverage: the summon callout (2026-11-04, user order)
+
+User order: every event should present the card that did it, with
+the card's image — "このカードが効果を使いました／召喚しました"
+must read off the presentation, not the log. Inventory of the
+pre-round build (code + redesign inventory.md, base 244f0ad era
+carried to 3c8b288) found activations already covered (chain pop /
+set-activate tilt pop / chain-solve pop all show the card), attacks
+covered (scene emphasis + target ghost), movement covered (flight
+ghosts), destruction covered (flash + flight / battle dissolve),
+confirmations covered (reveal sheet). The summon family was the
+hole: a NORMAL SUMMON — the most common event in the game — was a
+430 ms puff and nothing else; a generic special summon and a
+revival were a portal glow around a tile that simply appears; a
+flip summon only the tile's own flip. On the CPU's 620 ms pace the
+opponent's summons in particular read as "result + one log line"
+(inventory finding B40/所見2).
+
+Fix: `fxSummonCallout(key, code, con, pos)` — one shared grammar
+for every summon no bigger scene owns. The summoned card's image
+stamps in over its own zone at 1.5x (settle-in 0-200 ms), a seat
+rim ignites (gold = human, lapis = opponent; the redesign colour
+grammar; new CSS `.fx3-lapisframe`, gold reuses `.fx3-goldframe`),
+holds readable (640 ms own seat / 800 ms opponent — the opponent's
+actions run on CPU pace), rim keeps a 0.38 floor through the hold
+so the stamp reads as a presentation, then a 260 ms ease-out.
+Presentation only: the scene claims NO input window and lives in
+#fxlayer (pointer-events:none), so it cannot cover a prompt or
+the result screen.
+
+Wiring (fxProcessInner arrivals + one event hook):
+- normal summon (incl. advance summons): puff + callout
+- generic special summon (hand / deck / extra, non-EX-method):
+  portal + callout
+- revival / return from grave or banished: portal + callout
+- flip summon: changed-diff flip + callout (event hook)
+NOT wired, deliberately:
+- fusion / Xyz arrivals: material converge + portal already
+  present the card's arrival as a scene (a callout on top would
+  double the read)
+- ace cut-in summons: the ace scene owns them end-to-end (the
+  arrivals ace branch consumes them before the callout branches;
+  with the cut-in setting OFF they fall through to the callout,
+  so they are never left with nothing)
+- synchro arrivals take the generic path today, so they gain the
+  callout; the synchro GRAMMAR (material lights / level sum) is
+  the redesign-impl S block's, not this round's
+- face-down arrivals (sets, face-down special summons): never —
+  the identity is not public information yet (guarded on
+  POS_FACEUP at every call site)
+
+Coverage table (event -> card-image presentation, before -> after):
+  normal summon        puff only                 -> puff + callout
+  advance summon       converge + puff + glow    -> + callout
+  special summon (gen) portal 600                -> portal + callout
+  synchro (non-ace)    generic portal            -> + callout (grammar: redesign-impl S, unlanded)
+  fusion / Xyz         converge + portal         -> unchanged (covered)
+  revival              portal 700                -> portal + callout
+  flip summon          tile flip                 -> flip + callout
+  set (mon / S/T)      puff (face-down: correct) -> unchanged
+  ace summon           full cut-in               -> unchanged (covered)
+  activation (any loc) chain pop / tilt pop      -> unchanged (covered)
+  chain solve / negate solve pop (gold / gray)   -> unchanged (covered)
+  attack               scene + target ghost      -> unchanged (covered)
+  destroy / banish / send / bounce / deck return
+                       flash + flight / vanish   -> unchanged (covered)
+  draw (own / opp)     flight face-up / face-down-> unchanged (covered / correctly hidden)
+  search / confirm     reveal sheet (name+detail)-> unchanged (covered)
+  position change      rotation                  -> unchanged (covered)
+  flip (by effect/atk) flash + flip              -> unchanged (covered)
+  Xyz attach / detach  zone glow / peel          -> unchanged (covered)
+  stat change          strip flash               -> unchanged (covered)
+  LP damage/heal/cost  count + float (cause card
+                       shown by the solve pop)   -> unchanged; cost-vs-damage colour split is redesign-impl F (unlanded)
+  deck -> grave (mill) pile glow only            -> redesign-impl I(1) implements the flight on its branch (unlanded); NOT duplicated here
+  finisher             full-screen scene         -> unchanged (covered)
+NOT covered, with counts and reasons (2 kinds):
+  - counter add/remove: pool holds 0 counter cards (data.json
+    audit: 0 texts mention カウンター) and the engine emits no
+    counter event — nothing to present, nothing reachable.
+  - equip / target-relation display: pool holds 0 equip-type
+    cards (type bit 0x40000 audit: 0) and the engine parses
+    EQUIP / CARD_TARGET for the log only, emitting no FX event.
+Deck-out finish and deck shuffle carry no card to present (the
+result text / pile count already carry them); out of scope for a
+card-image rule.
+
+Tests: test-fx Part 1C (FXC1-FXC9) pins the callout records —
+normal (both seats), generic special summon, revival fire it;
+fusion, set monsters and face-down special summons do NOT; flip
+summons fire it alongside the flip beat; fxError stays null.
+Full test-fx passes (synthetic 1/1B/1C + two live duels to the
+result screen; live tally includes summoncall=5). test-fxidentify
+passes. Real frames: cap-fxcov.js (parked real duel + synthetic
+state replay, frames timed by FX-scene-local clock) in
+shots-fxcov/ — callout-summon-me / -opp / -spsummon /
+-flipsummon at 390x620 and 390x700, f01 stamp (~120-180 ms) and
+f02 hold (~400-570 ms) read off the frames: enlarged card, seat
+rim, name band legible, board not covered.
+
+## App renamed: MILLENNIUM DUELISTS (2026-11-04, user decision)
+
+The app's title changed from 「トトと簡易デュエル」 to
+**MILLENNIUM DUELISTS** — the plural is deliberate: the selling point
+is that AI-piloted original-work character decks are the opponents.
+Display surfaces replaced (text only, world styling unchanged, the
+wordmark is set in the app's own type — no imitation of any official
+logo):
+
+- v2/index.html: `<title>` and the start-screen `<h1>`, now set as a
+  two-line gold inscription (MILLENNIUM / DUELISTS, letterspaced).
+- index.html (retired v1 page): `<title>`, `<h1>`, footer name.
+- README.md: repository heading (with a one-line 旧名 note).
+
+Untouched on purpose: repository name, URLs, file paths, and the v1
+localStorage keys (`toto-duel-*-v1`) — those are functional
+identifiers, not display names. No test depended on the old title
+string.
+
+Subtitle (same decision, added minutes later): the title screen
+carries a small **for GENESYS** line under the wordmark — GENESYS is
+Konami's official English spelling of the format, and the line marks
+the app as GENESYS-rules-only. Placement judgement: the subtitle
+lives ONLY on the v2 title screen. It is deliberately NOT folded
+into the `<title>` tags, the v1 page, or the README heading — those
+carry the plain proper name; the subtitle is a title-screen design
+element, not part of the name itself.
+## Deck-select page (2026-11-04, user request: デッキ選択は別ページで)
+
+The start flow is two pages again. Before: the title overlay
+carried everything (title, both deck picks, first/second, the
+settings rows, the start button). Now:
+
+- Title page (#start): title, tagline, 「デッキを選ぶ」 (new
+  #todeck) and the load message. Nothing else — no deck, turn or
+  settings controls remain there (test-deckpage DP2).
+- Deck page (#deckpage, new overlay): header (「← タイトルへ」
+  back button + デッキ選択), then in one fixed column — own-deck
+  section, opponent-deck section, 先攻・後攻, the settings rows
+  (チェーン確認 / 召喚カットイン / 音, ids unchanged) — and a
+  footer with the live selection summary (#decksum: own deck /
+  opponent deck / turn choice, refreshed by every seg handler and
+  at boot) above the start button.
+
+Layout law kept: the deck page is a one-screen fixed column that
+never scrolls (overflow hidden); each deck list is a vertical
+list that scrolls inside its own region (.decklist,
+overflow-y:auto, inside a flex .dp-sec), so a growing roster of
+character decks stays fully reachable — proven in the capture
+rig by cloning both lists to 10 decks (list scrolls internally,
+last entry reachable, page still fits the screen). Deck rows are
+the same .deck cards as before, full-width now; the selected
+state (gold frame + check dot) is unchanged, and own/opponent
+remain separate labelled lists.
+
+Unchanged on purpose: every control id (seg-mydeck / seg-opdeck /
+seg-first / seg-resp / seg-cutin / soundbtn / startbtn), so all
+existing suites drive the flow exactly as before. The start
+button still IS the load state (A-03: disabled 読み込み中… ->
+デュエル開始, failure -> 再読み込み), now on the deck page;
+navigation is wired before the data load so the failure path's
+retry button stays reachable. Art preload still fires at boot
+and on every deck change (deck-select-time preload, no blank/'?'
+surfaces). The VS curtain moved to #app level (z 65, above both
+pre-duel pages) — it still has no button and advances on its own;
+starting hides both pages. Rematch restore （同じ設定でもう1戦）
+clicks the start button directly and is unaffected. A pre-duel
+deck-recipe viewer does not exist in the current build and was
+NOT added here (out of scope, noted for the record).
+
+Tests: new test-deckpage (DP1-DP13) — structure, navigation,
+defaults, summary updates, stylesheet scroll contract, and the
+deck-page start (VS curtain plays, both pages hidden, board up).
+test-ui (both runs), test-layout and test-bgm pass unchanged.
+Real frames: cap-deckpage.js in shots-deckpage/ — title and deck
+page at 390x620 / 390x700, swapped-selection state, plus the
+10-deck scroll stress at 700; the summary wraps to two lines
+rather than truncating the turn choice (fixed after the first
+capture round).
 
 ## Board-tile kind frame (user decision 2026-11-04, variant 1 shipped)
 

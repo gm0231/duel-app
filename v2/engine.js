@@ -1140,6 +1140,53 @@ function maskEntry(e, view, ctxCode) {
   return e;
 }
 
+// The human seat gets the same fair-information treatment as the bot
+// (user report 2026-11-04: a target-selection grid showed the
+// opponent's face-down cards with their names and art). The core
+// writes real codes into SELECT_* messages unconditionally (see the
+// CPU policy header), and the bot path masks them before evaluation;
+// the human path handed the raw prompt to the UI, which rendered
+// whatever code it found. Before a prompt reaches the human
+// answerer, every candidate pointing at a card the human may not see
+// (opponent hand / deck, opponent face-down field or Extra card)
+// loses its code, so the identity never reaches the UI layer at all.
+// Answers are index-based, so masking changes nothing about WHAT may
+// be chosen — only about what is shown. The driver's stored prompt
+// (the MSG_RETRY path) stays pristine; masking re-applies to a copy
+// on every ask. The one legal reveal exception is shared with the
+// bot: 墓穴の道連れ shows both hands before its choices.
+function maskPromptForHuman(prompt, state) {
+  const ctxCode = prompt.context ? prompt.context.code : 0;
+  const view = { me: prompt.player };
+  const fix = (e) => {
+    if (!e || typeof e !== 'object') return e;
+    let x = e;
+    // SELECT_TRIBUTE and the command lists carry no position on the
+    // wire; recover the mirror's true position for field entries so
+    // the face-down test judges the card as it actually lies — a
+    // face-up card must stay visible, and pos 0 must not let a
+    // face-down one slip through either.
+    if ((x.loc === LOC.MZONE || x.loc === LOC.SZONE) && (x.pos == null || x.pos === 0) && state) {
+      const P = state.players[x.con];
+      const cell = P ? (x.loc === LOC.MZONE ? P.mzone[x.seq] : P.szone[x.seq]) : null;
+      if (cell && cell.pos != null) x = Object.assign({}, x, { pos: cell.pos });
+    }
+    x = maskEntry(x, view, ctxCode);
+    // maskEntry has no Extra Deck rule (the bot meets its candidates
+    // through botView, which nulls hidden Extra cards); the human
+    // prompt needs it stated: an opponent Extra card that is not
+    // face-up is hidden information.
+    if (x.code != null && x.con !== view.me && x.loc === LOC.EXTRA && x.pos != null && !(x.pos & POS_FACEUP))
+      x = Object.assign({}, x, { code: null });
+    return x;
+  };
+  const out = Object.assign({}, prompt);
+  for (const k of ['cards', 'select', 'unselect', 'must', 'entries',
+                   'summon', 'spsummon', 'repos', 'mset', 'sset', 'activate', 'attack'])
+    if (Array.isArray(prompt[k])) out[k] = prompt[k].map(fix);
+  return out;
+}
+
 // ---------------------------------------------------------------- valuation
 function cdOf(data, code) { return code ? data.cards[code] : null; }
 function isMonsterCd(cd) { return !!cd && (cd.type & CT.MONSTER) !== 0; }
@@ -2820,7 +2867,7 @@ class Duel {
         let bytes;
         if (prompt.player === this.humanTeam && opts.humanAnswerer) {
           this.stats.humanPrompts++;
-          bytes = await opts.humanAnswerer(prompt, this.state);
+          bytes = await opts.humanAnswerer(maskPromptForHuman(prompt, this.state), this.state);
         } else {
           this.stats.botPrompts++;
           const wait = prompt.name === 'SELECT_CHAIN' ? pace.botChain : pace.bot;
@@ -2950,7 +2997,7 @@ const Engine = { MSG, SELECT_TYPES, PHASES, LOC, POS, POS_FACEUP, POS_ATTACK, PO
   ATTRIBUTES, RACES, Reader, splitMessages, i32resp, cancelResp, cardsResp, cmdResp, placeResp,
   counterResp, sortResp, unselectToggleResp, u64resp, parsePrompt, sumSelectionValid, isDeclarable,
   shuffledCopy, randBelow,
-  GameState, botAnswer, makeBotMemory, botView, Duel };
+  GameState, botAnswer, makeBotMemory, botView, maskPromptForHuman, Duel };
 // Diagnostic-only surface for the tuning harnesses (test-cpu-tune*.js):
 // the policy's internal scorers, exposed read-only so a trace can name
 // the exact gate/score that declined an offered play. Not used by the

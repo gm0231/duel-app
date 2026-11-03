@@ -133,6 +133,15 @@ function preloadCardArt(deckKeys) {
     if (!artPreloaded.has(f)) { artPreloaded.add(f); const im = new Image(); im.src = f; }
   }
 }
+// deck-select page: display names + the live selection summary
+// above the start button (what is chosen, on one line, always
+// current — the page's seg handlers refresh it on every change).
+function deckDisplayName(k) { return k === 'gg' ? 'ゲート・ガーディアン' : 'MILLENNIUM PROPHECY'; }
+function updateDeckSum() {
+  const el = $('decksum'); if (!el) return;
+  const turn = firstChoice === 'first' ? '先攻' : firstChoice === 'second' ? '後攻' : '先攻・後攻ランダム';
+  el.textContent = '自分：' + deckDisplayName(myDeckKey) + ' ／ 相手：' + deckDisplayName(opDeckKey) + ' ／ ' + turn;
+}
 function locLabel(e) {
   const who = e.con === HP ? '自分' : '相手';
   switch (e.loc) {
@@ -145,6 +154,44 @@ function locLabel(e) {
     case E.LOC.DECK: return who + 'のデッキ';
     default: return who;
   }
+}
+// ---- hidden candidates in selection prompts (user report
+// 2026-11-04: a target-selection grid showed the opponent's set
+// cards with their names and art). The engine strips the code of
+// such entries before delivery (maskPromptForHuman); this predicate
+// is the render-side twin, so a candidate list that still carries a
+// code is masked here too. A candidate is hidden when its identity
+// is not public information for the viewer: an opponent's face-down
+// field / Extra card, or an opponent hand / deck card. The one
+// legal exception is shared with the engine: 墓穴の道連れ's own
+// effect reveals both hands before the choice (context code), so
+// its candidates stay visible. One's OWN face-down cards are never
+// hidden — the owner knows them.
+const HAND_DESTRUCTION_CODE = 16435215;
+function selCardHidden(e, prompt) {
+  if (!e) return false;
+  if (e.code == null) return true; // no identity delivered, nothing to show
+  if (e.con == null || e.con === HP) return false;
+  if (prompt && prompt.context && prompt.context.code === HAND_DESTRUCTION_CODE) return false;
+  if (e.loc === E.LOC.HAND || e.loc === E.LOC.DECK) return true;
+  if ((e.loc === E.LOC.MZONE || e.loc === E.LOC.SZONE || e.loc === E.LOC.EXTRA) && e.pos != null && !(e.pos & E.POS_FACEUP)) return true;
+  return false;
+}
+// Public-only label for a hidden candidate: which slot it sits in is
+// table information (the loc line already says it); for a face-down
+// monster its position form is public too (the board shows it).
+function hiddenCardLabel(e) {
+  if (!e) return '裏側のカード';
+  if (e.loc === E.LOC.MZONE) {
+    if (e.pos != null && (e.pos & E.POS.FD_ATK)) return '裏側のモンスター（攻撃表示）';
+    if (e.pos != null && (e.pos & E.POS.FD_DEF)) return '裏側のモンスター（守備表示）';
+    return '裏側のモンスター';
+  }
+  if (e.loc === E.LOC.SZONE) return '裏側のカード';
+  if (e.loc === E.LOC.HAND) return '相手の手札のカード';
+  if (e.loc === E.LOC.DECK) return '相手のデッキのカード';
+  if (e.loc === E.LOC.EXTRA) return '相手のEXデッキのカード';
+  return '裏側のカード';
 }
 function isMonster(code) { const d = cardData(code); return d && (d.type & 0x1); }
 // card-kind (original frame) key, derived mechanically from the core
@@ -1432,6 +1479,50 @@ function fxPuff(key) { // normal summons & sets: a small placement beat only
   fxAnim(d, [{ opacity: 0 }, { opacity: 0.9, offset: 0.3 }, { opacity: 0 }], { duration: 430, easing: 'ease-out' });
   fxKill(d, 470);
 }
+// ---- summon callout (FX coverage round): every summon that no
+// bigger scene owns still NAMES its card. The summoned card's image
+// stamps in over its own zone — settle-in, a seat rim (gold = the
+// human seat, lapis = the opponent, the redesign colour grammar),
+// a readable hold (longer for the opponent, whose actions run on
+// the CPU's pace), then an ease-out. It claims no input window and
+// sits in the FX layer, so it can never cover a prompt or the
+// result; a face-down arrival never calls out (its identity is not
+// public yet), and the ace scene's summons stand down via the
+// arrival branch order (they are consumed before reaching here).
+function fxSummonCallout(key, code, con, pos) {
+  if (code == null || (pos != null && (pos & E.POS_FACEUP) === 0)) return;
+  const el = fxSlotEl(key); if (!el) return;
+  const app = $('app'); if (!app) return;
+  const ar = fxRel(app);
+  const r = fxRel(el);
+  const W = Math.round(r.w * 1.5), H = Math.round(W * 1.36);
+  let cx = r.cx, cy = r.y + (r.h - 24) / 2;
+  cx = Math.max(W / 2 + 2, Math.min(ar.w - W / 2 - 2, cx));
+  cy = Math.max(H / 2 + 2, Math.min(ar.h - H / 2 - 2, cy));
+  const card = fxPlaceGhost(code, false, { cx, cy }, W, H, deckKeyOfSeat(con));
+  if (!card) return;
+  card.style.zIndex = 6; card.style.opacity = '0';
+  const rim = fxNode(con === HP ? 'fx3-goldframe' : 'fx3-lapisframe', cx, cy, W, H);
+  if (rim) { rim.style.opacity = '0'; rim.style.zIndex = 7; }
+  const hold = con === HP ? 640 : 800, dur = hold + 260;
+  fxAddScene({
+    kind: 'summoncall', dur,
+    render(t) {
+      const s = 0.7 + 0.3 * FXE.settle(fxSeg(t, 0, 200));
+      card.style.transform = 'scale(' + s.toFixed(3) + ')';
+      card.style.opacity = String(Math.min(fxSeg(t, 0, 90), 1 - fxSeg(t, hold, dur)));
+      if (rim) {
+        // ignition flash (0-460), then a low seat-coloured floor for
+        // the rest of the hold — the frame is what makes the stamp
+        // read as a presentation rather than a merely bigger tile
+        const ri = t < 80 ? t / 80 : Math.max(0.38, 1 - fxSeg(t, 240, 460));
+        rim.style.transform = card.style.transform;
+        rim.style.opacity = String(0.95 * ri * (1 - fxSeg(t, hold, dur)));
+      }
+    },
+    onDone() { try { card.remove(); } catch (e) {} if (rim) { try { rim.remove(); } catch (e) {} } },
+  });
+}
 function fxWhiteFlash(key) { // destruction: flash white, gone (restrained)
   const el = fxSlotEl(key); if (!el) return;
   const r = fxRel(el);
@@ -2057,6 +2148,10 @@ function fxProcessInner(evs, state) {
     if (fromGrave || fromRemoved) { // revival / return: NO flight — the zone lights and it appears
       fxPortal(ar.key, 'revive', 700); // V4-5: the zone glow is folded into the portal scene
       fxRecord('portal', { method: 'revive', code });
+      if ((ar.entry.pos & E.POS_FACEUP) !== 0) { // FX coverage: a revival names its card too
+        fxSummonCallout(ar.key, code, con, ar.entry.pos);
+        fxRecord('summoncall', { code, how: 'revive', con });
+      }
       consumedArr.add(ar.key);
       continue;
     }
@@ -2091,6 +2186,10 @@ function fxProcessInner(evs, state) {
     }
     if (isNormal || isSetMon) {
       fxPuff(ar.key); fxRecord('place', { how: isNormal ? 'summon' : 'set', code });
+      if (isNormal && (ar.entry.pos & E.POS_FACEUP) !== 0) { // FX coverage: the plainest summon in the game was the one with no card presentation at all
+        fxSummonCallout(ar.key, code, con, ar.entry.pos);
+        fxRecord('summoncall', { code, how: 'summon', con });
+      }
       // Round B (B10): an advance (tribute) summon's tributes leave the
       // way fusion/Xyz materials do — they glow and converge into the
       // summon point instead of flying to the graveyard — and the
@@ -2107,6 +2206,10 @@ function fxProcessInner(evs, state) {
     // other special summons (from hand / deck / extra): zone glows first
     fxPortal(ar.key, method, 600); // V4-5: glow folded in
     fxRecord('portal', { method, code });
+    if ((ar.entry.pos & E.POS_FACEUP) !== 0) { // FX coverage: the portal lights the zone; the callout names the card (never for a face-down arrival — not public yet)
+      fxSummonCallout(ar.key, code, con, ar.entry.pos);
+      fxRecord('summoncall', { code, how: 'spsummon', con });
+    }
     consumedArr.add(ar.key);
   }
   // arrivals on the spell/trap zone (sets): a small placement beat
@@ -2151,6 +2254,22 @@ function fxProcessInner(evs, state) {
     if (dep) {
       if (atkTargetKeys.has(dep.key)) fxRecord('destroyflash', { code: ev.code, via: 'scene' });
       else { fxWhiteFlash(dep.key); fxRecord('destroyflash', { code: ev.code }); }
+    }
+  }
+  // ---- flip summons (FX coverage): the flip itself is animated by
+  // the changed-diff below (round B); the callout names the card —
+  // a flip summon is a summon, and every summon presents its card.
+  for (const ev of evs) {
+    if (ev.kind !== 'flipsummon' || ev.code == null) continue;
+    for (const key of Object.keys(cur.z)) {
+      const ze = cur.z[key], parts = key.split(':').map(Number);
+      if (ze && ze.code === ev.code && parts[0] === ev.con && parts[1] === E.LOC.MZONE) {
+        if ((ze.pos & E.POS_FACEUP) !== 0) {
+          fxSummonCallout(key, ev.code, ev.con, ze.pos);
+          fxRecord('summoncall', { code: ev.code, how: 'flipsummon', con: ev.con });
+        }
+        break;
+      }
     }
   }
   // ---- in-place changes: xyz detach / attach, stat changes, flips (round B hook)
@@ -3725,6 +3844,52 @@ function openInfoPop(code, ref, fx) {
   $('infopop-close').addEventListener('click', () => { playClick(); closeInfoPop(); });
 }
 function closeInfoPop() { const p = $('infopop'); if (p && p.className) { p.className = ''; p.innerHTML = ''; } }
+// The one visibility rule for board info (opponent-info round):
+// a field card's public info may be shown iff it is face-up, or
+// it is the player's own card (own face-down cards ghost through
+// by design). An opponent's face-down card NEVER resolves here —
+// its code stays hidden behind this single guard, the same rule
+// the tile art and the stat strip already obey.
+function boardCardAt(key) {
+  if (!duelState || !key) return null;
+  const [con, loc, seq] = key.split(':').map(Number);
+  if (loc !== E.LOC.MZONE && loc !== E.LOC.SZONE) return null;
+  const P = duelState.players[con];
+  if (!P) return null;
+  const card = loc === E.LOC.MZONE ? P.mzone[seq] : P.szone[seq];
+  if (!card || card.code == null) return null;
+  if ((card.pos & E.POS_FACEUP) === 0 && con !== HP) return null;
+  return { code: card.code, ref: { con, loc, seq } };
+}
+// R-SEL-2 extension (opponent-info round): while a selection
+// sheet is peeked down, a tap on a board card is an INFO tap —
+// the read-only detail floats over the board, and closing it
+// returns to the peeked sheet with the selection untouched.
+// The prompt is never answered, toggled or cancelled from here.
+function peekInfoTap(key) {
+  const hit = boardCardAt(key);
+  if (!hit) return false;
+  playClick();
+  openInfoPop(hit.code, hit.ref);
+  return true;
+}
+function peekBoardTap(x, y) {
+  if (!document.elementsFromPoint) return false;
+  const els = document.elementsFromPoint(x, y);
+  for (const el of els) {
+    if (!el || !el.closest) continue;
+    const zoneEl = el.closest('[data-zone]');
+    if (zoneEl) return peekInfoTap(zoneEl.dataset.zone);
+    if (el.closest('#preview') && previewState) {
+      playClick();
+      openInfoPop(previewState.code, previewState.con != null && previewState.loc != null ? { con: previewState.con, loc: previewState.loc, seq: previewState.seq } : null);
+      return true;
+    }
+    const handEl = el.closest('#hand .hcard');
+    if (handEl && handEl.dataset.code) { setPreview(+handEl.dataset.code, null); return true; }
+  }
+  return false;
+}
 function dockClose() { $('dock').className = ''; $('dock').innerHTML = ''; }
 function clearInteraction() {
   sheetClose(); dockClose();
@@ -3751,6 +3916,13 @@ function uiAnswer(prompt, state) {
     // choice only — passing (i32 -1) is always a legal SELECT_CHAIN
     // answer, and forced prompts are still shown in every mode.
     if (fxSettings.resp === 'off' && prompt.name === 'SELECT_CHAIN' && !prompt.forced) { resolve(E.i32resp(-1)); return; }
+    // Zero-option chain prompts (user report 2026-11-04): the core
+    // sends MSG_SELECT_CHAIN at every timing window even when the
+    // player has nothing chainable (measured: 58% of chain prompts
+    // in bot duels carry 0 entries) — passing is then the ONLY legal
+    // answer, so asking is pure friction. Resolve immediately, before
+    // any prompt cycle (no currentPrompt, no stats refresh, no dock).
+    if (prompt.name === 'SELECT_CHAIN' && chainPassDecision(prompt, state) === 'pass') { resolve(E.i32resp(-1)); return; }
     if (prompt.name === 'SELECT_EFFECTYN' && duelNoConfirm.has(effectYnKey(prompt))) { flashAutoPass(cardName(prompt.code)); resolve(E.i32resp(0)); return; }
     // An arriving prompt takes the sheet back from the FX settings
     // sheet (round B) — the settings sheet must never sit over a dock
@@ -4049,6 +4221,37 @@ function openCardInfo(code) {
 }
 // ---- chain dock (EDOPro-style; numbered links live in the mid bar) ----
 function chainKey(e) { return e.code + '|' + e.con + '|' + e.loc + '|' + e.seq + '|' + e.desc; }
+// Does this SELECT_CHAIN prompt have any option worth asking about?
+// Returns:
+//   'pass'  — no live candidate: answer pass (-1) at once, show
+//             nothing. Covers BOTH the core's zero-entry prompts
+//             and prompts whose every candidate is dismissed for
+//             this chain (mixed with duel dismissals).
+//   'flash' — every candidate is duel-dismissed: uiChain owns this
+//             case (visible 自動パス flash + short delay), so the
+//             player can see their setting fire.
+//   'show'  — at least one live candidate, or the prompt is forced
+//             (mandatory responses are always shown; passing is not
+//             even legal there).
+// Dismissals never apply in response mode 'on' （毎回）, exactly as
+// in uiChain. The per-chain dismissal reset mirrors uiChain's own
+// (a finished chain's dismissals must not leak into an open-state
+// activation window), and stays idempotent when uiChain repeats it.
+function chainPassDecision(prompt, state) {
+  if (prompt.forced) return 'show';
+  const entries = prompt.entries || [];
+  if (!entries.length) return 'pass';
+  if (fxSettings.resp === 'on') return 'show';
+  if (state && !state.chain.length) dismissedChains = new Set();
+  let allDuel = true, allAny = true;
+  for (const e of entries) {
+    const k = chainKey(e);
+    if (!dismissedDuel.has(k)) allDuel = false;
+    if (!dismissedDuel.has(k) && !dismissedChains.has(k)) allAny = false;
+  }
+  if (allDuel) return 'flash';
+  return allAny ? 'pass' : 'show';
+}
 function updateAutoPassChip() {
   const el = $('autopass'); if (!el) return;
   if (Date.now() < autoPassFlashUntil) return; // flash text still showing
@@ -4284,18 +4487,27 @@ function uiPosition(prompt, state) {
 function gridSheet(o) {
   // o: {title, sub, cards:[{code,locLabel,extra,locked}], selected:Set(idx), valid:fn, confirmLabel, cancelable, onToggle}
   const draw = () => {
-    const tray = [...o.selected].map(i => '<span class="chip" data-chip="' + i + '">' + cardName(o.cards[i].code) + ' ✕</span>').join('') +
-      (o.locked || []).map(c => '<span class="chip locked">' + cardName(c.code) + '（固定）</span>').join('');
+    // Hidden candidates (opponent's face-down / hand / deck cards)
+    // render as the card back with a public-only label: no name, no
+    // art, no stats, no text, no detail button.
+    const hidOf = (c) => selCardHidden(c.ref || c, o.prompt);
+    const nameOf = (c) => hidOf(c) ? hiddenCardLabel(c.ref || c) : cardName(c.code);
+    const tray = [...o.selected].map(i => '<span class="chip" data-chip="' + i + '">' + nameOf(o.cards[i]) + ' ✕</span>').join('') +
+      (o.locked || []).map(c => '<span class="chip locked">' + (selCardHidden(c, o.prompt) ? hiddenCardLabel(c) : cardName(c.code)) + '（固定）</span>').join('');
     const subTxt = typeof o.sub === 'function' ? o.sub() : o.sub;
     sheetOpen('<div class="ttl">' + o.title + '</div><div class="sub" id="gsub">' + subTxt + '</div>' + contextLineHTML(o.prompt) + retryWarn(o.prompt) +
       // (W-24: a retry used to repeat the sub as a 「条件：」 line
       // under the warning — the same sentence twice. The shortfall
       // already lives on the disabled confirm button's label.)
       (tray ? '<div id="tray">' + tray + '</div>' : '<div id="tray"></div>') +
-      '<div class="grid">' + o.cards.map((c, i) =>
-        '<div class="gcard' + (o.selected.has(i) ? ' sel' : '') + '" data-grid="' + i + '"' + artInline(c.code, false, c.ref && c.ref.con != null ? deckKeyOfSeat(c.ref.con) : deckKeyOfSeat(HP)) + '><button class="gdetail" data-gdetail="' + i + '">詳細</button><div class="loc">' + c.locLabel + '</div><div class="nm' + kindCls(c.code) + '">' + cardName(c.code) + (c.extra ? ' ' + c.extra : '') + '</div>' +
-        (statsLine(c.code) ? '<div class="stats">' + statsLine(c.code) + '</div>' : '') +
-        (o.showText && cardText(c.code) ? '<div class="itext">' + cardText(c.code) + '</div>' : '') + '</div>').join('') + '</div>' +
+      '<div class="grid">' + o.cards.map((c, i) => {
+        const hid = hidOf(c);
+        return '<div class="gcard' + (hid ? ' back' : '') + (o.selected.has(i) ? ' sel' : '') + '" data-grid="' + i + '"' + (hid ? '' : artInline(c.code, false, c.ref && c.ref.con != null ? deckKeyOfSeat(c.ref.con) : deckKeyOfSeat(HP))) + '>' +
+        (hid ? '' : '<button class="gdetail" data-gdetail="' + i + '">詳細</button>') +
+        '<div class="loc">' + c.locLabel + '</div><div class="nm' + (hid ? '' : kindCls(c.code)) + '">' + (hid ? hiddenCardLabel(c.ref || c) : cardName(c.code) + (c.extra ? ' ' + c.extra : '')) + '</div>' +
+        (hid ? '' : (statsLine(c.code) ? '<div class="stats">' + statsLine(c.code) + '</div>' : '') +
+        (hid ? '' : (o.showText && cardText(c.code) ? '<div class="itext">' + cardText(c.code) + '</div>' : ''))) + '</div>';
+      }).join('') + '</div>' +
       '<div class="btnrow"><button class="bigbtn" id="grid-confirm" ' + (o.valid() ? '' : 'disabled') + '>' + (o.valid() ? (o.confirmLabel || '決定') : (o.needLabel ? o.needLabel() : (o.confirmLabel || '決定'))) + '</button>' +
       (o.cancelable ? '<button class="bigbtn sub" id="grid-cancel">選ばずにやめる</button>' : '') + '</div>');
     $('sheet').querySelectorAll('[data-grid]').forEach(g => g.addEventListener('click', (ev) => { if (ev.target.closest('[data-gdetail]')) return; playClick();
@@ -4379,10 +4591,14 @@ function uiUnselect(prompt, state) {
   if (prompt.finishable && selCount > 0 && selCount < prompt.min) hint = 'あと' + (prompt.min - selCount) + '枚選ぶと決定できます。';
   if (prompt.finishable && selCount > 0) hint += 'やめる場合は選択をすべて外してください。';
   sheetOpen('<div class="ttl">カードの選択</div><div class="sub">' + prompt.min + '〜' + prompt.max + ' 枚（現在 ' + selCount + ' 枚選択中）。タップで選択／解除します。' + (hint ? ' ' + hint : '') + '</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
-    '<div class="grid">' + combined.map((x, k) =>
-      '<div class="gcard' + (x.sel ? ' sel' : '') + '" data-unselect="' + x.idx + '"' + artInline(x.c.code, false, deckKeyOfSeat(x.c.con)) + '><button class="gdetail" data-uinfo="' + k + '">詳細</button><div class="loc">' + locLabel(x.c) + '</div><div class="nm' + kindCls(x.c.code) + '">' + cardName(x.c.code) + '</div>' +
-      (statsLine(x.c.code) ? '<div class="stats">' + statsLine(x.c.code) + '</div>' : '') +
-      (cardText(x.c.code) ? '<div class="itext">' + cardText(x.c.code) + '</div>' : '') + '</div>').join('') + '</div>' +
+    '<div class="grid">' + combined.map((x, k) => {
+      const hid = selCardHidden(x.c, prompt);
+      return '<div class="gcard' + (hid ? ' back' : '') + (x.sel ? ' sel' : '') + '" data-unselect="' + x.idx + '"' + (hid ? '' : artInline(x.c.code, false, deckKeyOfSeat(x.c.con))) + '>' +
+      (hid ? '' : '<button class="gdetail" data-uinfo="' + k + '">詳細</button>') +
+      '<div class="loc">' + locLabel(x.c) + '</div><div class="nm' + (hid ? '' : kindCls(x.c.code)) + '">' + (hid ? hiddenCardLabel(x.c) : cardName(x.c.code)) + '</div>' +
+      (hid ? '' : (statsLine(x.c.code) ? '<div class="stats">' + statsLine(x.c.code) + '</div>' : '') +
+      (hid ? '' : (cardText(x.c.code) ? '<div class="itext">' + cardText(x.c.code) + '</div>' : ''))) + '</div>';
+    }).join('') + '</div>' +
     '<div class="btnrow">' +
     (prompt.finishable && selCount >= prompt.min ? '<button class="bigbtn" id="unselect-finish">決定</button>' : '') +
     (cancelTruthful ? '<button class="bigbtn sub" id="unselect-cancel">選ばずにやめる</button>' : '') + '</div>');
@@ -4437,7 +4653,7 @@ function uiCounter(prompt, state) {
   const draw = () => {
     const total = amounts.reduce((a, b) => a + b, 0);
     sheetOpen('<div class="ttl">カウンターの取り除き</div><div class="sub">合計 ' + prompt.count + ' 個（現在 ' + total + ' 個）</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
-      prompt.cards.map((c, i) => '<div class="counterrow"><span>' + cardName(c.code) + '（' + locLabel(c) + '／' + c.count + '個）</span>' +
+      prompt.cards.map((c, i) => '<div class="counterrow"><span>' + (selCardHidden(c, prompt) ? hiddenCardLabel(c) : cardName(c.code)) + '（' + locLabel(c) + '／' + c.count + '個）</span>' +
         '<span class="ctl"><button data-dec="' + i + '">−</button><b>' + amounts[i] + '</b><button data-inc="' + i + '">＋</button></span></div>').join('') +
       '<div class="btnrow"><button class="bigbtn" id="counter-confirm" ' + (total === prompt.count ? '' : 'disabled') + '>決定</button></div>');
     $('sheet').querySelectorAll('[data-inc]').forEach(b => b.addEventListener('click', () => { const i = +b.dataset.inc; if (amounts[i] < prompt.cards[i].count) amounts[i]++; playClick(); draw(); }));
@@ -4451,7 +4667,7 @@ function uiSort(prompt, state) {
   let order = prompt.cards.map((_, i) => i); // order[pos] = original index
   const draw = () => {
     sheetOpen('<div class="ttl">' + (prompt.name === 'SORT_CHAIN' ? 'チェーンの順番' : 'カードの順番') + '</div><div class="sub">' + (prompt.name === 'SORT_CHAIN' ? '上から順に処理される順番です。並べ替えて「この順番で決定」を押してください。' : '上から順に、次に使う順番に並べてください。') + '</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
-      order.map((ci, pos) => '<div class="sortrow"><span>' + (pos + 1) + '. ' + cardName(prompt.cards[ci].code) + '</span><span class="mv">' +
+      order.map((ci, pos) => '<div class="sortrow"><span>' + (pos + 1) + '. ' + (selCardHidden(prompt.cards[ci], prompt) ? hiddenCardLabel(prompt.cards[ci]) : cardName(prompt.cards[ci].code)) + '</span><span class="mv">' +
         '<button data-up="' + pos + '">↑</button><button data-down="' + pos + '">↓</button></span></div>').join('') +
       '<div class="btnrow"><button class="bigbtn" id="sort-ok">この順番で決定</button><button class="bigbtn sub" id="sort-keep">元の順番のままにする</button></div>');
     $('sheet').querySelectorAll('[data-up]').forEach(b => b.addEventListener('click', () => { const p = +b.dataset.up; if (p > 0) { [order[p-1], order[p]] = [order[p], order[p-1]]; } playClick(); draw(); }));
@@ -4481,6 +4697,14 @@ window.__purpose = { infer: inferSelectPurpose, phaseCtx: phaseJaContext };
 // Test surface: render the SELECT_UNSELECT_CARD sheet for a synthetic
 // prompt so its button states can be asserted without a live duel.
 window.__unselect = { open: (prompt) => uiUnselect(prompt, null) };
+// Test surface: render the SELECT_CARD grid sheet for a synthetic
+// prompt (same seam as __unselect), for test-facedown-select.js.
+window.__select = { open: (prompt) => uiSelectCards(prompt, null) };
+// Test surface (opponent-info round): the board info-tap guard
+// and the peek info tap, so test-oppinfo.js can pin the
+// visibility rule and the selection-untouched contract without
+// hit-testing (jsdom has no elementsFromPoint).
+window.__oppinfo = { boardCardAt, peekInfoTap };
 function uiYesNo(prompt, state) {
   const isEff = prompt.name === 'SELECT_EFFECTYN';
   // WHICH card and WHICH effect is being asked must be readable on
@@ -4701,25 +4925,29 @@ document.addEventListener('click', (ev) => {
       }
       renderPlaceHint();
       if (duelState) render(duelState);
+      return;
     }
+    // a zone the placement does not target is an INFO tap, not a
+    // placement: show the card's public info in the resident
+    // preview and leave the placement exactly as it was
+    // (opponent-info round; boardCardAt hides opponent face-down).
+    const hit = boardCardAt(key);
+    if (hit) setPreview(hit.code, hit.ref);
     return;
   }
   if (zoneEl && !placeCtx && duelState) {
-    const [zcon, zloc, zseq] = zoneEl.dataset.zone.split(':').map(Number);
-    if (zloc === E.LOC.MZONE || zloc === E.LOC.SZONE) {
-      const P = duelState.players[zcon];
-      const card = zloc === E.LOC.MZONE ? P.mzone[zseq] : P.szone[zseq];
-      if (card && card.code != null && ((card.pos & E.POS_FACEUP) !== 0 || zcon === HP)) {
-        // attack-block round: the persistent preview carries the
-        // same certain reason the action sheet states — an own
-        // monster with no offered 攻撃 in a live battle command.
-        let reason = null;
-        if (zcon === HP && zloc === E.LOC.MZONE && currentPrompt && currentPrompt.prompt.name === 'SELECT_BATTLECMD' &&
-            !(actionMap.get(zcon + ':' + zloc + ':' + zseq) || []).some(a => a.label === '攻撃')) {
-          reason = attackBlockReason(card.code, zcon, zloc, zseq);
-        }
-        setPreview(card.code, { con: zcon, loc: zloc, seq: zseq }, reason);
+    const hit = boardCardAt(zoneEl.dataset.zone);
+    if (hit) {
+      // attack-block round: the persistent preview carries the
+      // same certain reason the action sheet states — an own
+      // monster with no offered 攻撃 in a live battle command.
+      let reason = null;
+      const { con: zcon, loc: zloc, seq: zseq } = hit.ref;
+      if (zcon === HP && zloc === E.LOC.MZONE && currentPrompt && currentPrompt.prompt.name === 'SELECT_BATTLECMD' &&
+          !(actionMap.get(zcon + ':' + zloc + ':' + zseq) || []).some(a => a.label === '攻撃')) {
+        reason = attackBlockReason(hit.code, zcon, zloc, zseq);
       }
+      setPreview(hit.code, hit.ref, reason);
     }
   }
   const actEl = ev.target.closest('[data-act]');
@@ -5275,6 +5503,13 @@ function wireSeg(id, apply) {
   }));
 }
 (async () => {
+  // deck-select page navigation (pure DOM — wired before the data
+  // load so the pages can be walked even on the failure path, whose
+  // retry button lives on the deck page).
+  $('deckpage').style.display = 'none';
+  updateDeckSum();
+  $('todeck').addEventListener('click', () => { playClick(); $('start').style.display = 'none'; $('deckpage').style.display = 'flex'; });
+  $('deckback').addEventListener('click', () => { playClick(); $('deckpage').style.display = 'none'; $('start').style.display = 'flex'; });
   try {
     DATA = await (await fetch('data.json')).json();
     // fxmap.json: which printed effect a desc index names. A failed
@@ -5297,9 +5532,9 @@ function wireSeg(id, apply) {
     sb.addEventListener('click', () => location.reload());
     return;
   }
-  wireSeg('seg-mydeck', (v) => { myDeckKey = v; preloadCardArt([myDeckKey, opDeckKey]); });
-  wireSeg('seg-opdeck', (v) => { opDeckKey = v; preloadCardArt([myDeckKey, opDeckKey]); });
-  wireSeg('seg-first', (v) => { firstChoice = v; });
+  wireSeg('seg-mydeck', (v) => { myDeckKey = v; preloadCardArt([myDeckKey, opDeckKey]); updateDeckSum(); });
+  wireSeg('seg-opdeck', (v) => { opDeckKey = v; preloadCardArt([myDeckKey, opDeckKey]); updateDeckSum(); });
+  wireSeg('seg-first', (v) => { firstChoice = v; updateDeckSum(); });
   syncFxSegs(); // reflect any persisted round-B settings before wiring
   wireSeg('seg-cutin', (v) => { fxSettings.cutin = v === 'on'; fxSaveSettings(); });
   wireSeg('seg-resp', (v) => { fxSettings.resp = v; fxSaveSettings(); });
@@ -5313,6 +5548,12 @@ function wireSeg(id, apply) {
   $('sheetx').addEventListener('click', () => { playClick(); sheetClose(); });
   $('sheetwrap').addEventListener('click', (ev) => {
     if (ev.target === $('sheetwrap') && sheetKind === 'view') { playClick(); sheetClose(); }
+    // opponent-info round: while a prompt sheet is peeked down,
+    // the wrap still covers the board, so a backdrop tap is
+    // forwarded to the card under the point as a read-only info
+    // tap (peekBoardTap). It never reaches the phase/menu buttons
+    // beneath — only card surfaces answer, and only with info.
+    else if (ev.target === $('sheetwrap') && $('sheetwrap').classList.contains('peek')) peekBoardTap(ev.clientX, ev.clientY);
   });
   $('peekbtn').addEventListener('click', () => {
     playClick();
@@ -5352,8 +5593,7 @@ function wireSeg(id, apply) {
     // covers the engine-start wait, so the tap is never followed
     // by dead time (audit C-33).
     {
-      const dn = (k) => k === 'gg' ? 'ゲート・ガーディアン' : 'MILLENNIUM PROPHECY';
-      $('vssub').innerHTML = dn(myDeckKey) + ' vs ' + dn(opDeckKey) + '<br>あなたは' + (humanFirst ? '先攻' : '後攻') + 'です';
+      $('vssub').innerHTML = deckDisplayName(myDeckKey) + ' vs ' + deckDisplayName(opDeckKey) + '<br>あなたは' + (humanFirst ? '先攻' : '後攻') + 'です';
       const vs = $('vsoverlay'); vs.classList.add('on');
       try {
         // DS-07 (brushup round 3): the curtain itself is NEVER
@@ -5391,6 +5631,7 @@ function wireSeg(id, apply) {
     fieldPrev = null; summonMarks.clear(); // cannot-attack trackers restart with the duel
     setBgmScene('normal', true);
     $('start').style.display = 'none';
+    $('deckpage').style.display = 'none';
     $('logline').textContent = '対戦を準備中…';
     duel = await createClientDuel(DATA, {
       seed: (Date.now() % 100000) + 1,
@@ -5469,6 +5710,7 @@ function wireSeg(id, apply) {
       if (cfg.my) { myDeckKey = cfg.my; setSeg('seg-mydeck', cfg.my); }
       if (cfg.op) { opDeckKey = cfg.op; setSeg('seg-opdeck', cfg.op); }
       if (cfg.first) { firstChoice = cfg.first; setSeg('seg-first', cfg.first); }
+      updateDeckSum();
       $('startbtn').click();
     }
   } catch (e) {}
