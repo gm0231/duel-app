@@ -45,6 +45,147 @@ function statsLine(code) {
   return '攻' + d.atk + '／守' + d.def;
 }
 function cardText(code) { return (DATA && DATA.texts && DATA.texts[code]) ? DATA.texts[code].text : ''; }
+// ---- which effect is being asked about (user report 2026-11-03:
+//    a confirmation that does not say WHICH effect is a defect) ----
+// The core identifies the effect behind every activatable entry and
+// most yes/no questions with its description string id. In this
+// build's bundled scripts (data.json utility.lua) the id is
+//   aux.Stringid(code, idx) = code<<20 | idx     (idx = 0-based)
+// where idx is the SAME index the script passes to SetDescription,
+// and script practice registers ONE description per activatable
+// effect, in effect order — so desc index n names official text
+// effect n+1 (verified live over 12 seeded duels: 1330 activatable
+// entries, desc code always equalled the entry's card, idx always
+// named an existing numbered segment; see NOTES). desc == 0 means
+// "no description set" (single implicit effect) and small descs are
+// core system strings — neither misidentifies, neither resolves.
+function descEffect(desc) {
+  if (desc == null || desc === 0) return null;
+  const code = Math.floor(desc / 1048576), idx = desc % 1048576;
+  if (code === 0 || idx >= 16 || !DATA || !DATA.cards[code]) return null;
+  return { code, idx };
+}
+const CIRCLED_NUM = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯';
+function effectSegments(code) { // [{n, body}] split of the official text on ①：-style markers
+  const t = cardText(code).replace(/[\r\n]+/g, '\n');
+  const out = [];
+  const re = /([①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯])：/g;
+  let m, last = null;
+  while ((m = re.exec(t))) {
+    if (last) out.push({ n: last.n, body: t.slice(last.end, m.index).trim() });
+    last = { n: CIRCLED_NUM.indexOf(m[1]) + 1, end: m.index + m[0].length };
+  }
+  if (last) out.push({ n: last.n, body: t.slice(last.end).trim() });
+  return out;
+}
+// The desc-index -> printed-effect-number correspondence is NOT
+// universally idx+1 (printed continuous effects own no description,
+// so the indices shift). fxmap.json (derived by gen-fxmap.js from
+// the bundled scripts + official texts, audited per card) says, per
+// card: {id:1} = identity is proven for this card, {map:{idx:n}} =
+// hand-audited override, {n} = count of described activatable
+// indices (for the follow-up rule below). Cards absent from fxmap
+// (or an fxmap that failed to load) get NO effect number anywhere —
+// the full text is shown instead of a possibly wrong number.
+let FXMAP = {};
+// Resolve (entry code, desc) to the effect the prompt is about:
+//   {n, body}        the numbered effect itself
+//   {follow:true}    desc index == the count of described effects:
+//                    the core's yes/no for the optional follow-up
+//                    clause of the effect now resolving (its desc is
+//                    registered one past the described effects)
+//   null             cannot be pinned — callers fall back to the
+//                    full text, never to a guessed effect
+function resolveEffect(code, desc) {
+  const de = descEffect(desc);
+  if (!de || de.code !== code) return null;
+  const m = FXMAP[code];
+  if (!m) return null;
+  const segs = effectSegments(code);
+  // follow-up yes/no (index == the card's described-effect count).
+  // Only for cards whose mapped effects exist at all: when a card
+  // has described-but-unnumbered indices (collisions, fxmap "n"
+  // without id/map), an index at the boundary cannot be trusted
+  // either, so it stays unidentified like every other index there.
+  if (de.idx === m.n && (m.id || m.map)) return { follow: true };
+  let n = 0;
+  if (m.map) n = m.map[de.idx] || 0;
+  else if (m.id) n = de.idx + 1;
+  if (!n) return null;
+  const seg = segs.find(s => s.n === n);
+  return seg ? { n: seg.n, body: seg.body } : null;
+}
+// The clause a follow-up yes/no asks about: the 「その後、…できる」
+// sentence of the effect now resolving. Every follow-up observed
+// in this pool (Mudora/Kelbek/the Trap spider, desc index == the
+// described-effect count in each case) asks exactly that, and for
+// each of those cards the LAST 「その後…できる」 sentence of the
+// text is the clause its prompt carries. When a card has none, the
+// fallback is the last 「〜できる」 sentence; '' when neither
+// exists (the block then says it is the resolving effect's
+// follow-up without quoting a clause).
+function followUpClause(code) {
+  const sentences = cardText(code).split('。').map(s => s.trim()).filter(Boolean);
+  const steps = sentences.filter(s => s.includes('その後') && s.includes('できる'));
+  const opt = steps.length ? steps : sentences.filter(s => s.includes('できる'));
+  const s = opt.length ? opt[opt.length - 1] : '';
+  if (!s) return '';
+  return s.length > 72 ? s.slice(0, 72) + '…' : s;
+}
+// The 「その後、…できる」 step clause INSIDE one numbered effect's
+// own text (a follow-up question's parent effect), '' when that
+// effect carries no such clause.
+function stepClause(code, n) {
+  const seg = effectSegments(code).find(s => s.n === n);
+  if (!seg) return '';
+  const s = seg.body.split('。').map(x => x.trim()).filter(x => x.includes('その後') && x.includes('できる'));
+  const out = s.length ? s[s.length - 1] : '';
+  return out.length > 72 ? out.slice(0, 72) + '…' : out;
+}
+function fxExcerpt(fx) { // one-line preview of an effect body
+  const s = (fx.body || '').replace(/\s+/g, ' ');
+  return s.length > 28 ? s.slice(0, 28) + '…' : s;
+}
+// The effect behind a prompt ENTRY (chain candidate / command
+// activation): resolveEffect first; when the core sends NO desc
+// for a Spell/Trap entry, the entry IS the card activation itself
+// (the ACTIVATE block of these cards carries no SetDescription —
+// census-verified: every desc-less S/T entry in this pool is a
+// fresh activation, and every effect activation carries a desc).
+// A Spell/Trap's activation effect is its FIRST numbered segment,
+// labelled as the activation rather than as a resolved number.
+function entryEffect(e) {
+  const fx = resolveEffect(e.code, e.desc);
+  if (fx) return fx;
+  if (!e.desc) {
+    const d = cardData(e.code);
+    if (d && (d.type & 0x6)) { // Spell or Trap card
+      const seg = effectSegments(e.code)[0];
+      if (seg) return { n: seg.n, body: seg.body, act: true };
+    }
+  }
+  return null;
+}
+// The highlight block: the asked-about effect alone, with its
+// number, over the full card text in a dimmer role (the full text
+// stays so nothing is hidden; the eye is told where to look).
+function fxBlockHTML(code, fx) {
+  const segBody = fx ? (fx.follow ? followUpClause(code) : (fx.body || '')) : '';
+  if (!segBody) return cardText(code) ? '<div class="cardtext">' + cardText(code) + '</div>' : '';
+  const head = fx.follow
+    ? '<div class="fxlab">この後、追加で選べる処理</div>'
+    : fx.act
+      ? '<div class="fxlab">発動する効果（このカードの発動）</div>'
+      : '<div class="fxlab">聞かれている効果：' + CIRCLED_NUM[fx.n - 1] + '</div>';
+  return head + '<div class="cardtext fxmain">' + segBody + '</div>' +
+    (cardText(code) ? '<details class="fxfull"><summary>カード全体のテキスト</summary><div class="cardtext">' + cardText(code) + '</div></details>' : '');
+}
+// Name as the dismissal manager shows it: with the effect number
+// when the dismissed class is one specific effect of the card.
+function dismissalName(e) {
+  const fx = resolveEffect(e.code, e.desc);
+  return cardName(e.code) + (fx && fx.n ? ' の効果' + CIRCLED_NUM[fx.n - 1] : '');
+}
 function isXyzCode(code) { const d = cardData(code); return !!(d && (d.type & 0x800000)); }
 function cardMetaLine(code, mats) {
   const d = cardData(code); if (!d) return '';
@@ -65,7 +206,11 @@ function liveMats(con, loc, seq) {
 function contextLineHTML(prompt) {
   const ctx = prompt && prompt.context;
   if (!ctx) return '';
-  return '<div class="ctx">「' + cardName(ctx.code) + '」の効果による確認（' + locLabel(ctx) + '）</div>';
+  // Name the effect number too when the asking link's desc pins it
+  // (same wording everywhere a context line appears).
+  const fx = resolveEffect(ctx.code, ctx.desc);
+  const what = fx && fx.n ? '」の効果' + CIRCLED_NUM[fx.n - 1] : '」の効果';
+  return '<div class="ctx">「' + cardName(ctx.code) + what + 'による確認（' + locLabel(ctx) + '）</div>';
 }
 function contextText(prompt) {
   const ctx = prompt && prompt.context;
@@ -681,19 +826,73 @@ function fxCtxOf(id) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   return ctx;
 }
-function fxDrawParticles() {
-  if (!fxBursts.length) return;
-  const t = fxTimeMs;
-  fxBursts = fxBursts.filter(b => t - b.t0 <= b.life[1] + (b.delayMax || 0) + 40);
-  let drawn = 0;
-  for (const cvKind of ['low', 'top']) {
-    const ctx = fxCtxOf(cvKind === 'low' ? 'fxcv' : 'fxcvTop');
-    if (!ctx) continue;
-    const layer = $(cvKind === 'low' ? 'fxcv' : 'fxcvTop').parentElement;
-    ctx.clearRect(0, 0, layer.clientWidth, layer.clientHeight);
-    for (const b of fxBursts) {
-      if (b.cv !== cvKind) continue;
-      const rnd = fxMulberry32(b.seed);
+// ---- V4 polish: additive bloom painting (proposal 追記 V4).
+// Scenes may register drawLow / drawTop hooks fn(ctx, sceneLocalT);
+// the pump paints them on the shared FX clock right after the
+// particle pass, so light freezes with hit-stop exactly like
+// everything else. DOM stays for cards and text; light lives here.
+const fxBloomCache = {};
+function fxBloomSprite(col) {
+  let c = fxBloomCache[col];
+  if (c) return c;
+  c = fxBloomCache[col] = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, '#ffffff'); gr.addColorStop(.16, 'rgba(255,255,255,.92)'); gr.addColorStop(.38, col); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+  return c;
+}
+const fxRingCache = {};
+function fxRingSprite(col, wf) {
+  const key = col + '|' + wf;
+  let c = fxRingCache[key];
+  if (c) return c;
+  c = fxRingCache[key] = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  const a = Math.max(0, .5 - wf), d = Math.min(1, .5 + wf);
+  gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(a, 'rgba(0,0,0,0)'); gr.addColorStop(.5, col); gr.addColorStop(d, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+  return c;
+}
+function fxDrawGlow(ctx, x, y, r, col, alpha, additive) {
+  if (!(r > 0) || !(alpha > 0)) return;
+  if (additive !== false) ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = Math.min(1, alpha);
+  ctx.drawImage(fxBloomSprite(col), x - r, y - r, r * 2, r * 2);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+}
+function fxDrawSoftRing(ctx, x, y, r, col, alpha, wf) {
+  if (!(r > 0) || !(alpha > 0)) return;
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = Math.min(1, alpha);
+  ctx.drawImage(fxRingSprite(col, wf == null ? .10 : wf), x - r, y - r, r * 2, r * 2);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+}
+function fxDrawComet(ctx, x1, y1, x2, y2, ext, col, alphaMul, trails) {
+  if (!(ext > 0) || !(alphaMul > 0)) return;
+  const hx = fxLerp(x1, x2, ext), hy = fxLerp(y1, y2, ext);
+  const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
+  const tail = Math.min(len * .55, 90), tx = hx - ux * tail, ty = hy - uy * tail;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round';
+  const g = ctx.createLinearGradient(tx, ty, hx, hy);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(.55, col); g.addColorStop(1, '#ffffff');
+  ctx.strokeStyle = g;
+  ctx.globalAlpha = .95 * alphaMul; ctx.lineWidth = 3.2;
+  ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(hx, hy); ctx.stroke();
+  ctx.globalAlpha = .33 * alphaMul; ctx.lineWidth = 8;
+  ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(hx, hy); ctx.stroke();
+  ctx.restore();
+  if (trails) for (const tr of trails) { if (tr.e > 0 && tr.e < ext) fxDrawGlow(ctx, fxLerp(x1, x2, tr.e), fxLerp(y1, y2, tr.e), 10, col, tr.a * alphaMul); }
+  fxDrawGlow(ctx, hx, hy, 16, col, .95 * alphaMul);
+  fxDrawGlow(ctx, hx, hy, 34, col, .40 * alphaMul);
+}
+function fxDrawBurstSet(ctx, cvKind, t, drawn, wantAdd) {
+  for (const b of fxBursts) {
+    if (b.cv !== cvKind) continue;
+    if (!!b.add !== wantAdd) continue;
+    const rnd = fxMulberry32(b.seed);
       for (let i = 0; i < b.n && drawn < FX_PARTICLE_CAP; i++) {
         const dl = rnd() * (b.delayMax || 0), life = fxLerp(b.life[0], b.life[1], rnd());
         const age = t - b.t0 - dl;
@@ -725,10 +924,59 @@ function fxDrawParticles() {
           drawn++;
         }
       }
+  }
+  return drawn;
+}
+const fxCanvasDirty = { low: false, top: false };
+function fxPaintCanvases() {
+  const t = fxTimeMs;
+  fxBursts = fxBursts.filter(b => t - b.t0 <= b.life[1] + (b.delayMax || 0) + 40);
+  let drawn = 0;
+  for (const cvKind of ['low', 'top']) {
+    const hooks = [];
+    for (const sc of fxScenes) {
+      if (sc.dead) continue;
+      const h = cvKind === 'low' ? sc.drawLow : sc.drawTop;
+      if (!h) continue;
+      // a scene may declare the local-time windows in which its hook
+      // actually paints (winLow / winTop: [[a, b], ...]); outside
+      // them the canvas is left completely untouched — a full-screen
+      // clear + repaint every frame for an idle hook is exactly the
+      // kind of cost V4 exists to remove.
+      const win = cvKind === 'low' ? sc.winLow : sc.winTop;
+      if (win) { const lt = t - sc.t0; let on = false; for (const sg of win) { if (lt >= sg[0] && lt <= sg[1]) { on = true; break; } } if (!on) continue; }
+      hooks.push([sc, h]);
     }
+    const hasBursts = fxBursts.some(b => b.cv === cvKind);
+    const id = cvKind === 'low' ? 'fxcv' : 'fxcvTop';
+    if (!hooks.length && !hasBursts) {
+      if (fxCanvasDirty[cvKind]) {
+        const ctx0 = fxCtxOf(id);
+        if (ctx0) { const layer0 = $(id).parentElement; ctx0.clearRect(0, 0, layer0.clientWidth, layer0.clientHeight); }
+        fxCanvasDirty[cvKind] = false;
+      }
+      continue;
+    }
+    const ctx = fxCtxOf(id);
+    if (!ctx) continue;
+    const layer = $(id).parentElement;
+    ctx.clearRect(0, 0, layer.clientWidth, layer.clientHeight);
+    drawn = fxDrawBurstSet(ctx, cvKind, t, drawn, false);
     ctx.globalAlpha = 1;
+    // V4: bursts flagged add paint in a second, additive pass (light,
+    // not dust) — still inside the shared particle budget.
+    if (fxBursts.some(b => b.cv === cvKind && b.add)) {
+      ctx.globalCompositeOperation = 'lighter';
+      drawn = fxDrawBurstSet(ctx, cvKind, t, drawn, true);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1;
+    }
+    for (const pair of hooks) { try { pair[1](ctx, t - pair[0].t0); } catch (e) { fxError = fxError || ('paint hook: ' + (e && e.message)); } }
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    fxCanvasDirty[cvKind] = true;
   }
 }
+function fxDrawParticles() { fxPaintCanvases(); }
 // Foundation self-check scene (verification only): a 90-particle
 // spiral+burst over the board centre on the shared clock. Driven via
 // window.__fx.stress() by the stage-1 FPS / freeze harness.
@@ -745,6 +993,7 @@ function fxResetFoundation() {
   fxAceSceneRef = null; fxFinisherSceneRef = null; fxAceRecent = null; // stage 3 scene refs (hosts are wiped by fxResetDuel)
   const appEl = $('app'); if (appEl) appEl.style.transform = ''; // a finisher tilt must not survive the duel
   for (const id of ['fxcv', 'fxcvTop']) { const c = $(id); if (c && c.getContext) { const x = c.getContext('2d'); if (x) x.clearRect(0, 0, c.width, c.height); } }
+  fxCanvasDirty.low = fxCanvasDirty.top = false;
 }
 
 // ------------------------------------------------------------ FX snapshots
@@ -1119,6 +1368,11 @@ function fxLpCount(con, to, startAtFx) {
           numEl.style.opacity = String(Math.max(0, Math.min(1, fade)));
           numEl.style.transform = 'translate(-50%,-100%) translateY(' + (-8 * nu) + 'px) scale(' + s.toFixed(3) + ')';
         }
+        // V4: the number runs white-hot for its first 70 ms, then
+        // cools to the standard red (3 quantized steps, not a ramp)
+        const hot = t - (delay + 20);
+        const hstep = hot < 35 ? 0 : hot < 70 ? 1 : 2;
+        if (numEl._hs !== hstep) { numEl._hs = hstep; numEl.style.color = hstep === 0 ? '#ffffff' : hstep === 1 ? '#ffc9c2' : '#ff5348'; }
       }
     },
     onDone() {
@@ -1182,82 +1436,105 @@ function fxAttackSceneV3(o) {
   const aPt = o.aPt, tPt = o.tPt; if (!aPt || !tPt) return null;
   const col = FX_ATTR_COLORS[o.attr] || '#ffe9a8';
   const dx = tPt.cx - aPt.cx, dy = tPt.cy - aPt.cy, len = Math.hypot(dx, dy);
-  const ang = Math.atan2(dy, dx) * 180 / Math.PI;
   const nodes = [];
   const mk = (cls, cx, cy, w, h) => { const d = fxNode(cls, cx, cy, w, h); if (d) nodes.push(d); return d; };
   const emph = mk('fx3-emph', aPt.cx, aPt.cy, aPt.w, aPt.h);            // L1 attacker emphasis
   const trim = mk('fx3-trim', tPt.cx, tPt.cy, Math.max(tPt.w, 30), Math.max(tPt.h, 30)); // L2 target rim
   if (trim) trim.style.borderColor = col;
-  let lineW = null, tip = null;                                        // L3 line + bright tip
-  if (len >= 8) {
-    lineW = document.createElement('div');
-    lineW.className = 'fx fx-line fx3-linew';
-    lineW.style.left = aPt.cx + 'px'; lineW.style.top = aPt.cy + 'px'; lineW.style.width = len + 'px';
-    lineW.style.opacity = '0';
-    lineW.innerHTML = '<div class="gl"></div><div class="cl"></div>';
-    layer.appendChild(lineW); nodes.push(lineW);
-    tip = mk('fx3-tip', aPt.cx, aPt.cy, 11, 11);
-    if (tip) tip.style.opacity = '0';
-  }
-  const coreW = mk('fx3-core', tPt.cx, tPt.cy, 84, 84);                // L5 impact core (white)
-  if (coreW) { coreW.style.background = 'radial-gradient(circle,#ffffff 0%,#ffffff 34%,transparent 68%)'; coreW.style.opacity = '0'; }
-  const coreA = mk('fx3-core', tPt.cx, tPt.cy, 84, 84);                // L5 impact core (attribute)
-  if (coreA) { coreA.style.background = 'radial-gradient(circle,' + col + ' 0%,' + col + '99 42%,transparent 70%)'; coreA.style.opacity = '0'; }
-  const ring1 = mk('fx3-ring', tPt.cx, tPt.cy, 64, 64);                // L6 rings x2
-  const ring2 = mk('fx3-ring', tPt.cx, tPt.cy, 64, 64);
-  if (ring1) { ring1.style.borderColor = col; ring1.style.opacity = '0'; }
-  if (ring2) { ring2.style.borderColor = col; ring2.style.opacity = '0'; }
-  let ghost = null;                                                    // L8 shake / L9 dissolve ghost
+  // L8/L9 ghost stack (V4): the shake and the dissolve ride three
+  // stacked copies — main, a white-hot copy, a gray copy — whose
+  // filters are set ONCE here; the dissolve becomes an opacity
+  // cross-fade, so no filter is ever written per frame.
+  let ghost = null, ghostHot = null, ghostGray = null;
   if (!o.direct && o.targetCode != null) {
-    ghost = fxPlaceGhost(o.targetCode, false, tPt, Math.max(10, tPt.w - 2), Math.max(10, tPt.h - 24));
-    if (ghost) { ghost.style.opacity = '0'; nodes.push(ghost); }
+    const gw = Math.max(10, tPt.w - 2), gh = Math.max(10, tPt.h - 24);
+    ghost = fxPlaceGhost(o.targetCode, false, tPt, gw, gh);
+    if (ghost) {
+      ghost.style.opacity = '0'; nodes.push(ghost);
+      ghostHot = fxPlaceGhost(o.targetCode, false, tPt, gw, gh);
+      if (ghostHot) { ghostHot.style.filter = 'brightness(2.7) saturate(0)'; ghostHot.style.opacity = '0'; nodes.push(ghostHot); }
+      ghostGray = fxPlaceGhost(o.targetCode, false, tPt, gw, gh);
+      if (ghostGray) { ghostGray.style.filter = 'grayscale(1) brightness(.82)'; ghostGray.style.opacity = '0'; nodes.push(ghostGray); }
+    }
   }
   // L7 attribute particles, born at the impact point on the FX clock
-  fxSpawnBurst('low', { seed: (Math.random() * 1e9) | 0, o: [tPt.cx, tPt.cy], n: 26, t0: fxTimeMs + 280, life: [300, 560], speed: [110, 330], ang: [0, Math.PI * 2], grav: 520, dragK: 2.6, size: [2.5, 6], cols: [col, '#ffffff', col], alpha: .95 });
-  if (o.destroyed) fxSpawnBurst('low', { seed: (Math.random() * 1e9) | 0, o: [tPt.cx, tPt.cy], n: 8, t0: fxTimeMs + 410, life: [320, 520], speed: [16, 54], ang: [-Math.PI / 2, 0.9], grav: -60, size: [2.5, 5], cols: ['#ffffff', '#ffe9a8'], alpha: .9 });
+  fxSpawnBurst('low', { add: 1, seed: (Math.random() * 1e9) | 0, o: [tPt.cx, tPt.cy], n: 26, t0: fxTimeMs + 280, life: [300, 560], speed: [110, 330], ang: [0, Math.PI * 2], grav: 520, dragK: 2.6, size: [2.5, 6], cols: [col, '#ffffff', col], alpha: .95 });
+  if (o.destroyed) fxSpawnBurst('low', { add: 1, seed: (Math.random() * 1e9) | 0, o: [tPt.cx, tPt.cy], n: 8, t0: fxTimeMs + 410, life: [320, 520], speed: [16, 54], ang: [-Math.PI / 2, 0.9], grav: -60, size: [2.5, 5], cols: ['#ffffff', '#ffe9a8'], alpha: .9 });
   const sc = fxAddScene({
-    kind: 'attack', dur: 1000,
+    kind: 'attack', dur: 1000, winLow: [[0, 780]],
     cues: [{ at: 280, fn: () => fxHitStop(70) }], // L4: the world stops at the collision
+    // V4 (proposal 追記 V4-2): every light layer lives on the low
+    // canvas — L1 halo + rim sweep, the L3 comet, the L5 three-tier
+    // impact bloom, L6 soft rings, L9 rising streaks. The DOM keeps
+    // only the two card rims and the ghost stack (transform/opacity).
+    drawLow(ctx, t) {
+      const halo = t < 300 ? fxSeg(t, 0, 300) : 1 - fxSeg(t, 300, 640);
+      if (halo > 0) fxDrawGlow(ctx, aPt.cx, aPt.cy, 64, col, .5 * halo);
+      if (t > 0 && t < 170) { // rim light runs once around the attacker's edge
+        const u = fxSeg(t, 0, 170), sweep = -Math.PI / 2 + u * Math.PI * 2;
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+        ctx.globalAlpha = .9 * (1 - .4 * u);
+        ctx.beginPath(); ctx.arc(aPt.cx, aPt.cy, Math.max(aPt.w, aPt.h) * .62, sweep - .5, sweep + .5); ctx.stroke();
+        ctx.restore();
+      }
+      if (len >= 8 && t >= 60 && t <= 430) { // the tapered comet; trail ghosts sample the launch curve 30/60/95 ms back
+        const af = Math.min(fxSeg(t, 60, 100), 1 - fxSeg(t, 300, 430));
+        const ext = FXE.launch(fxSeg(t, 100, 280));
+        const trails = [30, 60, 95].map((L, i) => ({ e: FXE.launch(fxSeg(t - L, 100, 280)), a: [.4, .25, .15][i] }));
+        if (af > 0 && ext > 0) fxDrawComet(ctx, aPt.cx, aPt.cy, tPt.cx, tPt.cy, ext, col, af, trails);
+      }
+      if (t >= 280 && t <= 560) { // impact: white core / colour halo / wash
+        fxDrawGlow(ctx, tPt.cx, tPt.cy, 34, '#ffffff', .95 * (1 - fxSeg(t, 335, 500)));
+        fxDrawGlow(ctx, tPt.cx, tPt.cy, 62, col, .6 * (.35 + .65 * fxSeg(t, 280, 370)) * (1 - fxSeg(t, 370, 520)));
+        fxDrawGlow(ctx, tPt.cx, tPt.cy, 110, col, .30 * fxSeg(t, 280, 320) * (1 - fxSeg(t, 280, 560)));
+      }
+      if (t >= 280 && t < 700) { // two soft rings, 60 ms stagger
+        const u1 = FXE.outCubic(fxSeg(t, 280, 620)); if (u1 > 0) fxDrawSoftRing(ctx, tPt.cx, tPt.cy, 13 + 34 * u1, col, .8 * (1 - u1), .12);
+        const u2 = FXE.outCubic(fxSeg(t, 340, 680)); if (u2 > 0) fxDrawSoftRing(ctx, tPt.cx, tPt.cy, 13 + 35 * u2, col, .7 * (1 - u2), .12);
+      }
+      if (o.destroyed && t >= 380 && t < 760) { // thin light streaks rise off the broken body
+        ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round';
+        for (let i = 0; i < 3; i++) {
+          const u = fxSeg(t, 380 + i * 40, 660 + i * 40); if (u <= 0 || u >= 1) continue;
+          const x = tPt.cx - 14 + i * 14, y0 = tPt.cy + 10, y1 = y0 - 52 * FXE.outCubic(u);
+          const g = ctx.createLinearGradient(0, y0, 0, y1);
+          g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(1, '#ffffff');
+          ctx.strokeStyle = g; ctx.lineWidth = 2; ctx.globalAlpha = .55 * (1 - u);
+          ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y1); ctx.stroke();
+        }
+        ctx.restore();
+      }
+    },
     render(t) {
-      if (emph) { // L1: 1 -> 1.06 with the settle curve's own overshoot; rim lit fast, gone by ~640
+      if (emph) { // L1: 1 -> 1.06 with the settle curve's own overshoot; gone by ~640 (the glow itself is canvas now)
         emph.style.transform = 'scale(' + (1 + 0.06 * FXE.settle(fxSeg(t, 0, 120))).toFixed(3) + ')';
         emph.style.opacity = String(1 - fxSeg(t, 480, 640));
-        emph.style.boxShadow = '0 0 ' + Math.round(15 * (1 - fxSeg(t, 0, 320))) + 'px #ffffffcc, inset 0 0 10px #ffffff88';
       }
       if (trim) { // L2: one rim pulse, 60-210
         const p = Math.sin(Math.PI * fxSeg(t, 60, 210));
         trim.style.transform = 'scale(' + (1 + 0.045 * p).toFixed(3) + ')';
         trim.style.opacity = String(0.85 * p * (1 - fxSeg(t, 300, 460)));
       }
-      if (lineW) { // L3: accelerates in (launch curve), arrives 280, fades by 430
-        const ext = FXE.launch(fxSeg(t, 100, 280));
-        lineW.style.transform = 'rotate(' + ang + 'deg) scaleX(' + ext.toFixed(3) + ')';
-        lineW.style.opacity = String(t < 100 ? fxSeg(t, 60, 100) : 1 - fxSeg(t, 300, 430));
-        if (tip) {
-          tip.style.left = (aPt.cx + dx * ext - 5.5) + 'px'; tip.style.top = (aPt.cy + dy * ext - 5.5) + 'px';
-          tip.style.opacity = String(t < 100 ? 0 : 1 - fxSeg(t, 280, 400));
-        }
-      }
-      // L5: the white core is what pops during the hit-stop; the
-      // attribute colour takes over and peaks at +90 ms, then decays
-      const cu = fxSeg(t, 280, 420);
-      if (coreW) { coreW.style.transform = 'scale(' + (0.4 + 0.55 * FXE.outCubic(cu)).toFixed(3) + ')'; coreW.style.opacity = String(cu <= 0 ? 0 : 1 - fxSeg(t, 335, 425)); }
-      if (coreA) { coreA.style.transform = 'scale(' + (0.4 + 0.85 * FXE.outCubic(cu)).toFixed(3) + ')'; coreA.style.opacity = String(cu <= 0 ? 0 : (0.35 + 0.65 * fxSeg(t, 280, 370)) * (1 - fxSeg(t, 370, 500))); }
-      if (ring1) { const u = FXE.outCubic(fxSeg(t, 280, 620)); ring1.style.transform = 'scale(' + (0.4 + 1.05 * u).toFixed(3) + ')'; ring1.style.opacity = String(0.9 * (1 - u) * (t >= 280 ? 1 : 0)); }
-      if (ring2) { const u = FXE.outCubic(fxSeg(t, 330, 670)); ring2.style.transform = 'scale(' + (0.4 + 1.1 * u).toFixed(3) + ')'; ring2.style.opacity = String(0.8 * (1 - u) * (t >= 330 ? 1 : 0)); }
       if (ghost) {
-        if (t < 280) { ghost.style.opacity = '0'; }
+        if (t < 280) { ghost.style.opacity = '0'; if (ghostHot) ghostHot.style.opacity = '0'; if (ghostGray) ghostGray.style.opacity = '0'; }
         else {
           const st = t - 280;
           const gx = 3 * Math.sin(st / 17) * Math.exp(-st / 85); // L8: damped +-3px shake
-          if (o.destroyed && t >= 350) { // L9: white peak 350-410, then dissolve (paint-only filter on a ghost)
+          if (o.destroyed && t >= 350) { // L9: white peak 350-410 on the hot copy, then the gray copy takes over the dissolve
             const du = fxSeg(t, 350, 600);
-            ghost.style.filter = 'brightness(' + (1 + 1.7 * Math.sin(Math.PI * fxSeg(t, 350, 410))).toFixed(2) + ') saturate(' + (1 - du).toFixed(2) + ')';
-            ghost.style.transform = 'translate(' + gx.toFixed(1) + 'px,' + (-12 * FXE.inCubic(du)).toFixed(1) + 'px)';
-            ghost.style.opacity = String(1 - fxSeg(t, 470, 600));
+            const tr = 'translate(' + gx.toFixed(1) + 'px,' + (-12 * FXE.inCubic(du)).toFixed(1) + 'px)';
+            const fade = 1 - fxSeg(t, 470, 600);
+            ghost.style.transform = tr;
+            ghost.style.opacity = String(fade);
+            if (ghostHot) { ghostHot.style.transform = tr; ghostHot.style.opacity = String(.85 * Math.sin(Math.PI * fxSeg(t, 350, 410)) * fade); }
+            if (ghostGray) { ghostGray.style.transform = tr; ghostGray.style.opacity = String(.85 * fxSeg(t, 410, 520) * fade); }
           } else {
             ghost.style.transform = 'translate(' + gx.toFixed(1) + 'px,0px)';
             ghost.style.opacity = String(o.destroyed ? 1 : 1 - fxSeg(t, 450, 480));
+            if (ghostHot) ghostHot.style.opacity = '0';
+            if (ghostGray) ghostGray.style.opacity = '0';
           }
         }
       }
@@ -1580,7 +1857,13 @@ function fxAceSkip() {
   const sc = fxAceSceneRef;
   if (!sc || sc.dead || sc.skipLocal != null) return;
   const local = fxTimeMs - sc.t0;
-  if (local < 3900) { sc.skipLocal = local; sc.dur = local + 700; } // exit (300) + landing (350) + margin
+  if (local < 3900) {
+    sc.skipLocal = local; sc.dur = local + 700; // exit (300) + landing (350) + margin
+    // the exit/landing now happen at THIS local time, not at
+    // 3900/4200 — retarget the V4 paint windows to match
+    sc.winLow = [[140, 1200], [local, local + 700]];
+    sc.winTop = [[Math.min(1400, local), local + 700]];
+  }
 }
 function fxAceSceneV3(o) {
   const layer = fxLayerEl(); if (!layer) return null;
@@ -1603,16 +1886,25 @@ function fxAceSceneV3(o) {
   if (vA) { vA.style.background = 'repeating-conic-gradient(from 10deg,' + cols[0] + 'f2 0deg 16deg,' + cols[1] + '4d 16deg 34deg)'; vA.style.webkitMask = vA.style.mask = 'radial-gradient(circle,transparent 52%,#000 62%,#000 88%,transparent 96%)'; vA.style.opacity = '0'; nodes.push(vA); }
   const vB = fxNode('fx3-vortexB', zr.cx, zr.cy, psize * 0.62, psize * 0.62); // L4 inner counter-vortex
   if (vB) { vB.style.background = 'repeating-conic-gradient(from 190deg,' + cols[0] + 'd9 0deg 10deg,' + cols[1] + '33 10deg 26deg)'; vB.style.webkitMask = vB.style.mask = 'radial-gradient(circle,transparent 50%,#000 62%,#000 84%,transparent 94%)'; vB.style.opacity = '0'; nodes.push(vB); }
-  const flash = fxNode('fx fx3-core', zr.cx, zr.cy, 90, 90); // L6 converge flash
-  if (flash) { flash.style.background = 'radial-gradient(circle,#ffffff 0%,#ffffffcc 40%,transparent 70%)'; flash.style.opacity = '0'; nodes.push(flash); }
-  const matGhosts = []; // L1/L2 materials
+  // L6 converge flash is a three-tier bloom on the low canvas now (V4)
+  const matGhosts = []; // L1/L2 materials (+ V4: two trail ghosts
+  // under the card and a red-hot copy over it per material — the heat
+  // is a preset filter on the copy, cross-faded by opacity only)
   for (const m of o.mats) {
     const pt = fxPtOfKey(m.key); if (!pt) continue;
-    const g = fxPlaceGhost(m.code, false, pt, Math.max(10, pt.w - 2), Math.max(10, pt.h - 24));
-    if (g) { matGhosts.push({ el: g, pt }); nodes.push(g); }
+    const gw = Math.max(10, pt.w - 2), gh = Math.max(10, pt.h - 24);
+    const tr2 = fxPlaceGhost(m.code, false, pt, gw, gh);
+    if (tr2) { tr2.style.opacity = '0'; nodes.push(tr2); }
+    const tr1 = fxPlaceGhost(m.code, false, pt, gw, gh);
+    if (tr1) { tr1.style.opacity = '0'; nodes.push(tr1); }
+    const g = fxPlaceGhost(m.code, false, pt, gw, gh);
+    if (g) {
+      const hot = fxPlaceGhost(m.code, false, pt, gw, gh);
+      if (hot) { hot.style.filter = 'brightness(2.1) saturate(1.6) hue-rotate(-18deg)'; hot.style.opacity = '0'; nodes.push(hot); }
+      matGhosts.push({ el: g, hot, tr1, tr2, pt }); nodes.push(g);
+    }
   }
-  const land = fxNode('fx3-ring', zr.cx, zr.cy, 64, 64); // L17 landing ring
-  if (land) { land.style.borderColor = cols[0]; land.style.opacity = '0'; nodes.push(land); }
+  // L17 landing rings are soft rings on the low canvas now (V4)
   const zoneGlowL = fxNode('fx3-emph', zr.cx, zr.cy, zr.w, zr.h); // L17 zone glow
   if (zoneGlowL) { zoneGlowL.style.borderColor = cols[0]; zoneGlowL.style.opacity = '0'; nodes.push(zoneGlowL); }
   fxSpawnBurst('low', { mode: 'spiral', seed: (Math.random() * 1e9) | 0, o: [zr.cx, zr.cy], n: 46, t0: fxTimeMs + 300, life: [500, 850], r: [46, 96], turns: 1.6, size: [3, 7], cols: [cols[0], '#ffffff', cols[1]], delayMax: 300, alpha: .95 }); // L5
@@ -1625,10 +1917,16 @@ function fxAceSceneV3(o) {
   const streaks = hmk('fx3-acestreaks'); streaks.style.background = 'repeating-conic-gradient(from 0deg,rgba(255,240,200,.14) 0deg 2deg,transparent 2deg 18deg)'; streaks.style.opacity = '0'; // L8
   const vw = Math.min(window.innerWidth || 390, 430);
   const cw = Math.round(Math.min(250, vw * 0.62)), chh = Math.round(cw * 1.38);
+  const after1 = hmk('bigcard'); after1.style.width = cw + 'px'; after1.style.height = chh + 'px'; after1.style.opacity = '0'; after1.style.filter = 'brightness(1.5) saturate(1.3)'; // L9 V4 afterimages, 55/120 ms behind the card
+  after1.innerHTML = '<div class="nm">' + cardName(o.code) + '</div>';
+  const after2 = hmk('bigcard'); after2.style.width = cw + 'px'; after2.style.height = chh + 'px'; after2.style.opacity = '0'; after2.style.filter = 'brightness(1.5) saturate(1.3)';
+  after2.innerHTML = '<div class="nm">' + cardName(o.code) + '</div>';
   const card = hmk('bigcard'); card.style.width = cw + 'px'; card.style.height = chh + 'px'; card.style.opacity = '0'; // L9
+  card.style.boxShadow = '0 0 42px ' + cols[0] + '77, 0 6px 24px #000c'; // static frame shadow, set once; the breathing glow is canvas now (V4)
   card.innerHTML = '<div class="nm">' + cardName(o.code) + '</div>';
   const banner = hmk('banner'); banner.style.opacity = '0'; // L12/L13
-  banner.innerHTML = '<div class="cn">' + cardName(o.code) + '</div><div class="cs"></div>';
+  banner.innerHTML = '<div class="cn">' + cardName(o.code) + '</div><div class="rule"></div><div class="cs"></div>';
+  const ruleEl = banner.querySelector('.rule');
   const csEl = banner.querySelector('.cs');
   const ccx = ar.cx, ccy = ar.y + ar.h * 0.40;
   const ringMk = () => { const r = hmk('fx fx3-ring'); r.style.left = (ccx - 32) + 'px'; r.style.top = (ccy - 32) + 'px'; r.style.width = '64px'; r.style.height = '64px'; r.style.borderColor = cols[0]; r.style.opacity = '0'; return r; };
@@ -1637,17 +1935,66 @@ function fxAceSceneV3(o) {
   fxSpawnBurst('top', { seed: (Math.random() * 1e9) | 0, o: [ccx, ccy + 40], n: 26, t0: fxTimeMs + 1300, life: [1800, 2600], speed: [8, 26], ang: [-Math.PI / 2, .9], grav: -14, dragK: .4, size: [2, 5], cols: [cols[0], '#ffffff'], delayMax: 800, alpha: .55 }); // L14
   const portalAngle = (te) => { const ds = (te - 300) / 1000; if (ds <= 0) return 0; if (ds < 0.4) return 625 * ds * ds; return 100 + 500 * (ds - 0.4); };
   const sc = fxAddScene({
-    kind: 'ace', dur: 4600,
+    kind: 'ace', dur: 4600, winLow: [[140, 1200], [4150, 4600]], winTop: [[1400, 4600]],
     cues: [{ at: 700, fn: () => playSe('summon_big') }], // L6 is the SE sync point A (the landing sound of the special summon)
+    // V4 (proposal 追記 V4-1): the light layers — funnel core + rim
+    // at the zone, material heat, the 700 ms three-tier flash bloom
+    // and the landing soft rings (low canvas); the breathing hold
+    // glow and the exit implosion ring (top canvas).
+    drawLow(ctx, t) {
+      const te = sc.skipLocal != null && t > sc.skipLocal ? 3900 + (t - sc.skipLocal) : t;
+      const po = fxSeg(te, 300, 380) * (1 - fxSeg(te, 1020, 1180));
+      if (po > 0) { // dark funnel core + rim light breathing with the spin-up
+        const spin = fxSeg(te, 300, 700);
+        fxDrawGlow(ctx, zr.cx, zr.cy, fxLerp(30, 86, spin), '#05030a', .55 * po, false);
+        fxDrawSoftRing(ctx, zr.cx, zr.cy, psize * .40, cols[0], (.25 + .55 * spin + .08 * Math.sin(te / 37)) * po, .10);
+      }
+      for (const mg of matGhosts) { // white heat at each converging material
+        const cu = FXE.inCubic(fxSeg(te, 150, 550));
+        if (cu > 0 && cu < 1) fxDrawGlow(ctx, fxLerp(mg.pt.cx, zr.cx, cu), fxLerp(mg.pt.cy, zr.cy, cu), 26, '#ffffff', .5 * cu);
+      }
+      if (te > 700 && te < 860) { // L6: the flash, as a three-tier bloom
+        const fl = Math.sin(Math.PI * fxSeg(te, 700, 860));
+        fxDrawGlow(ctx, zr.cx, zr.cy, 52, '#ffffff', .95 * fl);
+        fxDrawGlow(ctx, zr.cx, zr.cy, 120, cols[0], .55 * fl);
+        fxDrawGlow(ctx, zr.cx, zr.cy, 215, cols[0], .30 * fl);
+      }
+      if (te >= 4200) { // L17: landing soft rings, 60 ms stagger
+        const u1 = fxSeg(te, 4200, 4520); if (u1 > 0 && u1 < 1) fxDrawSoftRing(ctx, zr.cx, zr.cy, 32 * (0.5 + 0.8 * FXE.outCubic(u1)), cols[0], .9 * (1 - u1), .12);
+        const u2 = fxSeg(te, 4260, 4580); if (u2 > 0 && u2 < 1) fxDrawSoftRing(ctx, zr.cx, zr.cy, 32 * (0.5 + 0.8 * FXE.outCubic(u2)), cols[0], .7 * (1 - u2), .12);
+      }
+    },
+    drawTop(ctx, t) {
+      const te = sc.skipLocal != null && t > sc.skipLocal ? 3900 + (t - sc.skipLocal) : t;
+      if (te < 1400) return;
+      const cardOp = fxSeg(te, 900, 1030) * (1 - fxSeg(te, 3900, 4200));
+      if (cardOp <= 0) return;
+      const exitU = fxSeg(te, 3900, 4200), shrink = 1 - .45 * exitU;
+      const ph = 2 * Math.PI * (te - 1400) / 2400;
+      fxDrawGlow(ctx, ccx, ccy, 200 * shrink, cols[0], (.30 + .08 * Math.sin(ph)) * cardOp);
+      fxDrawGlow(ctx, ccx, ccy, 130 * shrink, '#ffe9a8', (.14 + .05 * Math.sin(ph + 1.2)) * cardOp);
+      if (exitU > 0 && exitU < 1) fxDrawSoftRing(ctx, ccx, ccy, 190 * shrink, cols[0], .4 * exitU, .14); // the glow collapses inward before the scrim lifts
+    },
     render(t) {
       const te = sc.skipLocal != null && t > sc.skipLocal ? 3900 + (t - sc.skipLocal) : t;
-      // L1/L2: materials glow red-hot, then converge into the point
+      // L1/L2: materials glow red-hot (the preset-filter copy fades
+      // in over the card), trail ghosts ride at 66% / 33% of the
+      // path, then everything converges into the point (V4)
       for (const mg of matGhosts) {
         const glow = FXE.outCubic(fxSeg(te, 0, 250));
         const cu = FXE.inCubic(fxSeg(te, 150, 550));
-        mg.el.style.filter = 'brightness(' + (1 + 1.1 * glow).toFixed(2) + ') saturate(' + (1 + 0.6 * glow).toFixed(2) + ') hue-rotate(' + (-18 * glow).toFixed(0) + 'deg)';
-        mg.el.style.transform = 'translate(' + ((zr.cx - mg.pt.cx) * cu).toFixed(1) + 'px,' + ((zr.cy - mg.pt.cy) * cu).toFixed(1) + 'px) scale(' + (1 - 0.78 * cu).toFixed(3) + ')';
-        mg.el.style.opacity = String(1 - fxSeg(te, 500, 560));
+        const op = 1 - fxSeg(te, 500, 560);
+        const tr = 'translate(' + ((zr.cx - mg.pt.cx) * cu).toFixed(1) + 'px,' + ((zr.cy - mg.pt.cy) * cu).toFixed(1) + 'px) scale(' + (1 - 0.78 * cu).toFixed(3) + ')';
+        mg.el.style.transform = tr;
+        mg.el.style.opacity = String(op);
+        if (mg.hot) { mg.hot.style.transform = tr; mg.hot.style.opacity = String(glow * op); }
+        const trailIn = fxSeg(te, 150, 250);
+        for (const tp of [[mg.tr1, .66, .30], [mg.tr2, .33, .15]]) {
+          if (!tp[0]) continue;
+          const cuT = cu * tp[1];
+          tp[0].style.transform = 'translate(' + ((zr.cx - mg.pt.cx) * cuT).toFixed(1) + 'px,' + ((zr.cy - mg.pt.cy) * cuT).toFixed(1) + 'px) scale(' + (1 - 0.78 * cuT).toFixed(3) + ')';
+          tp[0].style.opacity = String(tp[2] * op * trailIn);
+        }
       }
       // L3: the zone lights before the portal opens
       if (preglow) preglow.style.opacity = String(0.85 * fxSeg(te, 250, 380) * (1 - fxSeg(te, 480, 800)));
@@ -1659,36 +2006,49 @@ function fxAceSceneV3(o) {
         if (vA) { vA.style.transform = 'rotate(' + th.toFixed(1) + 'deg) scale(' + ps.toFixed(3) + ')'; vA.style.opacity = String(po); }
         if (vB) { vB.style.transform = 'rotate(' + (-1.6 * th).toFixed(1) + 'deg) scale(' + ps.toFixed(3) + ')'; vB.style.opacity = String(po); }
       }
-      // L6: the converge flash — the beat the whole build-up pays off
-      if (flash) { const u = fxSeg(te, 700, 820); flash.style.transform = 'scale(' + (0.3 + 1.4 * FXE.outCubic(u)).toFixed(3) + ')'; flash.style.opacity = String(0.95 * (1 - u) * (te >= 700 ? 1 : 0)); }
-      // L7/L8: scrim in; background vortex + streaks turn for the WHOLE hold
+      // L6: the converge flash is the drawLow three-tier bloom now
+      // L7/L8: scrim in; background vortex + streaks turn for the
+      // WHOLE hold — but the exit is two-stage (V4): the rotation
+      // freezes at 3900 and the scrim only lifts from 3980
       const holdOut = 1 - fxSeg(te, 3900, 4200);
-      if (scrim) scrim.style.opacity = String(0.78 * fxSeg(te, 750, 1000) * holdOut);
-      if (bg) { bg.style.opacity = String(0.85 * fxSeg(te, 750, 1100) * holdOut); bg.style.transform = 'rotate(' + (((te - 750) * 12 / 1000) % 360).toFixed(1) + 'deg)'; }
-      if (streaks) { streaks.style.opacity = String(0.7 * fxSeg(te, 750, 1100) * holdOut); streaks.style.transform = 'rotate(' + (-((te - 750) * 6 / 1000) % 360).toFixed(1) + 'deg)'; }
-      // L9/L15/L16: card settles in, its glow breathes (2.4 s period), exits small
+      const rotTe = Math.min(te, 3900);
+      if (scrim) scrim.style.opacity = String(0.78 * fxSeg(te, 750, 1000) * (1 - fxSeg(te, 3980, 4200)));
+      if (bg) { bg.style.opacity = String(0.85 * fxSeg(te, 750, 1100) * holdOut); bg.style.transform = 'rotate(' + (((rotTe - 750) * 12 / 1000) % 360).toFixed(1) + 'deg)'; }
+      if (streaks) { streaks.style.opacity = String(0.7 * fxSeg(te, 750, 1100) * holdOut); streaks.style.transform = 'rotate(' + (-((rotTe - 750) * 6 / 1000) % 360).toFixed(1) + 'deg)'; }
+      // L9/L15/L16: card settles in (its breathing glow is the
+      // drawTop canvas now) and sinks 6 px as it exits
       if (card) {
         const sIn = 1.35 - 0.35 * FXE.settle(fxSeg(te, 900, 1350));
         const sOut = 1 - 0.15 * fxSeg(te, 3900, 4200);
-        card.style.transform = 'translate(-50%,-50%) scale(' + (sIn * sOut).toFixed(3) + ')';
+        card.style.transform = 'translate(-50%,-50%) translateY(' + (6 * fxSeg(te, 3900, 4200)).toFixed(1) + 'px) scale(' + (sIn * sOut).toFixed(3) + ')';
         card.style.opacity = String(fxSeg(te, 900, 1030) * holdOut);
-        const pulse = te >= 1400 && te < 3900 ? 42 + 6 * Math.sin(2 * Math.PI * (te - 1400) / 2400) : 42;
-        card.style.boxShadow = '0 0 ' + pulse.toFixed(0) + 'px ' + cols[0] + '77, 0 6px 24px #000c';
+      }
+      // L9 V4: two afterimages trail the card's entrance by 55/120 ms
+      for (const ap of [[after1, 55, .30], [after2, 120, .14]]) {
+        if (!ap[0]) continue;
+        const teL = te - ap[1];
+        if (teL >= 900 && te < 2100) {
+          const sL = 1.35 - 0.35 * FXE.settle(fxSeg(teL, 900, 1350));
+          ap[0].style.transform = 'translate(-50%,-50%) scale(' + sL.toFixed(3) + ')';
+          ap[0].style.opacity = String(ap[2] * (1 - fxSeg(teL, 1200, 1900)) * fxSeg(teL, 900, 1030));
+        } else ap[0].style.opacity = '0';
       }
       // L10: burst rings, 150 ms apart
       if (ringA) { const u = FXE.outCubic(fxSeg(te, 950, 1550)); ringA.style.transform = 'scale(' + (0.4 + 1.2 * u).toFixed(3) + ')'; ringA.style.opacity = String(0.8 * (1 - u) * (te >= 950 ? 1 : 0)); }
       if (ringB) { const u = FXE.outCubic(fxSeg(te, 1100, 1700)); ringB.style.transform = 'scale(' + (0.4 + 1.2 * u).toFixed(3) + ')'; ringB.style.opacity = String(0.7 * (1 - u) * (te >= 1100 ? 1 : 0)); }
-      // L12/L13: banner snaps in; ATK/DEF count up to the real values
+      // L12/L13: banner snaps in; V4 stagger — the name lands, the
+      // gold rule draws (1180-1400), the count starts at 1280
       if (banner) {
         banner.style.opacity = String(fxSeg(te, 1100, 1400) * holdOut);
         banner.style.transform = 'translateX(' + (-26 * (1 - FXE.snap(fxSeg(te, 1100, 1400)))).toFixed(1) + 'px)';
+        if (ruleEl) { ruleEl.style.transform = 'scaleX(' + fxSeg(te, 1180, 1400).toFixed(3) + ')'; ruleEl.style.opacity = String(fxSeg(te, 1100, 1400) * holdOut); }
         if (csEl && d && d.atk != null) {
-          const u = FXE.outCubic(fxSeg(te, 1200, 1600));
+          const u = FXE.outCubic(fxSeg(te, 1280, 1680));
           csEl.textContent = 'ATK ' + Math.round(d.atk * u) + ' ／ DEF ' + Math.round(d.def * u);
         }
       }
-      // L17: the landing beat on the real board zone
-      if (land) { const u = FXE.outCubic(fxSeg(te, 4200, 4550)); land.style.transform = 'scale(' + (0.5 + 0.8 * u).toFixed(3) + ')'; land.style.opacity = String(0.9 * (1 - u) * (te >= 4200 ? 1 : 0)); }
+      // L17: the landing beat on the real board zone (the rings are
+      // drawLow soft rings now; the zone glow stays DOM)
       if (zoneGlowL) zoneGlowL.style.opacity = String(0.9 * Math.sin(Math.PI * fxSeg(te, 4200, 4550)));
     },
     onDone() {
@@ -2118,7 +2478,7 @@ function sheetClose() { closeInfoPop(); $('sheetwrap').className = ''; $('sheetw
 // is in progress — opening or closing it never answers, toggles
 // or cancels anything, so a choice can be checked mid-selection
 // and the selection is exactly as it was left.
-function openInfoPop(code, ref) {
+function openInfoPop(code, ref, fx) {
   if (code == null || !DATA || !DATA.cards[code]) return;
   setPreview(code, ref || null);
   const mats = ref ? liveMats(ref.con, ref.loc, ref.seq) : null;
@@ -2126,7 +2486,7 @@ function openInfoPop(code, ref) {
   const st = statsLine(code);
   $('infopop').innerHTML = '<div class="ttl">' + cardName(code) + '</div>' +
     '<div class="sub">' + [meta, st].filter(Boolean).join('／') + '</div>' +
-    (cardText(code) ? '<div class="cardtext">' + cardText(code) + '</div>' : '<div class="sub">テキスト未収録</div>') +
+    (cardText(code) ? (fx ? fxBlockHTML(code, fx) : '<div class="cardtext">' + cardText(code) + '</div>') : '<div class="sub">テキスト未収録</div>') +
     '<div class="btnrow"><button class="bigbtn sub" id="infopop-close">閉じる</button></div>';
   $('infopop').className = 'on';
   $('infopop-close').addEventListener('click', () => { playClick(); closeInfoPop(); });
@@ -2200,7 +2560,11 @@ function uiCmd(prompt, state) {
   const add = (list, label, type) => list.forEach((e, i) => {
     const key = e.con + ':' + e.loc + ':' + e.seq;
     if (!actionMap.has(key)) actionMap.set(key, []);
-    actionMap.get(key).push({ label, bytes: E.cmdResp(type, i), code: e.code });
+    // Activatable entries keep their desc: two effects of the same
+    // card must not collapse into indistinguishable buttons.
+    const fx = label === '効果を発動' ? entryEffect(e) : null;
+    const lab = fx && fx.n ? (fx.act ? 'カードを発動：' + fxExcerpt(fx) : '効果を発動：' + CIRCLED_NUM[fx.n - 1] + ' ' + fxExcerpt(fx)) : label;
+    actionMap.get(key).push({ label: lab, bytes: E.cmdResp(type, i), code: e.code, desc: e.desc });
   });
   if (prompt.name === 'SELECT_IDLECMD') {
     add(prompt.summon, '通常召喚', 0);
@@ -2283,10 +2647,17 @@ function openActionSheet(key) {
     }
     if (reason) unusable = '<div class="optbtn disabled">効果を発動<span class="reason">' + reason + '</span></div>';
   }
+  // When this card has several offered effects, pin the texts: the
+  // offered effects are highlighted one by one (full text stays
+  // readable below, R-SEL-1 style).
+  const offeredFx = [...new Set(acts.map(a => { const f = entryEffect(a); return f && f.n ? f.n : 0; }).filter(Boolean))].sort();
+  const fxBlocks = zoneCode != null && offeredFx.length > 1
+    ? offeredFx.map(n => { const seg = effectSegments(zoneCode).find(s => s.n === n); return seg ? fxBlockHTML(zoneCode, seg) : ''; }).join('')
+    : '';
   sheetOpenView('<div class="ttl">' + title + '</div><div class="sub">' + locLabel({ con, loc, seq }) + (meta ? '／' + meta : '') + '</div>' +
     acts.map((a, i) => '<button class="optbtn" data-action-idx="' + i + '">' + a.label + '</button>').join('') +
     unusable +
-    (txt ? '<div class="cardtext">' + txt + '</div>' : '') +
+    (fxBlocks || (txt ? '<div class="cardtext">' + txt + '</div>' : '')) +
     '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">盤面に戻る</button></div>');
   $('sheet').querySelectorAll('[data-action-idx]').forEach(b => b.addEventListener('click', () => {
     const a = acts[+b.dataset.actionIdx];
@@ -2361,7 +2732,7 @@ function flashAutoPass(names) {
 function openDismissManager() {
   if (currentPrompt) return; // during a prompt the dock itself carries the controls
   const rows = [...dismissedDuel.entries()].map(([k, v]) =>
-    '<div class="sortrow"><span>' + cardName(v.code) + '</span><span class="mv"><button data-undismiss="' + k + '">解除</button></span></div>').join('');
+    '<div class="sortrow"><span>' + dismissalName(v) + '</span><span class="mv"><button data-undismiss="' + k + '">解除</button></span></div>').join('');
   sheetOpenView('<div class="ttl">自動パスの設定（このデュエル）</div>' +
     '<div class="sub">ここにあるカードだけが残ったチェーン確認は、自動でパスされます。他に候補がある確認は通常どおり表示されます。</div>' +
     (rows || '<div class="sub">設定中のカードはありません</div>') +
@@ -2419,7 +2790,7 @@ function uiChain(prompt, state) {
   // candidate, and all forced prompts, are shown normally. A visible flash
   // indicator tells the player the auto-pass happened.
   if (!noDismiss && !prompt.forced && prompt.entries.length > 0 && prompt.entries.every(e => dismissedDuel.has(chainKey(e)))) {
-    flashAutoPass([...new Set(prompt.entries.map(e => cardName(e.code)))].join('・'));
+    flashAutoPass([...new Set(prompt.entries.map(e => dismissalName(e)))].join('・'));
     const cp = currentPrompt;
     clearInteraction(); // board is inert during the short delay: no stale actions can fire
     if (duelState) render(duelState);
@@ -2440,8 +2811,13 @@ function uiChain(prompt, state) {
       '<div class="cands">' + prompt.entries.map((e, i) => {
         if (!noDismiss && dismissedDuel.has(chainKey(e))) return ''; // duel-dismissed: hidden here, managed in the section below
         const disChain = dismissedChains.has(chainKey(e));
+        // the candidate's own effect, named on the candidate itself
+        // (a card with several chainable effects must not read as
+        // one undifferentiated name)
+        const cfx = entryEffect(e);
         return '<div class="cand' + (disChain ? ' dismissed' : '') + '" data-chain="' + i + '">' + cardName(e.code) +
           '<div class="loc">' + locLabel(e) + (disChain ? '（このチェーンでは聞かない）' : '') + '</div>' +
+          (cfx && cfx.n ? '<div class="fxline">' + (cfx.act ? '発動：' : '効果' + CIRCLED_NUM[cfx.n - 1] + '：') + fxExcerpt(cfx) + '</div>' : '') +
           (prompt.forced ? '' : '<span class="dismiss" data-dismiss="' + i + '">' + (disChain ? '聞くに戻す' : 'このチェーンでは聞かない') + '</span>') +
           (prompt.forced || disChain ? '' : '<span class="dueldismiss" data-dueldismiss="' + i + '">このデュエル中は聞かない</span>') +
           '<span class="candinfo" data-info="' + i + '">詳細</span></div>';
@@ -2449,8 +2825,8 @@ function uiChain(prompt, state) {
       (() => {
         const dd = prompt.entries.filter(e => dismissedDuel.has(chainKey(e)));
         if (noDismiss || !dd.length) return '';
-        return '<div class="duelsection">自動パス設定中：' + [...new Set(dd.map(e => cardName(e.code)))].join('・') +
-          dd.map(e => '<button data-undismiss="' + chainKey(e) + '">' + cardName(e.code) + ' を解除</button>').join('') + '</div>';
+        return '<div class="duelsection">自動パス設定中：' + [...new Set(dd.map(e => dismissalName(e)))].join('・') +
+          dd.map(e => '<button data-undismiss="' + chainKey(e) + '">' + dismissalName(e) + ' を解除</button>').join('') + '</div>';
       })() +
       '<div class="row">' + (prompt.forced ? '' : '<button class="bigbtn" id="chain-pass">パス</button>') + '</div>';
     $('dock').className = 'on'; // exact class is a contract (tests/tools match on it) — do not append state classes here
@@ -2467,7 +2843,7 @@ function uiChain(prompt, state) {
     // the detail floats over the dock and closes back onto it.
     $('dock').querySelectorAll('[data-info]').forEach(x => x.addEventListener('click', (ev) => {
       ev.stopPropagation(); playClick();
-      const e = prompt.entries[+x.dataset.info]; openInfoPop(e.code, e);
+      const e = prompt.entries[+x.dataset.info]; openInfoPop(e.code, e, entryEffect(e));
     }));
     $('dock').querySelectorAll('[data-dismiss]').forEach(x => x.addEventListener('click', (ev) => {
       ev.stopPropagation(); playClick();
@@ -2479,11 +2855,11 @@ function uiChain(prompt, state) {
     $('dock').querySelectorAll('[data-dueldismiss]').forEach(x => x.addEventListener('click', (ev) => {
       ev.stopPropagation(); playClick();
       const e = prompt.entries[+x.dataset.dueldismiss];
-      dismissedDuel.set(chainKey(e), { code: e.code });
+      dismissedDuel.set(chainKey(e), { code: e.code, desc: e.desc });
       updateAutoPassChip();
       // if that was the last visible candidate class, the prompt now auto-passes
       if (!prompt.forced && prompt.entries.every(en => dismissedDuel.has(chainKey(en)))) {
-        flashAutoPass([...new Set(prompt.entries.map(en => cardName(en.code)))].join('・'));
+        flashAutoPass([...new Set(prompt.entries.map(en => dismissalName(en)))].join('・'));
         const cp = currentPrompt;
         clearInteraction();
         if (duelState) render(duelState);
@@ -2681,20 +3057,58 @@ const OPTION_LABELS = {
 };
 function optionLabelText(desc) {
   if (typeof desc !== 'number' || !isFinite(desc)) return null;
-  const code = Math.floor(desc / 16), idx = desc % 16;
+  // desc = aux.Stringid(code, idx) = code<<20 | idx (see
+  // descEffect; the code*16+n form names no real card)
+  const code = Math.floor(desc / 1048576), idx = desc % 1048576;
   return OPTION_LABELS[code + '|' + idx] || null;
 }
 window.__optLabel = { resolve: optionLabelText };
 function uiYesNo(prompt, state) {
   const isEff = prompt.name === 'SELECT_EFFECTYN';
-  sheetOpen('<div class="ttl">' + (isEff ? cardName(prompt.code) + ' の効果' : '確認') + '</div>' +
+  // WHICH card and WHICH effect is being asked must be readable on
+  // the sheet itself (user report 2026-11-03). Sources, in order:
+  // EFFECTYN names its card outright; a plain YESNO carries the
+  // asking card in the prompt context AND, when its desc is that
+  // card's string id, the exact effect index being resolved.
+  const ctx = !isEff && prompt.context && prompt.context.code ? prompt.context : null;
+  const named = isEff ? { code: prompt.code } : ctx;
+  const fx = isEff ? resolveEffect(prompt.code, prompt.desc)
+                   : (ctx ? (resolveEffect(ctx.code, prompt.desc) || resolveEffect(ctx.code, ctx.desc)) : null);
+  const ttl = named
+    ? cardName(named.code) + ' の効果' + (fx && fx.n ? CIRCLED_NUM[fx.n - 1] : '')
+    : '確認';
+  let sub, block;
+  if (isEff) {
+    sub = locLabel(prompt) + ' の効果を発動しますか？';
+    block = fxBlockHTML(prompt.code, fx);
+  } else if (fx && fx.follow) {
+    // yes/no about the optional clause inside the resolving effect.
+    // The parent effect is the one the context (the solving chain
+    // link) names: when its number is known, the question is pinned
+    // to it and its own step clause is quoted; otherwise the clause
+    // is quoted from the card text as a whole.
+    const parentFx = resolveEffect(ctx.code, ctx.desc);
+    const clause = (parentFx && parentFx.n ? stepClause(ctx.code, parentFx.n) : '')
+      || followUpClause(ctx.code);
+    sub = '「' + cardName(ctx.code) + '」の効果の続きです。' + (clause ? '次も行いますか？' : 'この効果の処理を続けますか？');
+    block = fxBlockHTML(ctx.code, parentFx && parentFx.n ? parentFx : fx);
+  } else if (named) {
+    sub = '「' + cardName(named.code) + '」' + (fx && fx.n ? 'の効果' + CIRCLED_NUM[fx.n - 1] : 'の効果') + 'について確認です。この効果を進めますか？';
+    block = fxBlockHTML(named.code, fx);
+  } else {
+    sub = '選択してください';
+    block = '';
+  }
+  sheetOpen('<div class="ttl">' + ttl + '</div>' +
     '<div class="ctx">' + timingText(state) + confirmTag(state) + '</div>' +
-    '<div class="sub">' + (isEff ? locLabel(prompt) + ' の効果を発動しますか？' : '選択してください') + '</div>' + (isEff ? '' : contextLineHTML(prompt)) + retryWarn(prompt) +
-    // C-25: a yes/no about an effect must show the effect — the
-    // decision is made from the text, not from the card's name.
-    (isEff && cardText(prompt.code) ? '<div class="cardtext">' + cardText(prompt.code) + '</div>' : '') +
-    '<button class="optbtn" id="yn-yes">' + (isEff ? '発動する' : 'はい') + '</button>' +
-    '<button class="optbtn" id="yn-no">' + (isEff ? '発動しない' : 'いいえ') + '</button>' +
+    '<div class="sub">' + sub + '</div>' + (isEff || named ? '' : contextLineHTML(prompt)) + retryWarn(prompt) +
+    block +
+    // a follow-up question is not an activation: its answer pair
+    // says 行う/行わない, matching the question's own wording
+    '<button class="optbtn" id="yn-yes">' + (fx && fx.follow ? '行う' : (isEff || named ? '発動する' : 'はい')) + '</button>' +
+    '<button class="optbtn" id="yn-no">' + (fx && fx.follow ? '行わない' : (isEff || named ? '発動しない' : 'いいえ')) + '</button>' +
+    // C-27 (audit round): an effectyn class can be suppressed for
+    // the rest of the duel; the auto-answer is then 発動しない.
     (isEff ? '<button class="optbtn" id="yn-suppress">この効果の確認を、このデュエル中は省略する</button><div class="sub">省略すると、次回からは自動で「発動しない」として進みます</div>' : ''));
   $('yn-yes').addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(1)); });
   $('yn-no').addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(0)); });
@@ -2702,15 +3116,26 @@ function uiYesNo(prompt, state) {
   if (sup) sup.addEventListener('click', () => { playClick(); duelNoConfirm.add(effectYnKey(prompt)); finishPrompt(E.i32resp(0)); });
 }
 function uiOption(prompt, state) {
-  // C-24: buttons carry the descriptor's own wording wherever
-  // optionLabelText resolves it (the whole reachable pool);
-  // unresolved descriptors fall back to a numbered button, and
-  // the SOURCE card's full text is shown either way, so what the
-  // options choose between is readable in place.
-  const srcTxt = prompt.context && prompt.context.code ? cardText(prompt.context.code) : '';
-  sheetOpen('<div class="ttl">効果の選択</div><div class="sub">適用する効果を選んでください。</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
-    (srcTxt ? '<div class="cardtext">' + srcTxt + '</div>' : '') +
-    prompt.options.map((o, i) => { const lb = optionLabelText(o); return '<button class="optbtn" data-opt="' + i + '">' + (lb || ('選択肢 ' + (i + 1))) + '</button>'; }).join(''));
+  // C-24: option entries are the same desc string ids as everywhere
+  // else. A button's label, in order of precision: the audit round's
+  // hand-written wording for sub-descriptions (Agido's mill
+  // choices, which are NOT numbered effects), then the numbered
+  // effect the desc decodes to, then a plain numbered label. The
+  // SOURCE card (from the context or the first decodable option)
+  // is named in the title and its full text rides below.
+  const optFx = prompt.options.map(o => descEffect(o));
+  const srcCode = (prompt.context && prompt.context.code) || (optFx.find(d => d) || {}).code || null;
+  const ttl = srcCode ? cardName(srcCode) + ' の効果の選択' : '効果の選択';
+  sheetOpen('<div class="ttl">' + ttl + '</div><div class="sub">適用する効果を選んでください。</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
+    prompt.options.map((o, i) => {
+      const lb = optionLabelText(o);
+      if (lb) return '<button class="optbtn" data-opt="' + i + '">' + lb + '</button>';
+      const d = optFx[i];
+      const fx = d ? resolveEffect(d.code, o) : null;
+      if (fx && fx.n) return '<button class="optbtn" data-opt="' + i + '">効果' + CIRCLED_NUM[fx.n - 1] + '：' + fxExcerpt(fx) + '</button>';
+      return '<button class="optbtn" data-opt="' + i + '">選択肢 ' + (i + 1) + '</button>';
+    }).join('') +
+    (srcCode ? fxBlockHTML(srcCode, null) : ''));
   $('sheet').querySelectorAll('[data-opt]').forEach(b => b.addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(+b.dataset.opt)); }));
 }
 // ---- announce ----
@@ -3355,6 +3780,15 @@ function wireSeg(id, apply) {
 (async () => {
   try {
     DATA = await (await fetch('data.json')).json();
+    // fxmap.json: which printed effect a desc index names. A failed
+    // or foreign-shaped response (test stubs answer every fetch
+    // with data.json) just leaves FXMAP empty — identification
+    // degrades to full-text display, never to wrong numbers.
+    try {
+      const fm = await (await fetch('fxmap.json')).json();
+      const k = Object.keys(fm || {})[0];
+      if (fm && k && fm[k] && typeof fm[k].n === 'number') FXMAP = fm;
+    } catch (e) { /* identification off, display unaffected */ }
     $('loadmsg').textContent = '準備完了（カード ' + Object.keys(DATA.cards).length + ' 種）';
     // A-03: the start button's state IS the load state — disabled
     // and labelled while loading, live only when a duel can start.
