@@ -5675,3 +5675,79 @@ test-genesis pass. test-logdetail-ui D11/D12 fail IDENTICALLY on
 the unmodified base tree (pre-existing, not this change).
 Frames: cap-neuron.js in shots-neuron/ (import OK / NG verdicts
 and the saved deck on the deck page, 390x620 / 390x700).
+
+## Card-view round + keycard S/T stage + art #18 (2026-11-04, user requests)
+
+Three user asks landed on one branch (feat/cardview-keycard):
+
+1) Card-view (「せっかく画像設定するんだから、確認する場面では
+画像がよく見えた方がいい」). The read-only detail sheet
+(openCardInfo) now LEADS with the big art: a .infoart block at
+the top of the sheet carrying cardArtFile(code, true) inline
+(deck context via deckKeyOfCode, exactly like the resident
+preview resolves a bare code), width 100%, height
+min(280px, 44dvh), top-anchored crop per the standing rule;
+unlisted cards fall back to the shared placeholder through the
+class background, the same fallback as the FX big card. Name /
+meta / stats / text follow below, unchanged; the sheet's
+internal scroll is untouched. Pile sheets (openPileSheet) lead
+every known card's row with a .pthumb thumbnail (30x40, the
+SMALL art file, the instance seat's deck context): grave,
+removed and own EX rows. A hidden card (code null — face-down
+banished) keeps the bare '？' row: NO thumbnail element, no
+name, data-info empty, tap does nothing. The opponent EX sheet
+stays count-only. Board tiles, the resident preview and the
+1-screen base layout are unchanged. Measured on real frames
+(390x620 / 390x700, cap-cardview.js): at 620 the detail sheet
+shows art + name without scrolling; the meta line starts right
+below the name and the first text lines sit under the sticky
+close bar until scrolled (the pre-existing sticky-btnrow
+grammar, unchanged). Tests: test-cardview (CV0-CV10).
+
+2) Keycard spell/trap stage (「魔法・罠でも切り札カードは
+同じような演出を入れよう」). A key S/T now gets an ace-grade
+presentation on ACTIVATION — fxKeycardCutin, a 2400 ms scene on
+the #fxcutin stage: gold frame held over the activating card's
+own tile, scrim, the big card (big art file) settling in, the
+name banner with a 魔法カード/罠カード sub-line, burst rings;
+any tap skips to the exit (fxKeycardSkip, wired into the same
+pointerdown handler as the ace skip). The trigger is the BGM
+ladder's own — an 'activate' event whose code is in
+KEYCARD_ACTIVATE_CODES (《墓守の罠》 98715423 / 《現世と冥界の
+逆転》 17484499) — derived from the keycard definitions, no
+per-name branch in the FX code, and gated by the same cut-in
+setting as the monster cut-ins. While it runs it OWNS the
+event: fxRoundBEvents skips the generic fxSetActivate tilt for
+that activation (no stacking); with cut-ins off, or while an
+ace scene is presenting, the generic presentation keeps the
+activation as before. It does NOT reuse fxAceSceneV3: that
+scene is built around materials converging on an empty zone
+and a summon landing, and an activation's card already stands
+in its S/T zone — same stage and grammar, activation-shaped
+timeline instead. BGM conditions were not touched (visual and
+ladder fire on the same event). Tests: test-keycardact
+(KA0-KA5: fires for both key traps on both seats, no generic
+stacking, control trap unchanged, cutin-off fallback).
+
+3) Individual art #18: 《墓守の罠》 (98715423) -> 'hakamori'
+(user art ~/workspace/duel-assets/hakamori-user-20261104.jpg,
+the white-robed Egyptian priestess). First TRAP with
+individual art; plain CARD_ART registration, no deck override.
+Files generated top-anchored like every delivery (small
+320x320 square crop, big 640x882 full-width crop). Because the
+keycard stage resolves its art through cardArtFile/CARD_ART,
+the stage now shows this illustration (pinned by
+test-keycardact KA2i and by the keyact frames). test-cardart
+gained the #18 entries (CA0w/x, CA7z35-38, CA11k/l, CA13o,
+CA14i, CA16z); the unlisted fallback exemplar (classic Agido
+16135253) is unaffected.
+
+Regression on the final tree: test-cardart, test-cardview,
+test-keycardact, test-fx, test-oppinfo, test-bgm,
+test-typecolor, test-facedown-select, test-chainpass,
+test-logdetail-ui, test-overlay, test-setvis, test-layout,
+test-ui all pass.
+Frames: cap-cardview.js (grave / detail / keyact at 390x620
+and 390x700) in ~/workspace/duel-app-cardview-shots/.
+Unmeasured, as ever: real-device WKWebView look and feel, SE
+timing by ear.
