@@ -5096,6 +5096,95 @@ ATK 2300／DEF 1600, at 390x620/700. The post-summon field
 tile is fixture-pinned (CA11ad), as the deck-scoped
 deliveries pinned their non-Ishizu surfaces by fixture.
 
+## Face-down selection leak fixed (2026-11-04, user report: 相手の裏側セットが選択画面で見えた)
+
+The user found in real play that a target-selection sheet
+showed the opponent's face-down set cards WITH name and art —
+and they could be picked. Root cause: the core writes real
+codes into every SELECT_* message unconditionally (correct
+engine behavior — the bot path already masked them through
+maskEntry/botView), but Duel.run handed the RAW prompt to
+the human answerer. The board renderer guarded its own
+tiles, so the leak lived only in prompt rendering:
+gridSheet (SELECT_CARD / SELECT_TRIBUTE / SELECT_SUM via
+uiSelectCards and uiSelectSum) rendered name, art, stats,
+full text, tray chips, must chips and a 詳細 button reaching
+openInfoPop for every candidate — including the opponent's
+face-down ones. uiUnselect (the un-select grid) and the
+uiSort / uiCounter name labels had the same hole.
+
+Reproduction (before the fix, real duel): a crafted deck
+(太陽の書 x20 + メドゥーサのワーム x20 vs an all-Worm CPU that
+always sets) reached 太陽の書's target prompt with the
+opponent's face-down Defense monster (con=1, loc=4, pos=8)
+inside — the prompt delivered to the human UI carried the
+real code 2694423 and the card name. Five such leaked
+candidates were recorded in one duel.
+
+Fix, two layers:
+1. engine.js — maskPromptForHuman(prompt, state), applied
+   in Duel.run immediately before humanAnswerer. Same view
+   semantics as the bot (view {me: prompt.player}, context
+   code from prompt.context so 《墓穴の道連れ》 16435215 keeps
+   the revealed hand visible — its effect reveals both hands
+   BY RULE). Candidate lists masked: cards / select /
+   unselect / must / entries / summon / spsummon / repos /
+   mset / sset / activate / attack. Entries whose pos is
+   null/0 recover the true position from the GameState
+   mirror (SELECT_TRIBUTE ships pos=0). Face-down EXTRA
+   entries are masked too (maskEntry had no EXTRA rule).
+   Selection legality is untouched: indices, counts and the
+   candidate set are identical; only identity fields of
+   hidden opponent cards become null. The stored prompt is
+   never mutated (copy semantics — a retry re-masks).
+2. client.js — defense in depth at render time.
+   selCardHidden(e, prompt): an opponent's face-down field
+   card, set S/T, hand card, deck card or face-down EXTRA
+   card renders as the card back with a generic label
+   (「裏側のモンスター（守備表示）」/「裏側のカード」/…) — no
+   art, no stats, no text, no 詳細 button — even if a real
+   code reaches the renderer. gridSheet, uiUnselect,
+   uiSort, uiCounter all route through it. New CSS:
+   .gcard.back paints the standard card-back art.
+
+Audit of the other surfaces (no leak found): pile sheets
+(grave/removed are public; opponent EXTRA and hand list
+counts only; deck shows only a revealed top card),
+contextLineHTML (the asked-about card is public at
+activation time), the chain dock (own entries only),
+ANNOUNCE_CARD catalog (a declaration list drawn from the
+public card DB by design), FX ghosts (face-down judged
+from position), board tiles and the resident preview
+(faceUp / ownership guards), dlog target names (face-up
+check in engine.js).
+
+test-facedown-select.js (22 checks): Part A engine unit
+pins — the mask matrix (opponent face-down field/set/hand/
+EXTRA lose their code; face-up, grave, and the HUMAN's OWN
+face-down keep theirs), con/loc/seq/pos preserved, copy
+semantics, the Hand Destruction exception, TRIBUTE pos
+recovery. Part B two real duels — 太陽の書 scenario (the
+masked candidate stays selectable and actually flips),
+墓穴の道連れ scenario (revealed hand stays named and
+selectable; no other leak). Part C jsdom rendering —
+masked grid cells are .gcard.back with the generic label
+and no detail button; tray chips labelled; a synthetic
+prompt carrying a REAL code for an opponent face-down card
+still renders masked (render-side guard); Hand Destruction
+context renders names; the un-select grid is guarded.
+ALL PASSED. Full-suite run on the branch: every suite
+green except test-logdetail-ui D11/D12, which fail
+IDENTICALLY on the pristine base f4365e2 in this
+environment (pre-existing; the probe touches history
+rendering only, unrelated to selection).
+
+Real frames (cap-facedown-select.js,
+shots-facedown-select/): a live page at 390x620 and
+390x700 shows the selection sheet with the opponent's set
+monster and set S/T as full card backs labelled
+「裏側のモンスター（守備表示）」「裏側のカード」, while the
+opponent's face-up Mudora and the player's own 太陽の書
+keep art, name, stats, text and the 詳細 button.
 ## Opponent card info (user request, 2026-11-04): tap an opponent's card, see its public info
 
 The user asked to tap an opponent's monster (or any field
