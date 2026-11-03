@@ -2467,3 +2467,152 @@ their WAAPI/interval timers in this stage; scenes from stage 2
 onward run on the FX clock. The engine exposes a test surface
 (__fx.now/scenes/particles/hitStop/stress/spawnBurst) so later
 stages verify numbers, not just wiring.
+
+## V3 integration — Stage 2: battle + chain scenes (branch feat/v3-s2-battle-chain)
+
+Both scenes rebuilt on the stage-1 foundation (shared FX clock,
+scenes, sprite particles, hit-stop). Numbers are proposal 1.2 / 1.4
+unless a deviation is recorded below with its reason.
+
+### Requirements for this stage (why pros build it this way)
+
+ATTACK. (1) The collision instant must EXIST: round B scheduled the
+impact with a fixed 240 ms delay unrelated to the line's arrival, so
+line, impact, LP and SE each flowed on their own and the hit never
+"landed". Requirement: every layer of the scene is scheduled
+against ONE impact point (t=280) on the shared clock. (2) The line
+is a SIGNAL, not a journey: MD draws it for a few frames at
+declaration. A line that slowly grows for 560 ms becomes the main
+actor and inverts the reading. Requirement: the line arrives in
+180 ms with an accelerating curve and then gets out of the way.
+(3) Cause before effect: the LP counter starts AFTER the impact
+(t=400) so the eye reads hit -> number; the damage number is an
+accent AT the counter, never a replacement for it (the counter is
+the primary readout — this refines proposal L10's placement note,
+which already anchors the number at the LP plate). (4) Sound marks
+the REAL damage moment: SE is information. The spec's "impact SE at
+280 ms" holds when declaration and damage are one beat; when a
+chain response window separates them, a guessed 280 ms cue would
+lie about when damage happened. Deviation (recorded, deliberate):
+battle-damage SE that arrives in the SAME batch as its attack is
+held and fired at the scene's 280 ms cue; damage arriving in a
+later batch fires immediately, because that arrival IS the
+resolution moment. (5) The board never moves: the target "shake"
+(L8) is applied to a ghost overlay, never to the real tile.
+
+CHAIN. (1) A chain is a STACK YOU CAN READ: every link's number
+stays visible on the bar chips at all times; the foreground pop is
+a presentation of the CARD ITSELF (round B's name-only panel is
+replaced by the card ghost), never a substitute for the stack.
+(2) The pop never fights the response prompt: it is pure
+presentation on the FX clock; the dock owns input and is never
+covered (layer table). (3) Solving must read at board centre, not
+only as a chip colour change: the solving link returns to the
+foreground with a gold ignition; a negated link must READ as
+negated (grayscale exit), because "was it negated?" decides the
+next play. (4) The shrink landing (pop -> chip) is what ties the
+foreground card to its stack slot: FLIP-style travel to the chip,
+and the chip swells on landing.
+
+### Stage 2 acceptance criteria (fixed BEFORE implementation)
+
+- S2-C1 All 16 pre-existing test files pass, zero regressions.
+- S2-C2 Attack frame strip at FX-local ~0/120/290/360/500/750/1000:
+  attacker emphasis + line mid-flight (~120); line arrived + impact
+  core popped at the hit-stop (~290); the line/particles FROZEN at
+  ~360 vs ~290 (hit-stop proof in a real duel, not a harness
+  injection); rings + attribute particles (~500); damage number at
+  the LP plate + counter mid-count (~750); settled (~1000).
+- S2-C3 LP coordination: after an attack-driven LP drop of N, the
+  damage number showing -N exists inside the 420-1000 window and
+  __fx.lpShown lands exactly on the state value by attack+1000 ms
+  (FX clock). Non-attack LP changes still count over 600 ms.
+- S2-C4 Chain strip: the pop is the card ghost with a slamming
+  number (60-220), holds, then travels to its chip by 950 ms; a
+  2-link chain shows the dashed connector + CHAIN label beat.
+- S2-C5 Solving: on a solving transition the link foregrounds
+  (scale-in 200 ms), gold frame ignites at 120-270 ms with rising
+  gold particles, exits dimmed by 450 ms; negated links exit in
+  grayscale. Verified by frame strip if a live chain solves on
+  camera, else by a synthetic __fx.process drive + DOM assertions
+  (stated honestly either way).
+- S2-C6 fxError null in live duels; total live particles during an
+  attack scene + a simultaneous burst stay <= 90 (budget clip).
+- S2-C7 The old fixed-delay impact path is gone: no 240 ms delay
+  constant remains in the battle path; fxAttackLine/fxImpact are
+  replaced by the scene (records 'attackline'/'impact' kept for
+  the existing test surface).
+Residuals: SE *feel* (timing is structural per the deviation
+above); real-device appearance/FPS (carried from stage 1).
+
+### Standing focus (user instruction, 2026-11-03 — applies to all stages, centred on stage 4)
+
+SELECTION / CANCELLATION SCENES are a named priority group: zone
+placement, position selection, target selection, chain response
+(respond / pass / per-card "don't ask"), grid selections (search /
+materials / discards), count specification, reordering, yes/no, and
+every cancel / back path. For each scene, the requirement question
+is what the user must know AT THAT MOMENT:
+  (a) what am I choosing right now (what is this prompt asking)?
+  (b) what happens if I confirm (what becomes true, what moves)?
+  (c) what happens if I cancel / go back (what state do I return to)?
+  (d) is it reversible once confirmed?
+  (e) how many are left to choose (count / remaining)?
+  (f) is this mandatory or optional (can I decline, and at what cost)?
+Any scene whose current presentation/copy/flow fails one of these
+gets an audit entry with concrete replacement copy and a concrete
+flow fix; stage 4 works this group FIRST, before other audit items.
+Every stage report carries a section on what was learned / added
+for this group. Stage-2 contact point: the chain pop must never
+fight the response dock (already a stage-2 requirement above);
+the dock's own copy is a stage-4 target in this group.
+
+### Stage 2 results (measured 2026-11-03, this branch)
+
+- S2-C1 PASS: all 16 test files pass, zero FAIL lines (incl.
+  test-fx synthetic + 2 live duels). FXB2c's 1100 ms LP landing
+  holds under the new schedule (attack+400 start, 600 ms count).
+- S2-C2 PASS: attack strip (v3shots/s2-after-attack, FX-local
+  167/284/350/450/550/650/750/850/934) — attacker emphasis + line
+  mid-flight (167), line arrived with bright tip (284), impact
+  core popped (350), attribute particles scattering at the LP
+  plate (450). Hit-stop proof from the same strip's timing table:
+  across the collision the FX clock advanced 33 ms while 108 ms
+  of wall time passed (~75 ms discrepancy = the 70 ms stop +
+  sampling jitter).
+- S2-C3 PASS: live LP probe (v3probe-lp.js) — a 3750 direct hit
+  whose damage resolved after the response window: the count
+  started at the resolution batch, ran 600 ms easeOutCubic
+  (8000 -> 4250, decelerating samples), landed EXACTLY, and the
+  -3750 damage number existed through the count window and was
+  removed after. The same-batch path (start at attack+400) is
+  covered by FXB2c + the design in fxLpCount.
+- S2-C4 PASS (1-link): the pop is the card ghost with the big
+  number on its lower edge (s2-after-chain f02) and travels to
+  its chip while shrinking/fading (f07). RESIDUAL: the 2-link
+  dashed connector + CHAIN beat was not captured live in this
+  stage's duels (chains captured were 1-link); the code path is
+  exercised only when n>=2 — carried as an unmeasured item, not
+  a pass.
+- S2-C5 PASS (normal solve): live capture (s2-after-solve) —
+  foreground return (84 ms), gold frame ignited (300 ms), gold
+  rising particles + exit (417 ms). RESIDUAL: the negated-link
+  grayscale exit was not captured live (no negation occurred on
+  camera); implemented off the snapshot's per-link neg flag.
+- S2-C6 PASS: fxError null in live duels; particle budget clip
+  active (attack burst measured at exactly 26 live).
+- S2-C7 PASS: fxAttackLine / fxImpact and the fixed 240 ms impact
+  delay are deleted; the battle path is the scene.
+FOUND DEFECT (fixed in this stage, spec deviation recorded in the
+proposal addendum): the prototype's particle drag formula divided
+by (k/1000), throwing every dragK particle ~1000x too far —
+invisible in the prototype AND in stage 1's stress demo (only the
+spiral half ever showed). Measured before the fix: 26 particles
+alive, 0 bright canvas pixels at the impact point. After the fix
+(distance = sp*(1-e^{-kt})/k): bright-pixel lifecycle at the
+impact 16 -> 747 -> 1022 -> 406 -> 80 -> 0 across 283-866 ms.
+Selection/cancel group (standing focus): no new scene was built
+in this stage; one requirement was confirmed by construction —
+the chain pop (950 ms) and the response dock never interact: the
+pop is presentation on the FX clock and the dock keeps input for
+the whole window. The dock's own copy/flow is a stage-4 target.

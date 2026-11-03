@@ -216,6 +216,13 @@ const ATTR_SE = { 1: 'atk_earth', 2: 'atk_water', 4: 'atk_fire', 8: 'atk_wind', 
 function drainSeEvents(state) {
   if (!state.events || !state.events.length) return;
   const evs = state.events.splice(0, state.events.length);
+  // V3 stage 2 SE sync: battle damage arriving in the SAME batch as
+  // its attack is one beat — its hit SE is held for the attack
+  // scene's impact cue (t=280 on the FX clock). Damage arriving in a
+  // later batch (a chain window separated declaration from
+  // resolution) fires immediately: that arrival IS the damage
+  // moment, and sound must mark the truth, not a guessed time.
+  const batchAtk = evs.find(e => e.kind === 'attack');
   for (const ev of evs) {
     noteBgmEvent(ev); // BGM key-card latch (see the BGM block above)
     switch (ev.kind) {
@@ -225,7 +232,13 @@ function drainSeEvents(state) {
       case 'spsummon': playSe('summon_big'); break;
       case 'flipsummon': playSe('summon_land'); break;
       case 'attack': { const d = ev.code != null ? cardData(ev.code) : null; playSe(d ? (ATTR_SE[d.attribute] || 'atk_sword_big') : 'atk_sword_big'); break; }
-      case 'damage': if (ev.amount >= 1500) playSe('hit_critical'); else if (ev.amount >= 500) playSe('hit_big'); break;
+      case 'damage': {
+        const seName = ev.amount >= 1500 ? 'hit_critical' : ev.amount >= 500 ? 'hit_big' : null;
+        if (!seName) break;
+        if (batchAtk && ev.player === 1 - batchAtk.con) fxAddScene({ kind: 'secue', dur: 300, cues: [{ at: 280, fn: () => playSe(seName) }], render: () => {} });
+        else playSe(seName);
+        break;
+      }
       case 'destroy': playSe(ev.battle ? 'destroy_blast' : 'destroy_stone'); break;
       case 'banish': playSe('banish_warp'); break;
       case 'recover': playSe('recover'); break;
@@ -502,6 +515,7 @@ function fxPump(wall) {
   if (wall >= fxStopUntilWall) fxTimeMs += dt; // during hit-stop the clock (and every scene on it) is frozen
   let alive = false;
   for (const sc of fxScenes) {
+    if (sc.dead) continue; // superseded scenes never render again (their cleanup already ran)
     const t = fxTimeMs - sc.t0;
     if (t < 0) { alive = true; continue; }
     if (t >= sc.dur) {
@@ -514,6 +528,11 @@ function fxPump(wall) {
     }
     alive = true;
     try { sc.render(t); } catch (e) { fxError = String((e && e.stack) || e); sc.dead = true; }
+    if (!sc.dead && sc.cues) { // timed cues on the shared clock (SE sync points, hit-stop triggers)
+      for (const q of sc.cues) {
+        if (!q.done && t >= q.at) { q.done = true; try { q.fn(); } catch (e) {} }
+      }
+    }
   }
   fxScenes = fxScenes.filter(s => !s.dead);
   fxDrawParticles();
@@ -623,7 +642,11 @@ function fxDrawParticles() {
           const sz = fxLerp(b.size[0], b.size[1], rnd()), col = b.cols[(rnd() * b.cols.length) | 0];
           if (age < 0 || age > life) continue;
           const k = b.dragK || 0; let px, py;
-          if (k > 0) { const f = (1 - Math.exp(-k * age / 1000)) / (k / 1000); px = b.o[0] + Math.cos(an) * sp * f; py = b.o[1] + Math.sin(an) * sp * f + (b.grav || 0) * age * age / 2e6; }
+          // drag: distance = sp * (1 - e^{-k t}) / k (t in seconds, sp in px/s).
+          // DEVIATION from the prototype, recorded in NOTES: the
+          // prototype's divisor (k/1000) made every dragK particle
+          // land ~1000x too far away — i.e. off-screen and invisible.
+          if (k > 0) { const f = (1 - Math.exp(-k * age / 1000)) / k; px = b.o[0] + Math.cos(an) * sp * f; py = b.o[1] + Math.sin(an) * sp * f + (b.grav || 0) * age * age / 2e6; }
           else { px = b.o[0] + Math.cos(an) * sp * age / 1000; py = b.o[1] + Math.sin(an) * sp * age / 1000 + (b.grav || 0) * age * age / 2e6; }
           const u = age / life, alpha = Math.sin(Math.PI * Math.min(1, u)) * (b.alpha || 1);
           const spr = fxSprite(col, 16), s = sz * (0.6 + 0.4 * Math.sin(Math.PI * u));
@@ -841,11 +864,18 @@ function fxProcessInner(evs, state) {
       fxRecord('vanish', { to: 'gone', code: dep.entry.code });
     }
   }
-  // destroy events: white flash at the zone the card occupied
+  // destroy events: white flash at the zone the card occupied.
+  // V3 stage 2: if this batch's attack scene targets that zone, the
+  // scene owns the white peak (timed to the blow at its t=350) — an
+  // immediate flash here would double it into a strobe.
+  const atkTargetKeys = new Set(fxAttackKeys(evs, state).map(x => x.tKey).filter(Boolean));
   for (const ev of evs) {
     if (ev.kind !== 'destroy') continue;
     const dep = departed.find(d => d.entry.code === ev.code && d.key.split(':').map(Number)[0] === ev.con);
-    if (dep) { fxWhiteFlash(dep.key); fxRecord('destroyflash', { code: ev.code }); }
+    if (dep) {
+      if (atkTargetKeys.has(dep.key)) fxRecord('destroyflash', { code: ev.code, via: 'scene' });
+      else { fxWhiteFlash(dep.key); fxRecord('destroyflash', { code: ev.code }); }
+    }
   }
   // ---- in-place changes: xyz detach / attach, stat changes, flips (round B hook)
   for (const ch of changed) {
@@ -941,26 +971,68 @@ function fxPtOfKey(key) { const el = fxSlotEl(key); return el ? fxRel(el) : null
 // ---- LP counter (B7): damage/recovery counts on the counter itself;
 // a heal additionally floats a blue number (MD shows floats only there)
 const fxLpShown = [null, null];   // per seat: the value the counter currently shows
-const fxLpTimers = [null, null];  // per seat: active count interval (render defers to it)
-function fxLpBusy(con) { return fxLpTimers[con] != null; }
+const fxLpScenes = [null, null];  // per seat: active count scene (render defers to it)
+function fxLpBusy(con) { return !!fxLpScenes[con] && !fxLpScenes[con].dead; }
 function fxLpEl(con) { return con === HP ? $('myLp') : $('oppLp'); }
-function fxLpCount(con, to) {
+// V3 stage 2: the count runs on the shared FX clock (600 ms,
+// easeOutCubic — proposal L11), so it can be SCHEDULED: after an
+// attack the count starts at attack+400 ms, after the impact has
+// landed (cause before effect). A damage drop also carries the red
+// damage number at the LP plate (L10): an accent at the counter —
+// the counter itself stays the primary readout. A scene that is
+// superseded mid-count restarts from the value currently shown.
+function fxLpCount(con, to, startAtFx) {
   const el = fxLpEl(con); if (!el) return;
-  if (fxLpTimers[con]) { clearInterval(fxLpTimers[con]); fxLpTimers[con] = null; }
+  if (fxLpScenes[con] && !fxLpScenes[con].dead) { const old = fxLpScenes[con]; old.dead = true; if (old.cleanup) old.cleanup(); }
+  fxLpScenes[con] = null;
   const start = fxLpShown[con];
   if (start == null || start === to) { fxLpShown[con] = to; el.textContent = to; return; }
-  const diff = to - start;
-  const dur = Math.max(220, Math.min(850, Math.abs(diff) * 0.28));
-  const t0 = performance.now();
-  fxLpTimers[con] = setInterval(() => {
-    try {
-      const t = Math.min(1, (performance.now() - t0) / dur);
-      const eased = 1 - (1 - t) * (1 - t);
-      const v = Math.round(start + diff * eased);
-      fxLpShown[con] = v; el.textContent = v;
-      if (t >= 1) { clearInterval(fxLpTimers[con]); fxLpTimers[con] = null; fxLpShown[con] = to; el.textContent = to; }
-    } catch (e) { if (fxLpTimers[con]) { clearInterval(fxLpTimers[con]); fxLpTimers[con] = null; } }
-  }, 30);
+  const delay = Math.max(0, (startAtFx != null ? startAtFx : fxTimeMs) - fxTimeMs);
+  const isDmg = to < start;
+  let numEl = null;
+  if (isDmg) {
+    const layer = fxLayerEl(), r = fxRel(el);
+    if (layer && r) {
+      numEl = document.createElement('div');
+      numEl.className = 'fx fx3-dmgnum';
+      numEl.textContent = '−' + (start - to);
+      numEl.style.left = r.cx + 'px'; numEl.style.top = (r.y - 2) + 'px';
+      numEl.style.opacity = '0';
+      layer.appendChild(numEl);
+    }
+  }
+  let flashed = false;
+  const sc = fxAddScene({
+    kind: 'lpcount', dur: delay + 620,
+    render(t) {
+      const tt = t - delay;
+      if (tt < 0) { if (fxLpShown[con] !== start) { fxLpShown[con] = start; el.textContent = start; } }
+      else {
+        if (isDmg && !flashed) { flashed = true; el.classList.remove('lpflash'); void el.offsetWidth; el.classList.add('lpflash'); }
+        const u = Math.min(1, tt / 600);
+        const v = Math.round(start + (to - start) * FXE.outCubic(u));
+        if (v !== fxLpShown[con]) { fxLpShown[con] = v; el.textContent = v; }
+      }
+      if (numEl) { // L10 window: [delay+20, delay+600] of the scene
+        const nu = fxSeg(t, delay + 20, delay + 600);
+        if (nu <= 0 || nu >= 1) { numEl.style.opacity = '0'; }
+        else {
+          const s = 1.45 - 0.45 * FXE.settle(fxSeg(t, delay + 20, delay + 150));
+          const fade = Math.min(fxSeg(t, delay + 20, delay + 60) * 2, 1, (1 - fxSeg(t, delay + 480, delay + 600)) * 1.6 + 0.15);
+          numEl.style.opacity = String(Math.max(0, Math.min(1, fade)));
+          numEl.style.transform = 'translate(-50%,-100%) translateY(' + (-8 * nu) + 'px) scale(' + s.toFixed(3) + ')';
+        }
+      }
+    },
+    onDone() {
+      fxLpShown[con] = to; el.textContent = to;
+      el.classList.remove('lpflash');
+      if (numEl) numEl.remove();
+      if (fxLpScenes[con] === sc) fxLpScenes[con] = null;
+    },
+  });
+  sc.cleanup = () => { if (numEl) numEl.remove(); el.classList.remove('lpflash'); };
+  fxLpScenes[con] = sc;
 }
 function fxHealFloat(con, amount) {
   const el = fxLpEl(con); if (!el) return;
@@ -983,35 +1055,119 @@ function fxHealFloat(con, amount) {
 // card itself never leaves its zone; no formula is ever shown.
 const FX_ATTR_COLORS = { 1: '#d29a55', 2: '#4aa3ff', 4: '#ff6a3d', 8: '#7fe08a', 16: '#ffe98a', 32: '#9a6aff', 64: '#ffd94d' };
 const FX_ATTR_WASH = { 1: 'rgba(170,115,60,.50)', 2: 'rgba(40,110,255,.42)', 4: 'rgba(255,90,30,.48)', 8: 'rgba(90,230,140,.38)', 16: 'rgba(255,250,225,.88)', 32: 'rgba(16,4,38,.85)', 64: 'rgba(255,215,80,.55)' };
-function fxAttackLine(fromPt, toPt) {
-  const layer = fxLayerEl(); if (!layer) return;
-  const dx = toPt.cx - fromPt.cx, dy = toPt.cy - fromPt.cy;
-  const len = Math.hypot(dx, dy); if (len < 8) return;
-  const ang = Math.atan2(dy, dx) * 180 / Math.PI;
-  const d = document.createElement('div');
-  d.className = 'fx fx-line';
-  d.style.left = fromPt.cx + 'px'; d.style.top = (fromPt.cy - 1) + 'px'; d.style.width = len + 'px';
-  layer.appendChild(d);
-  fxAnim(d, [
-    { transform: 'rotate(' + ang + 'deg) scaleX(0)', opacity: 1 },
-    { transform: 'rotate(' + ang + 'deg) scaleX(1)', opacity: 1, offset: 0.35 },
-    { transform: 'rotate(' + ang + 'deg) scaleX(1)', opacity: 0 },
-  ], { duration: 560, easing: 'ease-out' });
-  fxKill(d, 600);
+// ---- V3 stage 2: the attack scene (proposal 1.2). One timeline on
+// the shared FX clock; every layer is scheduled against the single
+// impact point t=280, where a 70 ms hit-stop freezes the whole FX
+// world (line, particles, LP alike). The board itself never moves:
+// the target shake rides a ghost, and battle destruction keeps the
+// round-A removal grammar (the card flies to its pile) — this scene
+// owns the white peak + rising particles at the target, timed to
+// the blow, and suppresses the diff pass's immediate white flash.
+let fxLastAttackScene = null; // {t0, defCon} — the LP loop schedules its count from this
+function fxAttackKeys(evs, state) {
+  // attacker/target zone keys for each attack event in a batch
+  // (shared by the scene wiring and the destroy-flash suppression)
+  const out = [];
+  const la = state ? state.lastAttack : null;
+  for (const ev of evs) {
+    if (ev.kind !== 'attack') continue;
+    let aKey = null, tKey = null;
+    if (la && la.attacker && la.attacker.con === ev.con) {
+      aKey = la.attacker.con + ':' + E.LOC.MZONE + ':' + la.attacker.seq;
+      if (la.target) tKey = la.target.con + ':' + E.LOC.MZONE + ':' + la.target.seq;
+    }
+    out.push({ ev, aKey, tKey });
+  }
+  return out;
 }
-function fxImpact(pt, attr) {
-  const layer = fxLayerEl(); if (!layer) return;
-  const color = FX_ATTR_COLORS[attr] || '#ffe9a8';
-  const d = document.createElement('div');
-  d.className = 'fx fx-impact';
-  d.style.left = pt.cx + 'px'; d.style.top = pt.cy + 'px'; d.style.width = '64px'; d.style.height = '64px';
-  d.style.background = 'radial-gradient(circle,' + color + 'ee 0%,' + color + '88 45%,transparent 72%)';
-  layer.appendChild(d);
-  fxAnim(d, [
-    { transform: 'translate(-50%,-50%) scale(.5)', opacity: 1 },
-    { transform: 'translate(-50%,-50%) scale(1.3)', opacity: 0 },
-  ], { duration: 460, easing: 'ease-out', delay: 240 });
-  fxKill(d, 760);
+function fxAttackSceneV3(o) {
+  const layer = fxLayerEl(); if (!layer) return null;
+  const aPt = o.aPt, tPt = o.tPt; if (!aPt || !tPt) return null;
+  const col = FX_ATTR_COLORS[o.attr] || '#ffe9a8';
+  const dx = tPt.cx - aPt.cx, dy = tPt.cy - aPt.cy, len = Math.hypot(dx, dy);
+  const ang = Math.atan2(dy, dx) * 180 / Math.PI;
+  const nodes = [];
+  const mk = (cls, cx, cy, w, h) => { const d = fxNode(cls, cx, cy, w, h); if (d) nodes.push(d); return d; };
+  const emph = mk('fx3-emph', aPt.cx, aPt.cy, aPt.w, aPt.h);            // L1 attacker emphasis
+  const trim = mk('fx3-trim', tPt.cx, tPt.cy, Math.max(tPt.w, 30), Math.max(tPt.h, 30)); // L2 target rim
+  if (trim) trim.style.borderColor = col;
+  let lineW = null, tip = null;                                        // L3 line + bright tip
+  if (len >= 8) {
+    lineW = document.createElement('div');
+    lineW.className = 'fx fx-line fx3-linew';
+    lineW.style.left = aPt.cx + 'px'; lineW.style.top = aPt.cy + 'px'; lineW.style.width = len + 'px';
+    lineW.style.opacity = '0';
+    lineW.innerHTML = '<div class="gl"></div><div class="cl"></div>';
+    layer.appendChild(lineW); nodes.push(lineW);
+    tip = mk('fx3-tip', aPt.cx, aPt.cy, 11, 11);
+    if (tip) tip.style.opacity = '0';
+  }
+  const coreW = mk('fx3-core', tPt.cx, tPt.cy, 84, 84);                // L5 impact core (white)
+  if (coreW) { coreW.style.background = 'radial-gradient(circle,#ffffff 0%,#ffffff 34%,transparent 68%)'; coreW.style.opacity = '0'; }
+  const coreA = mk('fx3-core', tPt.cx, tPt.cy, 84, 84);                // L5 impact core (attribute)
+  if (coreA) { coreA.style.background = 'radial-gradient(circle,' + col + ' 0%,' + col + '99 42%,transparent 70%)'; coreA.style.opacity = '0'; }
+  const ring1 = mk('fx3-ring', tPt.cx, tPt.cy, 64, 64);                // L6 rings x2
+  const ring2 = mk('fx3-ring', tPt.cx, tPt.cy, 64, 64);
+  if (ring1) { ring1.style.borderColor = col; ring1.style.opacity = '0'; }
+  if (ring2) { ring2.style.borderColor = col; ring2.style.opacity = '0'; }
+  let ghost = null;                                                    // L8 shake / L9 dissolve ghost
+  if (!o.direct && o.targetCode != null) {
+    ghost = fxPlaceGhost(o.targetCode, false, tPt, Math.max(10, tPt.w - 2), Math.max(10, tPt.h - 24));
+    if (ghost) { ghost.style.opacity = '0'; nodes.push(ghost); }
+  }
+  // L7 attribute particles, born at the impact point on the FX clock
+  fxSpawnBurst('low', { seed: (Math.random() * 1e9) | 0, o: [tPt.cx, tPt.cy], n: 26, t0: fxTimeMs + 280, life: [300, 560], speed: [110, 330], ang: [0, Math.PI * 2], grav: 520, dragK: 2.6, size: [2.5, 6], cols: [col, '#ffffff', col], alpha: .95 });
+  if (o.destroyed) fxSpawnBurst('low', { seed: (Math.random() * 1e9) | 0, o: [tPt.cx, tPt.cy], n: 8, t0: fxTimeMs + 410, life: [320, 520], speed: [16, 54], ang: [-Math.PI / 2, 0.9], grav: -60, size: [2.5, 5], cols: ['#ffffff', '#ffe9a8'], alpha: .9 });
+  const sc = fxAddScene({
+    kind: 'attack', dur: 1000,
+    cues: [{ at: 280, fn: () => fxHitStop(70) }], // L4: the world stops at the collision
+    render(t) {
+      if (emph) { // L1: 1 -> 1.06 with the settle curve's own overshoot; rim lit fast, gone by ~640
+        emph.style.transform = 'scale(' + (1 + 0.06 * FXE.settle(fxSeg(t, 0, 120))).toFixed(3) + ')';
+        emph.style.opacity = String(1 - fxSeg(t, 480, 640));
+        emph.style.boxShadow = '0 0 ' + Math.round(15 * (1 - fxSeg(t, 0, 320))) + 'px #ffffffcc, inset 0 0 10px #ffffff88';
+      }
+      if (trim) { // L2: one rim pulse, 60-210
+        const p = Math.sin(Math.PI * fxSeg(t, 60, 210));
+        trim.style.transform = 'scale(' + (1 + 0.045 * p).toFixed(3) + ')';
+        trim.style.opacity = String(0.85 * p * (1 - fxSeg(t, 300, 460)));
+      }
+      if (lineW) { // L3: accelerates in (launch curve), arrives 280, fades by 430
+        const ext = FXE.launch(fxSeg(t, 100, 280));
+        lineW.style.transform = 'rotate(' + ang + 'deg) scaleX(' + ext.toFixed(3) + ')';
+        lineW.style.opacity = String(t < 100 ? fxSeg(t, 60, 100) : 1 - fxSeg(t, 300, 430));
+        if (tip) {
+          tip.style.left = (aPt.cx + dx * ext - 5.5) + 'px'; tip.style.top = (aPt.cy + dy * ext - 5.5) + 'px';
+          tip.style.opacity = String(t < 100 ? 0 : 1 - fxSeg(t, 280, 400));
+        }
+      }
+      // L5: the white core is what pops during the hit-stop; the
+      // attribute colour takes over and peaks at +90 ms, then decays
+      const cu = fxSeg(t, 280, 420);
+      if (coreW) { coreW.style.transform = 'scale(' + (0.4 + 0.55 * FXE.outCubic(cu)).toFixed(3) + ')'; coreW.style.opacity = String(cu <= 0 ? 0 : 1 - fxSeg(t, 335, 425)); }
+      if (coreA) { coreA.style.transform = 'scale(' + (0.4 + 0.85 * FXE.outCubic(cu)).toFixed(3) + ')'; coreA.style.opacity = String(cu <= 0 ? 0 : (0.35 + 0.65 * fxSeg(t, 280, 370)) * (1 - fxSeg(t, 370, 500))); }
+      if (ring1) { const u = FXE.outCubic(fxSeg(t, 280, 620)); ring1.style.transform = 'scale(' + (0.4 + 1.05 * u).toFixed(3) + ')'; ring1.style.opacity = String(0.9 * (1 - u) * (t >= 280 ? 1 : 0)); }
+      if (ring2) { const u = FXE.outCubic(fxSeg(t, 330, 670)); ring2.style.transform = 'scale(' + (0.4 + 1.1 * u).toFixed(3) + ')'; ring2.style.opacity = String(0.8 * (1 - u) * (t >= 330 ? 1 : 0)); }
+      if (ghost) {
+        if (t < 280) { ghost.style.opacity = '0'; }
+        else {
+          const st = t - 280;
+          const gx = 3 * Math.sin(st / 17) * Math.exp(-st / 85); // L8: damped +-3px shake
+          if (o.destroyed && t >= 350) { // L9: white peak 350-410, then dissolve (paint-only filter on a ghost)
+            const du = fxSeg(t, 350, 600);
+            ghost.style.filter = 'brightness(' + (1 + 1.7 * Math.sin(Math.PI * fxSeg(t, 350, 410))).toFixed(2) + ') saturate(' + (1 - du).toFixed(2) + ')';
+            ghost.style.transform = 'translate(' + gx.toFixed(1) + 'px,' + (-12 * FXE.inCubic(du)).toFixed(1) + 'px)';
+            ghost.style.opacity = String(1 - fxSeg(t, 470, 600));
+          } else {
+            ghost.style.transform = 'translate(' + gx.toFixed(1) + 'px,0px)';
+            ghost.style.opacity = String(o.destroyed ? 1 : 1 - fxSeg(t, 450, 480));
+          }
+        }
+      }
+    },
+    onDone() { for (const n of nodes) { try { n.remove(); } catch (e) {} } },
+  });
+  return sc;
 }
 function fxAtkBanner() {
   const layer = fxLayerEl(); if (!layer) return;
@@ -1042,31 +1198,114 @@ function fxFinisher(attr) {
 // within the last few seconds of duel time); a deck-out win has no
 // recent hit and correctly gets no wash.
 let fxLastHitAt = 0, fxLastHitAttr = null;
-// ---- chain pop (B8): the newest link appears large in the
-// foreground, then shrinks toward the chain bar. Bar-side states
-// (CHAIN label / newest / solving glow / done dim) live in render().
-function fxChainPop(n, code) {
+// ---- chain scenes (B8 -> V3 stage 2, proposal 1.4). The pop is
+// the CARD ITSELF (round B showed a name-only panel), its number
+// slams onto the lower edge, and after the hold it TRAVELS to its
+// chip in the bar — the landing ties the foreground card to its
+// slot in the stack. Solving brings the link back to the
+// foreground with a gold ignition; a negated link gets no gold —
+// it grays out and leaves, so "negated" reads at board centre.
+function fxChainChipEl(n) {
+  const chips = document.querySelectorAll('#chainbar .link');
+  return chips && chips[n - 1] ? chips[n - 1] : null;
+}
+function fxChainSceneV3(n, code) {
   const layer = fxLayerEl(); if (!layer) return;
-  const d = document.createElement('div');
-  d.className = 'fx-chainpop';
-  // the big cyan link number rides the card's lower edge (supplement A)
-  d.innerHTML = '<div class="cn2">' + (code != null ? cardName(code) : '') + '</div><span class="no">' + n + '</span>';
-  layer.appendChild(d);
-  let dx = 0, dy = 0;
-  const bar = $('chainbar'), app = $('app');
-  if (bar && app && bar.getBoundingClientRect && app.getBoundingClientRect) {
-    const ar = app.getBoundingClientRect(), br = bar.getBoundingClientRect();
-    if (br.width > 0 && ar.width > 0) {
-      dx = (br.left - ar.left + br.width / 2) - ar.width / 2;
-      dy = (br.top - ar.top + br.height / 2) - ar.height * 0.34;
+  const app = $('app'); if (!app) return;
+  const ar = fxRel(app);
+  const cx = ar.cx, cy = ar.y + ar.h * 0.34, W = 104, H = 142;
+  const card = fxPlaceGhost(code, false, { cx, cy }, W, H);
+  if (!card) return;
+  card.style.zIndex = 6;
+  const ring = document.createElement('div'); ring.className = 'fx3-chainring'; ring.style.opacity = '0'; card.appendChild(ring);
+  const no = document.createElement('div'); no.className = 'fx3-chainno'; no.textContent = n; card.appendChild(no);
+  // landing target: this link's own chip (fall back to the bar centre)
+  let tx = cx, ty = cy, chip = fxChainChipEl(n);
+  if (chip) { const r = fxRel(chip); if (r.w > 0) { tx = r.cx; ty = r.cy; } }
+  if (tx === cx && ty === cy) { const bar = $('chainbar'); if (bar) { const r = fxRel(bar); if (r.w > 0) { tx = r.cx; ty = r.cy; } } }
+  const dx = tx - cx, dy = ty - cy;
+  // L5: from the 2nd link, a dashed connector draws between the
+  // previous chip and the new one while the pop holds
+  let linkLine = null;
+  if (n >= 2) {
+    const prevChip = fxChainChipEl(n - 1);
+    if (prevChip && chip) {
+      const r1 = fxRel(prevChip), r2 = fxRel(chip);
+      const lx = r2.cx - r1.cx, ly = r2.cy - r1.cy, ll = Math.hypot(lx, ly);
+      if (ll > 4) {
+        linkLine = document.createElement('div');
+        linkLine.className = 'fx fx3-linkline';
+        linkLine.style.left = r1.cx + 'px'; linkLine.style.top = (r1.cy - 1) + 'px'; linkLine.style.width = ll + 'px';
+        linkLine.style.transform = 'rotate(' + (Math.atan2(ly, lx) * 180 / Math.PI) + 'deg) scaleX(0)';
+        layer.appendChild(linkLine);
+      }
     }
   }
-  fxAnim(d, [
-    { transform: 'translate(-50%,-50%) scale(1.06)', opacity: 1 },
-    { transform: 'translate(-50%,-50%) scale(1)', opacity: 1, offset: 0.55 },
-    { transform: 'translate(calc(-50% + ' + dx + 'px), calc(-50% + ' + dy + 'px)) scale(.38)', opacity: 0 },
-  ], { duration: 820, easing: 'ease-in-out' });
-  fxKill(d, 860);
+  fxAddScene({
+    kind: 'chainpop', dur: 950,
+    render(t) {
+      // L1: the card arrives by 220 ms (settle curve overshoots, then rests); white rim ignites in 80 ms
+      const s = 0.7 + 0.3 * FXE.settle(fxSeg(t, 0, 220));
+      // L4: 700-950 the card travels FLIP-style to its chip and lands small
+      const u = FXE.inOut(fxSeg(t, 700, 950));
+      const sc2 = fxLerp(s, Math.max(0.14, 26 / H), u);
+      card.style.transform = 'translate(' + (dx * u).toFixed(1) + 'px,' + (dy * u).toFixed(1) + 'px) scale(' + sc2.toFixed(3) + ')';
+      const rim = t < 80 ? t / 80 : 1 - fxSeg(t, 260, 480);
+      card.style.boxShadow = '0 0 0 2px rgba(255,255,255,' + (0.95 * rim).toFixed(2) + '), 0 12px 34px rgba(0,0,0,.55)';
+      card.style.opacity = String(1 - fxSeg(t, 890, 950));
+      // L2: the number slams 1.6 -> 1.0 over 60-220, ring pulse behind it
+      const ns = 1.6 - 0.6 * FXE.settle(fxSeg(t, 60, 220));
+      no.style.transform = 'translateX(-50%) scale(' + ns.toFixed(3) + ')';
+      no.style.opacity = String(1 - fxSeg(t, 890, 950));
+      const ru = fxSeg(t, 60, 300);
+      ring.style.transform = 'scale(' + (0.6 + 0.75 * FXE.outCubic(ru)).toFixed(3) + ')';
+      ring.style.opacity = String(0.8 * (1 - ru) * (t >= 60 ? 1 : 0));
+      if (linkLine) { // L5: dashes draw in over 250 ms, then crawl (the "connected" motion)
+        const du = fxSeg(t, 150, 400);
+        linkLine.style.transform = linkLine.style.transform.replace(/scaleX\([0-9.]+\)/, 'scaleX(' + du.toFixed(3) + ')');
+        linkLine.style.backgroundPositionX = (-t / 3).toFixed(1) + 'px';
+        linkLine.style.opacity = String(0.85 * (1 - fxSeg(t, 800, 950)));
+      }
+    },
+    onDone() {
+      card.remove();
+      if (linkLine) linkLine.remove();
+      if (chip) fxAnim(chip, [{ transform: 'scale(1.28)' }, { transform: 'scale(1)' }], { duration: 180, easing: 'ease-out' }); // the chip swells on landing
+    },
+  });
+}
+function fxChainSolveSceneV3(n, code, neg) {
+  const layer = fxLayerEl(); if (!layer) return;
+  const app = $('app'); if (!app) return;
+  const ar = fxRel(app);
+  const card = fxPlaceGhost(code, false, { cx: ar.cx, cy: ar.y + ar.h * 0.34 }, 104, 142);
+  if (!card) return;
+  card.style.zIndex = 6;
+  const no = document.createElement('div'); no.className = 'fx3-chainno'; no.textContent = n;
+  if (neg) no.style.color = '#b9b9b9';
+  card.appendChild(no);
+  const pt = fxRel(card);
+  fxAddScene({
+    kind: 'chainsolve', dur: 450,
+    cues: neg ? [] : [{ at: 120, fn: () => fxSpawnBurst('low', { seed: (Math.random() * 1e9) | 0, o: [pt.cx, pt.cy], n: 8, life: [380, 620], speed: [14, 46], ang: [-Math.PI / 2, 0.8], grav: -50, size: [2.5, 5], cols: ['#ffd94d', '#ffe9a8'], alpha: .95 }) }],
+    render(t) {
+      // L7: the solving link returns to the foreground (scale-in 200 ms)
+      card.style.transform = 'scale(' + (0.8 + 0.2 * FXE.settle(fxSeg(t, 0, 200))).toFixed(3) + ')';
+      if (neg) { // L9 (negated): no gold — the frame grays and saturation drains before it leaves
+        const g = fxSeg(t, 120, 300);
+        card.style.boxShadow = '0 0 0 2px rgba(170,170,170,' + (0.9 * g).toFixed(2) + '), 0 12px 34px rgba(0,0,0,.55)';
+        card.style.filter = 'grayscale(' + g.toFixed(2) + ')';
+      } else { // L8: gold frame + outer glow ignite at 120-270
+        const g = fxSeg(t, 120, 270);
+        card.style.boxShadow = '0 0 0 2px rgba(255,217,77,' + (0.95 * g).toFixed(2) + '), 0 0 ' + Math.round(24 * g) + 'px rgba(201,162,39,.7), 0 12px 34px rgba(0,0,0,.55)';
+      }
+      // L9: exit dimmed (and desaturated) 270-450 — "processed" stays readable while it leaves
+      const du = fxSeg(t, 270, 450);
+      if (!neg) card.style.filter = 'saturate(' + (1 - 0.75 * du).toFixed(2) + ') brightness(' + (1 - 0.25 * du).toFixed(2) + ')';
+      card.style.opacity = String(1 - fxSeg(t, 330, 450));
+    },
+    onDone() { card.remove(); },
+  });
 }
 // ---- set S/T activation (B9): the card tips into the chain
 // presentation — tilted, white-rimmed — it never flips inside its zone
@@ -1077,8 +1316,17 @@ function fxSetActivate(code, linkNo) {
   const d = fxPlaceGhost(code, false, { cx: ar.cx, cy: ar.y + ar.h * 0.36 }, 74, 96); if (!d) return;
   // when this activation IS the chain's new link, the tilted card is
   // the foreground pop (B8) and carries the big link number itself —
-  // a separate pop panel on top of it would just bury both
-  if (linkNo) d.innerHTML += '<div class="setno">' + linkNo + '</div>';
+  // a separate pop panel on top of it would just bury both.
+  // V3 stage 2: the number SLAMS in (proposal 1.4 L2) instead of
+  // sitting static for the whole presentation.
+  if (linkNo) {
+    d.innerHTML += '<div class="setno">' + linkNo + '</div>';
+    const noEl = d.querySelector('.setno');
+    if (noEl) {
+      noEl.style.transformOrigin = '0 0';
+      fxAddScene({ kind: 'setno', dur: 780, render(t) { noEl.style.transform = 'scale(' + (1.7 - 0.7 * FXE.settle(fxSeg(t, 40, 200))).toFixed(3) + ')'; } });
+    }
+  }
   d.style.transform = 'rotate(-14deg)';
   d.style.boxShadow = '0 0 0 2px #ffffff, 0 0 20px #ffffffaa';
   d.style.zIndex = 5;
@@ -1173,8 +1421,9 @@ function fxRoundBEvents(evs, prev, cur, diff) {
     if (isNewLink) popDone = true;
     fxRecord('setactivate', { code: ev.code });
   }
-  // ---- attacks (B7)
+  // ---- attacks (B7 -> V3 stage 2 scene)
   let lastAtkAttr = null;
+  const atkList = fxAttackKeys(evs, st);
   for (const ev of evs) {
     if (ev.kind === 'damage') fxLastHitAt = performance.now();
     if (ev.kind !== 'attack') continue;
@@ -1182,32 +1431,35 @@ function fxRoundBEvents(evs, prev, cur, diff) {
     const attr = d ? d.attribute : null;
     lastAtkAttr = attr;
     fxLastHitAt = performance.now(); fxLastHitAttr = attr;
-    const la = st ? st.lastAttack : null;
-    let aKey = null, tKey = null;
-    if (la && la.attacker && la.attacker.con === ev.con) {
-      aKey = la.attacker.con + ':' + E.LOC.MZONE + ':' + la.attacker.seq;
-      if (la.target) tKey = la.target.con + ':' + E.LOC.MZONE + ':' + la.target.seq;
-    }
+    const ak = atkList.find(x => x.ev === ev) || {};
+    let aKey = ak.aKey || null, tKey = ak.tKey || null;
     if (!aKey && ev.code != null) { // fallback: find the attacker in the standing snapshot
       for (const k of Object.keys(cur.z)) {
         const e2 = cur.z[k], parts = k.split(':').map(Number);
         if (e2 && e2.code === ev.code && parts[0] === ev.con && parts[1] === E.LOC.MZONE) { aKey = k; break; }
       }
     }
-    if (aKey) fxZoneGlow(aKey, 520);
-    if (ev.direct || !tKey) { // direct attack: the line runs to the LP plate + banner
+    const direct = ev.direct || !tKey;
+    const aPt = aKey ? fxPtOfKey(aKey) : null;
+    let tPt = null, targetCode = null, destroyed = false;
+    if (direct) { // direct attack: the line runs to the LP plate + banner
       const lpEl = fxLpEl(1 - ev.con);
-      const aPt = aKey ? fxPtOfKey(aKey) : null, tPt = lpEl ? fxRel(lpEl) : null;
-      if (aPt && tPt) fxAttackLine(aPt, tPt);
-      fxAtkBanner();
-      fxRecord('attackline', { code: ev.code, direct: true });
-      fxRecord('directattack', { code: ev.code });
+      tPt = lpEl ? fxRel(lpEl) : null;
     } else {
-      const aPt = aKey ? fxPtOfKey(aKey) : null, tPt = fxPtOfKey(tKey);
-      if (aPt && tPt) { fxAttackLine(aPt, tPt); fxImpact(tPt, attr); }
-      fxRecord('attackline', { code: ev.code, direct: false });
-      fxRecord('impact', { code: ev.code, attr });
+      tPt = tKey ? fxPtOfKey(tKey) : null;
+      const dep = diff.departed.find(dd => dd.key === tKey);
+      const standing = cur.z[tKey];
+      targetCode = dep ? dep.entry.code : (standing ? standing.code : null);
+      destroyed = !!dep && evs.some(e2 => e2.kind === 'destroy' && e2.code === dep.entry.code);
     }
+    if (aPt && tPt) {
+      const sc = fxAttackSceneV3({ aPt, tPt, attr, direct, targetCode, destroyed });
+      if (sc) fxLastAttackScene = { t0: sc.t0, defCon: 1 - ev.con };
+    }
+    if (direct) fxAtkBanner();
+    fxRecord('attackline', { code: ev.code, direct: !!direct });
+    if (direct) fxRecord('directattack', { code: ev.code });
+    else fxRecord('impact', { code: ev.code, attr });
   }
   // ---- finisher (B7): only the blow that ends the duel gets the
   // full-screen wash (attribute-tinted); the result overlay follows.
@@ -1222,17 +1474,25 @@ function fxRoundBEvents(evs, prev, cur, diff) {
   // number (see fxSetActivate)
   if (grew && !popDone) {
     const n = cur.links.length;
-    fxChainPop(n, cur.links[n - 1].code);
+    fxChainSceneV3(n, cur.links[n - 1].code);
     fxRecord('chainpop', { n, code: cur.links[n - 1].code });
   } else if (grew) {
     fxRecord('chainpop', { n: cur.links.length, code: cur.links[cur.links.length - 1].code, via: 'tilt' });
   }
-  if (cur.solving !== prev.solving && cur.solving > 0) fxRecord('chainsolving', { n: cur.solving });
-  // ---- LP (B7): the counter counts; heals float blue
+  if (cur.solving !== prev.solving && cur.solving > 0) {
+    fxRecord('chainsolving', { n: cur.solving });
+    const link = cur.links[cur.solving - 1];
+    if (link) fxChainSolveSceneV3(cur.solving, link.code, !!link.neg);
+  }
+  // ---- LP (B7 -> V3 stage 2): the counter counts on the FX clock;
+  // after an attack it starts at attack+400 ms (impact first, then
+  // the number — cause before effect). Heals still float blue.
   for (let p = 0; p < 2; p++) {
     if (cur.lp[p] === prev.lp[p]) continue;
     if (fxLpShown[p] == null) fxLpShown[p] = prev.lp[p];
-    fxLpCount(p, cur.lp[p]);
+    let startAt = null;
+    if (cur.lp[p] < prev.lp[p] && fxLastAttackScene && fxLastAttackScene.defCon === p && fxTimeMs - fxLastAttackScene.t0 < 400) startAt = fxLastAttackScene.t0 + 400;
+    fxLpCount(p, cur.lp[p], startAt);
     fxRecord('lpchange', { player: p, from: prev.lp[p], to: cur.lp[p] });
     if (cur.lp[p] > prev.lp[p]) { fxHealFloat(p, cur.lp[p] - prev.lp[p]); fxRecord('healfloat', { player: p, amount: cur.lp[p] - prev.lp[p] }); }
   }
@@ -1241,8 +1501,9 @@ function fxResetRoundB() {
   if (fxCutinTimer) { clearTimeout(fxCutinTimer); fxCutinTimer = null; }
   fxCutinGen++;
   fxLastHitAt = 0; fxLastHitAttr = null;
+  fxLastAttackScene = null;
   for (let p = 0; p < 2; p++) {
-    if (fxLpTimers[p]) { clearInterval(fxLpTimers[p]); fxLpTimers[p] = null; }
+    if (fxLpScenes[p]) { const s = fxLpScenes[p]; s.dead = true; if (s.cleanup) s.cleanup(); fxLpScenes[p] = null; }
     fxLpShown[p] = null;
   }
 }
