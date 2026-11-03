@@ -3060,3 +3060,48 @@ Frame-verified at 390x620/700 in real duels (a27shots/).
   belongs to B-15's territory and is filed in the brush-up
   backlog for the daily loop.
 Unmeasured as before: sound feel, real-device WKWebView.
+
+## Minerva 3rd triage (2026-11-03): the 4th legitimate state — activation locks
+- The user's 14:28 screenshot REFUTED the earlier "no bug, 3
+  legitimate states" verdict: turn 1, Main 1, Minerva just Xyz-
+  summoned, materials x2 (tile AND sheet), deck 30 — yet the
+  sheet's 発動 row was greyed with the generic 「今は発動でき
+  ません」. None of the 3 known states (materials 0 / deck < 3 /
+  used this turn) can hold there.
+- Root cause (reproduced at engine level, 11/11 Vernusylph
+  duels): 森と目覚の春化精 (36745317) and 花と野原の春化精
+  (62133026) carry 「このターン、自分は地属性以外のモンスターの
+  効果を発動できない」. Minerva is LIGHT. Fire a Vernusylph hand
+  effect earlier in the turn — the standard Ishizu turn-1 line,
+  which also explains the user's GY 5 / deck 30 — and the core
+  CORRECTLY omits her ignition from SELECT_IDLECMD. No engine
+  bug, no parser bug (raw bytes re-decoded independently; both
+  repos-layout variants consume the message exactly and agree).
+  Unfired controls offered her normally and the activation
+  resolved (detach -> mill 3). The first two triages missed it
+  because their reproductions never played the Vernusylph line.
+- The defect was invisibility, again: the reason lives in
+  ANOTHER card's lingering restriction, which the sheet's
+  detach/mill derivation cannot see. Fix (client.js): the
+  restricting cards are derived from the pool's own card texts
+  (regex over DATA.texts -> {36745317, 62133026}, EARTH
+  exception), the human's activation is latched from the
+  presentation event stream (noteMonsterLock, fed by
+  drainSeEvents — the same latch path as BGM key cards), scoped
+  to the activation turn, and openActionSheet now states
+  「このターンは地属性以外のモンスター効果を発動できません」
+  for ANY of the human's field monsters whose 発動 action is
+  missing under an active lock (the lock reason outranks the
+  Xyz detach/mill reasons — it blocks regardless of both).
+  Reasons are still only stated when mechanically certain.
+- Verified: test-minerva3.js (new; derivation, latching,
+  opponent-does-not-latch, EARTH exception, turn expiry) +
+  all 16 existing suites pass; real-browser play (headless
+  Chromium, 390x700) reproduced the user's exact frame —
+  turn 1, zone 3, materials x2 — and the sheet now shows the
+  lock reason (shots-minerva3/ in the fix worktree).
+- The screenshot's "EX 15" is NOT a bug: the pile bar shows the
+  OPPONENT's piles (at duel start it reads 35/15/0/0/5 = GG's
+  40-card deck minus its opening hand, EX untouched). The
+  user's own EX count is not what that bar displays.
+- Still unmeasured: sound feel, real-device WKWebView.
