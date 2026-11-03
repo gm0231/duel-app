@@ -736,8 +736,18 @@ function drainSeEvents(state) {
 // read-only sheet at the head of the next human prompt — before the
 // prompt itself opens, because the information belongs to the
 // decision the player is about to make. Rows open the usual card
-// detail on top of the sheet; the only exit is the close button.
+// detail on top of the sheet; every exit settles the wait (below).
 let pendingConfirms = [];
+// The confirm sheet is a 'view' sheet, so it has THREE exits (its own
+// close button, the x button, a backdrop tap) and C-20 makes them the
+// same single exit. The presentation wait must settle on ANY of them:
+// sheetClose() calls settleConfirmSheet(), so no exit can strand the
+// awaited promise in humanAnswerer (which would freeze the duel).
+let confirmSheetResolve = null;
+function settleConfirmSheet() {
+  const r = confirmSheetResolve; confirmSheetResolve = null;
+  if (r) r();
+}
 function queueConfirmEvents(evs) {
   for (const ev of evs || []) {
     if (ev.kind === 'confirm' && ev.shown === HP && ev.cards && ev.cards.some(c => c.code)) pendingConfirms.push(ev);
@@ -763,6 +773,7 @@ function showPendingConfirms() {
   }
   if (!groups.length) return Promise.resolve();
   return new Promise((resolve) => {
+    confirmSheetResolve = resolve;
     let html = '<div class="ttl">カードの確認</div>';
     for (const g of groups) {
       // deck entries arrive in group order, not position order: the
@@ -780,7 +791,7 @@ function showPendingConfirms() {
     $('sheet').querySelectorAll('[data-info]').forEach(el => el.addEventListener('click', () => {
       if (el.dataset.info) { playClick(); openInfoPop(+el.dataset.info); }
     }));
-    $('sheet-cancel').addEventListener('click', () => { playClick(); sheetClose(); resolve(); });
+    $('sheet-cancel').addEventListener('click', () => { playClick(); sheetClose(); settleConfirmSheet(); });
   });
 }
 // Test surface (same spirit as window.__fx / window.__bgm).
@@ -3012,6 +3023,7 @@ function sheetOpen(html, kind) {
   }
 }
 function sheetClose() {
+  settleConfirmSheet(); // any exit from the confirm sheet ends its wait
   closeInfoPop();
   const wrap = $('sheetwrap'), sheet = $('sheet');
   if (!wrap.classList.contains('on')) { wrap.removeAttribute('data-kind'); sheet.innerHTML = ''; return; }
@@ -3577,14 +3589,27 @@ function uiSelectCards(prompt, state) {
 function uiUnselect(prompt, state) {
   const combined = prompt.select.map((c, i) => ({ c, idx: i, sel: false }))
     .concat(prompt.unselect.map((c, i) => ({ c, idx: prompt.select.length + i, sel: true })));
-  sheetOpen('<div class="ttl">カードの選択</div><div class="sub">' + prompt.min + '〜' + prompt.max + ' 枚（現在 ' + prompt.unselect.length + ' 枚選択中）。タップで選択／解除します。</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
+  const selCount = prompt.unselect.length;
+  // Both buttons below send the same wire reply (-1), and the core
+  // reads it by state (playerop.cpp SelectUnselectCard, operations
+  // SelectTribute case 3): with a finishable selection of >= min it
+  // FINISHES with the current selection; with nothing selected it
+  // cancels the whole operation. So 「選ばずにやめる」 may only be
+  // offered while -1 would truly cancel — nothing selected yet, or
+  // a prompt that is not finishable at all. Offering it beside 決定
+  // let "やめる" silently confirm the selection instead.
+  const cancelTruthful = prompt.cancelable && !(prompt.finishable && selCount > 0);
+  let hint = '';
+  if (prompt.finishable && selCount > 0 && selCount < prompt.min) hint = 'あと' + (prompt.min - selCount) + '枚選ぶと決定できます。';
+  if (prompt.finishable && selCount > 0) hint += 'やめる場合は選択をすべて外してください。';
+  sheetOpen('<div class="ttl">カードの選択</div><div class="sub">' + prompt.min + '〜' + prompt.max + ' 枚（現在 ' + selCount + ' 枚選択中）。タップで選択／解除します。' + (hint ? ' ' + hint : '') + '</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
     '<div class="grid">' + combined.map((x, k) =>
       '<div class="gcard' + (x.sel ? ' sel' : '') + '" data-unselect="' + x.idx + '"><button class="gdetail" data-uinfo="' + k + '">詳細</button><div class="loc">' + locLabel(x.c) + '</div><div class="nm">' + cardName(x.c.code) + '</div>' +
       (statsLine(x.c.code) ? '<div class="stats">' + statsLine(x.c.code) + '</div>' : '') +
       (cardText(x.c.code) ? '<div class="itext">' + cardText(x.c.code) + '</div>' : '') + '</div>').join('') + '</div>' +
     '<div class="btnrow">' +
-    (prompt.finishable && prompt.unselect.length >= prompt.min ? '<button class="bigbtn" id="unselect-finish">決定</button>' : '') +
-    (prompt.cancelable ? '<button class="bigbtn sub" id="unselect-cancel">選ばずにやめる</button>' : '') + '</div>');
+    (prompt.finishable && selCount >= prompt.min ? '<button class="bigbtn" id="unselect-finish">決定</button>' : '') +
+    (cancelTruthful ? '<button class="bigbtn sub" id="unselect-cancel">選ばずにやめる</button>' : '') + '</div>');
   $('sheet').querySelectorAll('[data-unselect]').forEach(g => g.addEventListener('click', (ev) => { if (ev.target.closest('[data-uinfo]')) return; playClick(); finishPrompt(E.unselectToggleResp(+g.dataset.unselect)); }));
   $('sheet').querySelectorAll('[data-uinfo]').forEach(b => b.addEventListener('click', (ev) => { ev.stopPropagation(); playClick(); const x = combined[+b.dataset.uinfo]; openInfoPop(x.c.code, x.c); }));
   const fin = $('unselect-finish'); if (fin) fin.addEventListener('click', () => { playClick(); finishPrompt(E.cancelResp()); });
@@ -3650,6 +3675,9 @@ function optionLabelText(desc) {
   return OPTION_LABELS[code + '|' + idx] || null;
 }
 window.__optLabel = { resolve: optionLabelText };
+// Test surface: render the SELECT_UNSELECT_CARD sheet for a synthetic
+// prompt so its button states can be asserted without a live duel.
+window.__unselect = { open: (prompt) => uiUnselect(prompt, null) };
 function uiYesNo(prompt, state) {
   const isEff = prompt.name === 'SELECT_EFFECTYN';
   // WHICH card and WHICH effect is being asked must be readable on

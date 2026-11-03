@@ -187,6 +187,44 @@ async function part2() {
   window.document.getElementById('sheet-cancel').click();
   await p;
   ok(resolved, 'C8: close button resolves the presentation wait');
+  // C9/C10: the confirm sheet is a view sheet — the x button and a
+  // backdrop tap are the same single exit (C-20) and must ALSO settle
+  // the wait; before the fix they closed the sheet and stranded the
+  // promise in humanAnswerer, freezing the duel for good.
+  const settles = async (closeFn, label) => {
+    window.__confirm.push(mk(own, 0));
+    let done = false;
+    const q = window.__confirm.show().then(() => { done = true; });
+    await new Promise(r => setTimeout(r, 40));
+    closeFn();
+    await Promise.race([q, new Promise(r => setTimeout(r, 400))]);
+    ok(done, label);
+  };
+  await settles(() => window.document.getElementById('sheetx').click(), 'C9: x button resolves the presentation wait');
+  await settles(() => window.document.getElementById('sheetwrap').click(), 'C10: backdrop tap resolves the presentation wait');
+  // C11-C14: SELECT_UNSELECT_CARD button truthfulness. Both buttons
+  // send -1; the core finishes with the current selection when a
+  // finishable selection reaches min and cancels when nothing is
+  // selected, so 選ばずにやめる may only appear while -1 cancels.
+  ok(!!window.__unselect, 'C11: client exposes the unselect surface');
+  if (window.__unselect) {
+    const stub = (i) => ({ code: own[i % own.length], con: 0, loc: 4, seq: i });
+    const open = (over) => window.__unselect.open(Object.assign(
+      { select: [stub(0), stub(1)], unselect: [], min: 1, max: 2, finishable: true, cancelable: true }, over));
+    const doc = window.document;
+    open({ unselect: [stub(2)] });
+    ok(!!doc.getElementById('unselect-finish') && !doc.getElementById('unselect-cancel'),
+      'C12: finishable + selection >= min offers 決定 only (no fake cancel)');
+    open({ unselect: [] });
+    ok(!doc.getElementById('unselect-finish') && !!doc.getElementById('unselect-cancel'),
+      'C13: nothing selected offers 選ばずにやめる only');
+    open({ unselect: [stub(2)], finishable: false });
+    ok(!!doc.getElementById('unselect-cancel'), 'C14: non-finishable cancelable prompt keeps its cancel');
+    open({ unselect: [stub(2)], min: 2 });
+    ok(!doc.getElementById('unselect-finish') && !doc.getElementById('unselect-cancel') &&
+      doc.getElementById('sheet').textContent.includes('あと1枚'),
+      'C14b: mid-selection shows no button and states the remainder');
+  }
   window.close();
 }
 
