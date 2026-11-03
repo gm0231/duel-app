@@ -4542,3 +4542,24 @@ resident preview, eye and grin unmistakable at tile size),
 and — the surface a FLIP monster actually shows — drawn and
 set face-down through the real sheet, its face ghosting
 under the breathing setown veil, rotated with the tile.
+
+Tenth delivery, REPLACEMENT (user, 2026-11-03: "カオスポッド
+のイラストこれに変更"): new source ~/workspace/duel-assets/
+chaospod-user-20261103-v2.jpg (853x1844 — the pod on a
+middle shelf between canopic jars, taller frame than the
+first delivery). Only the two delivered files were rebuilt;
+the CARD_ART registration is unchanged and the first source
+stays in duel-assets. Small file: the standard top-anchored
+square (y0-853) puts the pod low-left and the tile's centre
+cover-crop clips it, so the crop start was adjusted to
+y350-1203 -> 320x320 (25KB) — the pod's top is still kept
+whole (nothing of the subject is cut; only the empty upper
+shelves are excluded), and the tile simulation plus the
+real-play tile show the green eye and the teeth centred.
+Big file = standard top-anchored full width x y0-1176 ->
+640x882 (98KB); the pod (y~540-905) sits fully inside, so
+no adjustment there. test-cardart: ALL PASSED. Real-play
+frames (cap-chaospod.js, shots-chaospod-v2/): drawn and
+normal-summoned face-up (tile + resident preview read
+instantly — eye and grin between the two jars) and set
+face-down under the breathing veil, at 390x620/700.

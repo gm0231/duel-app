@@ -1,0 +1,24 @@
+{
+ "620": {
+  "summon": {
+   "fieldArts": [
+    "background-image:url(../assets/card-art-chaospod-s.jpg);background-position:cent"
+   ]
+  },
+  "set": {
+   "setTileArt": "background-image:url(../assets/card-art-chaospod-s.jpg);background-position:center top",
+   "setTileVeil": true
+  }
+ },
+ "700": {
+  "summon": {
+   "fieldArts": [
+    "background-image:url(../assets/card-art-chaospod-s.jpg);background-position:cent"
+   ]
+  },
+  "set": {
+   "setTileArt": "background-image:url(../assets/card-art-chaospod-s.jpg);background-position:center top",
+   "setTileVeil": true
+  }
+ }
+}
