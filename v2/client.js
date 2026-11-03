@@ -320,21 +320,23 @@ async function neuronFetchOnce(url) {
   } catch (e) { return null; }
   finally { if (to) clearTimeout(to); }
 }
-async function neuronFetchViaChain(targetUrl) {
-  const wraps = [
-    u => u, // direct (expected to fail by CORS today; kept first so a future ACAO header just works)
-    u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u), // measured working 2026-11-04 (follows the share link's redirect to the deck page)
-    u => 'https://api.allorigins.win/get?url=' + encodeURIComponent(u), // same service, JSON envelope
-    u => 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(u),
-    u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u), // one retry: the measured route is flaky
-  ];
+const NEURON_WRAPS = [
+  u => u, // direct (expected to fail by CORS today; kept first so a future ACAO header just works)
+  u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u), // measured working 2026-11-04 (follows the share link's redirect to the deck page)
+  u => 'https://api.allorigins.win/get?url=' + encodeURIComponent(u), // same service, JSON envelope
+  u => 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(u),
+  u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u), // retries: the measured routes are flaky
+  u => 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(u),
+];
+async function neuronFetchViaChain(targetUrl, preferredWrap) {
+  const wraps = preferredWrap ? [preferredWrap, ...NEURON_WRAPS.filter(w => w !== preferredWrap)] : NEURON_WRAPS;
   for (const w of wraps) {
     let t = await neuronFetchOnce(w(targetUrl));
     if (t == null) continue;
     if (t.includes('"contents"')) { // allorigins /get envelope
       try { const j = JSON.parse(t); if (j && typeof j.contents === 'string') t = j.contents; } catch (e) {}
     }
-    if (t) return t;
+    if (t) return { text: t, wrap: w };
   }
   return null;
 }
@@ -353,14 +355,16 @@ function neuronExtractMemberDeckUrl(html) {
 }
 async function neuronFetchDeckHtml(startUrl) {
   const first = await neuronFetchViaChain(startUrl);
-  if (first && neuronLooksLikeDeckHtml(first)) return { ok: true, html: first };
+  if (first && neuronLooksLikeDeckHtml(first.text)) return { ok: true, html: first.text };
   if (first) {
     // a deck-search result page (or any page) that links the deck:
-    // follow the embedded member_deck URL once.
-    const next = neuronExtractMemberDeckUrl(first);
+    // follow the embedded member_deck URL once, trying first the
+    // relay that just answered (it is the likeliest to answer
+    // again right now).
+    const next = neuronExtractMemberDeckUrl(first.text);
     if (next && next !== startUrl) {
-      const second = await neuronFetchViaChain(next);
-      if (second && neuronLooksLikeDeckHtml(second)) return { ok: true, html: second };
+      const second = await neuronFetchViaChain(next, first.wrap);
+      if (second && neuronLooksLikeDeckHtml(second.text)) return { ok: true, html: second.text };
     }
   }
   return { ok: false };

@@ -107,7 +107,7 @@ async function runFlow(page, input, marker, tries) {
   // ---- Case B: the real deck code -> auto-save
   await page.evaluate(() => localStorage.clear());
   await openPanel(page);
-  const bOk = await runFlow(page, '2t9x91u', '自動で保存しました', 3);
+  const bOk = await runFlow(page, '2t9x91u', '自動で保存しました', 4);
   ok(bOk, 'B1: the real deck code imports and auto-saves end-to-end');
   if (bOk) {
     const txt = await page.$eval('#neuronresult', el => el.textContent);
