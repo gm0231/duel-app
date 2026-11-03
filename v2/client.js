@@ -3110,7 +3110,7 @@ function openLogHistory() {
   const rows = logHist.slice(-30).reverse().map(e =>
     '<div class="loghistrow"><span class="lt">T' + Math.max(1, e.turn) + '</span>' + e.text + '</div>').join('');
   sheetOpenView('<div class="ttl">対戦の履歴</div><div class="sub">直近 ' + Math.min(30, logHist.length) + ' 件（新しい順）</div>' + rows +
-    '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">盤面に戻る</button></div>');
+    '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">閉じる</button></div>');
   $('sheet-cancel').addEventListener('click', () => { playClick(); sheetClose(); });
 }
 function render(state) {
@@ -3204,8 +3204,24 @@ function phaseJa(n) {
 // made it look stuck. So every shown confirmation now carries the turn
 // owner + phase and a per-turn sequence number that increments per prompt.
 let confirmTurn = -1, confirmSeq = 0;
+function phaseJaContext(n) {
+  // W-27 (brushup round 3): context lines name the phase at the
+  // granularity a confirmation actually needs. The battle
+  // sub-steps (BATTLE_START / BATTLE_STEP / BATTLE) collapse to
+  // バトルフェイズ — the player cannot act on their boundaries,
+  // and バトル開始 sat one row away from the phase button's
+  // destination labels, inviting a misread. The one sub-phase
+  // distinction that changes what a confirmation means — a
+  // damage-step timing — is named explicitly instead. The
+  // phase READOUT in the mid bar keeps the fine phaseJa names:
+  // it is a display, not a context line, and the damage-step
+  // readout is real information there (B-08 compression stands).
+  if (n === 'BATTLE_START' || n === 'BATTLE_STEP' || n === 'BATTLE') return 'バトルフェイズ';
+  if (n === 'DAMAGE' || n === 'DAMAGE_CAL') return 'ダメージ計算の確認';
+  return phaseJa(n);
+}
 function timingText(state) {
-  const ph = state.phaseName ? '・' + phaseJa(state.phaseName) : '';
+  const ph = state.phaseName ? '・' + phaseJaContext(state.phaseName) : '';
   return (state.turnPlayer === HP ? '自分のターン' : '相手のターン') + ph;
 }
 function confirmTag(state) { // call ONCE per shown prompt, never per redraw
@@ -3295,7 +3311,10 @@ function openInfoPop(code, ref, fx) {
   $('infopop').innerHTML = '<div class="ttl">' + cardName(code) + '</div>' +
     '<div class="sub">' + [meta, st].filter(Boolean).join('／') + '</div>' +
     (cardText(code) ? (fx ? fxBlockHTML(code, fx) : '<div class="cardtext">' + cardText(code) + '</div>') : '<div class="sub">このカードのテキストは表示できません</div>') +
-    '<div class="btnrow"><button class="bigbtn sub" id="infopop-close">閉じる</button></div>';
+    // W-28: the detail pop floats over whatever is beneath it;
+    // while a prompt is open, closing returns to that selection
+    // (選択に戻る); over a pure view it is just 閉じる.
+    '<div class="btnrow"><button class="bigbtn sub" id="infopop-close">' + (currentPrompt ? '選択に戻る' : '閉じる') + '</button></div>';
   $('infopop').className = 'on';
   $('infopop-close').addEventListener('click', () => { playClick(); closeInfoPop(); });
 }
@@ -3517,7 +3536,10 @@ function openActionSheet(key) {
     acts.map((a, i) => '<button class="optbtn" data-action-idx="' + i + '">' + a.label + '</button>').join('') +
     unusable +
     (fxBlocks || (txt ? '<div class="cardtext">' + txt + '</div>' : '')) +
-    '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">盤面に戻る</button></div>');
+    // W-28 (brushup round 3): this sheet IS the pending idle
+    // choice — closing it returns to that choice, so it takes
+    // the selection-context label, not the viewing one.
+    '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">選択に戻る</button></div>');
   $('sheet').querySelectorAll('[data-action-idx]').forEach(b => b.addEventListener('click', () => {
     const a = acts[+b.dataset.actionIdx];
     if (a.label === '通常召喚' || a.label === '特殊召喚' || a.label === 'モンスターをセット' || a.label === '魔法・罠をセット') lastPlaceCard = { key, code: a.code };
@@ -3573,7 +3595,10 @@ function openPileSheet(kind, con) {
       pa.acts.map((a, j) => '<button class="optbtn" data-pile-act="' + i + ':' + j + '">' + cardName(a.code) + '：' + a.label + '</button>').join('')).join('');
   }
   sheetOpenView('<div class="ttl">' + ({ grave: '墓地', removed: '除外', extra: 'EXデッキ', deck: 'デッキ', hand: '手札' }[kind]) + '（' + (con === HP ? '自分' : '相手') + '）</div>' + body +
-    '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">盤面に戻る</button></div>');
+    // W-28: with executable actions this sheet serves the
+    // pending choice (選択に戻る); without them it is a viewer
+    // (閉じる). The label follows what closing actually does.
+    '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">' + (pileActs.length ? '選択に戻る' : '閉じる') + '</button></div>');
   $('sheet').querySelectorAll('[data-pile-act]').forEach(b => b.addEventListener('click', () => {
     const [i, j] = b.dataset.pileAct.split(':').map(Number); playClick(); finishPrompt(pileActs[i].acts[j].bytes);
   }));
@@ -3592,7 +3617,7 @@ function openCardInfo(code) {
   sheetOpenView('<div class="ttl">' + cardName(code) + '</div>' +
     '<div class="sub">' + [meta, st].filter(Boolean).join('／') + '</div>' +
     (txt ? '<div class="cardtext">' + txt + '</div>' : '<div class="sub">このカードのテキストは表示できません</div>') +
-    '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">盤面に戻る</button></div>');
+    '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">閉じる</button></div>');
   $('sheet-cancel').addEventListener('click', () => { playClick(); sheetClose(); });
 }
 // ---- chain dock (EDOPro-style; numbered links live in the mid bar) ----
@@ -3617,7 +3642,7 @@ function openDismissManager() {
   sheetOpenView('<div class="ttl">自動パスの設定（このデュエル）</div>' +
     '<div class="sub">ここにあるカードだけが残ったチェーン確認は、自動でパスされます。他に候補がある確認は通常どおり表示されます。</div>' +
     (rows || '<div class="sub">設定中のカードはありません</div>') +
-    '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">盤面に戻る</button></div>');
+    '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">閉じる</button></div>');
   $('sheet').querySelectorAll('[data-undismiss]').forEach(b => b.addEventListener('click', () => {
     playClick(); dismissedDuel.delete(b.dataset.undismiss); updateAutoPassChip(); openDismissManager();
   }));
@@ -3647,7 +3672,7 @@ function openFxSettings() {
       '<button data-v="on"' + (fxSettings.resp === 'on' ? ' class="sel"' : '') + '>毎回</button>' +
       '<button data-v="off"' + (fxSettings.resp === 'off' ? ' class="sel"' : '') + '>自動</button></div>' +
       '<div class="sub">おまかせ：「聞かない」にしたカードだけ自動でパス。それ以外は毎回確認します<br>毎回：すべてのチェーンで毎回確認します（「聞かない」設定は無効）<br>自動：任意のチェーン確認は全て自動でパス。必須の確認だけ表示します</div>' +
-      '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">盤面に戻る</button></div>');
+      '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">閉じる</button></div>');
     const wire = (id, apply) => {
       const el = $(id); if (!el) return;
       el.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { playClick(); apply(b.dataset.v); draw(); }));
@@ -3859,25 +3884,50 @@ function gridSheet(o) {
   };
   draw();
 }
+// BU-13 (brushup round 3): the core sends no purpose tag with
+// SELECT_CARD, so this client states only the purpose it can
+// PROVE from the prompt + state alone — the rule-process
+// hand-limit discard in the end phase. Every guard must hold:
+// END phase, no chain in progress and no asking effect (context
+// null), not cancelable, every candidate is the asked player's
+// own hand card, and min == max == exactly the over-limit count
+// (hand - 6). Effect-driven selections from the hand (a discard
+// COST, a target, a material) fail at least the context / chain
+// / count guards and keep the generic title — a guessed purpose
+// that mislabels a cost as a rule discard would be worse than
+// none. Returns 'handlimit' or null.
+function inferSelectPurpose(prompt, state) {
+  if (!state || !prompt || prompt.name !== 'SELECT_CARD' || prompt.context) return null;
+  if (state.phaseName !== 'END' || (state.chain && state.chain.length)) return null;
+  if (prompt.cancelable) return null;
+  const P = state.players && state.players[prompt.player];
+  if (!P || !P.hand) return null;
+  const excess = P.hand.length - 6;
+  if (excess <= 0 || prompt.min !== excess || prompt.max !== excess) return null;
+  if (!prompt.cards.length || prompt.cards.some(c => c.con !== prompt.player || c.loc !== E.LOC.HAND)) return null;
+  return 'handlimit';
+}
 function uiSelectCards(prompt, state) {
   const isTrib = prompt.name === 'SELECT_TRIBUTE';
   const atk = !isTrib && promptAttacker ? promptAttacker : null;
+  const isHandLimit = !isTrib && !atk && inferSelectPurpose(prompt, state) === 'handlimit';
   const selected = new Set();
   const sum = () => [...selected].reduce((a, i) => a + (prompt.cards[i].releaseParam || 0), 0);
   gridSheet({
     prompt,
-    title: isTrib ? 'リリースするカード' : atk ? cardName(atk.code) + ' の攻撃' : 'カードの選択',
+    title: isTrib ? 'リリースするカード' : atk ? cardName(atk.code) + ' の攻撃' : isHandLimit ? '手札の上限' : 'カードの選択',
     sub: () => isTrib ? '合計 ' + prompt.min + ' 以上になるよう選んでください（現在 ' + sum() + '）'
                       : atk ? '攻撃する相手を選んでください'
+                      : isHandLimit ? '手札が上限（6枚）を超えています。捨てるカードを ' + prompt.min + ' 枚選んでください（現在 ' + selected.size + ' 枚）'
                       : prompt.min + '〜' + prompt.max + ' 枚選んでください（現在 ' + selected.size + ' 枚）',
-    confirmLabel: atk ? 'この相手を攻撃する' : undefined,
+    confirmLabel: atk ? 'この相手を攻撃する' : isHandLimit ? 'このカードを捨てる' : undefined,
     cards: prompt.cards.map(c => ({ code: c.code, locLabel: locLabel(c), extra: isTrib ? '（リリース値 ' + c.releaseParam + '）' : '', ref: c })),
     selected,
     locked: [],
     showText: true,
     cancelable: prompt.cancelable,
     valid: () => isTrib ? (sum() >= prompt.min && selected.size <= prompt.max) : (selected.size >= prompt.min && selected.size <= prompt.max),
-    needLabel: () => isTrib ? '決定（合計あと' + Math.max(0, prompt.min - sum()) + '）' : '決定（あと' + Math.max(0, prompt.min - selected.size) + '枚）',
+    needLabel: () => isTrib ? '決定（合計あと' + Math.max(0, prompt.min - sum()) + '）' : isHandLimit ? '捨てる（あと' + Math.max(0, prompt.min - selected.size) + '枚）' : '決定（あと' + Math.max(0, prompt.min - selected.size) + '枚）',
     onToggle: (i) => {
       if (selected.has(i)) selected.delete(i);
       else { if (!isTrib && selected.size >= prompt.max) return 'max'; selected.add(i); }
@@ -3997,6 +4047,10 @@ function optionLabelText(desc) {
   return OPTION_LABELS[code + '|' + idx] || null;
 }
 window.__optLabel = { resolve: optionLabelText };
+// Test surface (brushup round 3): the SELECT_CARD purpose
+// inference and the context-line phase granularity, so the
+// guard set is pinned by test-purpose.js.
+window.__purpose = { infer: inferSelectPurpose, phaseCtx: phaseJaContext };
 // Test surface: render the SELECT_UNSELECT_CARD sheet for a synthetic
 // prompt so its button states can be asserted without a live duel.
 window.__unselect = { open: (prompt) => uiUnselect(prompt, null) };
@@ -4270,7 +4324,8 @@ $('menubtn').addEventListener('click', () => {
   if (!menuActions.length) return;
   sheetOpenView('<div class="ttl">その他のアクション</div>' +
     menuActions.map((a, i) => '<button class="optbtn" data-menu="' + i + '">' + a.label + '</button>').join('') +
-    '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">盤面に戻る</button></div>');
+    // W-28: menu actions belong to the pending idle choice.
+    '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">選択に戻る</button></div>');
   $('sheet').querySelectorAll('[data-menu]').forEach(b => b.addEventListener('click', () => { playClick(); finishPrompt(menuActions[+b.dataset.menu].bytes); }));
   $('sheet-cancel').addEventListener('click', () => { playClick(); sheetClose(); });
 });
@@ -4858,7 +4913,17 @@ function wireSeg(id, apply) {
       $('vssub').innerHTML = dn(myDeckKey) + ' vs ' + dn(opDeckKey) + '<br>あなたは' + (humanFirst ? '先攻' : '後攻') + 'です';
       const vs = $('vsoverlay'); vs.classList.add('on');
       try {
-        vs.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220, easing: 'ease-out' });
+        // DS-07 (brushup round 3): the curtain itself is NEVER
+        // faded. An overlay-level opacity fade (0->1 over 220 ms)
+        // made the opaque #070503 background translucent for the
+        // whole fade, and the still-displayed start screen bled
+        // through behind the VS text (reproduced in transition
+        // frames at +218 ms / 620 and +226 ms / 700; opaque only
+        // from ~+299 ms). The curtain's job is to cover, so it is
+        // opaque from the first painted frame; only the contents
+        // stage in (beams and VS text already animate themselves;
+        // the matchup line gets the small fade the overlay had).
+        vs.querySelector('.vss').animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220, easing: 'ease-out' });
         vs.querySelector('.bl').animate([{ transform: 'translateX(-30%) rotate(9deg)', opacity: 0 }, { transform: 'translateX(38%) rotate(9deg)', opacity: 1, offset: .55 }, { transform: 'translateX(60%) rotate(9deg)', opacity: 0 }], { duration: 900, easing: 'cubic-bezier(.2,.7,.3,1)' });
         vs.querySelector('.br').animate([{ transform: 'translateX(30%) rotate(-9deg)', opacity: 0 }, { transform: 'translateX(-38%) rotate(-9deg)', opacity: 1, offset: .55 }, { transform: 'translateX(-60%) rotate(-9deg)', opacity: 0 }], { duration: 900, easing: 'cubic-bezier(.2,.7,.3,1)' });
         vs.querySelector('.vst').animate([{ transform: 'scale(1.5)', opacity: 0 }, { transform: 'scale(1)', opacity: 1 }], { duration: 380, delay: 120, easing: 'cubic-bezier(.16,1.3,.3,1)' });
