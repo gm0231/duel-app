@@ -1,0 +1,98 @@
+{
+ "620": {
+  "handEffect": {
+   "cls": "nm k-effect",
+   "bg": "rgb(113, 58, 18)",
+   "color": "rgb(232, 220, 192)"
+  },
+  "handSpell": {
+   "cls": "nm k-spell",
+   "bg": "rgb(13, 74, 52)",
+   "color": "rgb(232, 220, 192)"
+  },
+  "handTrap": {
+   "cls": "nm k-trap",
+   "bg": "rgb(109, 33, 80)",
+   "color": "rgb(232, 220, 192)"
+  },
+  "handFlip": {
+   "cls": "nm k-effect",
+   "bg": "rgb(113, 58, 18)",
+   "color": "rgb(232, 220, 192)"
+  },
+  "pvName": {
+   "cls": "pv-name k-fusion",
+   "bg": "rgb(69, 42, 99)",
+   "color": "rgb(232, 220, 192)"
+  },
+  "oppDownNmCount": 0,
+  "oppSetArt": ""
+ },
+ "700": {
+  "handEffect": {
+   "cls": "nm k-effect",
+   "bg": "rgb(113, 58, 18)",
+   "color": "rgb(232, 220, 192)"
+  },
+  "handSpell": {
+   "cls": "nm k-spell",
+   "bg": "rgb(13, 74, 52)",
+   "color": "rgb(232, 220, 192)"
+  },
+  "handTrap": {
+   "cls": "nm k-trap",
+   "bg": "rgb(109, 33, 80)",
+   "color": "rgb(232, 220, 192)"
+  },
+  "handFlip": {
+   "cls": "nm k-effect",
+   "bg": "rgb(113, 58, 18)",
+   "color": "rgb(232, 220, 192)"
+  },
+  "pvName": {
+   "cls": "pv-name k-fusion",
+   "bg": "rgb(69, 42, 99)",
+   "color": "rgb(232, 220, 192)"
+  },
+  "oppDownNmCount": 0,
+  "oppSetArt": "",
+  "grid": [
+   {
+    "cls": "nm k-effect",
+    "bg": "rgb(113, 58, 18)"
+   },
+   {
+    "cls": "nm k-fusion",
+    "bg": "rgb(69, 42, 99)"
+   },
+   {
+    "cls": "nm k-synchro",
+    "bg": "rgb(201, 201, 210)"
+   },
+   {
+    "cls": "nm k-xyz",
+    "bg": "rgb(38, 38, 47)"
+   },
+   {
+    "cls": "nm k-spell",
+    "bg": "rgb(13, 74, 52)"
+   },
+   {
+    "cls": "nm k-spell",
+    "bg": "rgb(13, 74, 52)"
+   },
+   {
+    "cls": "nm k-trap",
+    "bg": "rgb(109, 33, 80)"
+   },
+   {
+    "cls": "nm k-trap",
+    "bg": "rgb(109, 33, 80)"
+   },
+   {
+    "cls": "nm k-effect",
+    "bg": "rgb(113, 58, 18)"
+   }
+  ]
+ }
+}
