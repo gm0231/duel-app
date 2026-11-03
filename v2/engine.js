@@ -746,8 +746,15 @@ class GameState {
       case 110: { // ATTACK: attacker loc_info, target loc_info (zeroed = direct)
         const a = r.locInfo(); const tg = r.locInfo();
         this.lastAttack = { attacker: a, target: tg.loc === 0 ? null : tg };
-        this.pushLog('攻撃宣言');
         const az = a.loc === LOC.MZONE ? this.players[a.con].mzone[a.seq] : null;
+        const tz = tg.loc === LOC.MZONE ? this.players[tg.con].mzone[tg.seq] : null;
+        // The log names attacker and target (W-16): a bare 「攻撃宣言」
+        // left nothing searchable in the history after the fact.
+        if (az && az.code) {
+          this.pushLog(tg.loc === 0 || !tz || !tz.code
+            ? this.who(a.con) + '：' + this.nameOf(az.code) + ' が直接攻撃'
+            : this.who(a.con) + '：' + this.nameOf(az.code) + ' が ' + this.nameOf(tz.code) + ' を攻撃');
+        } else this.pushLog('攻撃宣言');
         this.pushEvent({ kind: 'attack', code: az ? az.code : null, con: a.con, direct: tg.loc === 0 });
         break;
       }

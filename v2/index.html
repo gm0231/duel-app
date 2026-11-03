@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>トトと簡易デュエル v2 (ocgcore) — Phase 2</title>
+<title>トトと簡易デュエル</title>
 <style>
   :root{
     --gold:#c9a227; --gold-dim:#8a6d1f; --ink:#0d0b08; --panel:#1b1712; --panel2:#241e16;
@@ -153,6 +153,7 @@
   #dock.on{display:block;}
   #dock .ttl{font-size:12px;color:var(--gold);font-weight:700;}
   #dock .ctx{font-size:11px;color:var(--txt-dim);margin:2px 0 6px;}
+  #dock .toplink{text-decoration:underline dotted;text-underline-offset:2px;}
   #dock .cands{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;}
   .cand{flex:0 0 auto;max-width:150px;border:1px solid var(--gold);border-radius:6px;background:var(--panel2);padding:6px 8px;font-size:11px;cursor:pointer;position:relative;}
   .cand .loc{color:var(--txt-dim);font-size:10px;}
@@ -459,7 +460,7 @@
   </div>
   <div id="midbar">
     <div id="chainbar"></div>
-    <div id="logline">エンジン読み込み中…</div>
+    <div id="logline">読み込み中…</div>
     <div id="phasebar">
       <div><div style="font-size:10px;color:var(--txt-dim)">自分</div><div class="lp" id="myLp">8000</div></div>
       <div id="phaseinfo">—</div>
@@ -506,9 +507,9 @@
     <div class="settings">
       <div class="srow"><div class="sl">チェーン確認</div>
         <div class="seg" id="seg-resp">
-          <button data-v="auto" class="sel">おまかせ<small>大事な時だけ聞く</small></button>
-          <button data-v="on">毎回<small>全タイミングで聞く</small></button>
-          <button data-v="off">自動<small>強制以外は流す</small></button>
+          <button data-v="auto" class="sel">おまかせ<small>「聞かない」設定だけ自動パス</small></button>
+          <button data-v="on">毎回<small>すべてのチェーンで聞く</small></button>
+          <button data-v="off">自動<small>必須以外は聞かずにパス</small></button>
         </div>
       </div>
       <div class="srow"><div class="sl">召喚カットイン</div>

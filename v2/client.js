@@ -18,6 +18,8 @@ let phaseAction = null;     // {label, bytes} for the phase button
 let menuActions = [];       // extra idle actions (hand shuffle)
 let placeCtx = null;        // active SELECT_PLACE/DISFIELD interaction
 let lastPlaceCard = null;   // {key, code} of a just-chosen summon/set action
+let pendingAttacker = null; // {code} of a just-chosen 攻撃 action (BATTLECMD)
+let promptAttacker = null;  // pendingAttacker, bound to the prompt it preceded
 let dismissedChains = new Set(); // chain-candidate dismissals (this chain only)
 let dismissedDuel = new Map();   // chain-candidate dismissals (whole duel): chainKey -> {code}
 // start-screen choices (Phase 2 item 5)
@@ -299,6 +301,8 @@ const SE_FILES = new Set(['ui_click', 'set_card', 'activate_card', 'vs_start',
   'negate_shield', 'summon_circle', 'summon_big', 'summon_land']);
 const seCache = {}, seLast = {};
 let audioOn = true;
+try { const savedAudio = localStorage.getItem('v2audio'); if (savedAudio != null) audioOn = savedAudio === '1'; } catch (e) {}
+function saveAudioPref() { try { localStorage.setItem('v2audio', audioOn ? '1' : '0'); } catch (e) {} }
 function playSe(name) {
   if (!audioOn || !SE_FILES.has(name)) return;
   const now = performance.now();
@@ -1975,7 +1979,7 @@ function fxAtkBanner() {
   const layer = fxLayerEl(); if (!layer) return;
   const d = document.createElement('div');
   d.className = 'fx-atkbanner';
-  d.textContent = 'DIRECT ATTACK';
+  d.textContent = '直接攻撃';
   layer.appendChild(d);
   fxAnim(d, [{ opacity: 0 }, { opacity: 1, offset: 0.2 }, { opacity: 1, offset: 0.75 }, { opacity: 0 }], { duration: 900, easing: 'ease-out' });
   fxKill(d, 940);
@@ -2984,7 +2988,11 @@ function timingText(state) {
 function confirmTag(state) { // call ONCE per shown prompt, never per redraw
   if (state.turnCount !== confirmTurn) { confirmTurn = state.turnCount; confirmSeq = 0; }
   confirmSeq++;
-  return confirmSeq >= 3 ? '（このターン' + confirmSeq + '回目の確認）' : '';
+  // From the FIRST confirmation, not the third: "is this the same
+  // question again?" is the player's cue to use the suppression
+  // exits, and it matters most on the early repeats (care audit
+  // W-19; supersedes the C-27 from-the-3rd rule).
+  return '（このターン' + confirmSeq + '回目の確認）';
 }
 // C-27: duel-long suppression for effect-activation yes/no,
 // keyed per card AND effect descriptor — the exit the chain
@@ -3063,7 +3071,7 @@ function openInfoPop(code, ref, fx) {
   const st = statsLine(code);
   $('infopop').innerHTML = '<div class="ttl">' + cardName(code) + '</div>' +
     '<div class="sub">' + [meta, st].filter(Boolean).join('／') + '</div>' +
-    (cardText(code) ? (fx ? fxBlockHTML(code, fx) : '<div class="cardtext">' + cardText(code) + '</div>') : '<div class="sub">テキスト未収録</div>') +
+    (cardText(code) ? (fx ? fxBlockHTML(code, fx) : '<div class="cardtext">' + cardText(code) + '</div>') : '<div class="sub">このカードのテキストは表示できません</div>') +
     '<div class="btnrow"><button class="bigbtn sub" id="infopop-close">閉じる</button></div>';
   $('infopop').className = 'on';
   $('infopop-close').addEventListener('click', () => { playClick(); closeInfoPop(); });
@@ -3100,6 +3108,11 @@ function uiAnswer(prompt, state) {
     // sheet (round B) — the settings sheet must never sit over a dock
     if ($('sheet') && $('sheet').querySelector('#fxseg-cutin')) sheetClose();
     currentPrompt = { prompt, resolve };
+    // The 攻撃 action's target choice is the SELECT_CARD that
+    // immediately follows it; bind the attacker to that one prompt
+    // only, so its sheet can name whose attack it is (P1-2).
+    promptAttacker = prompt.name === 'SELECT_CARD' ? pendingAttacker : null;
+    pendingAttacker = null;
     if (duel) { try { duel.refreshFieldStats(); } catch (e) {} } // live ATK/DEF behind the prompt UI
     try {
       dispatchPrompt(prompt, state);
@@ -3137,16 +3150,29 @@ function uiCmd(prompt, state) {
   const add = (list, label, type) => list.forEach((e, i) => {
     const key = e.con + ':' + e.loc + ':' + e.seq;
     if (!actionMap.has(key)) actionMap.set(key, []);
+    const lab0 = typeof label === 'function' ? label(e) : label;
     // Activatable entries keep their desc: two effects of the same
     // card must not collapse into indistinguishable buttons.
-    const fx = label === '効果を発動' ? entryEffect(e, 'idle') : null;
-    const lab = fx && fx.n ? (fx.act ? 'カードを発動：' + fxExcerpt(fx) : '効果を発動：' + CIRCLED_NUM[fx.n - 1] + ' ' + fxExcerpt(fx)) : label;
-    actionMap.get(key).push({ label: lab, bytes: E.cmdResp(type, i), code: e.code, desc: e.desc, activate: label === '効果を発動' });
+    const fx = lab0 === '効果を発動' ? entryEffect(e, 'idle') : null;
+    const lab = fx && fx.n ? (fx.act ? 'カードを発動：' + fxExcerpt(fx) : '効果を発動：' + CIRCLED_NUM[fx.n - 1] + ' ' + fxExcerpt(fx)) : lab0;
+    actionMap.get(key).push({ label: lab, bytes: E.cmdResp(type, i), code: e.code, desc: e.desc, activate: lab0 === '効果を発動' });
   });
+  // W-20: a position change names its DESTINATION, read from the
+  // monster's current position — 「表示形式を変更」 never said
+  // which way the card would end up facing.
+  const reposLabel = (e) => {
+    const P = state && state.players ? state.players[e.con] : null;
+    const c = P && e.loc === E.LOC.MZONE ? P.mzone[e.seq] : null;
+    const pos = c ? c.pos : null;
+    if (pos === E.POS.FU_ATK) return '守備表示に変更する';
+    if (pos === E.POS.FU_DEF) return '攻撃表示に変更する';
+    if (pos != null && (pos & (E.POS.FD_ATK | E.POS.FD_DEF))) return '表側攻撃表示にする';
+    return '表示形式を変更';
+  };
   if (prompt.name === 'SELECT_IDLECMD') {
     add(prompt.summon, '通常召喚', 0);
     add(prompt.spsummon, '特殊召喚', 1);
-    add(prompt.repos, '表示形式を変更', 2);
+    add(prompt.repos, reposLabel, 2);
     add(prompt.mset, 'モンスターをセット', 3);
     add(prompt.sset, '魔法・罠をセット', 4);
     add(prompt.activate, '効果を発動', 5);
@@ -3261,6 +3287,7 @@ function openActionSheet(key) {
   $('sheet').querySelectorAll('[data-action-idx]').forEach(b => b.addEventListener('click', () => {
     const a = acts[+b.dataset.actionIdx];
     if (a.label === '通常召喚' || a.label === '特殊召喚' || a.label === 'モンスターをセット' || a.label === '魔法・罠をセット') lastPlaceCard = { key, code: a.code };
+    if (a.label === '攻撃') pendingAttacker = { code: a.code };
     playClick(); finishPrompt(a.bytes);
   }));
   $('sheet-cancel').addEventListener('click', () => { playClick(); sheetClose(); });
@@ -3309,7 +3336,7 @@ function openCardInfo(code) {
   const st = statsLine(code);
   sheetOpenView('<div class="ttl">' + cardName(code) + '</div>' +
     '<div class="sub">' + [meta, st].filter(Boolean).join('／') + '</div>' +
-    (txt ? '<div class="cardtext">' + txt + '</div>' : '<div class="sub">テキスト未収録</div>') +
+    (txt ? '<div class="cardtext">' + txt + '</div>' : '<div class="sub">このカードのテキストは表示できません</div>') +
     '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">盤面に戻る</button></div>');
   $('sheet-cancel').addEventListener('click', () => { playClick(); sheetClose(); });
 }
@@ -3405,7 +3432,7 @@ function uiChain(prompt, state) {
     const top = state.chain[state.chain.length - 1];
     $('dock').innerHTML =
       '<div class="ttl">チェーン応答</div>' +
-      '<div class="ctx">' + timingText(state) + '｜' + (top ? 'チェーン' + state.chain.length + '：' + cardName(top.code) + ' への応答' : '効果への応答') + (prompt.forced ? '（発動必須）' : '') + tag + '</div>' +
+      '<div class="ctx">' + timingText(state) + '｜' + (top ? 'チェーン' + state.chain.length + '：<span class="toplink" data-topinfo="1">' + cardName(top.code) + '</span> への応答' : '効果への応答') + (prompt.forced ? '（発動必須）' : '') + tag + '</div>' +
       retryWarn(prompt) +
       '<div class="cands">' + prompt.entries.map((e, i) => {
         if (!noDismiss && dismissedDuel.has(chainKey(e))) return ''; // duel-dismissed: hidden here, managed in the section below
@@ -3418,7 +3445,7 @@ function uiChain(prompt, state) {
           '<div class="loc">' + locLabel(e) + (disChain ? '（このチェーンでは聞かない）' : '') + '</div>' +
           (cfx && cfx.n ? '<div class="fxline">' + (cfx.act ? '発動：' : '効果' + CIRCLED_NUM[cfx.n - 1] + '：') + fxExcerpt(cfx) + '</div>' : '') +
           (prompt.forced ? '' : '<span class="dismiss" data-dismiss="' + i + '">' + (disChain ? '聞くに戻す' : 'このチェーンでは聞かない') + '</span>') +
-          (prompt.forced || disChain ? '' : '<span class="dueldismiss" data-dueldismiss="' + i + '">このデュエル中は聞かない</span>') +
+          (prompt.forced || disChain ? '' : '<span class="dueldismiss" data-dueldismiss="' + i + '">このデュエル中は聞かない（この場所でのこの効果のみ）</span>') +
           '<span class="candinfo" data-info="' + i + '">詳細</span></div>';
       }).join('') + '</div>' +
       (() => {
@@ -3427,7 +3454,10 @@ function uiChain(prompt, state) {
         return '<div class="duelsection">自動パス設定中：' + [...new Set(dd.map(e => dismissalName(e)))].join('・') +
           dd.map(e => '<button data-undismiss="' + chainKey(e) + '">' + dismissalName(e) + ' を解除</button>').join('') + '</div>';
       })() +
-      '<div class="row">' + (prompt.forced ? '' : '<button class="bigbtn" id="chain-pass">パス</button>') + '</div>';
+      '<div class="row">' + (prompt.forced ? '' : '<button class="bigbtn" id="chain-pass">パス</button>') + '</div>' +
+      // W-17: what パス commits to, and that the question can
+      // return — stated once, under the button itself.
+      (prompt.forced ? '' : '<div class="sub">パス＝このタイミングでは何も発動しません。場面が変わると、また確認されることがあります。</div>');
     $('dock').className = 'on'; // exact class is a contract (tests/tools match on it) — do not append state classes here
     if (firstDraw && $('dock').animate) { // a NEW prompt visibly arrives, even if its text matches the previous one
       try { $('dock').animate([{ transform: 'translateY(14px)', opacity: .25 }, { transform: 'none', opacity: 1 }], { duration: 300, easing: 'ease-out' }); } catch (e) {}
@@ -3443,6 +3473,13 @@ function uiChain(prompt, state) {
     $('dock').querySelectorAll('[data-info]').forEach(x => x.addEventListener('click', (ev) => {
       ev.stopPropagation(); playClick();
       const e = prompt.entries[+x.dataset.info]; openInfoPop(e.code, e, entryEffect(e, 'chain'));
+    }));
+    // P2-5: the link being answered is itself readable in full —
+    // tapping its name in the context line floats its detail,
+    // without answering anything.
+    $('dock').querySelectorAll('[data-topinfo]').forEach(x => x.addEventListener('click', (ev) => {
+      ev.stopPropagation(); playClick();
+      if (top) openInfoPop(top.code, top);
     }));
     $('dock').querySelectorAll('[data-dismiss]').forEach(x => x.addEventListener('click', (ev) => {
       ev.stopPropagation(); playClick();
@@ -3503,10 +3540,12 @@ function uiPlace(prompt, state) {
     // C-26: name what is being placed whenever the identity is
     // certain — the just-chosen procedure action's card, else
     // the asking effect in the context form (never a guess).
-    if (lastPlaceCard) title = '《' + cardName(lastPlaceCard.code) + '》を置く場所をタップしてください';
-    else title = contextText(prompt) + '置く場所をタップしてください';
+    // W-05: a tap here is an immediate, unchangeable commitment —
+    // the banner must say so BEFORE the tap, not after.
+    if (lastPlaceCard) title = '《' + cardName(lastPlaceCard.code) + '》を置く場所をタップしてください。タップした場所にそのまま置かれます（選び直せません）';
+    else title = contextText(prompt) + '置く場所をタップしてください。タップした場所にそのまま置かれます（選び直せません）';
   } else {
-    title = contextText(prompt) + '無効にするゾーンをタップしてください';
+    title = contextText(prompt) + '無効にするゾーンをタップしてください。タップしたゾーンはそのまま無効になります（選び直せません）';
   }
   placeCtx = { avail: new Set(zones.map(z => z.con + ':' + z.loc + ':' + z.seq)), chosen: new Map(), count: prompt.count, retry: !!prompt.retryCount, title };
   const h = $('placehint');
@@ -3530,7 +3569,7 @@ function uiPosition(prompt, state) {
     { bit: E.POS.FD_ATK, label: '裏側攻撃表示', cls: 'back' },
     { bit: E.POS.FD_DEF, label: '裏側守備表示', cls: 'def back' },
   ].filter(d => prompt.mask & d.bit);
-  sheetOpen('<div class="ttl">' + cardName(prompt.code) + ' の表示形式</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
+  sheetOpen('<div class="ttl">' + cardName(prompt.code) + ' の表示形式</div><div class="sub">表示形式を選んでください。タップするとその表示形式で確定します。</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
     '<div class="posrow">' + defs.map(d => '<div class="posbtn" data-pos="' + d.bit + '"><div class="glyph ' + d.cls + '"></div>' + d.label + '</div>').join('') + '</div>');
   $('sheet').querySelectorAll('[data-pos]').forEach(b => b.addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(+b.dataset.pos)); }));
 }
@@ -3542,7 +3581,9 @@ function gridSheet(o) {
       (o.locked || []).map(c => '<span class="chip locked">' + cardName(c.code) + '（固定）</span>').join('');
     const subTxt = typeof o.sub === 'function' ? o.sub() : o.sub;
     sheetOpen('<div class="ttl">' + o.title + '</div><div class="sub" id="gsub">' + subTxt + '</div>' + contextLineHTML(o.prompt) + retryWarn(o.prompt) +
-      (o.prompt && o.prompt.retryCount ? '<div class="sub">条件：' + subTxt + '</div>' : '') +
+      // (W-24: a retry used to repeat the sub as a 「条件：」 line
+      // under the warning — the same sentence twice. The shortfall
+      // already lives on the disabled confirm button's label.)
       (tray ? '<div id="tray">' + tray + '</div>' : '<div id="tray"></div>') +
       '<div class="grid">' + o.cards.map((c, i) =>
         '<div class="gcard' + (o.selected.has(i) ? ' sel' : '') + '" data-grid="' + i + '"><button class="gdetail" data-gdetail="' + i + '">詳細</button><div class="loc">' + c.locLabel + '</div><div class="nm">' + cardName(c.code) + (c.extra ? ' ' + c.extra : '') + '</div>' +
@@ -3565,13 +3606,16 @@ function gridSheet(o) {
 }
 function uiSelectCards(prompt, state) {
   const isTrib = prompt.name === 'SELECT_TRIBUTE';
+  const atk = !isTrib && promptAttacker ? promptAttacker : null;
   const selected = new Set();
   const sum = () => [...selected].reduce((a, i) => a + (prompt.cards[i].releaseParam || 0), 0);
   gridSheet({
     prompt,
-    title: isTrib ? 'リリースするカード' : 'カードの選択',
+    title: isTrib ? 'リリースするカード' : atk ? cardName(atk.code) + ' の攻撃' : 'カードの選択',
     sub: () => isTrib ? '合計 ' + prompt.min + ' 以上になるよう選んでください（現在 ' + sum() + '）'
+                      : atk ? '攻撃する相手を選んでください'
                       : prompt.min + '〜' + prompt.max + ' 枚選んでください（現在 ' + selected.size + ' 枚）',
+    confirmLabel: atk ? 'この相手を攻撃する' : undefined,
     cards: prompt.cards.map(c => ({ code: c.code, locLabel: locLabel(c), extra: isTrib ? '（リリース値 ' + c.releaseParam + '）' : '', ref: c })),
     selected,
     locked: [],
@@ -3618,16 +3662,39 @@ function uiUnselect(prompt, state) {
 function uiSelectSum(prompt, state) {
   const selected = new Set();
   const fmt = (c) => { const o1 = c.sumParam & 0xffff, o2 = c.sumParam >> 16; return o2 && o2 !== o1 ? '値 ' + o1 + '／' + o2 : '値 ' + o1; };
+  // Current total of must + selected, as a RANGE: cards with two
+  // values make any single "current sum" a lie, so the sub states
+  // the reachable span and collapses to one number when it is one
+  // (care audit W-13, on the TRIBUTE sheet's established format).
+  const span = () => {
+    let lo = 0, hi = 0;
+    for (const c of prompt.must.concat([...selected].map(i => prompt.cards[i]))) {
+      const o1 = c.sumParam & 0xffff, o2 = c.sumParam >> 16;
+      const a = o2 ? Math.min(o1, o2) : o1, b = o2 ? Math.max(o1, o2) : o1;
+      lo += a; hi += b;
+    }
+    return { lo, hi };
+  };
   gridSheet({
     prompt,
     title: 'カードの選択（合計値）',
-    sub: prompt.mode === 'exact' ? '合計がちょうど ' + prompt.acc + ' になるよう選んでください' : '合計が ' + prompt.acc + ' 以上になるよう選んでください',
+    sub: () => {
+      const s = span();
+      const cur = s.lo === s.hi ? '現在の合計 ' + s.lo : '現在の合計 ' + s.lo + '〜' + s.hi;
+      return (prompt.mode === 'exact' ? '合計がちょうど ' + prompt.acc + ' になるよう選んでください' : '合計が ' + prompt.acc + ' 以上になるよう選んでください') + '（' + cur + '）';
+    },
     cards: prompt.cards.map(c => ({ code: c.code, locLabel: locLabel(c), extra: fmt(c), ref: c })),
     selected,
     locked: prompt.must,
     showText: true,
     cancelable: false,
     valid: () => E.sumSelectionValid(prompt, [...selected]),
+    needLabel: () => {
+      const s = span();
+      if (prompt.mode === 'exact' && s.lo === s.hi && s.hi < prompt.acc) return '決定（合計あと' + (prompt.acc - s.hi) + '）';
+      if (prompt.mode !== 'exact' && s.hi < prompt.acc) return '決定（合計あと' + (prompt.acc - s.hi) + '）';
+      return '決定';
+    },
     onToggle: (i) => { selected.has(i) ? selected.delete(i) : selected.add(i); },
     onConfirm: (idx) => finishPrompt(E.cardsResp(idx)),
   });
@@ -3651,10 +3718,10 @@ function uiCounter(prompt, state) {
 function uiSort(prompt, state) {
   let order = prompt.cards.map((_, i) => i); // order[pos] = original index
   const draw = () => {
-    sheetOpen('<div class="ttl">' + (prompt.name === 'SORT_CHAIN' ? 'チェーンの順番' : 'カードの順番') + '</div><div class="sub">上から順に並べてください。</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
+    sheetOpen('<div class="ttl">' + (prompt.name === 'SORT_CHAIN' ? 'チェーンの順番' : 'カードの順番') + '</div><div class="sub">' + (prompt.name === 'SORT_CHAIN' ? '上から順に処理される順番です。並べ替えて「この順番で決定」を押してください。' : '上から順に、次に使う順番に並べてください。') + '</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
       order.map((ci, pos) => '<div class="sortrow"><span>' + (pos + 1) + '. ' + cardName(prompt.cards[ci].code) + '</span><span class="mv">' +
         '<button data-up="' + pos + '">↑</button><button data-down="' + pos + '">↓</button></span></div>').join('') +
-      '<div class="btnrow"><button class="bigbtn" id="sort-ok">この順番で決定</button><button class="bigbtn sub" id="sort-keep">変更しない</button></div>');
+      '<div class="btnrow"><button class="bigbtn" id="sort-ok">この順番で決定</button><button class="bigbtn sub" id="sort-keep">元の順番のままにする</button></div>');
     $('sheet').querySelectorAll('[data-up]').forEach(b => b.addEventListener('click', () => { const p = +b.dataset.up; if (p > 0) { [order[p-1], order[p]] = [order[p], order[p-1]]; } playClick(); draw(); }));
     $('sheet').querySelectorAll('[data-down]').forEach(b => b.addEventListener('click', () => { const p = +b.dataset.down; if (p < order.length - 1) { [order[p+1], order[p]] = [order[p], order[p+1]]; } playClick(); draw(); }));
     $('sort-ok').addEventListener('click', () => { playClick(); finishPrompt(E.sortResp(order)); });
@@ -3705,7 +3772,13 @@ function uiYesNo(prompt, state) {
     : '確認';
   let sub, block;
   if (isEff) {
-    sub = locLabel(prompt) + ' の効果を発動しますか？';
+    // Per-location phrasing: locLabel + ' の効果' glued a floating
+    // particle (「自分の墓地 の効果…」). Each location gets its own
+    // whole sentence (care audit W-14).
+    sub = prompt.loc === E.LOC.HAND ? '手札にあるこのカードの効果を発動しますか？'
+      : prompt.loc === E.LOC.GRAVE ? '墓地にあるこのカードの効果を発動しますか？'
+      : prompt.loc === E.LOC.REMOVED ? '除外されているこのカードの効果を発動しますか？'
+      : 'フィールドのこのカードの効果を発動しますか？';
     block = fxBlockHTML(prompt.code, fx);
   } else if (fx && fx.follow) {
     // yes/no about the optional clause inside the resolving effect.
@@ -3724,7 +3797,11 @@ function uiYesNo(prompt, state) {
     sub = '「' + cardName(named.code) + '」' + (fx && fx.n ? 'の効果' + CIRCLED_NUM[fx.n - 1] : 'の効果') + 'について確認です。この効果を進めますか？';
     block = fxBlockHTML(named.code, fx);
   } else {
-    sub = '選択してください';
+    // No card could be pinned to this question: say what the
+    // question IS instead of a bare 「選択してください」 (W-18).
+    // (No card text can be attached here — by construction this
+    // branch has no context card to quote.)
+    sub = '効果の処理についての確認です。';
     block = '';
   }
   sheetOpen('<div class="ttl">' + ttl + '</div>' +
@@ -3754,14 +3831,16 @@ function uiOption(prompt, state) {
   const optFx = prompt.options.map(o => descEffect(o));
   const srcCode = (prompt.context && prompt.context.code) || (optFx.find(d => d) || {}).code || null;
   const ttl = srcCode ? cardName(srcCode) + ' の効果の選択' : '効果の選択';
-  sheetOpen('<div class="ttl">' + ttl + '</div><div class="sub">適用する効果を選んでください。</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
+  sheetOpen('<div class="ttl">' + ttl + '</div><div class="sub">適用する効果を選んでください。タップするとその効果で確定します（選び直せません）。</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
     prompt.options.map((o, i) => {
       const lb = optionLabelText(o);
       if (lb) return '<button class="optbtn" data-opt="' + i + '">' + lb + '</button>';
       const d = optFx[i];
       const fx = d ? resolveEffect(d.code, o) : null;
       if (fx && fx.n) return '<button class="optbtn" data-opt="' + i + '">効果' + CIRCLED_NUM[fx.n - 1] + '：' + fxExcerpt(fx) + '</button>';
-      return '<button class="optbtn" data-opt="' + i + '">選択肢 ' + (i + 1) + '</button>';
+      // Last resort (W-07): never a bare number the result cannot
+      // be read from — point at the full text printed below.
+      return '<button class="optbtn" data-opt="' + i + '">その他の効果（全文は下のカードテキストで確認してください）</button>';
     }).join('') +
     (srcCode ? fxBlockHTML(srcCode, null) : ''));
   $('sheet').querySelectorAll('[data-opt]').forEach(b => b.addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(+b.dataset.opt)); }));
@@ -3774,9 +3853,12 @@ function uiAnnounceBits(prompt, state) {
   const bits = table.filter(([bit]) => isRace ? (prompt.availLo & bit) !== 0 : (prompt.avail & bit) !== 0);
   const selected = new Set();
   const draw = () => {
-    sheetOpen('<div class="ttl">' + (isRace ? '種族' : '属性') + 'の宣言</div><div class="sub">' + prompt.count + ' つ選んでください（現在 ' + selected.size + '）</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
+    sheetOpen('<div class="ttl">' + (isRace ? '種族' : '属性') + 'の宣言</div><div class="sub">' + (prompt.context && prompt.context.code ? '「' + cardName(prompt.context.code) + '」の効果で宣言する' + (isRace ? '種族' : '属性') + 'を ' : '') + prompt.count + ' つ選んでください（現在 ' + selected.size + '）</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
       '<div class="grid">' + bits.map(([bit, nm]) => '<div class="gcard' + (selected.has(bit) ? ' sel' : '') + '" data-bit="' + bit + '"><div class="nm">' + nm + '</div></div>').join('') + '</div>' +
-      '<div class="btnrow"><button class="bigbtn" id="ann-confirm" ' + (selected.size === prompt.count ? '' : 'disabled') + '>決定</button></div>');
+      '<div class="btnrow"><button class="bigbtn" id="ann-confirm" ' + (selected.size === prompt.count ? '' : 'disabled') + '>決定</button></div>' +
+      // P2-3: the declaring card's own text rides the sheet, so
+      // "what is this declaration FOR" is answerable in place.
+      (prompt.context && prompt.context.code ? fxBlockHTML(prompt.context.code, null) : ''));
     $('sheet').querySelectorAll('[data-bit]').forEach(g => g.addEventListener('click', () => {
       const bit = +g.dataset.bit;
       if (selected.has(bit)) selected.delete(bit); else if (selected.size < prompt.count) selected.add(bit);
@@ -3792,8 +3874,10 @@ function uiAnnounceBits(prompt, state) {
   draw();
 }
 function uiAnnounceNumber(prompt, state) {
-  sheetOpen('<div class="ttl">数値の宣言</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
-    prompt.options.map((o, i) => '<button class="optbtn" data-num="' + i + '">' + o + '</button>').join(''));
+  sheetOpen('<div class="ttl">数値の宣言</div>' + contextLineHTML(prompt) +
+    (prompt.context && prompt.context.code ? '<div class="sub">「' + cardName(prompt.context.code) + '」の効果で宣言する数を選んでください。タップするとその数で確定します。</div>' : '') + retryWarn(prompt) +
+    prompt.options.map((o, i) => '<button class="optbtn" data-num="' + i + '">' + o + '</button>').join('') +
+    (prompt.context && prompt.context.code ? fxBlockHTML(prompt.context.code, null) : ''));
   $('sheet').querySelectorAll('[data-num]').forEach(b => b.addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(+b.dataset.num)); }));
 }
 function uiAnnounceCard(prompt, state) {
@@ -3807,10 +3891,27 @@ function uiAnnounceCard(prompt, state) {
     if (filtered.length) pool = filtered;
   }
   pool.sort((a, b) => cardName(a).localeCompare(cardName(b), 'ja'));
-  sheetOpen('<div class="ttl">カードの宣言</div>' + contextLineHTML(prompt) +
-    '<div class="sub">宣言するカードを選んでください。</div>' + retryWarn(prompt) +
-    '<div class="grid">' + pool.map(code => '<div class="gcard" data-code="' + code + '"><div class="nm">' + cardName(code) + '</div></div>').join('') + '</div>');
-  $('sheet').querySelectorAll('[data-code]').forEach(g => g.addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(+g.dataset.code)); }));
+  // Two steps, not tap-to-declare (P1-4/W-10): a declaration is
+  // irreversible and a name-only grid invites mis-taps, so a tap
+  // only SELECTS (with a detail button per candidate, the tray
+  // convention) and the named confirm button declares.
+  let chosen = null;
+  const draw = () => {
+    sheetOpen('<div class="ttl">カードの宣言</div>' + contextLineHTML(prompt) +
+      '<div class="sub">宣言するカードをタップで選び、「宣言する」を押してください。</div>' + retryWarn(prompt) +
+      '<div class="grid">' + pool.map(code => '<div class="gcard' + (chosen === code ? ' sel' : '') + '" data-code="' + code + '"><button class="gdetail" data-acinfo="' + code + '">詳細</button><div class="nm">' + cardName(code) + '</div></div>').join('') + '</div>' +
+      '<div class="btnrow"><button class="bigbtn" id="announce-ok" ' + (chosen == null ? 'disabled' : '') + '>' + (chosen == null ? '宣言する' : '《' + cardName(chosen) + '》を宣言する') + '</button></div>');
+    $('sheet').querySelectorAll('[data-code]').forEach(g => g.addEventListener('click', (ev) => {
+      if (ev.target.closest('[data-acinfo]')) return;
+      playClick(); chosen = +g.dataset.code; draw();
+    }));
+    $('sheet').querySelectorAll('[data-acinfo]').forEach(b => b.addEventListener('click', (ev) => {
+      ev.stopPropagation(); playClick(); openInfoPop(+b.dataset.acinfo);
+    }));
+    const ok = $('announce-ok');
+    if (ok) ok.addEventListener('click', () => { if (chosen != null) { playClick(); finishPrompt(E.i32resp(chosen)); } });
+  };
+  draw();
 }
 function uiRps(prompt, state) {
   sheetOpen('<div class="ttl">じゃんけん</div>' + retryWarn(prompt) +
@@ -3821,8 +3922,11 @@ function uiRps(prompt, state) {
   $('sheet').querySelectorAll('[data-rps]').forEach(b => b.addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(+b.dataset.rps)); }));
 }
 function uiFallback(prompt, state) {
-  sheetOpen('<div class="ttl">確認（' + prompt.name + '）</div><div class="sub">この確認は自動で処理します（対戦はそのまま進みます）。</div>' +
-    '<div class="btnrow"><button class="bigbtn" id="fb-auto">自動応答</button></div>');
+  // W-01: never leak the internal prompt name to the player. This
+  // sheet is itself the failure surface — say so, and say what the
+  // button does about it.
+  sheetOpen('<div class="ttl">確認の表示に失敗しました</div><div class="sub">この確認は正しく表示できませんでした。自動で無難な答えを返して対戦を続けます。</div>' +
+    '<div class="btnrow"><button class="bigbtn" id="fb-auto">自動で答えて続ける</button></div>');
   $('fb-auto').addEventListener('click', () => { playClick(); finishPrompt(E.botAnswer(prompt, state, DATA, E.makeBotMemory())); });
 }
 // ---------------------------------------------------------------- global taps
@@ -4449,8 +4553,12 @@ function wireSeg(id, apply) {
     const w = $('sheetwrap'); const on = w.classList.toggle('peek');
     $('peekbtn').textContent = on ? '選択に戻る' : '盤面を見る';
   });
+  // reflect the persisted audio preference in the switch at boot
+  $('soundbtn').classList.toggle('on', audioOn);
+  $('sndstate').textContent = audioOn ? 'オン' : 'オフ';
   $('soundbtn').addEventListener('click', () => {
     audioOn = !audioOn;
+    saveAudioPref();
     // section 4: a switch shape + a state word, not a text button
     $('soundbtn').classList.toggle('on', audioOn);
     $('sndstate').textContent = audioOn ? 'オン' : 'オフ';
@@ -4500,7 +4608,7 @@ function wireSeg(id, apply) {
     bgmWantedRank = -1; bgmSeenKeys.clear(); // BGM stage ladder restarts with the duel
     setBgmScene('normal', true);
     $('start').style.display = 'none';
-    $('logline').textContent = 'エンジン起動中…';
+    $('logline').textContent = '対戦を準備中…';
     const M = await OcgCoreModule();
     duel = new E.Duel(M, DATA, {
       seed: (Date.now() % 100000) + 1,
