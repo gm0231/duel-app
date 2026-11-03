@@ -205,12 +205,125 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     window.close();
   }
 
+  // ================= Part 1B: round-B synthetic grammar =================
+  {
+    const window = await boot();
+    const doc = window.document;
+    const E = window.Engine;
+    const fx = window.__fx;
+    fx.reset();
+    const step = (st, evs) => { const before = fx.log.length; fx.process(evs || [], st); return fx.log.slice(before); };
+    const has = (recs, kind, pred) => recs.some(r => r.kind === kind && (!pred || pred(r)));
+    const ACE = 8505920; // 合体魔神－ゲート・ガーディアン (fusion; BGM key card + cut-in roster)
+    const TRIB = (() => { for (const [code, c] of Object.entries(data.cards)) if ((c.type & 0x1) && !(c.type & 0x4802040) && c.level >= 7) return +code; return null; })();
+
+    ok(!!fx.settings && fx.settings.cutin === true && fx.settings.resp === 'auto', 'FXB0: round-B settings surface with defaults (cutin on, resp auto)');
+    ok(!!doc.getElementById('seg-cutin') && !!doc.getElementById('seg-resp') && !!doc.getElementById('fxbtn'), 'FXB0b: settings controls exist (start-screen segs + in-duel button)');
+
+    // baseline: one monster each
+    let st = fakeState(s => { s.players[0].mzone[0] = mon(NORMAL); s.players[1].mzone[0] = mon(NORMAL2); });
+    step(st);
+
+    // attack declaration: line to the target + attribute impact
+    st = fakeState(s => { s.players[0].mzone[0] = mon(NORMAL); s.players[1].mzone[0] = mon(NORMAL2); });
+    st.lastAttack = { attacker: { con: 0, loc: E.LOC.MZONE, seq: 0 }, target: { con: 1, loc: E.LOC.MZONE, seq: 0 } };
+    let recs = step(st, [{ kind: 'attack', code: NORMAL, con: 0, direct: false }]);
+    ok(has(recs, 'attackline', r => r.direct === false), 'FXB1: an attack declaration fires the attack line');
+    ok(has(recs, 'impact'), 'FXB1b: the attribute impact lands on the target');
+
+    // direct attack: banner + LP change for the counter count
+    st = fakeState(s => { s.players[0].mzone[0] = mon(NORMAL); s.players[1].lp = 5000; });
+    st.lastAttack = { attacker: { con: 0, loc: E.LOC.MZONE, seq: 0 }, target: null };
+    recs = step(st, [{ kind: 'attack', code: NORMAL, con: 0, direct: true }, { kind: 'damage', player: 1, amount: 3000 }]);
+    ok(has(recs, 'directattack'), 'FXB2: a direct attack raises the DIRECT ATTACK banner');
+    ok(has(recs, 'lpchange', r => r.player === 1 && r.to === 5000), 'FXB2b: the LP change is recorded for the counter count');
+    await new Promise(r => setTimeout(r, 1100));
+    ok(doc.getElementById('oppLp').textContent === '5000', 'FXB2c: the LP counter counted down to the exact state value (got ' + doc.getElementById('oppLp').textContent + ')');
+    ok(fx.lpShown(1) === 5000, 'FXB2d: __fx.lpShown tracks the settled counter');
+
+    // heal: counts up + floats the only floating number in the grammar
+    st = fakeState(s => { s.players[0].mzone[0] = mon(NORMAL); s.players[1].lp = 5600; });
+    recs = step(st, [{ kind: 'recover', player: 1, amount: 600 }]);
+    ok(has(recs, 'healfloat', r => r.amount === 600), 'FXB3: a heal floats a blue number at the counter');
+
+    // finisher: the duel-ending attack washes the whole screen
+    st = fakeState(s => { s.players[0].mzone[0] = mon(NORMAL); s.players[1].lp = 0; s.winner = 0; });
+    st.lastAttack = { attacker: { con: 0, loc: E.LOC.MZONE, seq: 0 }, target: null };
+    recs = step(st, [{ kind: 'attack', code: NORMAL, con: 0, direct: true }, { kind: 'damage', player: 1, amount: 5600 }]);
+    ok(has(recs, 'finisher'), 'FXB4: the duel-ending attack fires the finisher wash');
+
+    // finisher, trailing-batch form: the core delivers MSG_WIN in
+    // its own step AFTER the lethal damage — the wash must still fire
+    fx.reset();
+    step(fakeState(s => { s.players[0].mzone[0] = mon(NORMAL); s.players[1].lp = 300; }));
+    let recs2 = step(fakeState(s => { s.players[0].mzone[0] = mon(NORMAL); s.players[1].lp = 0; }), [{ kind: 'damage', player: 1, amount: 300 }]);
+    ok(!has(recs2, 'finisher'), 'FXB4b: damage alone (no winner yet) does not fire the wash');
+    recs2 = step(fakeState(s => { s.players[0].mzone[0] = mon(NORMAL); s.players[1].lp = 0; s.winner = 0; }), []);
+    ok(has(recs2, 'finisher'), 'FXB4c: MSG_WIN trailing the lethal damage still fires the finisher');
+
+    // chain: every new link pops forward, numbered; set S/T activation
+    // tips into the presentation; solving is tracked for the bar glow
+    fx.reset();
+    step(fakeState());
+    const link = (code, con) => ({ code, con: con || 0, loc: E.LOC.HAND, seq: 0, negated: false, disabled: false, solved: false });
+    st = fakeState(s => { s.chain = [link(NORMAL)]; });
+    recs = step(st, [{ kind: 'activate', code: NORMAL, con: 0, loc: E.LOC.HAND }]);
+    ok(has(recs, 'chainpop', r => r.n === 1), 'FXB5: the first link pops in the foreground with its number');
+    st = fakeState(s => { s.chain = [link(NORMAL), link(NORMAL2, 1)]; });
+    recs = step(st, [{ kind: 'activate', code: NORMAL2, con: 1, loc: E.LOC.SZONE }]);
+    ok(has(recs, 'chainpop', r => r.n === 2 && r.via === 'tilt'), 'FXB5b: a set S/T link merges its pop into the tilt (number rides the card)');
+    ok(has(recs, 'setactivate', r => r.code === NORMAL2), 'FXB6: a set S/T activation tips into the presentation (tilt pop)');
+    st = fakeState(s => { s.chain = [link(NORMAL), link(NORMAL2)]; s.solvingLink = 2; });
+    recs = step(st, []);
+    ok(has(recs, 'chainsolving', r => r.n === 2), 'FXB6b: solving is tracked for the bar glow');
+
+    // cut-in: an ace summon fires it; OFF silences it (portal unaffected)
+    fx.reset();
+    step(fakeState());
+    st = fakeState(s => { s.players[1].mzone[0] = mon(ACE); });
+    recs = step(st, [{ kind: 'spsummon', code: ACE, con: 1 }]);
+    ok(has(recs, 'cutin', r => r.code === ACE), 'FXB7: summoning an ace (key card) fires the cut-in');
+    ok(fx.cutinOn() === true, 'FXB7b: the cut-in layer is showing');
+    fx.settings.cutin = false;
+    fx.reset(); step(fakeState());
+    st = fakeState(s => { s.players[1].mzone[0] = mon(ACE); });
+    recs = step(st, [{ kind: 'spsummon', code: ACE, con: 1 }]);
+    ok(!has(recs, 'cutin'), 'FXB7c: cut-in OFF silences the cut-in');
+    ok(has(recs, 'portal', r => r.method === 'fusion'), 'FXB7d: the round-A portal is unaffected by the cut-in toggle');
+    fx.settings.cutin = true;
+
+    // advance summon: tributes converge like materials, never fly
+    fx.reset();
+    step(fakeState(s => { s.players[0].mzone[0] = mon(NORMAL); s.players[0].mzone[1] = mon(NORMAL2); }));
+    st = fakeState(s => { s.players[0].mzone[2] = mon(TRIB); s.players[0].grave = [NORMAL, NORMAL2]; });
+    recs = step(st, [{ kind: 'summon', code: TRIB, con: 0 }]);
+    ok(has(recs, 'advance', r => r.code === TRIB), 'FXB8: a level>=5 normal summon is an advance summon');
+    ok(recs.filter(r => r.kind === 'converge' && r.how === 'tribute').length === 2, 'FXB8b: both tributes converge like materials');
+    ok(!recs.some(r => r.kind === 'flight' && (r.code === NORMAL || r.code === NORMAL2)), 'FXB8c: tributes do NOT fly to the graveyard');
+
+    // flips and position changes
+    fx.reset();
+    step(fakeState(s => { s.players[0].mzone[0] = { code: NORMAL, pos: 8, materials: 0, curAtk: data.cards[NORMAL].atk, curDef: data.cards[NORMAL].def }; }));
+    st = fakeState(s => { s.players[0].mzone[0] = { code: NORMAL, pos: 4, materials: 0, curAtk: data.cards[NORMAL].atk, curDef: data.cards[NORMAL].def }; });
+    recs = step(st, []);
+    ok(has(recs, 'flip', r => r.code === NORMAL), 'FXB9: a face-down monster flipping face-up flashes + edge-flips');
+    st = fakeState(s => { s.players[0].mzone[0] = mon(NORMAL); });
+    recs = step(st, []);
+    ok(has(recs, 'poschange', r => r.to === 'atk'), 'FXB9b: defense -> attack is a rotation beat');
+    ok(fx.error === null, 'FXB10: fxError stayed null through every round-B synthetic step (got: ' + fx.error + ')');
+    window.close();
+  }
+
   // ================= Part 2: live duels =================
   if (process.env.FX_SYNTH_ONLY) { console.log(failures === 0 ? 'ALL FX SYNTHETIC CHECKS PASSED' : failures + ' FAILED'); process.exit(failures ? 1 : 0); }
   const tally = {};
   for (let run = 0; run < 2; run++) {
     const window = await boot();
     const doc = window.document;
+    // run 2 plays the whole duel with response mode 'off' (round B,
+    // B11): every non-forced chain prompt auto-passes — the duel must
+    // still complete, which proves the mode only changes presentation
+    if (run === 1) window.__fx.settings.resp = 'off';
     doc.getElementById('startbtn').click();
     const obs = await playDuel(window, { timeoutMs: 420000 });
     const fx = window.__fx;
@@ -225,6 +338,10 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
   ok((tally.place || 0) > 0, 'FXL4: placement beats fired in live duels');
   ok((tally.flight || 0) > 0, 'FXL5: movement flights fired in live duels');
   ok(Object.keys(tally).some(k => k.startsWith('portal')), 'FXL6: summon portals fired in live duels');
+  ok((tally.attackline || 0) > 0, 'FXL7: attack lines fired in live duels (round B)');
+  console.log('  round-B live tallies: cutin=' + (tally.cutin || 0) + ' chainpop=' + (tally.chainpop || 0) +
+    ' finisher=' + (tally.finisher || 0) + ' directattack=' + (tally.directattack || 0) +
+    ' advance=' + (tally.advance || 0) + ' flip=' + (tally.flip || 0) + ' setactivate=' + (tally.setactivate || 0));
 
   console.log(failures === 0 ? 'ALL FX CHECKS PASSED' : failures + ' FX CHECK(S) FAILED');
   process.exit(failures === 0 ? 0 : 1);

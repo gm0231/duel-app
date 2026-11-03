@@ -56,7 +56,11 @@
   .slotstats span{display:block;white-space:nowrap;overflow:hidden;line-height:11px;}
   .slotstats b{color:var(--txt);font-size:9px;}
   .tile .nm{font-size:clamp(8px, calc(var(--sw) * 0.17), 12px);line-height:1.15;background:#000a;padding:1px 2px;border-radius:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .tile.def .inner{transform:rotate(90deg);}
+  /* scale .82: the rotated inner is imgH (1.22 x tile width) wide;
+     unscaled it would overflow the slot by ~11% on each side and the
+     slot's overflow:hidden would shave the card's own top/bottom
+     edges (post-rotation sides). .82 = 1/1.22 fits it exactly. */
+  .tile.def .inner{transform:rotate(90deg) scale(.82);}
   .tile .inner{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:flex-end;padding:2px;transition:transform .15s;}
   .tile.back{background:repeating-linear-gradient(45deg,#3d2c14 0 6px,#2c1f0d 6px 12px);}
   .tile.back .nm{display:none;}
@@ -75,7 +79,7 @@
   #chainbar{display:flex;visibility:hidden;gap:4px;overflow-x:auto;height:21px;padding:2px 0;}
   #chainbar.on{visibility:visible;}
   .link{flex:0 0 auto;font-size:10px;border:1px solid var(--gold-dim);border-radius:10px;padding:2px 7px;background:var(--panel2);white-space:nowrap;}
-  .link.solving{border-color:var(--gold);background:#4a3a10;color:#fff;}
+  .link.solving{border-color:#ffd94d;background:#4a3a10;color:#fff;box-shadow:0 0 10px #ffd94d99,0 0 0 1px #ffd94d;}
   .link.negated{text-decoration:line-through;opacity:.55;}
   .link .no{color:var(--gold);font-weight:700;}
   #logline{font-size:10px;color:var(--txt-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:15px;line-height:15px;}
@@ -84,7 +88,7 @@
   #phaseinfo{flex:1;font-size:12px;text-align:center;}
   #phasebtn{background:var(--gold);color:#191104;border:0;border-radius:6px;font-size:13px;font-weight:700;padding:0 10px;height:32px;min-width:104px;}
   #phasebtn:disabled{background:#4a3d22;color:#8a7c55;}
-  #menubtn{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:6px;font-size:12px;padding:0 8px;height:32px;}
+  #menubtn,#fxbtn{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:6px;font-size:12px;padding:0 8px;height:32px;}
   /* ---------- hand ---------- */
   #handbar{background:var(--panel);border-top:1px solid var(--gold-dim);padding:4px 4px 6px;}
   #handbar .who{font-size:10px;color:var(--txt-dim);padding:0 2px;height:13px;line-height:13px;}
@@ -170,6 +174,10 @@
   .overlay p{font-size:13px;color:var(--txt-dim);line-height:1.7;margin:0;}
   .overlay .startbtn{background:var(--gold);color:#191104;border:0;border-radius:8px;font-size:17px;font-weight:700;padding:14px 34px;}
   #result{display:none;}
+  /* round B: the start screen gained two setting rows (cut-in /
+     response mode) — at short viewports the column can exceed the
+     screen, so the START overlay (not the duel board) may scroll */
+  #start{justify-content:flex-start;overflow-y:auto;padding-top:26px;}
   /* placement hint is an overlay banner under the top bar — it must never
      push the board down when it appears mid-duel */
   #placehint{display:none;position:absolute;top:44px;left:0;right:0;z-index:30;background:#4a3a10;color:#ffe9a8;font-size:12px;text-align:center;padding:6px;border-bottom:1px solid var(--gold);}
@@ -221,6 +229,9 @@
   .fx-ghost{border:1px solid var(--gold-dim);background:#3a2f1d url('../assets/card-art-placeholder-s.jpg') center/cover;box-shadow:0 2px 8px #000a;overflow:hidden;}
   .fx-ghost .nm{position:absolute;left:1px;right:1px;bottom:1px;font-size:8px;line-height:1.15;background:#000a;padding:1px 2px;border-radius:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--txt);}
   .fx-ghost.back{background:repeating-linear-gradient(45deg,#3d2c14 0 6px,#2c1f0d 6px 12px);}
+  /* a set S/T activation that is also the chain's new link carries
+     the big cyan link number on the tilted card itself (round B) */
+  .fx-ghost .setno{position:absolute;top:1px;left:4px;font-size:22px;font-weight:700;color:#59d8f2;text-shadow:0 2px 6px #000,0 0 10px #59d8f288;line-height:1;}
   .fx-ghost.srcglow{box-shadow:0 0 0 2px #e06666,0 0 14px #e06666aa;}
   /* restrained flashes (destruction = white flash and gone) */
   .fx-flash{background:radial-gradient(circle,#ffffffee 0%,#ffffff88 40%,transparent 72%);}
@@ -243,8 +254,12 @@
   #fxcutin .banner{position:absolute;left:0;right:0;top:66%;text-align:center;color:#ffe9a8;}
   #fxcutin .banner .cn{font-size:19px;font-weight:700;letter-spacing:.06em;text-shadow:0 2px 8px #000;}
   #fxcutin .banner .cs{font-size:14px;margin-top:3px;color:var(--txt);text-shadow:0 2px 6px #000;}
-  /* full-screen finisher wash (round B) */
-  .fx-finishwash{position:absolute;inset:0;pointer-events:none;}
+  /* full-screen finisher wash (round B): body-level + fixed so it
+     paints over the result overlay for its 1.3 s (see fxFinisher) */
+  .fx-finishwash{position:fixed;inset:0;z-index:65;pointer-events:none;}
+  /* heal float (round B): the ONLY floating number — damage is read
+     off the LP counter's count-down, MD-style */
+  .fx-healfloat{font-size:15px;font-weight:700;color:#8fd8ff;text-shadow:0 1px 4px #000;}
   /* chain foreground pop (round B): the newest link, large, with its
      number — it shrinks toward the chain bar */
   .fx-chainpop{position:absolute;left:50%;top:34%;transform:translate(-50%,-50%);min-width:150px;max-width:240px;border:2px solid #59d8f2;border-radius:8px;background:#12222bee;color:#dff8ff;padding:10px 12px;text-align:center;box-shadow:0 0 20px #59d8f266;pointer-events:none;}
@@ -297,6 +312,7 @@
       <div><div style="font-size:10px;color:var(--txt-dim)">自分</div><div class="lp" id="myLp">8000</div></div>
       <div id="phaseinfo">—</div>
       <button id="menubtn" style="display:none">手札操作</button>
+      <button id="fxbtn">演出設定</button>
       <button id="phasebtn" disabled>—</button>
     </div>
   </div>
@@ -334,6 +350,17 @@
         <button data-v="first" class="sel">先攻</button>
         <button data-v="second">後攻</button>
         <button data-v="random">ランダム</button>
+      </div>
+      <div class="segrow">召喚カットイン</div>
+      <div class="seg" id="seg-cutin">
+        <button data-v="on" class="sel">ON</button>
+        <button data-v="off">OFF</button>
+      </div>
+      <div class="segrow">応答モード</div>
+      <div class="seg" id="seg-resp">
+        <button data-v="auto" class="sel">Auto</button>
+        <button data-v="on">On</button>
+        <button data-v="off">Off</button>
       </div>
     </div>
     <button class="startbtn" id="startbtn">デュエル開始</button>

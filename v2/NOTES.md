@@ -2126,11 +2126,12 @@ settings toggles are round B.
   gates for the 63-card pool). It is a baseline, not an expert:
   long-game resource races with the Gate Guardian seat are its
   measured weak spot.
-- Effects/presentation polish: summon/movement/phase presentation landed
-  in FX round A (see "FX round A" above); attack lines, chain pops and
-  ace cut-ins are FX round B. No damage numbers (deliberate — MD-style
-  grammar shows no formula). (Printed-only ATK/DEF was fixed in Phase 2
-  — board values are live from the core query.)
+- Effects/presentation polish: FX rounds A and B landed (see "FX
+  round A" / "FX round B" above) — summon/movement/phase grammar,
+  ace cut-ins, battle lines, chain pops, defense rotation, settings.
+  No damage numbers (deliberate — MD-style grammar shows no formula).
+  (Printed-only ATK/DEF was fixed in Phase 2 — board values are live
+  from the core query.)
 - SELECT_OPTION buttons are numbered placeholders — the core sends string
   table IDs (descriptions); a strings table is needed to label them.
 - Genesis point limits: NOT applied — the format restrictions (no
@@ -2158,3 +2159,179 @@ settings toggles are round B.
   stages SOUND is likewise not ear-checked]; the chain duel-dismissal is keyed per
   candidate (code+location+sequence+effect desc), so the same card in a
   different zone is a separate dismissal entry.
+
+## FX round B — set pieces (branch feat/fx-round-b, 2026-11-03)
+
+Part 2 of the approved presentation (sections 3-3..3-8, 3-11,
+supplement A) on the round-A foundation. The division of labour is
+unchanged: attack/cut-in/chain visuals live in the read-only FX
+layer; the chain-bar states, defense rotation and LP counter are
+presentation-only render changes. Nothing touches the engine, the
+legal answer set, or the frozen layout. test-fx.js grew Part 1B
+(FXB0..FXB10 + FXB4b/c); its Part 2 run 2 now plays a whole duel
+in response mode 'off'. window.__fx additionally exposes
+`settings` (the object the prompt UI reads), `cutinOn()` and
+`lpShown(con)`.
+
+- Ace cut-in (B6, 3-3): roster = the eight SUMMON-trigger cards
+  of the BGM key-card list (KEYCARD_CODES, read directly so the
+  two lists cannot drift): the five GG bosses （合体魔神ゲート・
+  ガーディアン / 水雷・雷風・風水の各魔神 / ダーク・ガーディアン）
+  and the Ishizu three （宵闇のルーチェ / 転輪のスフィンクス /
+  メタファイズ・ホルス・ドラゴン). DEVIATION, with reason: the
+  two key TRAPS （墓守の罠 / 現世と冥界の逆転） are NOT in the
+  cut-in roster — they latch the BGM stage on ACTIVATION, while
+  a cut-in is a summon presentation whose banner carries
+  ATK/DEF; a trap has neither a summon nor ATK/DEF. Trap
+  activations keep the chain presentation (and the B9 tilt pop
+  from the szone). Type: the round-A portal fires on the zone,
+  the #fxcutin scrim dims the field (translucent — LP and the
+  HUD stay readable), the card scales in large with a name +
+  ATK/DEF banner. ~4.7 s including the fade. #fxcutin is z-35
+  (below the dock 40 and the sheet 50) and pointer-events:none,
+  so the duel never waits and a prompt is never covered; any
+  tap dismisses it early via a capture-phase pointerdown
+  listener that does NOT consume the tap (installed lazily —
+  GUI tests count window listeners per boot). A second ace
+  replaces a running cut-in. The big card is the current shared
+  placeholder art, enlarged (no per-card art exists yet —
+  decision item 1); only its background changes if art lands.
+- Battle (B7, 3-4): attack declarations never move the card.
+  The attacker's zone glows, a thin cyan line (.fx-line) draws
+  from attacker to target (geometry from state.lastAttack, with
+  a snapshot search as fallback), and an attribute-coloured
+  radial impact lands on the target. Direct attacks run the
+  line to the defender's LP plate under a "DIRECT ATTACK"
+  band placed at the attack line's height. Destruction stays
+  round A's restrained white flash. No formula, no floating
+  damage numbers: LP changes count on the LP counter itself
+  (fxLpCount animates toward the state value, 220..850 ms,
+  ease-out; render defers to a running count via fxLpBusy so
+  batches cannot stomp it, and the first sighting of a seat
+  never animates), and a heal is the only floating number
+  (blue, at the counter). FINISHER: when the winner becomes
+  known, if a hit (an 'attack' or 'damage' event) landed
+  within the last 5 s, a full-screen attribute wash fires
+  （光 = white-out, 闇 = dark veil, 水 = blue, ...). Two
+  implementation findings shaped this: (1) the core often
+  delivers MSG_WIN in its own trailing batch, a beat AFTER
+  the lethal damage — keying the wash on "same batch carries
+  the blow" never fired in live duels, so the trigger is
+  winner-transition + recent hit (a deck-out win has no hit
+  and gets no wash, matching the grammar); (2) the wash is a
+  body-level position:fixed overlay at z-65 — inside #fxlayer
+  (z 25) the result overlay (z 60), shown in the same task as
+  the win, would have covered it for its entire life. The
+  result text stays readable through the translucent wash,
+  which fades over 1.3 s.
+- Chain (B8, 3-6 + supplement A): every new link pops large in
+  the foreground (.fx-chainpop: card name + the big cyan link
+  number on its lower edge), then shrinks toward the chain
+  bar. MERGE with B9 (first live capture drove this): when
+  the new link IS a set S/T activation, the tilted card is
+  the pop and carries the number on itself (.setno) —
+  stacking a panel over the tilted card buried both. On the
+  bar: 2+ links show a CHAIN label chip from the moment they
+  stack (counted only links render it); the newest link
+  rides enlarged (.newest) while stacking, cleared when
+  resolution begins; the solving link's chip glows yellow
+  (border + shadow, not just a colour swap); solved links
+  dim (.done, in addition to the existing ✓ and the negated
+  strike-through). The numbered chips, pass button and the
+  per-card "don't ask" machinery are untouched.
+- Set activation / flips / defense (B9, 3-12 as revised by the
+  MD-first rule + supplement A): an activation from the
+  SZONE tips a presentation copy into the centre — tilted
+  −14°, white rim — the card itself never flips inside its
+  zone; activations from hand/grave keep the existing
+  showcase side. A face-down card flipping face-up (in-place
+  snapshot diff) gets a white flash + an edge-on scaleX flip
+  of its tile. Defense position is MD-style 90° rotation:
+  tileHTML now wraps art + name band in an .art layer inside
+  .inner, and .tile.def rotates it 90° at scale .82
+  (= 1/1.22, so the rotated card — imgH = 1.22 × tile width
+  wide — fits the portrait tile exactly instead of being
+  shaved by the slot's overflow:hidden). The .mats/.ctrs
+  badges stay upright in the tile corners; the ATK/DEF strip
+  stays outside the tile, upright, two lines (round-4 spec),
+  and gains .defmode in defense: the DEF line is tinted
+  light blue and its value enlarged (.defline), so the form
+  also reads off the numbers. All zones keep one size.
+  tileHTML still emits .nm as a DIRECT child of .inner (the
+  round-A FX layer sizes ghost name bands off it) and .art
+  keeps the same computed line-height — two non-obvious
+  couplings found while landing this (FXA21 / stripClip).
+- Advance summons (B10, supplement A): no seniority
+  ceremony. A level ≥ 5 normal summon — or a monster set
+  whose set event carries the code — keeps the round-A
+  placement puff, gains a stronger zone glow, and its
+  tributes leave the way fusion/Xyz materials do: glow,
+  shrink, converge into the summon point instead of flying
+  to the graveyard (the fusion branch's own pattern: same
+  batch, same controller, MZONE departures are consumed as
+  tributes).
+- Settings (B11, 3-11): fxSettings {cutin, resp}, persisted
+  to localStorage ('v2fx', best-effort — private-mode
+  failures are swallowed). Controls live on the start screen
+  (seg-cutin / seg-resp, initialised from the persisted
+  values) and mid-duel in a sheet opened from the small
+  演出設定 button in the phase bar (inert while a prompt is
+  open; an arriving prompt reclaims the sheet — same
+  pattern as the menu). Response modes act ONLY on prompt
+  presentation: 'off' answers every non-forced SELECT_CHAIN
+  with a pass without opening the dock (passing is always
+  a legal chain answer; forced prompts still show); 'on'
+  disables the per-chain and per-duel dismissals inside
+  uiChain, so every timing is confirmed and nothing
+  auto-passes; 'auto' is the previous behaviour exactly.
+  The engine's legal set is never filtered. The start
+  overlay may scroll vertically at short heights now that
+  it carries two more rows (the duel board still never
+  scrolls).
+
+Verification: test-fx (Parts 1 + 1B synthetic, two live duels) plus the whole existing suite — node / explore / phase2 / ui / layout (104) / genesis / overlay / facedown / ggfusion / swap / investigate / bgm (26) / cpu / cpu-tune / cpu-tune2 — exit 0 with zero FAIL lines on this branch's final code; test-phase2 passed on its first solo run (its known sampling flake did not appear). Live round-B tallies from test-fx
+Part 2 (two duels): cutin 4, chainpop 11, setactivate 9,
+attackline 7, directattack 7, lpchange 7, portal:fusion 4;
+fxError null in both. Screenshots the agent viewed with its
+own eyes (worktree shots/): h620-mix-b/ (cut-in on 水雷魔神 —
+scrim, big card, banner, HUD readable through it),
+h620-nocutin/ (clean direct-attack line + DIRECT ATTACK
+band with the attacker glowing; the chain pop panel with
+its big number; the merged tilt pop carrying its number;
+the start screen with both setting rows and the persisted
+OFF selection), h700-gg-c/ (the finisher's water wash over
+the result), defprobe/ (face-up defense: measured
+rotate(90deg) scale(.82) on the tile inner, DEF line
+rgb(143,216,255) at 10 px, strip upright and readable;
+face-down backs measure the striped pattern on both tile
+and art layers), setprobe/ (the mid-duel settings sheet;
+flipping 応答モード to Off persisted to localStorage and
+reflected on the start-screen segment; sheet closes
+cleanly).
+
+NOT visually captured — stated honestly:
+- The CHAIN label chip on the bar in a live frame: across
+  4+ clicker duels (including a chain-first clicker that
+  answers every offered candidate) every chain that formed
+  had exactly one link. The label is a three-line render
+  branch reviewed in place; link-2 pops are asserted
+  synthetically (FXB5, FXB5b) and the label logic follows
+  the same state the pops read — but no screenshot of the
+  label itself exists.
+- The 'flip' / 'poschange' / 'advance' beats fired 0 times
+  in the jsdom live duels: a battle flip that is destroyed
+  in the same batch diffs as a departure rather than a
+  change, in-place position changes are rare with these
+  decks, and neither bot tribute-summoned in those two
+  games. All three beats are asserted synthetically
+  (FXB8, FXB9, FXB10). The defense ROTATION state they
+  lead to is screenshot- and probe-verified above.
+- On a lethal hit the LP counter may still be counting
+  (≤850 ms) when the result overlay appears; the result
+  text carries the final LP and the counter settles on the
+  exact value behind it (asserted by FXB3/FXB4's landing
+  checks).
+- Sound remains unverifiable by the agent (as with every
+  round): the BGM stage latching and SE wiring were not
+  touched by round B beyond sharing the key-card roster
+  constant.
