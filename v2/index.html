@@ -668,6 +668,9 @@
   #neuronresult .np-items{color:var(--txt-dim);font-size:11.5px;}
   #neuronpanel .np-foot{flex:0 0 auto;display:flex;flex-direction:column;gap:8px;}
   #neuronpanel .np-foot .startbtn{width:100%;min-height:46px;font-size:16px;letter-spacing:.1em;border-radius:12px;}
+  #neuronpanel .np-coderow{display:flex;gap:8px;width:100%;flex:0 0 auto;margin-top:6px;}
+  #neuroncode{flex:1 1 auto;min-width:0;background:#120d05;color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:12.5px;padding:9px 8px;box-sizing:border-box;}
+  #neuronopencode{flex:0 0 auto;background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:12px;padding:9px 10px;cursor:pointer;}
   #neuronsave{background:#3a2a10;color:#ffe9a8;border:1px solid var(--gold);}
   #loadmsg{font-size:11px;color:var(--txt-dim);margin:0;}
   /* the VS curtain lives at #app level (above both pre-duel pages)
@@ -816,8 +819,9 @@
   </div>
   <div class="overlay" id="neuronpanel">
     <div class="np-head"><button id="neuronback">← デッキ選択へ</button><div class="dp-title">デッキを取り込む</div></div>
-    <p class="np-note">ニューロン（公式カードデータベース）のデッキページで「テキスト表示」を選び、ページ全体をコピーして下に貼り付けてください。ほかに .ydk／パスコードのリスト／カード名のリストでも取り込めます。取り込んだデッキは Genesis（100pt）のルールで判定し、適合したものだけ保存できます。デッキコードからの自動取得は、公式サイトの仕様によりアプリからはできません。</p>
-    <textarea id="neurontext" placeholder="ここに貼り付け"></textarea>
+    <p class="np-note">取り込み方は、ニューロンでデッキを開いて「コピー」で共有リンクをコピーし、下の欄に貼り付けるだけです（貼り付けると自動で読み込みが始まります）。デッキコード（7文字）でも取り込めます。アプリが公式デッキページを取得して、Genesis（100pt）の判定と保存まで自動で行います。<br>取得は外部の中継サービス経由のため、混雑や障害で失敗することがあります。その場合は、リンクをブラウザで開いてページ全体を選択コピーし、ここに貼り付けてください（コピーした文章のままでも、ページのHTMLでも読み込めます）。ほかに .ydk／パスコードのリスト／カード名のリストでも取り込めます。<br>※ニューロンの「リスト保存」で作るデッキ登録シートは画像のため、読み込めません。</p>
+    <textarea id="neurontext" placeholder="共有リンク、デッキコード、またはページのコピーをここに貼り付け"></textarea>
+    <div class="np-coderow"><input id="neuroncode" type="text" inputmode="latin" autocomplete="off" placeholder="デッキコード（7文字）"><button id="neuronopencode">公式デッキページを開く</button></div>
     <div id="neuronresult"></div>
     <div class="np-foot">
       <button class="startbtn" id="neuronsave" style="display:none">保存する</button>

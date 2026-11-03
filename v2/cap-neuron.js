@@ -30,6 +30,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const port = server.address().port;
   const fixture = fs.readFileSync(path.join(__dirname, 'test-neuron-fixture.html'), 'utf8');
+  const visualFixture = fs.readFileSync(path.join(__dirname, 'test-neuron-visual-fixture.txt'), 'utf8');
   const gd = JSON.parse(fs.readFileSync(path.join(__dirname, 'genesys-data.json'), 'utf8'));
   const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'data.json'), 'utf8'));
   // points-illegal example: Kelbek x3 (150pt) + clean fillers to 42
@@ -50,9 +51,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await page.waitForFunction(() => document.getElementById('loadmsg').textContent.includes('準備完了'), { timeout: 60000 });
     await page.click('#todeck');
     await sleep(300);
-    // --- import OK flow ---
+    // --- guidance (fresh panel, 2026-11-04 rewrite) ---
     await page.click('#deckimport');
     await sleep(300);
+    await page.screenshot({ path: path.join(OUT, 'panel-guidance-h' + H + '.png') });
+    // --- import OK flow ---
     await page.evaluate((t) => { document.getElementById('neurontext').value = t; }, fixture);
     await page.click('#neuronparse');
     await page.waitForFunction(() => document.getElementById('neuronresult').textContent.includes('Genesis'), { timeout: 30000 });
@@ -72,6 +75,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await page.evaluate(() => { const r = document.getElementById('neuronresult'); r.scrollTop = r.scrollHeight; });
     await sleep(250);
     await page.screenshot({ path: path.join(OUT, 'import-ng-h' + H + '.png') });
+    // --- visual text flow (page copied as rendered text) ---
+    await page.evaluate((t) => { document.getElementById('neurontext').value = t; document.getElementById('neuronresult').innerHTML = ''; document.getElementById('neuronsave').style.display = 'none'; }, visualFixture);
+    await page.click('#neuronparse');
+    await page.waitForFunction(() => document.getElementById('neuronresult').textContent.includes('Genesis'), { timeout: 30000 });
+    await page.evaluate(() => { const r = document.getElementById('neuronresult'); r.scrollTop = r.scrollHeight; });
+    await sleep(250);
+    await page.screenshot({ path: path.join(OUT, 'import-visual-h' + H + '.png') });
     await page.close();
     console.log('height', H, 'done');
   }

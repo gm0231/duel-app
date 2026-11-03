@@ -298,18 +298,85 @@ function renderNeuronResult(deck, val, pool) {
   }
   el.innerHTML = h;
 }
-async function neuronDoParse() {
+// ---- URL import (user spec 2026-11-04: pasting the link is
+// enough). The official hosts (neuron.konami.net and
+// db.yugioh-card.com) send no CORS headers — verified in a real
+// browser from the app's own origin — so a direct fetch always
+// fails and the chain then tries public CORS relays in order.
+// Every payload is content-checked before use (a real deck page
+// carries input.link_value rows), so a relay answering with the
+// Neuron app stub or an error page never counts as success. The
+// relays are third-party services that can stop without notice;
+// when the whole chain fails the panel says so plainly and
+// points at the copy-paste fallback instead of failing silently.
+const NEURON_FETCH_TIMEOUT_MS = 25000;
+async function neuronFetchOnce(url) {
+  const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  const to = ctl ? setTimeout(() => ctl.abort(), NEURON_FETCH_TIMEOUT_MS) : null;
+  try {
+    const r = await fetch(url, ctl ? { signal: ctl.signal } : undefined);
+    if (!r || !r.ok) return null;
+    return await r.text();
+  } catch (e) { return null; }
+  finally { if (to) clearTimeout(to); }
+}
+async function neuronFetchViaChain(targetUrl) {
+  const wraps = [
+    u => u, // direct (expected to fail by CORS today; kept first so a future ACAO header just works)
+    u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u), // measured working 2026-11-04 (follows the share link's redirect to the deck page)
+    u => 'https://api.allorigins.win/get?url=' + encodeURIComponent(u), // same service, JSON envelope
+    u => 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(u),
+    u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u), // one retry: the measured route is flaky
+  ];
+  for (const w of wraps) {
+    let t = await neuronFetchOnce(w(targetUrl));
+    if (t == null) continue;
+    if (t.includes('"contents"')) { // allorigins /get envelope
+      try { const j = JSON.parse(t); if (j && typeof j.contents === 'string') t = j.contents; } catch (e) {}
+    }
+    if (t) return t;
+  }
+  return null;
+}
+function neuronLooksLikeDeckHtml(t) {
+  return !!t && t.includes('link_value') && t.includes('cid=') && /(monster_list|spell_list|extra_list)/.test(t);
+}
+function neuronExtractMemberDeckUrl(html) {
+  const re = /member_deck\.action\?([^"'<>\s]+)/g;
+  let mm;
+  while ((mm = re.exec(html))) {
+    const q = mm[1].replace(/&amp;/g, '&');
+    const cg = /(?:^|&)cgid=([a-f0-9]{32})/.exec(q), dn = /(?:^|&)dno=(\d+)/.exec(q);
+    if (cg && dn) return 'https://www.db.yugioh-card.com/yugiohdb/member_deck.action?ope=1&cgid=' + cg[1] + '&dno=' + dn[1];
+  }
+  return null;
+}
+async function neuronFetchDeckHtml(startUrl) {
+  const first = await neuronFetchViaChain(startUrl);
+  if (first && neuronLooksLikeDeckHtml(first)) return { ok: true, html: first };
+  if (first) {
+    // a deck-search result page (or any page) that links the deck:
+    // follow the embedded member_deck URL once.
+    const next = neuronExtractMemberDeckUrl(first);
+    if (next && next !== startUrl) {
+      const second = await neuronFetchViaChain(next);
+      if (second && neuronLooksLikeDeckHtml(second)) return { ok: true, html: second };
+    }
+  }
+  return { ok: false };
+}
+function neuronSaveRecord(rec) {
+  while (SAVED_DECKS['saved:' + rec.id]) rec = Object.assign({}, rec, { id: rec.id + 'x' });
+  savedDeckList.push(rec);
+  SAVED_DECKS['saved:' + rec.id] = rec;
+  try { if (window.NeuronLib) NeuronLib.storeSavedDecks(localStorage, savedDeckList); } catch (e) {}
+  renderSavedDecks();
+  selectMyDeck('saved:' + rec.id);
+  return rec;
+}
+function neuronPresentResult(parsed, autoSave) {
   const resEl = $('neuronresult');
   const saveBtn = $('neuronsave');
-  saveBtn.style.display = 'none'; neuronPending = null;
-  if (!window.NeuronLib) { resEl.innerHTML = '<div class="np-err">取り込み機能が読み込めていません</div>'; return; }
-  const parseBtn = $('neuronparse');
-  parseBtn.disabled = true; parseBtn.textContent = '読み込み中…';
-  const okd = await ensureGenesysData();
-  parseBtn.disabled = false; parseBtn.textContent = '読み込む';
-  if (!okd) { resEl.innerHTML = '<div class="np-err">カードデータ（genesys-data.json）を読み込めませんでした。通信環境を確認してください</div>'; return; }
-  if (!DATA) { resEl.innerHTML = '<div class="np-err">カードデータの読み込みが終わっていません</div>'; return; }
-  const parsed = NeuronLib.parseImport($('neurontext').value, (h) => new DOMParser().parseFromString(h, 'text/html'));
   if (!parsed.ok) {
     resEl.innerHTML = '<div class="np-err">読み込めませんでした</div><ul>' + parsed.errors.map(e => '<li>' + e.replace(/</g, '&lt;') + '</li>').join('') + '</ul>';
     return;
@@ -319,11 +386,49 @@ async function neuronDoParse() {
   const val = NeuronLib.validateGenesis(deck);
   const pool = NeuronLib.poolCheck(deck, new Set(Object.keys(DATA.cards).map(Number)));
   renderNeuronResult(deck, val, pool);
-  if (val.ok) {
-    neuronPending = NeuronLib.makeRecord(deck, val, pool);
+  if (!val.ok) return;
+  const rec = NeuronLib.makeRecord(deck, val, pool);
+  if (autoSave) {
+    neuronSaveRecord(rec);
+    resEl.insertAdjacentHTML('beforeend', '<div class="np-pt">判定が終わり、自動で保存しました（デッキ選択の「保存したデッキ」にあります）</div>');
+  } else {
+    neuronPending = rec;
     saveBtn.textContent = pool.ok ? '保存する' : '保存する（対戦はまだできません）';
     saveBtn.style.display = '';
   }
+}
+async function neuronDoParse() {
+  const resEl = $('neuronresult');
+  const saveBtn = $('neuronsave');
+  saveBtn.style.display = 'none'; neuronPending = null;
+  if (!window.NeuronLib) { resEl.innerHTML = '<div class="np-err">取り込み機能が読み込めていません</div>'; return; }
+  const parseBtn = $('neuronparse');
+  parseBtn.disabled = true; parseBtn.textContent = '読み込み中…';
+  const finishBtn = () => { parseBtn.disabled = false; parseBtn.textContent = '読み込む'; };
+  const okd = await ensureGenesysData();
+  if (!okd) { finishBtn(); resEl.innerHTML = '<div class="np-err">カードデータ（genesys-data.json）を読み込めませんでした。通信環境を確認してください</div>'; return; }
+  if (!DATA) { finishBtn(); resEl.innerHTML = '<div class="np-err">カードデータの読み込みが終わっていません</div>'; return; }
+  const rawText = $('neurontext').value;
+  // A URL (or a bare deck code) only counts as the URL flow when
+  // it is essentially the whole input — a pasted HTML page also
+  // CONTAINS official URLs and must stay on the paste path.
+  const url = rawText.trim().length <= 500 ? NeuronLib.extractImportUrl(rawText) : null;
+  const code = !url && NeuronLib.isDeckCode(rawText) ? rawText.trim() : null;
+  if (url || code) {
+    const startUrl = url || NeuronLib.deckCodeSearchUrl(code);
+    resEl.innerHTML = '<div class="np-pt">公式デッキページを取得しています…（外部の中継サービス経由のため、時間がかかることがあります）</div>';
+    const got = await neuronFetchDeckHtml(startUrl);
+    finishBtn();
+    if (!got.ok) {
+      resEl.innerHTML = '<div class="np-err">デッキページを取得できませんでした</div>' +
+        '<div class="np-pt">公式サイトはアプリからの直接の取得を許可していないため、外部の中継サービス経由で取得を試しましたが、応答がありませんでした。中継サービスは予告なく止まることがあります。時間をおいて再度お試しいただくか、リンクをブラウザで開いてページ全体を選択コピーし、ここに貼り付けてください（そのまま読み込めます）。</div>';
+      return;
+    }
+    neuronPresentResult(NeuronLib.parseImport(got.html, (h) => new DOMParser().parseFromString(h, 'text/html')), true);
+    return;
+  }
+  finishBtn();
+  neuronPresentResult(NeuronLib.parseImport(rawText, (h) => new DOMParser().parseFromString(h, 'text/html')), false);
 }
 function locLabel(e) {
   const who = e.con === HP ? '自分' : '相手';
@@ -6476,15 +6581,25 @@ function wireSeg(id, apply) {
   $('neuronsave').addEventListener('click', () => {
     if (!neuronPending) return;
     playClick();
-    let rec = neuronPending; neuronPending = null;
-    while (SAVED_DECKS['saved:' + rec.id]) rec = Object.assign({}, rec, { id: rec.id + 'x' });
-    savedDeckList.push(rec);
-    SAVED_DECKS['saved:' + rec.id] = rec;
-    try { if (window.NeuronLib) NeuronLib.storeSavedDecks(localStorage, savedDeckList); } catch (e) {}
+    const rec = neuronPending; neuronPending = null;
+    neuronSaveRecord(rec);
     $('neuronpanel').style.display = 'none';
     $('neuronsave').style.display = 'none';
-    renderSavedDecks();
-    selectMyDeck('saved:' + rec.id);
+  });
+  // pasting a share link (or a bare deck code) starts the import
+  // by itself — the user asked for "paste the URL and it is done".
+  $('neurontext').addEventListener('paste', (e) => {
+    try {
+      const t = (e.clipboardData || window.clipboardData).getData('text') || '';
+      if (window.NeuronLib && t.trim().length <= 500 && (NeuronLib.extractImportUrl(t) || NeuronLib.isDeckCode(t)))
+        setTimeout(() => neuronDoParse(), 60);
+    } catch (err) {}
+  });
+  $('neuronopencode').addEventListener('click', () => {
+    playClick();
+    const code = $('neuroncode').value.trim();
+    if (window.NeuronLib && NeuronLib.isDeckCode(code)) window.open(NeuronLib.deckCodeSearchUrl(code), '_blank');
+    else $('neuroncode').focus();
   });
   try {
     DATA = await (await fetch('data.json')).json();

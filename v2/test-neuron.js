@@ -20,6 +20,22 @@
    - A Genesis-legal deck with pool-unsupported cards saves but
      cannot start: the start button is disabled with the reason and
      the summary names the unsupported cards.
+   - The deck page copied as rendered text (the shape a phone
+     browser's select-all copy yields — real captures
+     test-neuron-visual-fixture.txt in JA and
+     test-neuron-share-fixture.txt in EN) parses to EXACTLY the
+     same deck as the page's HTML: 45/15/9 for MILLENNIUM
+     PROPHECY, 44/15/3 for the shared "Alluring Heroines". The
+     EN deck trips the release cutoff under the bundled list
+     202610: its two ORIGINAL ARTWORK COLLECTION cards (OCG
+     release 2026-09-26) postdate the list's 2026-03-01 cutoff,
+     so "cannot be used" naming both is the correct verdict.
+   - The URL flow (share link / deck code pasted): the app
+     fetches the deck page through its relay chain (fetch stubbed
+     here per route), parses, validates and AUTO-SAVES a legal
+     deck; a search page in between is followed to the embedded
+     member_deck URL; total fetch failure shows the honest
+     relay/fallback message and saves nothing.
    Method: jsdom boot (harness as test-deckpage; neuron.js injected
    in index.html order) + DOM clicks only for the UI flow; direct
    NeuronLib calls for the validator units. */
@@ -34,12 +50,15 @@ const html = fs.readFileSync(path.join(V2, 'index.html'), 'utf8');
 const data = JSON.parse(fs.readFileSync(path.join(V2, 'data.json'), 'utf8'));
 const genesys = JSON.parse(fs.readFileSync(path.join(V2, 'genesys-data.json'), 'utf8'));
 const fixture = fs.readFileSync(path.join(V2, 'test-neuron-fixture.html'), 'utf8');
+const visualFixture = fs.readFileSync(path.join(V2, 'test-neuron-visual-fixture.txt'), 'utf8');
+const shareFixtureHtml = fs.readFileSync(path.join(V2, 'test-neuron-share-fixture.html'), 'utf8');
+const shareFixtureTxt = fs.readFileSync(path.join(V2, 'test-neuron-share-fixture.txt'), 'utf8');
 const wasmBinary = fs.readFileSync(path.join(V2, 'build', 'ocgcore.wasm'));
 let failures = 0;
 const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (!cond) failures++; };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-async function boot(storageSeed) {
+async function boot(storageSeed, neuronResponder) {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
   const { window } = dom;
   window.Audio = class { constructor(src) { this.src = src; this.volume = 1; } play() { return Promise.resolve(); } pause() {} };
@@ -48,6 +67,11 @@ async function boot(storageSeed) {
   const wasmBuf = wasmBinary.buffer.slice(wasmBinary.byteOffset, wasmBinary.byteOffset + wasmBinary.byteLength);
   window.fetch = async (url) => {
     const u = String(url);
+    if (neuronResponder && /neuron\.konami\.net|db\.yugioh-card\.com|allorigins\.win|codetabs\.com/.test(u)) {
+      const r = await neuronResponder(u);
+      if (r) return r;
+      throw new TypeError('Failed to fetch'); // direct route: CORS-blocked in reality
+    }
     if (u.includes('ocgcore.wasm')) return { ok: true, status: 200, url: u, arrayBuffer: async () => wasmBuf };
     if (u.includes('genesys-data')) return { ok: true, status: 200, json: async () => genesys, arrayBuffer: async () => wasmBuf };
     return { ok: true, status: 200, json: async () => data, arrayBuffer: async () => wasmBuf };
@@ -77,6 +101,20 @@ async function importText(window, text) {
   for (let i = 0; i < 60 && !doc.getElementById('neuronresult').textContent.trim(); i++) await sleep(50);
   return doc.getElementById('neuronresult');
 }
+// URL flow: the result first shows a "fetching" note, so wait for
+// a terminal marker instead of any text.
+async function importUrlFlow(window, text, marker) {
+  const doc = window.document;
+  if (doc.getElementById('neuronpanel').style.display !== 'flex') doc.getElementById('deckimport').click();
+  doc.getElementById('neurontext').value = text;
+  doc.getElementById('neuronparse').click();
+  for (let i = 0; i < 200 && !doc.getElementById('neuronresult').textContent.includes(marker); i++) await sleep(50);
+  return doc.getElementById('neuronresult');
+}
+const multiEq = (a, b) => {
+  const m = (arr) => { const o = {}; for (const c of arr) o[c] = (o[c] || 0) + 1; return JSON.stringify(Object.entries(o).sort()); };
+  return ['main', 'extra', 'side'].every(s => m(a[s]) === m(b[s]));
+};
 // distinct Genesis-clean filler reps (no points, no link/pendulum,
 // no cutoff, no ng) straight from the bundled dataset
 function cleanReps(n, excludePool) {
@@ -252,6 +290,108 @@ const codesText = (main, extra, side) =>
     const res2 = await importText(window, 'メインデッキ\n剣神官ムドラ ×3\n存在しないカード ×1\n');
     ok(res2.textContent.includes('読み取れなかったカード名があります') && res2.textContent.includes('存在しないカード'),
       'N13b: an unknown name is rejected with the name itself');
+    window.close();
+  }
+
+  // ------------------------------------------------ visual text (JA page copy) == HTML ground truth
+  {
+    const window = await boot();
+    const doc = window.document;
+    const lib = window.NeuronLib;
+    doc.getElementById('todeck').click();
+    doc.getElementById('deckimport').click();
+    for (let i = 0; i < 60 && !lib.dataReady(); i++) await sleep(50);
+    const truth = lib.parseImport(fixture, (h) => new window.DOMParser().parseFromString(h, 'text/html'));
+    const vis = lib.parseImport(visualFixture, null);
+    ok(vis.ok && vis.format === 'visual', 'V1: JA page copy parses as visual text' + (vis.ok ? '' : ' — ' + JSON.stringify(vis.errors)));
+    ok(vis.ok && vis.deck.name === 'MILLENNIUM PROPHECY', 'V1b: deck name from the copied page (' + (vis.ok ? vis.deck.name : 'n/a') + ')');
+    ok(vis.ok && truth.ok && multiEq(vis.deck, truth.deck), 'V1c: visual parse is card-for-card identical to the HTML parse (45/15/9)');
+    const res = await importText(window, visualFixture);
+    ok(res.textContent.includes('Genesis適合 ― そのまま対戦できます') && res.textContent.includes('ポイント合計：100pt'),
+      'V1d: the copied page imports through the panel as playable');
+    window.close();
+  }
+
+  // ------------------------------------------------ share page: EN HTML + EN visual text
+  {
+    const window = await boot();
+    const doc = window.document;
+    const lib = window.NeuronLib;
+    doc.getElementById('todeck').click();
+    doc.getElementById('deckimport').click();
+    for (let i = 0; i < 60 && !lib.dataReady(); i++) await sleep(50);
+    const hp = lib.parseImport(shareFixtureHtml, (h) => new window.DOMParser().parseFromString(h, 'text/html'));
+    ok(hp.ok && hp.deck.name === 'Alluring Heroines' && hp.deck.main.length === 44 && hp.deck.extra.length === 15 && hp.deck.side.length === 3,
+      'V2: the shared recipe page HTML parses (44/15/3)' + (hp.ok ? '' : ' — ' + JSON.stringify(hp.errors)));
+    const vis = lib.parseImport(shareFixtureTxt, null);
+    ok(vis.ok && vis.format === 'visual', 'V2b: EN page copy parses as visual text' + (vis.ok ? '' : ' — ' + JSON.stringify(vis.errors)));
+    ok(vis.ok && hp.ok && multiEq(vis.deck, hp.deck), 'V2c: EN visual parse is card-for-card identical to the HTML parse');
+    const val = lib.validateGenesis(vis.deck);
+    ok(!val.ok && val.violations.some(v => v.kind === 'cutoff' && v.items.includes('ハーピィ・レディ－華麗なる分身－') && v.items.includes('香水戦術')),
+      'V2d: under list 202610 the deck is cutoff-illegal, naming both 2026-09-26 cards (validator is right; the deck predates no cutoff)');
+    ok(lib.displayName(64972181) === 'ハーピィ・レディ－華麗なる分身－', 'V2e: supplemental printed JA name resolves for display');
+    window.close();
+  }
+
+  // ------------------------------------------------ URL helpers (unit)
+  {
+    const window = await boot();
+    const lib = window.NeuronLib;
+    ok(lib.extractImportUrl('https://neuron.konami.net/link/qae5uv7gmv1b9qrt') === 'https://neuron.konami.net/link/qae5uv7gmv1b9qrt',
+      'U0: share link extracted verbatim');
+    ok(lib.extractImportUrl('デッキ https://www.db.yugioh-card.com/yugiohdb/member_deck.action?ope=1&cgid=77ea9998fb9d10ecc6e6f70c1056a5d9&dno=71 です') !== null,
+      'U0b: deck page URL extracted from surrounding text');
+    ok(lib.extractImportUrl('https://example.com/deck') === null, 'U0c: foreign URLs are not import URLs');
+    ok(lib.isDeckCode('2t9x91u') && !lib.isDeckCode('2t9x91') && !lib.isDeckCode('剣神官ムドラ'), 'U0d: deck code is exactly 7 alphanumerics');
+    ok(lib.deckCodeSearchUrl('2t9x91u').includes('deck_search.action?ope=1&deck_code=2t9x91u'), 'U0e: search URL is built from the code');
+    window.close();
+  }
+
+  // ------------------------------------------------ URL flow: share link -> fetch -> verdict -> auto-save
+  {
+    const relayDeck = async (u) => /allorigins|codetabs/.test(u) ? { ok: true, status: 200, text: async () => fixture } : null;
+    const window = await boot(null, relayDeck);
+    const doc = window.document;
+    doc.getElementById('todeck').click();
+    const res = await importUrlFlow(window, 'https://neuron.konami.net/link/qae5uv7gmv1b9qrt', '自動で保存しました');
+    ok(res.textContent.includes('MILLENNIUM PROPHECY') && res.textContent.includes('自動で保存しました'),
+      'U1: pasting the share link fetches, validates and auto-saves');
+    const saved = JSON.parse(window.localStorage.getItem('v2saveddecks') || '[]');
+    ok(saved.length === 1 && saved[0].name === 'MILLENNIUM PROPHECY' && saved[0].poolOk === true,
+      'U1b: the auto-saved deck is in localStorage');
+    ok(doc.querySelectorAll('#seg-mydeck .deck.saveditem').length === 1, 'U1c: the auto-saved deck is listed');
+    window.close();
+  }
+
+  // ------------------------------------------------ URL flow: deck code -> search page -> member_deck (two hops)
+  {
+    const hopPage = '<html><body><a href="https://www.db.yugioh-card.com/yugiohdb/member_deck.action?ope=1&cgid=77ea9998fb9d10ecc6e6f70c1056a5d9&dno=71">MILLENNIUM PROPHECY</a></body></html>';
+    const twoHop = async (u) => {
+      if (!/allorigins|codetabs/.test(u)) return null;
+      const dec = decodeURIComponent(u);
+      if (dec.includes('deck_search.action')) return { ok: true, status: 200, text: async () => hopPage };
+      if (dec.includes('member_deck.action')) return { ok: true, status: 200, text: async () => fixture };
+      return { ok: true, status: 200, text: async () => hopPage };
+    };
+    const window = await boot(null, twoHop);
+    const doc = window.document;
+    doc.getElementById('todeck').click();
+    const res = await importUrlFlow(window, '2t9x91u', '自動で保存しました');
+    ok(res.textContent.includes('MILLENNIUM PROPHECY') && res.textContent.includes('自動で保存しました'),
+      'U2: a bare deck code drives search -> member_deck -> auto-save');
+    window.close();
+  }
+
+  // ------------------------------------------------ URL flow: every route down -> honest failure, no save
+  {
+    const allDown = async () => null;
+    const window = await boot(null, allDown);
+    const doc = window.document;
+    doc.getElementById('todeck').click();
+    const res = await importUrlFlow(window, 'https://neuron.konami.net/link/qae5uv7gmv1b9qrt', '取得できませんでした');
+    ok(res.textContent.includes('取得できませんでした') && res.textContent.includes('中継サービス') && res.textContent.includes('貼り付けてください'),
+      'U3: total fetch failure explains the relay situation and the paste fallback');
+    ok(!window.localStorage.getItem('v2saveddecks'), 'U3b: nothing is saved when the fetch fails');
     window.close();
   }
 

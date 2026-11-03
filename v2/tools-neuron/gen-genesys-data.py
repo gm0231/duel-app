@@ -236,6 +236,42 @@ for nm, pt in points_by_name.items():
 print('points resolved:', len(points), '/', len(points_by_name), 'unresolved:', len(still_unresolved))
 if still_unresolved: print('  UNRESOLVED:', still_unresolved)
 
+# ---------------------------------------------------------------- name indexes (every printing)
+# The shared deck pages (neuron.konami.net links land on the TCG
+# database) render most card names in English, and both locales'
+# visual-text import resolves names as printed on the page. A
+# rep-level name map is NOT enough: "Harpie Lady 1" (91932350) is
+# alias-merged onto "Harpie Lady" (76812113), so its own printed
+# name exists only on the printing. Build name -> rep indexes from
+# EVERY printing instead: JA from the YGOPRODeck JA dump + sqlite +
+# app names (app spellings win), EN from en_name (BabelCDB texts
+# with the YGOPRODeck EN dump as backfill -- the spellings the TCG
+# database prints).
+index_ja = {}
+for c in cardinfo_ja:
+    if c.get('name'): index_ja.setdefault(c['name'], rep.get(c['id'], c['id']))
+for pc, nj in sq_names.items(): index_ja.setdefault(nj, rep.get(pc, pc))
+for code, nm in app_data['names'].items(): index_ja[nm] = rep.get(int(code), int(code))
+index_en = {}
+for i, n in en_name.items():
+    if n: index_en.setdefault(n, rep.get(i, i))
+# Supplemental printed JA names, hand-verified against real
+# official deck pages (2026-11-04): recent cards whose JA names
+# appear in NO upstream dump yet (the JA cardinfo dump and sqlite
+# both lag), while the official DB already prints them. Without
+# these, the visual-text import of a page containing them fails
+# its totals cross-check (honest error, never a wrong deck) and
+# the URL/HTML path is unaffected. Grow this list only from real
+# page evidence.
+SUPPLEMENT_JA = {
+    'ハーピィ・レディ－華麗なる分身－': 64972181,
+    '香水戦術': 24672129,
+    '絶望と希望の逆転': 25209168,
+}
+for nm, pc in SUPPLEMENT_JA.items():
+    index_ja[nm] = rep.get(pc, pc)
+    if pc not in names and rep.get(pc, pc) == pc: names[pc] = nm
+
 # ---------------------------------------------------------------- emit
 out = {
     'listVersion': LIST_VERSION,
@@ -244,6 +280,8 @@ out = {
     'cap': 100,
     'points': points,
     'names': {str(r): n for r, n in sorted(names.items())},
+    'indexJa': index_ja,
+    'indexEn': index_en,
     'alias': alias_map,
     'cid': {str(cid): pc for cid, pc in sorted(cid_map.items())},
     'lp': sorted(lp_set),
@@ -255,6 +293,6 @@ out_path = os.path.join(V2, 'genesys-data.json')
 with open(out_path, 'w', encoding='utf-8') as f:
     json.dump(out, f, ensure_ascii=False, separators=(',', ':'))
 print('wrote', out_path, os.path.getsize(out_path), 'bytes')
-print('names:', len(names), 'alias:', len(alias_map), 'cid:', len(cid_map),
+print('names:', len(names), 'indexJa:', len(index_ja), 'indexEn:', len(index_en), 'alias:', len(alias_map), 'cid:', len(cid_map),
       'lp:', len(lp_set), 'ex:', len(ex_set), 'late:', len(late_set), 'ng:', len(ng_set),
       'fallback merges:', fallback_merges, 'reps without ocg_date:', no_date)
