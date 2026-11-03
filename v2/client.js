@@ -428,6 +428,229 @@ function fxPhaseBanner(fam) {
   fxKill(d, 860);
   fxRecord('phase', { phase: fam });
 }
+// ------------------------------------------------------------ V3 stage 1: FX foundation
+// One clock, a scene engine, signature easings, sprite particles and
+// hit-stop — the foundation every V3 scene stands on. Requirements
+// and the layer-order table live in NOTES ("V3 integration —
+// Stage 1"); the short form:
+//  - every scene is a function of ONE shared FX clock (fxTimeMs);
+//    layers are scheduled against scene-local time on that clock.
+//  - hit-stop freezes the FX clock itself (all scenes + particles);
+//    the game (engine / prompts / board) is never on this clock.
+//  - particles are pre-rendered sprites, drawImage only, capped at
+//    FX_PARTICLE_CAP live across all scenes; no shadowBlur anywhere.
+//  - scene rendering writes transform / opacity (+ canvas) only.
+// Legacy round A/B effects keep their own WAAPI/interval timers in
+// this stage; scenes built from stage 2 onward run on this engine.
+function fxCubicBezier(x1, y1, x2, y2) {
+  const ax = 3 * x1 - 3 * x2 + 1, bx = 3 * x2 - 6 * x1, cx = 3 * x1;
+  const ay = 3 * y1 - 3 * y2 + 1, by = 3 * y2 - 6 * y1, cy = 3 * y1;
+  const sx = t => ((ax * t + bx) * t + cx) * t, sy = t => ((ay * t + by) * t + cy) * t, dx = t => (3 * ax * t + 2 * bx) * t + cx;
+  return x => { let t = x; for (let i = 0; i < 5; i++) { const e = sx(t) - x; if (Math.abs(e) < 1e-5) break; t -= e / dx(t); } return sy(t < 0 ? 0 : t > 1 ? 1 : t); };
+}
+// Signature easings (proposal 1.5): a curve per PURPOSE, replacing the
+// round A/B habit of reusing ease-out / ease-in-out / ease-in for
+// everything. CSS-side equivalents are the same cubic-bezier tuples.
+const FXE = {
+  settle: fxCubicBezier(.16, 1.3, .3, 1),   // card appearance (summon / cut-in): slight overshoot, then settles
+  snap: fxCubicBezier(.2, .9, .25, 1),      // information UI (banners, result): quick, clean stop
+  launch: fxCubicBezier(.6, 0, .9, .4),     // lines / beams: accelerates into the target
+  washOut: fxCubicBezier(.16, .8, .26, 1),  // full-screen washes: long decay tail
+  spinUp: fxCubicBezier(.25, .6, .35, 1),   // portal rotation ramp
+  outCubic: t => 1 - Math.pow(1 - t, 3),
+  inCubic: t => t * t * t,
+  inQuad: t => t * t,
+  outExpo: t => t >= 1 ? 1 : 1 - Math.pow(2, -10 * t),
+  inOut: t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
+  linear: t => t,
+};
+const fxSeg = (t, a, b) => { const v = (t - a) / (b - a); return v < 0 ? 0 : v > 1 ? 1 : v; };
+const fxLerp = (a, b, t) => a + (b - a) * t;
+// ---- the FX clock + scene engine
+let fxTimeMs = 0;          // the shared FX clock; freezes during hit-stop
+let fxLastWall = 0;        // last pump's wall timestamp
+let fxStopUntilWall = 0;   // hit-stop: wall time until which the clock is frozen
+let fxScenes = [];         // active scenes {kind, t0, dur, render, onDone, dead}
+let fxLoopOn = false, fxFrameNo = 0;
+function fxNow() { return fxTimeMs; }
+function fxHitStop(ms) {
+  const until = performance.now() + ms;
+  if (until > fxStopUntilWall) fxStopUntilWall = until;
+  fxEnsureLoop();
+}
+function fxAddScene(def) {
+  const sc = Object.assign({ t0: fxTimeMs, dead: false }, def);
+  fxScenes.push(sc);
+  fxEnsureLoop();
+  return sc;
+}
+function fxEnsureLoop() {
+  if (fxLoopOn) return;
+  fxLoopOn = true;
+  const seen = fxFrameNo;
+  try { requestAnimationFrame(fxPump); } catch (e) {}
+  // watchdog: if rAF is throttled (background tab, jsdom), pump by hand
+  setTimeout(() => { if (fxLoopOn && fxFrameNo === seen) fxPump(performance.now()); }, 90);
+}
+function fxPump(wall) {
+  fxFrameNo++;
+  if (!fxLastWall) fxLastWall = wall;
+  let dt = wall - fxLastWall;
+  fxLastWall = wall;
+  if (dt > 100) dt = 100; // a jank frame must not teleport a scene
+  if (dt < 0) dt = 0;
+  if (wall >= fxStopUntilWall) fxTimeMs += dt; // during hit-stop the clock (and every scene on it) is frozen
+  let alive = false;
+  for (const sc of fxScenes) {
+    const t = fxTimeMs - sc.t0;
+    if (t < 0) { alive = true; continue; }
+    if (t >= sc.dur) {
+      if (!sc.dead) {
+        sc.dead = true;
+        try { if (sc.render) sc.render(sc.dur); } catch (e) {}
+        try { if (sc.onDone) sc.onDone(); } catch (e) {}
+      }
+      continue;
+    }
+    alive = true;
+    try { sc.render(t); } catch (e) { fxError = String((e && e.stack) || e); sc.dead = true; }
+  }
+  fxScenes = fxScenes.filter(s => !s.dead);
+  fxDrawParticles();
+  fxLoopOn = false;
+  if (alive || fxBursts.length) fxEnsureLoop();
+}
+// ---- particles: seeded, closed-form, sprite-only (ported from the
+// approved prototype). A burst's particles are fully determined by
+// (seed, index), so any frame renders identically in playback and in
+// still capture — and freezing the FX clock freezes them mid-flight.
+const FX_PARTICLE_CAP = 90;
+let fxBursts = []; // {cv:'low'|'top', mode:'burst'|'spiral', seed, o:[x,y], n, t0, life:[min,max], ...}
+const fxSpriteCache = {};
+function fxSprite(col, r) {
+  const k = col + '_' + r;
+  if (fxSpriteCache[k]) return fxSpriteCache[k];
+  const c = document.createElement('canvas'); c.width = c.height = r * 2;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(r, r, 0, r, r, r);
+  gr.addColorStop(0, '#ffffff'); gr.addColorStop(.25, col); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, r * 2, r * 2);
+  fxSpriteCache[k] = c; return c;
+}
+function fxMulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+// particles of one burst alive at FX time t (closed form, exact count)
+function fxBurstAliveAt(b, t) {
+  const rnd = fxMulberry32(b.seed);
+  let n = 0;
+  for (let i = 0; i < b.n; i++) {
+    const dl = rnd() * (b.delayMax || 0), life = fxLerp(b.life[0], b.life[1], rnd());
+    rnd(); rnd(); rnd(); rnd(); // keep the stream aligned with the draw functions
+    const age = t - b.t0 - dl;
+    if (age >= 0 && age <= life) n++;
+  }
+  return n;
+}
+function fxParticlesAliveAt(t) { return fxBursts.reduce((a, b) => a + fxBurstAliveAt(b, t), 0); }
+function fxSpawnBurst(cvKind, b) {
+  b.cv = cvKind; b.mode = b.mode || 'burst';
+  if (b.t0 == null) b.t0 = fxTimeMs;
+  // budget: clip this burst so the projected live total (sampled over
+  // its lifetime) never exceeds the cap; the draw pass hard-stops at
+  // the cap as a second net.
+  let peak = 0;
+  const maxLife = b.life[1] + (b.delayMax || 0);
+  for (let dt = 0; dt <= maxLife; dt += 50) peak = Math.max(peak, fxParticlesAliveAt(b.t0 + dt));
+  const room = Math.max(0, FX_PARTICLE_CAP - peak);
+  if (b.n > room) b.n = room;
+  if (b.n > 0) { fxBursts.push(b); fxEnsureLoop(); }
+  return b;
+}
+function fxCanvasEl(kind) {
+  // find-or-create: the round A/B code clears #fxlayer / #fxcutin via
+  // innerHTML (duel reset, cut-in show), which would wipe a static
+  // canvas — so the particle canvases re-create themselves on demand
+  // and always land back inside their table row's host.
+  const id = kind === 'low' ? 'fxcv' : 'fxcvTop';
+  let c = $(id);
+  if (!c) {
+    c = document.createElement('canvas');
+    c.id = id;
+    const host = $(kind === 'low' ? 'fxlayer' : 'fxcutin');
+    if (host) host.appendChild(c);
+  }
+  return c;
+}
+function fxCtxOf(id) {
+  const c = fxCanvasEl(id === 'fxcv' ? 'low' : 'top');
+  if (!c || !c.getContext) return null;
+  const layer = c.parentElement;
+  const w = layer ? layer.clientWidth : 0, h = layer ? layer.clientHeight : 0;
+  if (!w || !h) return null;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  const ctx = c.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return ctx;
+}
+function fxDrawParticles() {
+  if (!fxBursts.length) return;
+  const t = fxTimeMs;
+  fxBursts = fxBursts.filter(b => t - b.t0 <= b.life[1] + (b.delayMax || 0) + 40);
+  let drawn = 0;
+  for (const cvKind of ['low', 'top']) {
+    const ctx = fxCtxOf(cvKind === 'low' ? 'fxcv' : 'fxcvTop');
+    if (!ctx) continue;
+    const layer = $(cvKind === 'low' ? 'fxcv' : 'fxcvTop').parentElement;
+    ctx.clearRect(0, 0, layer.clientWidth, layer.clientHeight);
+    for (const b of fxBursts) {
+      if (b.cv !== cvKind) continue;
+      const rnd = fxMulberry32(b.seed);
+      for (let i = 0; i < b.n && drawn < FX_PARTICLE_CAP; i++) {
+        const dl = rnd() * (b.delayMax || 0), life = fxLerp(b.life[0], b.life[1], rnd());
+        const age = t - b.t0 - dl;
+        if (b.mode === 'spiral') {
+          // stream order mirrors the prototype's drawSpiral: a0, r0, col, sz
+          const a0 = rnd() * Math.PI * 2, r0 = fxLerp(b.r[0], b.r[1], rnd());
+          const col = b.cols[(rnd() * b.cols.length) | 0], sz = fxLerp(b.size[0], b.size[1], rnd());
+          if (age < 0 || age > life) continue;
+          const u = age / life, ang = a0 + u * b.turns * Math.PI * 2, rad = r0 * (1 - FXE.inCubic(u));
+          const px = b.o[0] + Math.cos(ang) * rad, py = b.o[1] + Math.sin(ang) * rad * .62;
+          ctx.globalAlpha = Math.sin(Math.PI * u) * (b.alpha || 1);
+          const spr = fxSprite(col, 16);
+          ctx.drawImage(spr, px - sz, py - sz, sz * 2, sz * 2);
+          drawn++;
+        } else {
+          const sp = fxLerp(b.speed[0], b.speed[1], rnd()), an = b.ang[0] + (rnd() - .5) * b.ang[1];
+          const sz = fxLerp(b.size[0], b.size[1], rnd()), col = b.cols[(rnd() * b.cols.length) | 0];
+          if (age < 0 || age > life) continue;
+          const k = b.dragK || 0; let px, py;
+          if (k > 0) { const f = (1 - Math.exp(-k * age / 1000)) / (k / 1000); px = b.o[0] + Math.cos(an) * sp * f; py = b.o[1] + Math.sin(an) * sp * f + (b.grav || 0) * age * age / 2e6; }
+          else { px = b.o[0] + Math.cos(an) * sp * age / 1000; py = b.o[1] + Math.sin(an) * sp * age / 1000 + (b.grav || 0) * age * age / 2e6; }
+          const u = age / life, alpha = Math.sin(Math.PI * Math.min(1, u)) * (b.alpha || 1);
+          const spr = fxSprite(col, 16), s = sz * (0.6 + 0.4 * Math.sin(Math.PI * u));
+          ctx.globalAlpha = alpha; ctx.drawImage(spr, px - s, py - s, s * 2, s * 2);
+          drawn++;
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+// Foundation self-check scene (verification only): a 90-particle
+// spiral+burst over the board centre on the shared clock. Driven via
+// window.__fx.stress() by the stage-1 FPS / freeze harness.
+function fxStressScene() {
+  const app = $('app'); if (!app) return null;
+  const r = fxRel(app), cx = r.cx, cy = r.y + r.h * 0.42;
+  fxSpawnBurst('low', { mode: 'spiral', seed: 11, o: [cx, cy], n: 46, life: [500, 850], r: [46, 96], turns: 1.6, size: [3, 7], cols: ['#9a6bff', '#cdb2ff', '#5a8cff'], delayMax: 280, alpha: .95 });
+  fxSpawnBurst('low', { seed: 23, o: [cx, cy], n: 44, life: [600, 1100], speed: [90, 260], ang: [0, Math.PI * 2], grav: 300, dragK: 2.2, size: [3, 7], cols: ['#9a6bff', '#cdb2ff', '#ffffff'], alpha: .95 });
+  return fxAddScene({ kind: 'stress', dur: 3000, render: () => {} });
+}
+function fxResetFoundation() {
+  fxScenes = []; fxBursts = [];
+  fxStopUntilWall = 0; fxTimeMs = 0; fxLastWall = 0;
+  for (const id of ['fxcv', 'fxcvTop']) { const c = $(id); if (c && c.getContext) { const x = c.getContext('2d'); if (x) x.clearRect(0, 0, c.width, c.height); } }
+}
+
 // ------------------------------------------------------------ FX snapshots
 function fxSnap(state) {
   const z = {};
@@ -472,6 +695,7 @@ function fxCaptureDom() { // pre-render hand geometry for the FLIP reflow
   });
 }
 function fxResetDuel() {
+  fxResetFoundation(); // V3 stage 1: scenes / bursts / the FX clock restart with the duel
   fxPrev = null; fxHandRects = []; fxLog.length = 0; fxError = null;
   const layer = fxLayerEl(); if (layer) layer.innerHTML = '';
   const cut = $('fxcutin'); if (cut) { cut.className = ''; cut.innerHTML = ''; }
@@ -1034,6 +1258,15 @@ window.__fx = {
   settings: fxSettings, // round B (B11): the same object the prompt UI reads
   cutinOn: () => { const h = $('fxcutin'); return !!h && h.className === 'on'; },
   lpShown: (con) => fxLpShown[con],
+  // V3 stage 1 foundation surface: the shared clock, the scene
+  // registry, the particle budget and the hit-stop — so harnesses
+  // verify the foundation's numbers, not just its wiring.
+  now: () => fxTimeMs,
+  scenes: () => fxScenes.map(s => ({ kind: s.kind, t0: Math.round(s.t0), dur: s.dur })),
+  particles: () => fxParticlesAliveAt(fxTimeMs),
+  hitStop: (ms) => fxHitStop(ms),
+  stress: () => fxStressScene(),
+  spawnBurst: (cv, b) => fxSpawnBurst(cv, b),
 };
 
 // ---------------------------------------------------------------- rendering

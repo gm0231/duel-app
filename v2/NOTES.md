@@ -2335,3 +2335,135 @@ NOT visually captured — stated honestly:
   round): the BGM stage latching and SE wiring were not
   touched by round B beyond sharing the key-card roster
   constant.
+
+## V3 integration — Stage 1: FX foundation (branch feat/v3-s1-foundation)
+
+Integrating the approved v3 quality proposal
+(~/workspace/goals/simple-phone-duel-app/files/v3_quality_proposal.md)
+in four stages. Stage 1 builds ONLY the foundation the later scenes
+stand on: one FX clock, a scene engine, signature easings, a sprite
+particle system, a hit-stop mechanism, and a single layer-order
+table. No scene is rebuilt in this stage; existing round A/B scenes
+must look and behave exactly as before (regression is a failure).
+
+### Requirements for this stage (why pros build it this way)
+
+1. ONE CLOCK. Commercial presentation runs every layer off a single
+   timeline so picture, numbers and sound cues can share designed
+   sync points. The round A/B code gives every effect its own timer
+   (WAAPI animations, setInterval LP counter, setTimeout kills):
+   sync points cannot be designed on top of that, only hoped for.
+   Requirement: every scene is a function of one shared FX clock;
+   layers are scheduled against scene-local time on that clock.
+2. HIT-STOP FREEZES THE WORLD, NOT ONE EFFECT. The "weight" of an
+   impact reads because everything stops except the impact pop; if
+   only the line froze while particles kept drifting, the stop would
+   not read. Requirement: hit-stop = freeze the shared FX clock
+   (all scenes + particles). The GAME never waits: the engine, the
+   prompts and the board are outside the FX clock entirely.
+3. PARTICLES ARE SPRITES, CAPPED. A pro effect budget is predictable
+   on the weakest target: pre-rendered sprites blitted with
+   drawImage, a hard cap on live particles, no shadowBlur (the main
+   GPU cost driver). Requirement: <= 90 live particles across all
+   scenes, sprite-only rendering, canvas at DPR <= 2.
+4. LAYER ORDER IS A SINGLE TABLE. The finisher defect (wash z-65
+   over result z-60) happened because the wash was created OUTSIDE
+   the table, at body level. Requirement: every presentation layer
+   has exactly one row in one ordering table (below); a full-screen
+   effect lives INSIDE the table, and separation from the result
+   display is achieved by TIME (a gate), not by stacking above it.
+5. MOTION WRITES TRANSFORM/OPACITY ONLY. The board is frozen for
+   the whole duel; layout-affecting animation in the FX layer risks
+   reflowing the one thing that must never move. Requirement: scene
+   rendering writes transform/opacity (+ canvas pixels) only.
+
+### Layer order table (the single ordering authority from now on)
+
+| z | layer | owner / contents |
+|---|-------|------------------|
+| (flow) | board, hand, midbar | the frozen duel layout |
+| 25 | #fxlayer | round A/B grammar FX, board-particle canvas (#fxcv), chain pops, phase banner |
+| 30 | #placehint | placement instruction banner |
+| 35 | #fxcutin | ace / finisher scene host, top-particle canvas (#fxcvTop) |
+| 40 | #dock | chain response dock (a control: FX never covers it) |
+| 45 | #autopass | auto-pass chip (a control) |
+| 50 | #sheetwrap | sheets (controls) |
+| 60 | .overlay | start / result overlays |
+| 65 | .fx-finishwash | KNOWN EXCEPTION — round B finisher wash, body-level. To be removed in Stage 3 when the finisher is rebuilt inside #fxcutin and the result is gated by time. |
+
+Rule: no new presentation element may be created outside #fxlayer /
+#fxcutin; any future exception must be added as a row here FIRST.
+
+### Stage 1 acceptance criteria (fixed BEFORE implementation)
+
+- S1-C1 All pre-existing tests pass with zero regressions:
+  test-node / explore / phase2 / ui / layout / genesis / overlay /
+  facedown / ggfusion / swap / investigate / bgm / cpu / cpu-tune /
+  cpu-tune2 / fx (synthetic + 2 live duels).
+- S1-C2 Clock freeze: with a 300 ms hit-stop injected, __fx.now()
+  advances <= 17 ms while >= 290 ms of wall time passes, and a
+  running scene's rendered frame is identical at stop start/end.
+- S1-C3 Particle budget: emitters requesting 120 particles never
+  let the live count exceed 90 (__fx.particles()).
+- S1-C4 Sprite discipline: no 'shadowBlur' anywhere in client.js
+  FX paths (grep = 0 hits in the FX sections); particles render via
+  pre-rendered sprite drawImage only.
+- S1-C5 FPS reference (Chromium on this VM, software rendering —
+  REFERENCE ONLY, not a device measurement): during a live duel
+  with a 90-particle stress scene running, mean rAF interval
+  <= 17.5 ms and p95 <= 25 ms over >= 4 s.
+- S1-C6 The layer table above exists (this section) and the CSS
+  carries the same table as a comment; canvases #fxcv / #fxcvTop
+  exist inside #fxlayer / #fxcutin.
+- S1-C7 No visual regression: frame strips of a live attack scene
+  (and the phase banner / flight grammar) captured before vs after
+  stage 1 at matched moments show the same elements.
+- S1-C8 fxError stays null in live duels (covered by test-fx live).
+Unmeasured residuals carried forward (counted, not passed):
+real-device (WKWebView) FPS and appearance; audio sync feel.
+
+### Stage 1 results (measured 2026-11-03, this branch)
+
+- S1-C1 PASS: all 16 pre-existing test files pass on the stage-1
+  code (node/explore/phase2/ui/layout/genesis/overlay/facedown/
+  ggfusion/swap/investigate/bgm/cpu/cpu-tune/cpu-tune2/fx incl. its
+  2 live duels), zero FAIL lines; the same 12 headless files also
+  passed on the unmodified base as a baseline.
+- S1-C2 PASS: hitStop(300) during a live stress scene — FX clock
+  advanced 0 ms across the stop window, then exactly the post-stop
+  remainder (150 ms of a 450 ms sample); the particle canvas
+  dataURL was identical at stop start/end; two full screenshots
+  300 ms apart inside a 600 ms stop were byte-identical.
+- S1-C3 PASS: two emitters requesting 120 particles total — the
+  sampled live count peaked at exactly 90, never above.
+- S1-C4 PASS: no shadowBlur usage in code (the only grep hit is the
+  comment that prohibits it); particles render via pre-rendered
+  sprite drawImage only.
+- S1-C5 PASS (REFERENCE ONLY — Chromium on this VM, software
+  rendering; NOT a device measurement): rAF intervals with a
+  90-particle stress scene — start screen mean 16.63 ms / p95
+  16.8 ms; live duel with stress re-spawned mean 16.83 ms /
+  p95 16.8 ms; fxError stayed null.
+- S1-C6 PASS: the layer table above + the same table as a CSS
+  comment in index.html; #fxcv inside #fxlayer, #fxcvTop inside
+  #fxcutin. The canvases re-create themselves if the round A/B
+  innerHTML clears wipe them (fxCanvasEl).
+- S1-C7 PASS: frame strips before/after (v3shots/s1-before-attack,
+  s1-after-attack, in the worktree) — the same presentation elements
+  (attack line + DIRECT ATTACK banner; ace cut-in; phase banner;
+  LP resolution) with no visual regression. The foundation is
+  invisible by design in this stage.
+- S1-C8 PASS: fxError null across the live verification duels.
+Residuals carried forward (counted, not passed): (1) real-device
+WKWebView FPS + appearance, (2) audio sync feel — both unmeasurable
+from this environment. New audit candidates found while working:
+the phase-info midbar text wraps to 2-3 lines and crowds the log
+line (already audit B-08; re-confirmed in this stage's own frame
+strips — stage 4), and the round-B cut-in's ~4 s static hold is
+directly visible in the s1-after-attack strip (f00 == f02) — that
+is stage 3's L-hold-motion requirement, not a new item.
+Implementation notes: legacy round A/B effects intentionally keep
+their WAAPI/interval timers in this stage; scenes from stage 2
+onward run on the FX clock. The engine exposes a test surface
+(__fx.now/scenes/particles/hitStop/stress/spawnBurst) so later
+stages verify numbers, not just wiring.
