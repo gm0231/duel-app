@@ -260,9 +260,7 @@ async function clickUntilDock(window, timeoutMs) {
     const pile = doc.querySelector('[data-pile="grave:' + 0 + '"]') || doc.querySelector('[data-pile]');
     pile.click();
     await new Promise(r => setTimeout(r, 60));
-    // audit-27 (C-20) made pile sheets view-kind: sheetwrap carries
-    // 'on view', so "opened" is classList membership, not equality
-    ok($('sheetwrap').classList.contains('on'), 'LAY-b0 vh=' + vh + ': pile sheet opened for the freeze check');
+    ok($('sheetwrap').className === 'on', 'LAY-b0 vh=' + vh + ': pile sheet opened for the freeze check');
     ok(sizeSnapshot(window) === snap0, 'LAY-b1 vh=' + vh + ': tile/hand sizes identical with the sheet open');
     const cancel = $('sheet-cancel'); if (cancel) cancel.click();
     await new Promise(r => setTimeout(r, 60));

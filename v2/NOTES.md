@@ -2994,7 +2994,15 @@ expectation. The behaviour is correct (sheet opens; LAY-b1/b2
 freeze checks pass), so the test expectation was aligned to the
 new contract (classList.contains('on')) with this note as the
 audit trail. The audit commit message's "all 16 suites pass"
-does not hold for test-layout on its own tree.
+does not hold for test-layout on its own tree. RESOLUTION
+(update): the audit line then fixed it their own way in f71b2d9 —
+the C-20 kind marker moved from className to data-kind, since
+className === 'on' on #sheetwrap is a load-bearing contract
+(test clickers, pending-tap guard). That fix is the one that
+stands: my interim test-expectation alignment was reverted, the
+original LAY-b0 expectation passes again, and any future sheet
+state (e.g. V4-6's closing motion) must likewise ride in data-*,
+never in the class list.
 ## Audit-27 round (the 23 untouched + 4 partial items from the v3 audit)
 Implemented on feat/audit-27 from f288d69; wording/layout/flow
 items first, presentation-adjacent items (signal colours) last.
