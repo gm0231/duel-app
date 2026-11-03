@@ -474,6 +474,71 @@ function drainSeEvents(state) {
   }
 }
 
+// ---------------------------------------------------------------- card confirmation (MSG_CONFIRM_CARDS)
+// The core's way of saying "this player may look at these cards" —
+// e.g. Zolga the Prophet shows the activator the top 5 of BOTH decks.
+// The engine forwards it as a 'confirm' event, but a look is not a
+// board change: nothing on the field moves, so without a dedicated
+// surface the effect resolved invisibly (only the single top card
+// ever surfaced, buried in the deck pile sheet). Confirms addressed
+// to the human seat are queued as they arrive and presented as ONE
+// read-only sheet at the head of the next human prompt — before the
+// prompt itself opens, because the information belongs to the
+// decision the player is about to make. Rows open the usual card
+// detail on top of the sheet; the only exit is the close button.
+let pendingConfirms = [];
+function queueConfirmEvents(evs) {
+  for (const ev of evs || []) {
+    if (ev.kind === 'confirm' && ev.shown === HP && ev.cards && ev.cards.some(c => c.code)) pendingConfirms.push(ev);
+  }
+}
+function confirmGroupLabel(con, loc) {
+  const whose = con === HP ? '自分' : '相手';
+  if (loc === E.LOC.DECK) return whose + 'のデッキ（上から）';
+  if (loc === E.LOC.HAND) return whose + 'の手札';
+  if (loc === E.LOC.EXTRA) return whose + 'のEXデッキ';
+  return 'カード';
+}
+function showPendingConfirms() {
+  if (!pendingConfirms.length) return Promise.resolve();
+  const evs = pendingConfirms; pendingConfirms = [];
+  // group consecutive entries by (controller, location), arrival order
+  const groups = [];
+  for (const ev of evs) for (const c of ev.cards) {
+    if (!c.code) continue;
+    let g = groups[groups.length - 1];
+    if (!g || g.con !== c.con || g.loc !== c.loc) { g = { con: c.con, loc: c.loc, cards: [] }; groups.push(g); }
+    g.cards.push(c);
+  }
+  if (!groups.length) return Promise.resolve();
+  return new Promise((resolve) => {
+    let html = '<div class="ttl">カードの確認</div>';
+    for (const g of groups) {
+      // deck entries arrive in group order, not position order: the
+      // top of the deck is the HIGHEST seq (the mirror's deckTop rule)
+      const sorted = g.cards.slice().sort((a, b) => g.loc === E.LOC.DECK ? b.seq - a.seq : a.seq - b.seq);
+      html += '<div class="ttl" style="margin-top:8px">' + confirmGroupLabel(g.con, g.loc) + '</div>' +
+        sorted.map((c, i) => '<div class="sortrow" data-info="' + c.code + '">' +
+          (g.loc === E.LOC.DECK ? (i + 1) + '枚目：' : '') + cardName(c.code) + '<span class="chev">›</span></div>').join('');
+    }
+    html += '<div class="btnrow"><button class="bigbtn" id="sheet-cancel">閉じる</button></div>';
+    sheetOpenView(html);
+    // rows open the FLOATING detail (openInfoPop), never openCardInfo:
+    // the latter replaces the sheet's content, which would destroy
+    // this sheet's own close button and strand the presentation wait.
+    $('sheet').querySelectorAll('[data-info]').forEach(el => el.addEventListener('click', () => {
+      if (el.dataset.info) { playClick(); openInfoPop(+el.dataset.info); }
+    }));
+    $('sheet-cancel').addEventListener('click', () => { playClick(); sheetClose(); resolve(); });
+  });
+}
+// Test surface (same spirit as window.__fx / window.__bgm).
+window.__confirm = {
+  queue: () => pendingConfirms.slice(),
+  push: (ev) => { pendingConfirms.push(ev); },
+  show: showPendingConfirms,
+};
+
 // ---------------------------------------------------------------- presentation FX (rounds A/B)
 // Read-only presentation: this layer consumes the engine's event queue
 // (the same transient queue drainSeEvents reads) and state diffs
@@ -4114,6 +4179,7 @@ function wireSeg(id, apply) {
     dismissedDuel = new Map();
     duelNoConfirm = new Set(); // C-27 suppression restarts with the duel
     confirmTurn = -1; confirmSeq = 0; // per-turn confirmation counter restarts with the duel
+    pendingConfirms = []; // unshown card confirmations restart with the duel
     updateAutoPassChip();
     fxResetDuel(); // FX snapshot/layers restart with the duel (stale overlays must not survive)
     bgmWantedRank = -1; bgmSeenKeys.clear(); // BGM stage ladder restarts with the duel
@@ -4129,6 +4195,7 @@ function wireSeg(id, apply) {
       onUpdate: (state) => {
         if (duel) { try { duel.refreshFieldStats(); } catch (e) {} }
         const fxEvs = state.events ? state.events.slice() : []; // presentation queue: copied before drainSeEvents consumes it
+        queueConfirmEvents(fxEvs); // MSG_CONFIRM_CARDS -> pending reveal sheet (see the confirm block)
         fxCaptureDom(); // pre-render hand geometry for the FX reflow (FLIP)
         drainSeEvents(state);
         render(state);
@@ -4136,7 +4203,7 @@ function wireSeg(id, apply) {
         fxProcess(fxEvs, state); // presentation FX overlays (read-only; board geometry is final now)
         maybeSettleLayout(); // round 3: first render done, first prompt not yet delivered (engine order)
       },
-      humanAnswerer: async (prompt, state) => { maybeSettleLayout(); render(state); return uiAnswer(prompt, state); },
+      humanAnswerer: async (prompt, state) => { maybeSettleLayout(); render(state); await showPendingConfirms(); return uiAnswer(prompt, state); },
     });
     const stats = await duel.run();
     const st = duel.state;

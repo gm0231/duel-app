@@ -3368,3 +3368,54 @@ Unmeasured as before: sound feel, real-device WKWebView.
   the code, M3-5/M3-9 expect each Vernusylph's own name) + all
   suites pass; real-browser frame at 390x700 re-checked
   (shots-lockreason/ in the fix worktree).
+
+## Zolga confirm triage (2026-11-03): MSG_CONFIRM_CARDS was parsed, then dropped
+
+- User report: 《予見者ゾルガ》 (31525442) — "the look-at-the-
+  opponent's-deck effect doesn't feel like it's working properly."
+- Triage (stacked-deck harness, test-zolga.js part 1): the SCRIPT
+  is stock and correct (spop calls Duel.ConfirmCards for both
+  decks after the special summon), the CORE sends
+  MSG_CONFIRM_CARDS twice (own top 5, opponent top 5, shown =
+  activator), and the engine's byte parse is exact (0 bytes left,
+  codes match the decks). The special summon and the
+  AnnounceNumberRange choice also worked. The defect was purely
+  in the last hop: engine case 31 updated only the mirror's
+  knowledge (hand reveal / deckTop) and emitted NO event and NO
+  log line, so the client had nothing to present. The confirmed
+  cards never appeared; at most the single top card of each deck
+  surfaced later, buried in the deck pile sheet as
+  「一番上（公開中）」. The user's impression was correct.
+- Second, latent direction bug in the same lines: the knowledge
+  conditions were hardcoded `shown === 0`. With the human on core
+  seat 1 (後攻）, they tracked the CPU's knowledge instead. Now
+  keyed to `this.humanPlayer`.
+- Fix: engine case 31 collects the entries and pushes
+  `{kind:'confirm', shown, cards}` plus a 「確認：…」 log line
+  when the shown player is the human seat. client.js queues
+  human-addressed confirms as they arrive (queueConfirmEvents,
+  fed by the onUpdate event copy) and presents them as ONE
+  read-only sheet （カードの確認） at the head of the next human
+  prompt, before the prompt itself opens: grouped by
+  controller+location, deck groups sorted top-first (highest seq
+  = top, the mirror's deckTop rule) and numbered from the top.
+  Rows open the FLOATING detail (openInfoPop) — never
+  openCardInfo, which replaces the sheet's content and would
+  destroy the sheet's own close button, stranding the wait.
+  The close button is `#sheet-cancel`, the id every view sheet
+  (and the test clicker) already knows.
+- Coverage is generic, not Zolga-shaped: any ConfirmCards
+  addressed to the human now surfaces (the first real-browser
+  capture actually caught a hand confirmation —
+  ラビリンス・ウォール・シャドウ — before the deck one).
+- Verified: test-zolga.js (new; Z1–Z9 wire→event→state truth
+  incl. event codes == raw message codes and deckTop == topmost
+  confirmed card; C1–C8 the real client's sheet in jsdom) + all
+  existing suites; real-browser play (headless Chromium,
+  390x700, scripted driver on the real deck) captured ゾルガ's
+  reveal sheets (shots-zolga/ in the fix worktree). Note the two
+  looks present as TWO sequential sheets, not one combined: the
+  script announces a number and confirms per deck, so each look
+  is shown right after its own number choice — the game's own
+  order.
+- Still unmeasured: sound feel, real-device WKWebView.

@@ -753,10 +753,30 @@ class GameState {
       }
       case 31: { // CONFIRM_CARDS: shownPlayer, count u32, entries code+con+loc+seq — reveal knowledge
         const shown = r.u8(); const n = r.u32();
+        const confirmed = [];
         for (let i = 0; i < n; i++) {
           const code = r.u32(); const con = r.u8(); const loc = r.u8(); const seq = r.u32();
-          if (shown === 0 && code && loc === LOC.HAND && this.players[con].hand[seq]) this.players[con].hand[seq].code = code;
-          if (shown === 0 && loc === LOC.DECK && seq === this.players[con].deckCount - 1) this.deckTop[con] = code;
+          confirmed.push({ code, con, loc, seq });
+          if (shown === this.humanPlayer && code && loc === LOC.HAND && this.players[con].hand[seq]) this.players[con].hand[seq].code = code;
+          if (shown === this.humanPlayer && loc === LOC.DECK && seq === this.players[con].deckCount - 1) this.deckTop[con] = code;
+        }
+        // A confirmation is information the SHOWN player is entitled to
+        // read (Zolga the Prophet's look at the top 5 of BOTH decks is
+        // the pool's example). Previously this message updated only the
+        // mirror's knowledge — no event, no log — so the client could
+        // never show WHAT was confirmed and the effect resolved
+        // invisibly (at most the single top card surfaced later, buried
+        // in the deck pile sheet). Forward the full entry list as an
+        // event; the client presents it when shown === its human seat.
+        // (Knowledge above is keyed to humanPlayer, not a hardcoded
+        // seat 0: with the human on seat 1 the old condition tracked
+        // the CPU's knowledge instead.)
+        if (confirmed.length) {
+          this.pushEvent({ kind: 'confirm', shown, cards: confirmed });
+          if (shown === this.humanPlayer) {
+            const names = confirmed.filter(c => c.code).map(c => this.nameOf(c.code));
+            if (names.length) this.pushLog('確認：' + names.join('、'));
+          }
         }
         break;
       }
