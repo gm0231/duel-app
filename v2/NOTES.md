@@ -4135,3 +4135,19 @@ normal-summoned at 390x700 (tile + preview carry the sphere,
 centred), a fabricated both-arts board at 390x620 (Mudora and
 Agido side by side on field and in hand), and the big-card
 cut-in via fxCutinShow (same declared substitution as Mudora).
+
+Third delivery: 《古尖兵ケルベク》 25926710 (x1 in the Ishizu
+deck). Source: ~/workspace/duel-assets/kelbek-user-20261103.jpg
+(1024x1536 — the body descends in the UPPER two-thirds under a
+storm sky; temple and soldiers fill the bottom). The top-anchor
+rule works in this art's favour: small file = top-anchored
+square crop x37-981 / y0-944 -> 320x320 (43KB) keeps the spiked
+head with the Eye, the blue torso, the wing blades and most of
+the great claw (claw tips are the sanctioned bottom cut). Big
+file = full width x y0-1411 -> 640x882 (180KB). One line in
+CARD_ART; test-cardart gained CA0d/CA7d/CA7e/CA11c (34 checks).
+Real-play frames (cap-kelbek.js, shots-kelbek/): Kelbek drawn
+and normal-summoned at 390x700 (tile + preview read clearly at
+tile size), a fabricated three-arts board at 390x620 (Mudora /
+Agido / Kelbek side by side on field and in hand), cut-in via
+fxCutinShow as before.

@@ -38,7 +38,7 @@ function cardData(code) { return (DATA && DATA.cards[code]) || null; }
 // bottom — never crop the head. That is why artInline pins
 // background-position to top; the delivered files are themselves
 // top-anchored crops.
-const CARD_ART = { 99937011: 'mudora', 62320425: 'agido' }; // 剣神官ムドラ / 古衛兵アギド (user art 2026-11-03)
+const CARD_ART = { 99937011: 'mudora', 62320425: 'agido', 25926710: 'kelbek' }; // 剣神官ムドラ / 古衛兵アギド / 古尖兵ケルベク (user art 2026-11-03)
 function cardArtFile(code, big) {
   const s = code != null ? CARD_ART[code] : null;
   return s ? '../assets/card-art-' + s + (big ? '.jpg' : '-s.jpg') : null;
