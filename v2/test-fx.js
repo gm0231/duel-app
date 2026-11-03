@@ -48,6 +48,7 @@ async function boot() {
   const origFactory = window.OcgCoreModule;
   window.OcgCoreModule = (opts) => origFactory(Object.assign({}, opts, { wasmBinary }));
   inject('engine.js');
+  inject('duel-worker.js');
   inject('client.js');
   for (let i = 0; i < 100 && !window.document.getElementById('loadmsg').textContent.includes('準備完了'); i++)
     await new Promise(r => setTimeout(r, 50));
@@ -97,7 +98,7 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
       else if (q('#fb-auto', sheet)) click(q('#fb-auto', sheet));
       else if (q('[data-pile-act]', sheet)) click(q('[data-pile-act]', sheet));
       else if (q('[data-grid]:not(.sel)', sheet) || q('[data-grid]', sheet)) click(q('[data-grid]:not(.sel)', sheet) || q('[data-grid]', sheet));
-      else if (q('.optbtn', sheet)) click(q('.optbtn', sheet));
+      else if (q('.optbtn:not(.disabled)', sheet)) click(q('.optbtn:not(.disabled)', sheet)); // a disabled optbtn (e.g. an effect that cannot fire now) must not shadow #sheet-cancel — clicking it loops forever
       else if (q('#grid-cancel', sheet)) click(q('#grid-cancel', sheet));
       else if (q('#sheet-cancel', sheet)) click(q('#sheet-cancel', sheet));
     } else if (dockOn) {
@@ -314,6 +315,82 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     window.close();
   }
 
+  // ================= Part 1C: FX coverage — summon callouts =================
+  // Every summon that no bigger scene owns names its card: a normal
+  // summon was only a puff, a generic special summon / revival only a
+  // portal glow. The callout record fixes the coverage; fusion / Xyz
+  // (converge + portal), the ace scene and face-down arrivals must
+  // NOT gain one (owned elsewhere / not public information).
+  {
+    const window = await boot();
+    const fx = window.__fx;
+    fx.reset();
+    const step = (st, evs) => { const before = fx.log.length; fx.process(evs || [], st); return fx.log.slice(before); };
+    const has = (recs, kind, pred) => recs.some(r => r.kind === kind && (!pred || pred(r)));
+
+    step(fakeState()); // silent baseline
+
+    // own normal summon: placement beat + callout
+    let st = fakeState(s => { s.players[0].mzone[0] = mon(NORMAL); });
+    let recs = step(st, [{ kind: 'summon', code: NORMAL, con: 0 }]);
+    ok(has(recs, 'place', r => r.how === 'summon'), 'FXC1: a normal summon keeps its placement beat');
+    ok(has(recs, 'summoncall', r => r.how === 'summon' && r.code === NORMAL && r.con === 0), 'FXC1b: a normal summon names its card (callout)');
+
+    // opponent normal summon: callout on their seat too
+    st = fakeState(s => { s.players[0].mzone[0] = mon(NORMAL); s.players[1].mzone[0] = mon(NORMAL2); });
+    recs = step(st, [{ kind: 'summon', code: NORMAL2, con: 1 }]);
+    ok(has(recs, 'summoncall', r => r.how === 'summon' && r.con === 1), 'FXC2: an opponent normal summon names its card');
+
+    // generic special summon from the hand: portal + callout
+    st = fakeState(s => { s.players[0].mzone[0] = mon(NORMAL); s.players[0].mzone[1] = mon(NORMAL2); s.players[1].mzone[0] = mon(NORMAL2); });
+    recs = step(st, [{ kind: 'spsummon', code: NORMAL2, con: 0 }]);
+    ok(has(recs, 'portal', r => r.method === 'generic'), 'FXC3: a generic special summon keeps its portal');
+    ok(has(recs, 'summoncall', r => r.how === 'spsummon' && r.code === NORMAL2), 'FXC3b: a generic special summon names its card');
+
+    // revival from the grave: portal + callout
+    fx.reset();
+    step(fakeState(s => { s.players[0].grave = [NORMAL]; }));
+    st = fakeState(s => { s.players[0].mzone[0] = mon(NORMAL); });
+    recs = step(st, [{ kind: 'spsummon', code: NORMAL, con: 0 }]);
+    ok(has(recs, 'portal', r => r.method === 'revive'), 'FXC4: a revival keeps its revive portal');
+    ok(has(recs, 'summoncall', r => r.how === 'revive'), 'FXC4b: a revival names its card');
+
+    // fusion summon: converge + portal own it — no callout on top
+    fx.reset();
+    step(fakeState(s => { s.players[0].mzone[0] = mon(NORMAL); s.players[0].mzone[1] = mon(NORMAL2); }));
+    st = fakeState(s => { s.players[0].mzone[2] = mon(FUSION); s.players[0].grave = [NORMAL, NORMAL2]; });
+    recs = step(st, [{ kind: 'spsummon', code: FUSION, con: 0 }]);
+    ok(has(recs, 'portal', r => r.method === 'fusion'), 'FXC5: a fusion summon keeps its portal');
+    ok(!recs.some(r => r.kind === 'summoncall'), 'FXC5b: a fusion summon gets NO callout (converge + portal own it)');
+
+    // set monster: placement beat only, never a callout (not public)
+    fx.reset();
+    step(fakeState());
+    st = fakeState(s => { s.players[0].mzone[0] = { code: NORMAL, pos: 8, materials: 0, curAtk: data.cards[NORMAL].atk, curDef: data.cards[NORMAL].def }; });
+    recs = step(st, [{ kind: 'set', code: NORMAL, con: 0, loc: 4 }]);
+    ok(has(recs, 'place', r => r.how === 'set'), 'FXC6: a set monster keeps its placement beat');
+    ok(!recs.some(r => r.kind === 'summoncall'), 'FXC6b: a set monster gets NO callout (face-down is not public)');
+
+    // face-down special-summon arrival: no callout either
+    st = fakeState(s => {
+      s.players[0].mzone[0] = { code: NORMAL, pos: 8, materials: 0, curAtk: data.cards[NORMAL].atk, curDef: data.cards[NORMAL].def };
+      s.players[0].mzone[1] = { code: NORMAL2, pos: 8, materials: 0, curAtk: data.cards[NORMAL2].atk, curDef: data.cards[NORMAL2].def };
+    });
+    recs = step(st, [{ kind: 'spsummon', code: NORMAL2, con: 0 }]);
+    ok(!recs.some(r => r.kind === 'summoncall'), 'FXC7: a face-down special summon gets NO callout');
+
+    // flip summon: the flip beat + the callout
+    st = fakeState(s => {
+      s.players[0].mzone[0] = mon(NORMAL);
+      s.players[0].mzone[1] = { code: NORMAL2, pos: 8, materials: 0, curAtk: data.cards[NORMAL2].atk, curDef: data.cards[NORMAL2].def };
+    });
+    recs = step(st, [{ kind: 'flipsummon', code: NORMAL, con: 0 }]);
+    ok(has(recs, 'flip', r => r.code === NORMAL), 'FXC8: a flip summon keeps its flip beat');
+    ok(has(recs, 'summoncall', r => r.how === 'flipsummon' && r.code === NORMAL), 'FXC8b: a flip summon names its card');
+    ok(fx.error === null, 'FXC9: fxError stayed null through every coverage step (got: ' + fx.error + ')');
+    window.close();
+  }
+
   // ================= Part 1C: synchro grammar (proposal S) =================
   {
     const window = await boot();
@@ -470,7 +547,7 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     const has = (recs, kind, pred) => recs.some(r => r.kind === kind && (!pred || pred(r)));
     const link = (code, con, loc, seq) => ({ code, con: con || 0, loc: loc == null ? E.LOC.HAND : loc, seq: seq || 0, negated: false, disabled: false, solved: false });
     const THUNDER = 12580477, MOON = 14087893, SOLEMN = 40605147; // サンダー・ボルト / 月の書 / 神の通告 (proto 案2 fixtures)
-    ok(!!data.cards[THUNDER] && !!data.cards[MOON] && !!data.cards[SOLEMN], 'FXC0: redesign-B fixtures are in the pool');
+    ok(!!data.cards[THUNDER] && !!data.cards[MOON] && !!data.cards[SOLEMN], 'FXCH0: redesign-B fixtures are in the pool');
 
     // --- fix 1 (p2a): the pop bundle lifts until its bottom edge
     // clears the chain bar's top edge by 4px. jsdom geometry is all
@@ -485,23 +562,23 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     doc.getElementById('app').getBoundingClientRect = () => rect(0, 0, 390, 620);
     doc.getElementById('chainbar').getBoundingClientRect = () => rect(0, 228, 390, 21);
     let recs = step(st, [{ kind: 'activate', code: MOON, con: 1, loc: E.LOC.HAND }]);
-    ok(has(recs, 'chainlift', r => r.n === 2 && r.lift === 58), 'FXC1: p2a — the lift branch fires and computes the lift from the measured overlap (lift=' + (recs.find(r => r.kind === 'chainlift') || {}).lift + ', want 58)');
+    ok(has(recs, 'chainlift', r => r.n === 2 && r.lift === 58), 'FXCH1: p2a — the lift branch fires and computes the lift from the measured overlap (lift=' + (recs.find(r => r.kind === 'chainlift') || {}).lift + ', want 58)');
     const popGhost = doc.querySelector('#fxlayer .fx-ghost');
-    ok(!!popGhost && popGhost.dataset.chainLift === '58' && Math.abs(parseFloat(popGhost.style.top) - 81.8) < 0.6, 'FXC1b: p2a — the pop node itself is placed at the lifted position (top=' + (popGhost ? popGhost.style.top : 'none') + ', want ~81.8px = 210.8-58-71)');
-    ok(!!doc.querySelector('#fxlayer .fx3-chainword'), 'FXC1c: p2a — the CHAIN word rides the lifted bundle');
+    ok(!!popGhost && popGhost.dataset.chainLift === '58' && Math.abs(parseFloat(popGhost.style.top) - 81.8) < 0.6, 'FXCH1b: p2a — the pop node itself is placed at the lifted position (top=' + (popGhost ? popGhost.style.top : 'none') + ', want ~81.8px = 210.8-58-71)');
+    ok(!!doc.querySelector('#fxlayer .fx3-chainword'), 'FXCH1c: p2a — the CHAIN word rides the lifted bundle');
 
     // --- fix 2 (p2b): with the landed flag set, render()'s bar
     // output carries the gold-absorption classes (the flag lives
     // module-side, so it survives the bar's innerHTML rebuild)
     fx.markChainLanded(2, MOON);
-    ok(fx.chainLanded().join(',') === '2', 'FXC2: p2b — the landed flag stands for link 2');
+    ok(fx.chainLanded().join(',') === '2', 'FXCH2: p2b — the landed flag stands for link 2');
     render(st);
     const lbl = doc.querySelector('#chainbar .chainlbl');
-    ok(!!lbl && lbl.classList.contains('landed'), 'FXC2b: p2b — render() paints the CHAIN label with the landed (gold) class');
+    ok(!!lbl && lbl.classList.contains('landed'), 'FXCH2b: p2b — render() paints the CHAIN label with the landed (gold) class');
     const chips = doc.querySelectorAll('#chainbar .link');
-    ok(chips.length === 2 && chips[1].classList.contains('landed') && !chips[0].classList.contains('landed'), 'FXC2c: p2b — only the landed chip carries the landed (gold frame) class');
+    ok(chips.length === 2 && chips[1].classList.contains('landed') && !chips[0].classList.contains('landed'), 'FXCH2c: p2b — only the landed chip carries the landed (gold frame) class');
     render(fakeState(s => { s.log = []; s.chain = []; }));
-    ok(fx.chainLanded().length === 0, 'FXC2d: p2b — an empty chain clears the landed flags');
+    ok(fx.chainLanded().length === 0, 'FXCH2d: p2b — an empty chain clears the landed flags');
 
     // --- fix 3 (p2c / C3): a set trap becoming link 2 gets the
     // CHAIN word + a gold frame over its own (flipped) tile
@@ -511,11 +588,11 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     st3 = fakeState(s => { s.log = []; s.players[1].szone[0] = { code: SOLEMN, pos: 5 }; s.chain = [link(THUNDER, 0), link(SOLEMN, 1, E.LOC.SZONE, 0)]; });
     render(st3);
     recs = step(st3, [{ kind: 'activate', code: SOLEMN, con: 1, loc: E.LOC.SZONE }]);
-    ok(has(recs, 'setactivate', r => r.code === SOLEMN), 'FXC3: p2c — the set trap activation still tips into the presentation');
-    ok(has(recs, 'setactivatechain', r => r.n === 2 && r.frame === true && r.targetKey === '1:' + E.LOC.SZONE + ':0'), 'FXC3b: p2c — the set-link record names link 2 and its own tile as the gold-frame target (got ' + JSON.stringify(recs.find(r => r.kind === 'setactivatechain') || null) + ')');
-    ok(!!doc.querySelector('#fxlayer .fx3-chainword'), 'FXC3c: p2c — the CHAIN word stands for a set trap at link 2');
-    ok(!!doc.querySelector('#fxlayer .fx3-goldframe'), 'FXC3d: p2c — a gold frame node sits over the flipped trap tile');
-    ok(fx.error === null, 'FXC4: fxError stayed null through every redesign-B step (got: ' + fx.error + ')');
+    ok(has(recs, 'setactivate', r => r.code === SOLEMN), 'FXCH3: p2c — the set trap activation still tips into the presentation');
+    ok(has(recs, 'setactivatechain', r => r.n === 2 && r.frame === true && r.targetKey === '1:' + E.LOC.SZONE + ':0'), 'FXCH3b: p2c — the set-link record names link 2 and its own tile as the gold-frame target (got ' + JSON.stringify(recs.find(r => r.kind === 'setactivatechain') || null) + ')');
+    ok(!!doc.querySelector('#fxlayer .fx3-chainword'), 'FXCH3c: p2c — the CHAIN word stands for a set trap at link 2');
+    ok(!!doc.querySelector('#fxlayer .fx3-goldframe'), 'FXCH3d: p2c — a gold frame node sits over the flipped trap tile');
+    ok(fx.error === null, 'FXCH4: fxError stayed null through every redesign-B step (got: ' + fx.error + ')');
     window.close();
   }
 

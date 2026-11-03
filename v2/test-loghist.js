@@ -51,6 +51,7 @@ async function main() {
   const origFactory = window.OcgCoreModule;
   window.OcgCoreModule = (opts) => origFactory(Object.assign({}, opts, { wasmBinary }));
   inject('engine.js');
+  inject('duel-worker.js');
   inject('client.js');
   const ev = (src) => window.eval(src);
   for (let i = 0; i < 100 && !doc.getElementById('loadmsg').textContent.includes('準備完了'); i++)

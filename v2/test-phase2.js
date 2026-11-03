@@ -249,6 +249,8 @@ function scriptedAnswer(prompt, state, data) {
   // ---- D. seat swap: seat0 = GG deck, seat1 = Ishizu deck, human = seat 1
   {
     let totalsBad = 0, promptsSeen = 0;
+    const totD = [data.decks.gg.main.length + data.decks.gg.extra.length,
+                  data.decks.ishizu.main.length + data.decks.ishizu.extra.length];
     const poolsD = [new Set(data.decks.gg.main.concat(data.decks.gg.extra)),
                     new Set(data.decks.ishizu.main.concat(data.decks.ishizu.extra))];
     const foreignD = (state) => {
@@ -270,9 +272,9 @@ function scriptedAnswer(prompt, state, data) {
     const ans = (prompt, state) => {
       promptsSeen++;
       const foreign = foreignD(state);
-      if (state.totalCards(0) + state.totalCards(1) !== 113) totalsBad++;
-      if (state.totalCards(0) - 55 !== foreign[0] - foreign[1]) totalsBad++;
-      if (state.totalCards(1) - 58 !== foreign[1] - foreign[0]) totalsBad++;
+      if (state.totalCards(0) + state.totalCards(1) !== totD[0] + totD[1]) totalsBad++;
+      if (state.totalCards(0) - totD[0] !== foreign[0] - foreign[1]) totalsBad++;
+      if (state.totalCards(1) - totD[1] !== foreign[1] - foreign[0]) totalsBad++;
       return scriptedAnswer(prompt, state, data);
     };
     const duel = new Engine.Duel(M, data, {
@@ -284,7 +286,7 @@ function scriptedAnswer(prompt, state, data) {
     console.log('  seat-swap duel: turns', s.turns, 'retries', s.retries, 'winner', duel.state.winner, 'humanPrompts(seat1)', s.humanPrompts, 'botPrompts(seat0)', s.botPrompts);
     ok(duel.state.winner === 0 || duel.state.winner === 1, 'D1: seat-swapped duel completes with a winner');
     ok(s.retries === 0, 'D2: seat-swapped duel retries == 0');
-    ok(totalsBad === 0 && promptsSeen > 50, 'D3: totals satisfy combined==113 and per-seat == 55/58 adjusted by foreign-card balance at all ' + promptsSeen + ' prompts');
+    ok(totalsBad === 0 && promptsSeen > 50, 'D3: totals satisfy combined==' + (totD[0] + totD[1]) + ' and per-seat == ' + totD[0] + '/' + totD[1] + ' adjusted by foreign-card balance at all ' + promptsSeen + ' prompts');
     ok(s.humanPrompts > 0 && s.botPrompts > 0, 'D4: prompts routed to both seats (human seat 1 answered ' + s.humanPrompts + ')');
   }
 

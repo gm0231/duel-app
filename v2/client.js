@@ -28,6 +28,120 @@ let autoPassFlashUntil = 0;
 
 function cardName(code) { return (DATA && DATA.names[code]) || ('#' + code); }
 function cardData(code) { return (DATA && DATA.cards[code]) || null; }
+// ---- per-card illustrations (decided 2026-11-03: the user supplies
+// an image per card and each is applied as it arrives; cards without
+// an entry keep the shared placeholder art — the fallback IS the
+// default). Files: ../assets/card-art-<slug>-s.jpg (tiles, hand,
+// grid, preview, ghosts) and ../assets/card-art-<slug>.jpg (the big
+// cut-in card). Cropping rule (user, 2026-11-03, all cards): when
+// the art does not fit a window, keep the TOP and cut from the
+// bottom — never crop the head. That is why artInline pins
+// background-position to top; the delivered files are themselves
+// top-anchored crops.
+const CARD_ART = { 99937011: 'mudora', 62320425: 'agido', 25926710: 'kelbek', 63542003: 'keldo', 31525442: 'zolga', 86605515: 'cardan', 46148485: 'sphinx', 38699854: 'taiyou', 14087893: 'tsuki', 79106360: 'chaospod', 9350312: 'oka', 62133026: 'hana', 36745317: 'mori', 14108995: 'kakan', 15079028: 'carbon', 55702233: 'silky', 36898537: 'horus' }; // 剣神官ムドラ / 古衛兵アギド / 古尖兵ケルベク / 宿神像ケルドウ / 予見者ゾルガ / 賢瑞官カルダーン / 転輪のスフィンクス / 太陽の書 / 月の書 / カオスポッド / 丘と芽吹の春化精 / 花と野原の春化精 / 森と目覚の春化精 / 春化精の花冠 / 地久神－カルボン / 生きる偲びのシルキィ / メタファイズ・ホルス・ドラゴン (user art 2026-11-03)
+// ---- deck-scoped art overrides (user decision 2026-11-03): a card
+// can carry a DIFFERENT illustration while it belongs to a specific
+// deck. DECK_ART maps deck id (the data.json decks key) -> passcode
+// -> slug, and resolution prefers it over CARD_ART whenever the
+// caller supplies the deck context of the card instance. First
+// entries: the three Vernusylph sisters (Mori, Hana, Oka) wear
+// their Egyptian illustrations only inside the Ishizu deck; in
+// any other deck — a future Neuron-imported deck among them —
+// they fall back to their plain art on their own. The 4th entry
+// extends the same treatment to 《春化精の花冠》 (14108995), the
+// sisters' own spell: its Egyptian variant lives here, while
+// the forest painting stays in CARD_ART as the plain art any
+// other deck sees. The 5th entry is 《地久神－カルボン》
+// (15079028), the first MONSTER with an override: the giant
+// wears gold-and-hieroglyph regalia inside the Ishizu deck
+// and stays bare stone anywhere else. The 6th entry is
+// 《生きる偲びのシルキィ》 (55702233): the translucent girl
+// wears an Egyptian white dress with a gold sash inside the
+// Ishizu deck, and keeps her plain room painting anywhere
+// else. Generic by design: new decks and cards are data, not
+// branches.
+const DECK_ART = { ishizu: { 36745317: 'mori-ishizu', 62133026: 'hana-ishizu', 9350312: 'oka-ishizu', 14108995: 'kakan-ishizu', 15079028: 'carbon-ishizu', 55702233: 'silky-ishizu' } }; // 森と目覚の春化精 / 花と野原の春化精 / 丘と芽吹の春化精 / 春化精の花冠 / 地久神－カルボン / 生きる偲びのシルキィ (Egyptian art, Ishizu deck only)
+// Which deck each core seat is playing this duel ([seat0, seat1]),
+// set at duel start; nulls outside a duel. Every art surface
+// derives its deck context from the seat that owns the card
+// instance, never from the viewing seat — the override follows
+// the deck, not the chair.
+let seatDeckKeys = [null, null];
+function deckKeyOfSeat(p) { return (p === 0 || p === 1) ? seatDeckKeys[p] : null; }
+// Deck context for code-only surfaces (a preview without an
+// instance ref, the name catalogue): the deck key when exactly
+// one of the two duel decks contains the code — the only case
+// where "the deck it belongs to" is unambiguous without an
+// instance. In both or neither -> null (base art).
+function deckKeyOfCode(code) {
+  if (code == null || !DATA || !DATA.decks) return null;
+  const found = new Set();
+  for (let p = 0; p < 2; p++) {
+    const k = seatDeckKeys[p]; if (!k) continue;
+    const d = DATA.decks[k]; if (!d) continue;
+    if ((d.main || []).includes(code) || (d.extra || []).includes(code)) found.add(k);
+  }
+  return found.size === 1 ? [...found][0] : null;
+}
+function cardArtFile(code, big, deckKey) {
+  if (code == null) return null;
+  const over = deckKey ? (DECK_ART[deckKey] || {})[code] : null;
+  const s = over || CARD_ART[code];
+  return s ? '../assets/card-art-' + s + (big ? '.jpg' : '-s.jpg') : null;
+}
+// inline style for an HTML-string surface (tile art, hand, preview,
+// grid cards): empty string for unlisted codes, so their markup is
+// byte-identical to before.
+function artCss(code, big, deckKey) {
+  const f = cardArtFile(code, big, deckKey);
+  return f ? 'background-image:url(' + f + ');background-position:center top' : '';
+}
+function artInline(code, big, deckKey) {
+  const css = artCss(code, big, deckKey);
+  return css ? ' style="' + css + '"' : '';
+}
+// DOM-element surfaces (cut-in big cards, FX ghosts): set the same
+// two properties directly; a no-op for unlisted codes.
+function artApply(el, code, big, deckKey) {
+  const f = code != null ? cardArtFile(code, big, deckKey) : null;
+  if (!f || !el) return;
+  el.style.backgroundImage = 'url(' + f + ')';
+  el.style.backgroundPosition = 'center top';
+}
+const artPreloaded = new Set();
+function preloadCardArt(deckKeys) {
+  // start-screen preload (user spec: art is fetched from deck-select
+  // time so no surface ever flashes blank or '?'): warm every listed
+  // art whose card sits in one of the given decks, both sizes.
+  if (!DATA || !DATA.decks) return;
+  const files = new Set();
+  for (const k of deckKeys) {
+    const d = DATA.decks[k]; if (!d) continue;
+    for (const c of (d.main || []).concat(d.extra || [])) {
+      if (!CARD_ART[c] && !(DECK_ART[k] || {})[c]) continue;
+      for (const big of [false, true]) {
+        const f1 = cardArtFile(c, big); if (f1) files.add(f1);
+        // the deck-scoped variant too (DECK_ART): a Mori in the
+        // Ishizu deck paints mori-ishizu from the first frame, and
+        // the base file stays warm for code-only surfaces whose
+        // context resolves the other way.
+        const f2 = cardArtFile(c, big, k); if (f2) files.add(f2);
+      }
+    }
+  }
+  for (const f of files) {
+    if (!artPreloaded.has(f)) { artPreloaded.add(f); const im = new Image(); im.src = f; }
+  }
+}
+// deck-select page: display names + the live selection summary
+// above the start button (what is chosen, on one line, always
+// current — the page's seg handlers refresh it on every change).
+function deckDisplayName(k) { return k === 'gg' ? 'ゲート・ガーディアン' : 'MILLENNIUM PROPHECY'; }
+function updateDeckSum() {
+  const el = $('decksum'); if (!el) return;
+  const turn = firstChoice === 'first' ? '先攻' : firstChoice === 'second' ? '後攻' : '先攻・後攻ランダム';
+  el.textContent = '自分：' + deckDisplayName(myDeckKey) + ' ／ 相手：' + deckDisplayName(opDeckKey) + ' ／ ' + turn;
+}
 function locLabel(e) {
   const who = e.con === HP ? '自分' : '相手';
   switch (e.loc) {
@@ -41,7 +155,66 @@ function locLabel(e) {
     default: return who;
   }
 }
+// ---- hidden candidates in selection prompts (user report
+// 2026-11-04: a target-selection grid showed the opponent's set
+// cards with their names and art). The engine strips the code of
+// such entries before delivery (maskPromptForHuman); this predicate
+// is the render-side twin, so a candidate list that still carries a
+// code is masked here too. A candidate is hidden when its identity
+// is not public information for the viewer: an opponent's face-down
+// field / Extra card, or an opponent hand / deck card. The one
+// legal exception is shared with the engine: 墓穴の道連れ's own
+// effect reveals both hands before the choice (context code), so
+// its candidates stay visible. One's OWN face-down cards are never
+// hidden — the owner knows them.
+const HAND_DESTRUCTION_CODE = 16435215;
+function selCardHidden(e, prompt) {
+  if (!e) return false;
+  if (e.code == null) return true; // no identity delivered, nothing to show
+  if (e.con == null || e.con === HP) return false;
+  if (prompt && prompt.context && prompt.context.code === HAND_DESTRUCTION_CODE) return false;
+  if (e.loc === E.LOC.HAND || e.loc === E.LOC.DECK) return true;
+  if ((e.loc === E.LOC.MZONE || e.loc === E.LOC.SZONE || e.loc === E.LOC.EXTRA) && e.pos != null && !(e.pos & E.POS_FACEUP)) return true;
+  return false;
+}
+// Public-only label for a hidden candidate: which slot it sits in is
+// table information (the loc line already says it); for a face-down
+// monster its position form is public too (the board shows it).
+function hiddenCardLabel(e) {
+  if (!e) return '裏側のカード';
+  if (e.loc === E.LOC.MZONE) {
+    if (e.pos != null && (e.pos & E.POS.FD_ATK)) return '裏側のモンスター（攻撃表示）';
+    if (e.pos != null && (e.pos & E.POS.FD_DEF)) return '裏側のモンスター（守備表示）';
+    return '裏側のモンスター';
+  }
+  if (e.loc === E.LOC.SZONE) return '裏側のカード';
+  if (e.loc === E.LOC.HAND) return '相手の手札のカード';
+  if (e.loc === E.LOC.DECK) return '相手のデッキのカード';
+  if (e.loc === E.LOC.EXTRA) return '相手のEXデッキのカード';
+  return '裏側のカード';
+}
 function isMonster(code) { const d = cardData(code); return d && (d.type & 0x1); }
+// card-kind (original frame) key, derived mechanically from the core
+// type bitmask in data.json (cards[code].type) — no per-card hand
+// assignment, so every card in the pool is covered (user request
+// 2026-11-03: kind colors on the name band). Priority: spell/trap,
+// then the extra-deck kinds, ritual, plain normal (TYPE_NORMAL
+// without TYPE_EFFECT); any other monster is an effect monster.
+// '' when the card is unknown, so unclassed bands keep today's look.
+function cardKind(code) {
+  const d = cardData(code); if (!d) return '';
+  const t = d.type | 0;
+  if (t & 0x2) return 'spell';
+  if (t & 0x4) return 'trap';
+  if (t & 0x40) return 'fusion';
+  if (t & 0x2000) return 'synchro';
+  if (t & 0x800000) return 'xyz';
+  if (t & 0x80) return 'ritual';
+  if ((t & 0x10) && !(t & 0x20)) return 'normal';
+  if (t & 0x1) return 'effect';
+  return '';
+}
+function kindCls(code) { const k = cardKind(code); return k ? ' k-' + k : ''; }
 function statsLine(code) {
   const d = cardData(code); if (!d || !(d.type & 0x1)) return '';
   return '攻' + d.atk + '／守' + d.def;
@@ -176,14 +349,21 @@ function resolveYesNo(code, desc) {
 // A follow-up question whose desc belongs to a shared helper's
 // string table rather than to the asking card (the Vernusylph
 // family's resolution asks its optional special summon with
-// Stringid(9350312, 1)): the desc decodes to nothing in this
-// pool, but the RESOLVING link pins the parent effect, and the
-// parent's own text carries the 「その後、…できる」 step — the
-// only optional step a mid-resolution yes/no can ask about
-// inside that effect in this pool.
+// Stringid(9350312, 1)): the RESOLVING link pins the parent
+// effect, and the parent's own text carries the 「その後、…できる」
+// step — the only optional step a mid-resolution yes/no can ask
+// about inside that effect in this pool. Since the v11 recipe
+// swap the string-base card (9350312) is itself in the pool, so
+// its descs now DECODE — they are still foreign when a DIFFERENT
+// Vernusylph card is the one resolving; a desc of the asking
+// card itself stands or falls on its own merits, as does a desc
+// decoding to any unrelated card.
+const VERN_STRING_BASE = 9350312; // 丘と芽吹の春化精 (helper string table owner)
 function foreignFollowFx(ctx, prompt) {
   if (!prompt.desc) return null;
-  if (descEffect(prompt.desc)) return null; // decodable descs stand or fall on their own merits
+  const de = descEffect(prompt.desc);
+  if (de && de.code === ctx.code) return null; // the asking card's own desc: not foreign
+  if (de && de.code !== VERN_STRING_BASE) return null; // decodable elsewhere: not the shared-helper case
   const parent = resolveEffect(ctx.code, ctx.desc);
   if (!parent || !parent.n) return null;
   if (!stepClause(ctx.code, parent.n)) return null;
@@ -633,8 +813,24 @@ function optUsedReason(code) {
   const spent = cov.shared ? cands.some(n => rec.n.has(n)) : cands.every(n => rec.n.has(n));
   return spent ? 'このターン既に使用済みです' : null;
 }
-const REVIVE_CODE = 28958464; // マジックカード「死者蘇生」
-let monsterRevived = null; // {seq, code, turnCount} — the human's monster 死者蘇生 brought back this turn
+// The revive rider («この効果で特殊召喚したモンスターは攻撃できず、
+// その効果は発動できない») is DERIVED from the pool's texts, like
+// the lock / name-limit sets — not hardcoded to one card. No card
+// in the current pool carries the rider (《マジックカード「死者
+// 蘇生」》 left with the v11 recipe swap, and the classic 《死者
+// 蘇生》 that replaced it has no rider), so the latch below never
+// arms today; it stays correct for any future pool card whose
+// text carries the rider. Deliberately uncached: tests swap DATA.
+const REVIVE_RIDER_RE = /この効果で特殊召喚したモンスターは攻撃できず、その効果は発動できない/;
+function reviveRiderCode() {
+  if (!DATA || !DATA.texts) return null;
+  for (const code of Object.keys(DATA.texts)) {
+    const t = DATA.texts[code];
+    if (t && t.text && REVIVE_RIDER_RE.test(t.text)) return +code;
+  }
+  return null;
+}
+let monsterRevived = null; // {seq, code, turnCount, rider} — the human's monster the rider card brought back this turn
 // Attribution rule (documented boundary): presentation events
 // arrive in per-process batches, and 死者蘇生's activation and
 // its summon NEVER share one (chain windows intervene) — so the
@@ -655,8 +851,9 @@ function noteReviveFromEvents(evs, state) {
   reviveBatch++;
   const chainLen = state.chain ? state.chain.length : 0;
   const ownAct = evs.filter(e => e.kind === 'activate' && e.con === HP);
-  if (ownAct.some(e => e.code === REVIVE_CODE)) {
-    reviveArm = { turnCount: state.turnCount, batch: reviveBatch };
+  const rider = reviveRiderCode();
+  if (rider != null && ownAct.some(e => e.code === rider)) {
+    reviveArm = { turnCount: state.turnCount, batch: reviveBatch, code: rider };
   } else if (reviveArm && reviveArm.batch < reviveBatch && ownAct.length) {
     reviveArm = null;
   }
@@ -665,7 +862,7 @@ function noteReviveFromEvents(evs, state) {
     if (sums.length === 1) {
       const P = state.players && state.players[HP];
       const seq = P ? P.mzone.findIndex(c => c && c.code === sums[0].code) : -1;
-      if (seq >= 0) monsterRevived = { seq, code: sums[0].code, turnCount: state.turnCount };
+      if (seq >= 0) monsterRevived = { seq, code: sums[0].code, turnCount: state.turnCount, rider: reviveArm.code };
       reviveArm = null;
     } else if (sums.length > 1) reviveArm = null;
   }
@@ -681,7 +878,7 @@ function monsterRevivedReason(code, loc, seq, turnCount) {
   const tc = turnCount != null ? turnCount : (duelState ? duelState.turnCount : null);
   if (tc == null || tc !== monsterRevived.turnCount) return null;
   if (monsterRevived.code !== code || monsterRevived.seq !== seq) return null;
-  return '《' + cardName(REVIVE_CODE) + '》の効果で特殊召喚されたため、このターンは効果を発動できません';
+  return '《' + cardName(monsterRevived.rider) + '》の効果で特殊召喚されたため、このターンは効果を発動できません';
 }
 // ---- brushup round 2: cannot-activate reasons on the OTHER surfaces ----
 // The pool-coverage round stated reasons on the FIELD sheet and
@@ -841,6 +1038,207 @@ window.__poolcov = {
   exSummonLock, exLockReason,
   reset() { usedFxTurn = -1; usedFxByCode.clear(); usedFxSeen = new Set(); monsterRevived = null; reviveArm = null; reviveBatch = 0; usedNamesDuel.clear(); gravePrev = null; gravePrevNulls = 0; graveStamps = []; },
 };
+// ---- cannot-attack reasons (attack-block round, 2026-11-04) ----
+// The twin of the cannot-activate silence: a monster whose attack
+// the core does not offer in SELECT_BATTLECMD got NO row at all,
+// so a correct ruling read as a bug — the reported case: Baromett
+// Xyz-summoned under the opponent's 《ラビリンス・ウォール・
+// シャドウ》 could not attack and nothing anywhere said why.
+// Same discipline as the trackers above: sets are DERIVED from
+// the pool's own texts, the live evidence is the client's own
+// records, and a reason is stated only when it fully explains
+// the missing command. Derivations:
+//   (1) FIELD summon-turn block — a face-up field spell whose
+//       text bars monsters summoned this turn from attacking
+//       (except original Level N+): the source sits in a field
+//       zone (szone[5]) of either player, the monster arrived /
+//       was flip-summoned this turn (summonMarks), and it is not
+//       in the printed-Level exception (Xyz monsters have no
+//       Level and are always barred — the Baromett case).
+//   (2) SELF summon-turn block — the monster's OWN text carries
+//       「このカードは召喚したターンには攻撃できない」 and it was
+//       normal summoned / set this turn (kind-attributed mark).
+//   (3) the revive rider's attack half — the monsterRevived
+//       latch above already proves the summon and its source;
+//       the rider bars attacks as well as effects.
+// Enumerated NOT covered (pool audit in test-atkblock.js):
+//   - 《メタファイズ・ホルス・ドラゴン》's Pendulum-material
+//     rider (a monster whose control it stole cannot attack
+//     this turn): unreachable — the pool holds ZERO Pendulum
+//     monsters, so the branch can never arm.
+//   - 《光の護封霊剣》② (this turn, the opponent's monsters
+//     cannot DIRECT attack): the blocked side is always the
+//     CPU — the card sits only in the human's deck, so the
+//     human's own attack sheet can never be its surface.
+// "Summoned this turn" evidence is a zone-diff tracker in the
+// spirit of trackGraveArrivals: a zone newly holding a monster
+// is an arrival (normal summon, set and special summon all
+// arrive; a set flipped face-up by an effect keeps its arrival
+// turn, exactly like STATUS_SUMMON_TURN). Flip summons of a
+// monster set on an EARLIER turn arrive through the flipsummon
+// presentation event instead: the zone whose previous face was
+// down and is up now, when it is the only candidate — several
+// candidates stay silent. Kind attribution (summon / set /
+// spsummon) rides the same batch's presentation events; when
+// the batch does not attribute a kind, derivation (1) still
+// applies (it is kind-agnostic) and (2) stays silent. Control
+// changes write no summon event, so a stolen monster keeps the
+// marks of its own summon turn — no pool card changes control
+// today (audit), and a future one would need the swap case
+// revisited before its marks could be trusted across zones.
+let _summonTurnBlockCards = null; // Map code -> exempt original level, derived from DATA.texts
+function summonTurnBlockCards() {
+  if (_summonTurnBlockCards) return _summonTurnBlockCards;
+  _summonTurnBlockCards = new Map();
+  for (const code of Object.keys(DATA && DATA.texts ? DATA.texts : {})) {
+    const t = DATA.texts[code];
+    if (!t || !t.text) continue;
+    const norm = t.text.replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+    const m = norm.match(/元々のレベルが(\d+)以上のモンスターを除く、召喚・反転召喚・特殊召喚されたモンスターは、そのターンには攻撃できない/);
+    if (m) _summonTurnBlockCards.set(+code, +m[1]);
+  }
+  return _summonTurnBlockCards;
+}
+let _selfSummonBlockCards = null; // Set of codes whose own text bars attacking on their summon turn
+function selfSummonBlockCards() {
+  if (_selfSummonBlockCards) return _selfSummonBlockCards;
+  _selfSummonBlockCards = new Set();
+  for (const code of Object.keys(DATA && DATA.texts ? DATA.texts : {})) {
+    const t = DATA.texts[code];
+    if (t && t.text && /このカードは召喚したターンには攻撃できない/.test(t.text)) _selfSummonBlockCards.add(+code);
+  }
+  return _selfSummonBlockCards;
+}
+let fieldPrev = null; // per player: [{code, pos}|null] per mzone seq at the previous observation
+const summonMarks = new Map(); // 'con:seq' -> {code, turn, kinds:Set<string>}
+function trackFieldSummons(evs, state) {
+  if (!state || !state.players) return;
+  const cur = state.players.map(P => {
+    const row = [];
+    for (let s = 0; s < P.mzone.length; s++) {
+      const c = P.mzone[s];
+      row.push(c ? { code: c.code != null ? c.code : null, pos: c.pos != null ? c.pos : null } : null);
+    }
+    return row;
+  });
+  const fresh = new Set(); // zone keys whose arrival this very observation proves
+  for (let con = 0; con < 2; con++) {
+    for (let s = 0; s < cur[con].length; s++) {
+      const key = con + ':' + s;
+      const c = cur[con][s], p = fieldPrev ? fieldPrev[con][s] : null;
+      if (c && c.code != null && c.code !== 0 && (!p || (p.code != null && p.code !== 0 && p.code !== c.code))) {
+        // the zone newly holds this monster: an arrival. A
+        // previous IDENTITY-LESS occupant proves nothing (the
+        // monster may have been there all along) — stay silent,
+        // the grave tracker's discipline.
+        summonMarks.set(key, { code: c.code, turn: state.turnCount, kinds: new Set() });
+        fresh.add(key);
+      } else if (!c || c.code !== (summonMarks.get(key) || {}).code) {
+        summonMarks.delete(key); // zone emptied or the card is gone
+      }
+    }
+  }
+  // Kind attribution from THIS batch's presentation events
+  // (the same evidence noteReviveFromEvents reads). Summon /
+  // set / special summon events name con + code only, so they
+  // attribute to the fresh arrivals they can only mean.
+  if (evs) {
+    for (const ev of evs) {
+      if (ev.kind !== 'summon' && ev.kind !== 'spsummon' && ev.kind !== 'set' && ev.kind !== 'flipsummon') continue;
+      if (ev.kind === 'set' && ev.loc !== E.LOC.MZONE) continue;
+      if (ev.kind === 'flipsummon') {
+        // the monster was already on the field face-down: mark
+        // the one zone that turned face-up with this observation
+        const cands = [];
+        for (let s = 0; s < cur[ev.con].length; s++) {
+          const c = cur[ev.con][s], p = fieldPrev ? fieldPrev[ev.con][s] : null;
+          if (!c || c.code !== ev.code || !p) continue;
+          const wasDown = p.pos != null && (p.pos & E.POS_FACEUP) === 0;
+          const isUp = c.pos != null && (c.pos & E.POS_FACEUP) !== 0;
+          const marked = summonMarks.get(ev.con + ':' + s);
+          if (wasDown && isUp && !(marked && marked.turn === state.turnCount)) cands.push(s);
+        }
+        if (cands.length === 1) {
+          summonMarks.set(ev.con + ':' + cands[0], { code: ev.code, turn: state.turnCount, kinds: new Set(['flipsummon']) });
+        }
+        continue;
+      }
+      for (const key of fresh) {
+        const [kcon] = key.split(':').map(Number);
+        const mk = summonMarks.get(key);
+        if (kcon === ev.con && mk && mk.code === ev.code) mk.kinds.add(ev.kind);
+      }
+    }
+  }
+  fieldPrev = cur;
+}
+// The field-zone card imposing a summon-turn attack block right
+// now: {code, exempt} or null. Field spells live at szone[5];
+// the effect ranges over BOTH players' monster zones, so either
+// player's field zone counts.
+function liveSummonTurnBlock(state) {
+  const set = summonTurnBlockCards();
+  if (!set.size || !state || !state.players) return null;
+  for (let con = 0; con < 2; con++) {
+    const P = state.players[con];
+    const fz = P && P.szone ? P.szone[5] : null;
+    if (fz && fz.code != null && (fz.pos & E.POS_FACEUP) !== 0 && set.has(fz.code)) {
+      return { code: fz.code, exempt: set.get(fz.code) };
+    }
+  }
+  return null;
+}
+// The attack reason the sheet may state for the monster at
+// (con, loc, seq), or null. Callers gate the context first
+// (SELECT_BATTLECMD live, no 攻撃 action offered); this function
+// gates the monster itself: it must still be the marked card,
+// face-up in attack position — a face-down or defense monster
+// has no attack command by the basic rules, and claiming an
+// effect reason for it would be a false claim.
+function attackBlockReason(code, con, loc, seq, state) {
+  const st = state || duelState;
+  if (!st || loc !== E.LOC.MZONE || !st.players || !st.players[con]) return null;
+  const cell = st.players[con].mzone[seq];
+  if (!cell || cell.code !== code) return null;
+  if ((cell.pos & E.POS_FACEUP) === 0 || cell.pos !== E.POS.FU_ATK) return null;
+  const mark = summonMarks.get(con + ':' + seq);
+  const marked = mark && mark.code === code && mark.turn === st.turnCount ? mark : null;
+  // (3) the revive rider's attack half (same latch as the
+  // effect half in monsterRevivedReason; no pool card carries
+  // the rider today, so this arms only for a future pool card).
+  if (monsterRevived && monsterRevived.code === code && monsterRevived.seq === seq && monsterRevived.turnCount === st.turnCount) {
+    return '《' + cardName(monsterRevived.rider) + '》の効果で特殊召喚されたため、このターンは攻撃できません';
+  }
+  if (!marked) return null;
+  // (2) the monster's own printed clause — only a real normal
+  // summon / set arms it (its script hooks SUMMON_SUCCESS), so
+  // the mark must carry the kind.
+  if (selfSummonBlockCards().has(code) && (marked.kinds.has('summon') || marked.kinds.has('set'))) {
+    return 'このカードは召喚したターンには攻撃できません';
+  }
+  // (1) the field block: any summon kind counts (the core's
+  // STATUS_*_SUMMON_TURN covers them all); the printed-Level
+  // exception exempts — Xyz monsters have no Level at all.
+  const fb = liveSummonTurnBlock(st);
+  if (fb) {
+    const d = cardData(code);
+    const hasLevel = d && !(d.type & 0x800000);
+    if (!(hasLevel && d.level >= fb.exempt)) {
+      return '《' + cardName(fb.code) + '》の効果で、召喚したターンのモンスターは攻撃できません';
+    }
+  }
+  return null;
+}
+// Test surface (same spirit as __poolcov).
+window.__atkblock = {
+  summonTurnBlockCards() { return [...summonTurnBlockCards().entries()].map(([code, exempt]) => ({ code, exempt })); },
+  selfSummonBlockCards() { return [...selfSummonBlockCards()]; },
+  track(evs, state) { trackFieldSummons(evs, state); },
+  marks() { return [...summonMarks.entries()].map(([key, m]) => ({ key, code: m.code, turn: m.turn, kinds: [...m.kinds] })); },
+  liveBlock(state) { return liveSummonTurnBlock(state || duelState); },
+  reason(code, con, loc, seq, state) { return attackBlockReason(code, con, loc, seq, state); },
+  reset() { fieldPrev = null; summonMarks.clear(); },
+};
 // Drain the engine's presentation event queue into SE cues.
 const ATTR_SE = { 1: 'atk_earth', 2: 'atk_water', 4: 'atk_fire', 8: 'atk_wind', 16: 'atk_light', 32: 'atk_dark', 64: 'atk_light' };
 function drainSeEvents(state) {
@@ -990,16 +1388,16 @@ function fxNode(cls, cx, cy, w, h) {
   return d;
 }
 function fxKill(el, ms) { if (el) setTimeout(() => { try { el.remove(); } catch (e) {} }, ms); }
-function fxGhostEl(code, faceDown, w, h) {
+function fxGhostEl(code, faceDown, w, h, deckKey) {
   const d = document.createElement('div');
   d.className = 'fx fx-ghost' + (faceDown ? ' back' : '');
   d.style.width = w + 'px'; d.style.height = h + 'px';
-  if (!faceDown && code != null) d.innerHTML = '<div class="nm">' + cardName(code) + '</div>';
+  if (!faceDown && code != null) { artApply(d, code, false, deckKey); d.innerHTML = '<div class="nm' + kindCls(code) + '">' + cardName(code) + '</div>'; }
   return d;
 }
-function fxPlaceGhost(code, faceDown, pt, w, h) {
+function fxPlaceGhost(code, faceDown, pt, w, h, deckKey) {
   const layer = fxLayerEl(); if (!layer) return null;
-  const d = fxGhostEl(code, faceDown, w, h);
+  const d = fxGhostEl(code, faceDown, w, h, deckKey);
   d.style.left = (pt.cx - w / 2) + 'px'; d.style.top = (pt.cy - h / 2) + 'px';
   layer.appendChild(d);
   return d;
@@ -1012,8 +1410,10 @@ function fxPlaceGhost(code, faceDown, pt, w, h) {
 // leaving together still land one after another. The delay rides the
 // WAAPI animation itself (no per-frame writes), like the sheet-row
 // stagger elsewhere; the kill timer accounts for it.
-function fxFly(code, faceDown, fromPt, toPt, w, h, dur, delay) {
-  const d = fxPlaceGhost(code, faceDown, fromPt, w, h); if (!d) return;
+// `deckKey` (optional): the owning seat's deck id, so the ghost wears
+// that deck's per-deck art override (DECK_ART) like the tiles do.
+function fxFly(code, faceDown, fromPt, toPt, w, h, dur, delay, deckKey) {
+  const d = fxPlaceGhost(code, faceDown, fromPt, w, h, deckKey); if (!d) return;
   const dl = delay || 0;
   if (dl > 0) d.style.opacity = '0'; // held until the delayed animation takes over (fill:backwards shows frame 0)
   const dx = toPt.cx - fromPt.cx, dy = toPt.cy - fromPt.cy;
@@ -1088,6 +1488,50 @@ function fxPuff(key) { // normal summons & sets: a small placement beat only
   fxAnim(d, [{ opacity: 0 }, { opacity: 0.9, offset: 0.3 }, { opacity: 0 }], { duration: 430, easing: 'ease-out' });
   fxKill(d, 470);
 }
+// ---- summon callout (FX coverage round): every summon that no
+// bigger scene owns still NAMES its card. The summoned card's image
+// stamps in over its own zone — settle-in, a seat rim (gold = the
+// human seat, lapis = the opponent, the redesign colour grammar),
+// a readable hold (longer for the opponent, whose actions run on
+// the CPU's pace), then an ease-out. It claims no input window and
+// sits in the FX layer, so it can never cover a prompt or the
+// result; a face-down arrival never calls out (its identity is not
+// public yet), and the ace scene's summons stand down via the
+// arrival branch order (they are consumed before reaching here).
+function fxSummonCallout(key, code, con, pos) {
+  if (code == null || (pos != null && (pos & E.POS_FACEUP) === 0)) return;
+  const el = fxSlotEl(key); if (!el) return;
+  const app = $('app'); if (!app) return;
+  const ar = fxRel(app);
+  const r = fxRel(el);
+  const W = Math.round(r.w * 1.5), H = Math.round(W * 1.36);
+  let cx = r.cx, cy = r.y + (r.h - 24) / 2;
+  cx = Math.max(W / 2 + 2, Math.min(ar.w - W / 2 - 2, cx));
+  cy = Math.max(H / 2 + 2, Math.min(ar.h - H / 2 - 2, cy));
+  const card = fxPlaceGhost(code, false, { cx, cy }, W, H, deckKeyOfSeat(con));
+  if (!card) return;
+  card.style.zIndex = 6; card.style.opacity = '0';
+  const rim = fxNode(con === HP ? 'fx3-goldframe' : 'fx3-lapisframe', cx, cy, W, H);
+  if (rim) { rim.style.opacity = '0'; rim.style.zIndex = 7; }
+  const hold = con === HP ? 640 : 800, dur = hold + 260;
+  fxAddScene({
+    kind: 'summoncall', dur,
+    render(t) {
+      const s = 0.7 + 0.3 * FXE.settle(fxSeg(t, 0, 200));
+      card.style.transform = 'scale(' + s.toFixed(3) + ')';
+      card.style.opacity = String(Math.min(fxSeg(t, 0, 90), 1 - fxSeg(t, hold, dur)));
+      if (rim) {
+        // ignition flash (0-460), then a low seat-coloured floor for
+        // the rest of the hold — the frame is what makes the stamp
+        // read as a presentation rather than a merely bigger tile
+        const ri = t < 80 ? t / 80 : Math.max(0.38, 1 - fxSeg(t, 240, 460));
+        rim.style.transform = card.style.transform;
+        rim.style.opacity = String(0.95 * ri * (1 - fxSeg(t, hold, dur)));
+      }
+    },
+    onDone() { try { card.remove(); } catch (e) {} if (rim) { try { rim.remove(); } catch (e) {} } },
+  });
+}
 function fxWhiteFlash(key) { // destruction: flash white, gone (restrained)
   const el = fxSlotEl(key); if (!el) return;
   const r = fxRel(el);
@@ -1129,14 +1573,14 @@ function fxResultChip(key, code) {
 function fxVanish(key, code, faceDown) { // deck returns: gone in place, no flight (supplement)
   const el = fxSlotEl(key); if (!el) return;
   const r = fxRel(el);
-  const d = fxPlaceGhost(code, faceDown, r, r.w - 2, r.h - 24); if (!d) return;
+  const d = fxPlaceGhost(code, faceDown, r, r.w - 2, r.h - 24, deckKeyOfSeat(+key.split(':')[0])); if (!d) return;
   fxAnim(d, [{ transform: 'scale(1)', opacity: 1 }, { transform: 'scale(.55)', opacity: 0 }], { duration: 340, easing: 'ease-in' });
   fxKill(d, 380);
 }
 function fxSlide(fromKey, toKey, code, faceDown) { // control change: the card slides (supplement)
   const a = fxSlotEl(fromKey), b = fxSlotEl(toKey); if (!a || !b) return;
   const ra = fxRel(a), rb = fxRel(b);
-  const d = fxPlaceGhost(code, faceDown, ra, ra.w - 2, ra.h - 24); if (!d) return;
+  const d = fxPlaceGhost(code, faceDown, ra, ra.w - 2, ra.h - 24, deckKeyOfSeat(+fromKey.split(':')[0])); if (!d) return;
   const dx = rb.cx - ra.cx, dy = rb.cy - ra.cy;
   fxAnim(d, [
     { transform: 'translate(0px,0px) scale(1)', opacity: 1 },
@@ -2019,6 +2463,10 @@ function fxProcessInner(evs, state) {
     if (fromGrave || fromRemoved) { // revival / return: NO flight — the zone lights and it appears
       fxPortal(ar.key, 'revive', 700); // V4-5: the zone glow is folded into the portal scene
       fxRecord('portal', { method: 'revive', code });
+      if ((ar.entry.pos & E.POS_FACEUP) !== 0) { // FX coverage: a revival names its card too
+        fxSummonCallout(ar.key, code, con, ar.entry.pos);
+        fxRecord('summoncall', { code, how: 'revive', con });
+      }
       consumedArr.add(ar.key);
       continue;
     }
@@ -2070,6 +2518,10 @@ function fxProcessInner(evs, state) {
     }
     if (isNormal || isSetMon) {
       fxPuff(ar.key); fxRecord('place', { how: isNormal ? 'summon' : 'set', code });
+      if (isNormal && (ar.entry.pos & E.POS_FACEUP) !== 0) { // FX coverage: the plainest summon in the game was the one with no card presentation at all
+        fxSummonCallout(ar.key, code, con, ar.entry.pos);
+        fxRecord('summoncall', { code, how: 'summon', con });
+      }
       // Round B (B10): an advance (tribute) summon's tributes leave the
       // way fusion/Xyz materials do — they glow and converge into the
       // summon point instead of flying to the graveyard — and the
@@ -2086,6 +2538,10 @@ function fxProcessInner(evs, state) {
     // other special summons (from hand / deck / extra): zone glows first
     fxPortal(ar.key, method, 600); // V4-5: glow folded in
     fxRecord('portal', { method, code });
+    if ((ar.entry.pos & E.POS_FACEUP) !== 0) { // FX coverage: the portal lights the zone; the callout names the card (never for a face-down arrival — not public yet)
+      fxSummonCallout(ar.key, code, con, ar.entry.pos);
+      fxRecord('summoncall', { code, how: 'spsummon', con });
+    }
     consumedArr.add(ar.key);
   }
   // arrivals on the spell/trap zone (sets): a small placement beat
@@ -2105,12 +2561,12 @@ function fxProcessInner(evs, state) {
       const toPt = pilePt(con, dest);
       fxRecord('flight', { to: dest, code: dep.entry.code }); // intent is recorded even if a rect is momentarily unreadable; the ghost spawns when geometry exists (always, post-render)
       if (dest === 'grave' && dep.entry.code != null) graveFlown[con].push(dep.entry.code); // I(1): already flown — the deck-origin pass must not fly it again
-      if (fromPt && toPt) fxFly(dep.entry.code, faceDown, fromPt, toPt, fromPt.w - 2, fromPt.h - 24);
+      if (fromPt && toPt) fxFly(dep.entry.code, faceDown, fromPt, toPt, fromPt.w - 2, fromPt.h - 24, undefined, undefined, deckKeyOfSeat(con));
       pileLand(con, dest);
     } else if (cur.handLen[con] > prev.handLen[con]) { // bounced to a hand
       const toPt = handPt(con);
       fxRecord('flight', { to: 'hand', code: dep.entry.code });
-      if (fromPt && toPt) fxFly(dep.entry.code, faceDown, fromPt, toPt, fromPt.w - 2, fromPt.h - 24);
+      if (fromPt && toPt) fxFly(dep.entry.code, faceDown, fromPt, toPt, fromPt.w - 2, fromPt.h - 24, undefined, undefined, deckKeyOfSeat(con));
     } else if (cur.deck[con] > prev.deck[con]) { // returned to the deck: vanishes in place
       fxVanish(dep.key, dep.entry.code, faceDown);
       fxRecord('vanish', { to: 'deck', code: dep.entry.code });
@@ -2144,6 +2600,22 @@ function fxProcessInner(evs, state) {
       }
     }
   }
+  // ---- flip summons (FX coverage): the flip itself is animated by
+  // the changed-diff below (round B); the callout names the card —
+  // a flip summon is a summon, and every summon presents its card.
+  for (const ev of evs) {
+    if (ev.kind !== 'flipsummon' || ev.code == null) continue;
+    for (const key of Object.keys(cur.z)) {
+      const ze = cur.z[key], parts = key.split(':').map(Number);
+      if (ze && ze.code === ev.code && parts[0] === ev.con && parts[1] === E.LOC.MZONE) {
+        if ((ze.pos & E.POS_FACEUP) !== 0) {
+          fxSummonCallout(key, ev.code, ev.con, ze.pos);
+          fxRecord('summoncall', { code: ev.code, how: 'flipsummon', con: ev.con });
+        }
+        break;
+      }
+    }
+  }
   // ---- in-place changes: xyz detach / attach, stat changes, flips (round B hook)
   for (const ch of changed) {
     const [con, loc] = ch.key.split(':').map(Number);
@@ -2168,7 +2640,7 @@ function fxProcessInner(evs, state) {
     else if (cur.deck[HP] < prev.deck[HP]) { fromPt = pilePt(HP, 'deck'); fromKind = 'deck'; }
     const toPt = handPt(HP);
     if (fromKind) fxRecord('flight', { to: 'hand', from: fromKind, code });
-    if (fromPt && toPt) fxFly(code, false, fromPt, toPt, 44, 58);
+    if (fromPt && toPt) fxFly(code, false, fromPt, toPt, 44, 58, undefined, undefined, deckKeyOfSeat(HP));
   }
   for (const code of myD.removed) {
     // placed on the field? the arrival/puff already tells it — no flight (grammar asymmetry)
@@ -2176,9 +2648,9 @@ function fxProcessInner(evs, state) {
     if (placed) continue;
     const fromRect = fxHandRects.find(r => r.code === code);
     const fromPt = fromRect || handPt(HP);
-    if (graveD[HP].added.includes(code)) { const toPt = pilePt(HP, 'grave'); fxRecord('flight', { to: 'grave', from: 'hand', code }); graveFlown[HP].push(code); if (fromPt && toPt) fxFly(code, false, fromPt, toPt, 44, 58); pileLand(HP, 'grave'); }
-    else if (remD[HP].added.includes(code)) { const toPt = pilePt(HP, 'removed'); fxRecord('flight', { to: 'removed', from: 'hand', code }); if (fromPt && toPt) fxFly(code, false, fromPt, toPt, 44, 58); pileLand(HP, 'removed'); }
-    else if (cur.deck[HP] > prev.deck[HP]) { if (fromRect) { const layer = fxLayerEl(); const d = fxPlaceGhost(code, false, fromRect, fromRect.w - 2, fromRect.h - 2); if (d) { fxAnim(d, [{ transform: 'scale(1)', opacity: 1 }, { transform: 'scale(.55)', opacity: 0 }], { duration: 320, easing: 'ease-in' }); fxKill(d, 360); } } fxRecord('vanish', { to: 'deck', from: 'hand', code }); pileLand(HP, 'deck'); }
+    if (graveD[HP].added.includes(code)) { const toPt = pilePt(HP, 'grave'); fxRecord('flight', { to: 'grave', from: 'hand', code }); graveFlown[HP].push(code); if (fromPt && toPt) fxFly(code, false, fromPt, toPt, 44, 58, undefined, undefined, deckKeyOfSeat(HP)); pileLand(HP, 'grave'); }
+    else if (remD[HP].added.includes(code)) { const toPt = pilePt(HP, 'removed'); fxRecord('flight', { to: 'removed', from: 'hand', code }); if (fromPt && toPt) fxFly(code, false, fromPt, toPt, 44, 58, undefined, undefined, deckKeyOfSeat(HP)); pileLand(HP, 'removed'); }
+    else if (cur.deck[HP] > prev.deck[HP]) { if (fromRect) { const layer = fxLayerEl(); const d = fxPlaceGhost(code, false, fromRect, fromRect.w - 2, fromRect.h - 2, deckKeyOfSeat(HP)); if (d) { fxAnim(d, [{ transform: 'scale(1)', opacity: 1 }, { transform: 'scale(.55)', opacity: 0 }], { duration: 320, easing: 'ease-in' }); fxKill(d, 360); } } fxRecord('vanish', { to: 'deck', from: 'hand', code }); pileLand(HP, 'deck'); }
   }
   // opponent hand count changes: draws fly in as card backs
   const opp = 1 - HP;
@@ -2222,7 +2694,7 @@ function fxProcessInner(evs, state) {
     for (let i = 0; i < n; i++) {
       const code = residual[i];
       fxRecord('flight', { to: 'grave', from: 'deck', code }); // from:'deck' is the deck-origin marker (same `from` convention as the hand flights)
-      if (fromPt && toPt) fxFly(code, false, fromPt, toPt, 44, 58, 430, i * 110);
+      if (fromPt && toPt) fxFly(code, false, fromPt, toPt, 44, 58, 430, i * 110, deckKeyOfSeat(p));
     }
     if (n > 0) pileLand(p, 'grave');
   }
@@ -2509,12 +2981,12 @@ function fxAttackSceneV3(o) {
   let ghost = null, ghostHot = null, ghostGray = null, ghostSil = null;
   if (!o.direct && o.targetCode != null) {
     const gw = Math.max(10, tPt.w - 2), gh = Math.max(10, tPt.h - 24);
-    ghost = fxPlaceGhost(o.targetCode, false, tPt, gw, gh);
+    ghost = fxPlaceGhost(o.targetCode, false, tPt, gw, gh, o.tDeck);
     if (ghost) {
       ghost.style.opacity = '0'; nodes.push(ghost);
-      ghostHot = fxPlaceGhost(o.targetCode, false, tPt, gw, gh);
+      ghostHot = fxPlaceGhost(o.targetCode, false, tPt, gw, gh, o.tDeck);
       if (ghostHot) { ghostHot.style.filter = 'brightness(2.7) saturate(0)'; ghostHot.style.opacity = '0'; nodes.push(ghostHot); }
-      ghostGray = fxPlaceGhost(o.targetCode, false, tPt, gw, gh);
+      ghostGray = fxPlaceGhost(o.targetCode, false, tPt, gw, gh, o.tDeck);
       if (ghostGray) { ghostGray.style.filter = 'grayscale(1) brightness(.82)'; ghostGray.style.opacity = '0'; nodes.push(ghostGray); }
       // Redesign A / F3 (proto p1d): a dedicated silhouette layer
       // ABOVE the hot/gray copies — a white card rectangle with a
@@ -2752,7 +3224,8 @@ function fxFinisherSceneV3(attr) {
   const cw = Math.round(Math.min(250, vw * 0.62)), chh = Math.round(cw * 1.38);
   const card = hmk('bigcard');
   card.style.width = cw + 'px'; card.style.height = chh + 'px'; card.style.opacity = '0';
-  card.innerHTML = '<div class="nm">' + cardName(la.code) + '</div>';
+  artApply(card, la.code, true, la.aKey ? deckKeyOfSeat(+la.aKey.split(':')[0]) : null);
+  card.innerHTML = '<div class="nm' + kindCls(la.code) + '">' + cardName(la.code) + '</div>';
   // beam: attacker -> defender LP plate (fxcutin shares the app coordinate space)
   const dx = lpPt.cx - la.aPt.cx, dy = lpPt.cy - la.aPt.cy, len = Math.hypot(dx, dy);
   const ang = Math.atan2(dy, dx) * 180 / Math.PI;
@@ -2961,7 +3434,7 @@ function fxChainWord(cx, cy, durMs) {
   sc.cleanup = () => { try { d.remove(); } catch (e) {} };
   fxChainWordScene = sc;
 }
-function fxChainSceneV3(n, code) {
+function fxChainSceneV3(n, code, deckKey) {
   const layer = fxLayerEl(); if (!layer) return;
   const app = $('app'); if (!app) return;
   const ar = fxRel(app);
@@ -2984,7 +3457,7 @@ function fxChainSceneV3(n, code) {
     if (br.w > 0 || br.h > 0) lift = Math.max(0, Math.ceil((baseCy + H / 2) - (br.y - 4)));
   }
   const cx = ar.cx, cy = baseCy - lift;
-  const card = fxPlaceGhost(code, false, { cx, cy }, W, H);
+  const card = fxPlaceGhost(code, false, { cx, cy }, W, H, deckKey);
   if (!card) return;
   card.style.zIndex = 6;
   card.dataset.chainLift = String(lift);
@@ -3064,7 +3537,7 @@ function fxChainSceneV3(n, code) {
     },
   });
 }
-function fxChainSolveSceneV3(n, code, neg) {
+function fxChainSolveSceneV3(n, code, neg, deckKey) {
   const layer = fxLayerEl(); if (!layer) return;
   const app = $('app'); if (!app) return;
   const ar = fxRel(app);
@@ -3074,7 +3547,7 @@ function fxChainSolveSceneV3(n, code, neg) {
   let sx = cx, sy = cy, s0 = 0.8;
   const chip = fxChainChipEl(n);
   if (chip) { const r = fxRel(chip); if (r.w > 0) { sx = r.cx; sy = r.cy; s0 = Math.max(0.1, r.h / H); } }
-  const card = fxPlaceGhost(code, false, { cx, cy }, W, H);
+  const card = fxPlaceGhost(code, false, { cx, cy }, W, H, deckKey);
   if (!card) return;
   card.style.zIndex = 6;
   const no = document.createElement('div'); no.className = 'fx3-chainno'; no.textContent = n;
@@ -3088,7 +3561,7 @@ function fxChainSolveSceneV3(n, code, neg) {
   const frameEl = fxNode(neg ? 'fx3-grayframe' : 'fx3-goldframe', cx, cy, W, H);
   if (frameEl) { frameEl.style.opacity = '0'; frameEl.style.zIndex = 7; }
   let grayCopy = null;
-  if (neg) { grayCopy = fxPlaceGhost(code, false, { cx, cy }, W, H); if (grayCopy) { grayCopy.style.filter = 'grayscale(1)'; grayCopy.style.opacity = '0'; grayCopy.style.zIndex = 7; } }
+  if (neg) { grayCopy = fxPlaceGhost(code, false, { cx, cy }, W, H, deckKey); if (grayCopy) { grayCopy.style.filter = 'grayscale(1)'; grayCopy.style.opacity = '0'; grayCopy.style.zIndex = 7; } }
   fxAddScene({
     kind: 'chainsolve', dur: 450,
     cues: neg ? [] : [{ at: 200, fn: () => fxSpawnBurst('low', { seed: (Math.random() * 1e9) | 0, o: [cx, cy], n: 10, life: [380, 620], speed: [14, 46], ang: [-Math.PI / 2, 0.8], grav: -50, size: [2.5, 5], cols: ['#ffd94d', '#ffe9a8'], alpha: .95 }) }],
@@ -3118,11 +3591,11 @@ function fxChainSolveSceneV3(n, code, neg) {
 }
 // ---- set S/T activation (B9): the card tips into the chain
 // presentation — tilted, white-rimmed — it never flips inside its zone
-function fxSetActivate(code, linkNo, targetKey) {
+function fxSetActivate(code, linkNo, targetKey, deckKey) {
   const layer = fxLayerEl(); if (!layer) return;
   const app = $('app'); if (!app) return;
   const ar = fxRel(app);
-  const d = fxPlaceGhost(code, false, { cx: ar.cx, cy: ar.y + ar.h * 0.36 }, 74, 96); if (!d) return;
+  const d = fxPlaceGhost(code, false, { cx: ar.cx, cy: ar.y + ar.h * 0.36 }, 74, 96, deckKey); if (!d) return;
   // Redesign B (p2c, audit C3): when a SET S/T becomes link 2+, the
   // tilt path speaks the SAME grammar as a hand / field activation —
   // until now it had neither the CHAIN word nor a gold frame, so a
@@ -3234,13 +3707,14 @@ function fxAceSceneV3(o) {
   for (const m of o.mats) {
     const pt = fxPtOfKey(m.key); if (!pt) continue;
     const gw = Math.max(10, pt.w - 2), gh = Math.max(10, pt.h - 24);
-    const tr2 = fxPlaceGhost(m.code, false, pt, gw, gh);
+    const mDeck = deckKeyOfSeat(+m.key.split(':')[0]);
+    const tr2 = fxPlaceGhost(m.code, false, pt, gw, gh, mDeck);
     if (tr2) { tr2.style.opacity = '0'; nodes.push(tr2); }
-    const tr1 = fxPlaceGhost(m.code, false, pt, gw, gh);
+    const tr1 = fxPlaceGhost(m.code, false, pt, gw, gh, mDeck);
     if (tr1) { tr1.style.opacity = '0'; nodes.push(tr1); }
-    const g = fxPlaceGhost(m.code, false, pt, gw, gh);
+    const g = fxPlaceGhost(m.code, false, pt, gw, gh, mDeck);
     if (g) {
-      const hot = fxPlaceGhost(m.code, false, pt, gw, gh);
+      const hot = fxPlaceGhost(m.code, false, pt, gw, gh, mDeck);
       if (hot) { hot.style.filter = 'brightness(2.1) saturate(1.6) hue-rotate(-18deg)'; hot.style.opacity = '0'; nodes.push(hot); }
       matGhosts.push({ el: g, hot, tr1, tr2, pt }); nodes.push(g);
     }
@@ -3280,12 +3754,13 @@ function fxAceSceneV3(o) {
   const vw = Math.min(window.innerWidth || 390, 430);
   const cw = Math.round(Math.min(250, vw * 0.62)), chh = Math.round(cw * 1.38);
   const after1 = hmk('bigcard'); after1.style.width = cw + 'px'; after1.style.height = chh + 'px'; after1.style.opacity = '0'; after1.style.filter = 'brightness(1.5) saturate(1.3)'; // L9 V4 afterimages, 55/120 ms behind the card
-  after1.innerHTML = '<div class="nm">' + cardName(o.code) + '</div>';
+  after1.innerHTML = '<div class="nm' + kindCls(o.code) + '">' + cardName(o.code) + '</div>';
   const after2 = hmk('bigcard'); after2.style.width = cw + 'px'; after2.style.height = chh + 'px'; after2.style.opacity = '0'; after2.style.filter = 'brightness(1.5) saturate(1.3)';
-  after2.innerHTML = '<div class="nm">' + cardName(o.code) + '</div>';
+  after2.innerHTML = '<div class="nm' + kindCls(o.code) + '">' + cardName(o.code) + '</div>';
   const card = hmk('bigcard'); card.style.width = cw + 'px'; card.style.height = chh + 'px'; card.style.opacity = '0'; // L9
+  artApply(after1, o.code, true, deckKeyOfSeat(o.con)); artApply(after2, o.code, true, deckKeyOfSeat(o.con)); artApply(card, o.code, true, deckKeyOfSeat(o.con));
   card.style.boxShadow = '0 0 42px ' + cols[0] + '77, 0 6px 24px #000c'; // static frame shadow, set once; the breathing glow is canvas now (V4)
-  card.innerHTML = '<div class="nm">' + cardName(o.code) + '</div>';
+  card.innerHTML = '<div class="nm' + kindCls(o.code) + '">' + cardName(o.code) + '</div>';
   const banner = hmk('banner'); banner.style.opacity = '0'; // L12/L13
   banner.innerHTML = '<div class="cn">' + cardName(o.code) + '</div><div class="rule"></div><div class="cs"></div>';
   const ruleEl = banner.querySelector('.rule');
@@ -3440,14 +3915,14 @@ function fxAceSceneV3(o) {
 // A) -> the scrim dims the field -> the card, large, with a
 // name/ATK/DEF banner. ~4.7 s; any tap skips it.
 let fxCutinTimer = null, fxCutinGen = 0;
-function fxCutinShow(code) {
+function fxCutinShow(code, deckKey) {
   const host = $('fxcutin'); if (!host) return;
   ++fxCutinGen;
   const d = cardData(code);
   const vw = Math.min(window.innerWidth || 390, 430);
   const w = Math.round(Math.min(250, vw * 0.62)), h = Math.round(w * 1.38);
   host.innerHTML = '<div class="scrim"></div>' +
-    '<div class="bigcard" style="width:' + w + 'px;height:' + h + 'px"><div class="nm">' + cardName(code) + '</div></div>' +
+    '<div class="bigcard" style="width:' + w + 'px;height:' + h + 'px;' + artCss(code, true, deckKey) + '"><div class="nm' + kindCls(code) + '">' + cardName(code) + '</div></div>' +
     '<div class="banner"><div class="cn">' + cardName(code) + '</div>' +
     '<div class="cs">' + (d && (d.type & 0x1) ? 'ATK ' + d.atk + ' ／ DEF ' + d.def : '') + '</div></div>';
   host.className = 'on';
@@ -3520,7 +3995,7 @@ function fxRoundBEvents(evs, prev, cur, diff) {
         const sc = key ? fxAceSceneV3({ code: ev.code, key, con: ev.con, method: null, mats: [] }) : null;
         if (sc) { fxRecord('cutin', { code: ev.code, via: 'acescene-event' }); fxAceRecent = { code: ev.code, con: ev.con, until: fxTimeMs + 8000 }; continue; }
         if (fxAceSceneRef && !fxAceSceneRef.dead) continue; // an ace scene is presenting; never poster over it
-        fxCutinShow(ev.code);
+        fxCutinShow(ev.code, deckKeyOfSeat(ev.con));
         fxRecord('cutin', { code: ev.code });
       }
     }
@@ -3544,7 +4019,7 @@ function fxRoundBEvents(evs, prev, cur, diff) {
       const raw = st.chain[cur.links.length - 1];
       if (raw && raw.loc === E.LOC.SZONE && raw.seq != null) targetKey = raw.con + ':' + raw.loc + ':' + raw.seq;
     }
-    fxSetActivate(ev.code, isNewLink ? cur.links.length : 0, targetKey);
+    fxSetActivate(ev.code, isNewLink ? cur.links.length : 0, targetKey, deckKeyOfSeat(ev.con));
     if (isNewLink) popDone = true;
     fxRecord('setactivate', { code: ev.code });
   }
@@ -3580,7 +4055,7 @@ function fxRoundBEvents(evs, prev, cur, diff) {
       destroyed = !!dep && evs.some(e2 => e2.kind === 'destroy' && e2.code === dep.entry.code);
     }
     if (aPt && tPt) {
-      const sc = fxAttackSceneV3({ aPt, tPt, attr, direct, targetCode, destroyed });
+      const sc = fxAttackSceneV3({ aPt, tPt, attr, direct, targetCode, destroyed, tDeck: deckKeyOfSeat(tKey ? +tKey.split(':')[0] : 1 - ev.con) });
       if (sc) fxLastAttackScene = { t0: sc.t0, defCon: 1 - ev.con, aPt, tPt, attr, code: ev.code, aKey };
     }
     if (direct) fxAtkBanner();
@@ -3601,7 +4076,7 @@ function fxRoundBEvents(evs, prev, cur, diff) {
   // number (see fxSetActivate)
   if (grew && !popDone) {
     const n = cur.links.length;
-    fxChainSceneV3(n, cur.links[n - 1].code);
+    fxChainSceneV3(n, cur.links[n - 1].code, deckKeyOfSeat(cur.links[n - 1].con));
     fxRecord('chainpop', { n, code: cur.links[n - 1].code });
   } else if (grew) {
     fxRecord('chainpop', { n: cur.links.length, code: cur.links[cur.links.length - 1].code, via: 'tilt' });
@@ -3609,7 +4084,7 @@ function fxRoundBEvents(evs, prev, cur, diff) {
   if (cur.solving !== prev.solving && cur.solving > 0) {
     fxRecord('chainsolving', { n: cur.solving });
     const link = cur.links[cur.solving - 1];
-    if (link) fxChainSolveSceneV3(cur.solving, link.code, !!link.neg);
+    if (link) fxChainSolveSceneV3(cur.solving, link.code, !!link.neg, deckKeyOfSeat(link.con));
   }
   // ---- LP (B7 -> V3 stage 2 -> Redesign F): the counter counts on
   // the FX clock; after an attack it starts at attack+400 ms (impact
@@ -3725,20 +4200,29 @@ function tileHTML(card, con, actKey, loc) {
   // rotated every S/T tile 90 degrees (user report 2026-11-03)
   const isDef = loc === E.LOC.MZONE && (card.pos & E.POS_DEFENSE) !== 0;
   const showFace = faceUp || con === HP;
+  // the owner's own face-down cards (user design 2026-11-03): no plain
+  // back and no 「裏」 badge — the back pattern is veiled over the real
+  // face, which ghosts through with a slow opacity breath (.setown).
+  // Opponent face-down cards keep the plain back (showFace false).
+  const ownSet = con === HP && !faceUp && card.code != null;
   const nm = showFace && card.code != null ? cardName(card.code) : '';
   const ctrTotal = card.counters ? (Array.isArray(card.counters) ? card.counters.reduce((a, c) => a + (c.count || 0), 0) : card.counters) : 0;
-  return '<div class="tile' + (isDef ? ' def' : '') + (showFace ? '' : ' back') +
+  return '<div class="tile' + (isDef ? ' def' : '') + (showFace ? '' : ' back') + (ownSet ? ' setown' : '') +
     (card.materials >= 2 ? ' mats2' : card.materials === 1 ? ' mats1' : '') +
     (actKey && actionMap.has(actKey) ? ' actionable' : '') + '"' +
     (actKey ? ' data-act="' + actKey + '"' : '') + '>' +
     ((card.materials || isXyzCode(card.code)) ? '<div class="mats">×' + (card.materials || 0) + '</div>' : '') +
-    (con === HP && !faceUp && card.code != null ? '<div class="setbadge"' + ((card.materials || isXyzCode(card.code)) ? ' style="top:15px"' : '') + '>裏</div>' : '') +
     (ctrTotal ? '<div class="ctrs">◉' + ctrTotal + '</div>' : '') +
     // the artwork lives INSIDE .inner (round B): in defense position
     // the whole inner — art + name band — rotates 90 degrees, while
-    // the corner badges (.mats/.ctrs) and the stat strip stay upright
-    '<div class="inner"><div class="art"></div>' +
-    (nm ? '<div class="nm">' + nm + '</div>' : '') +
+    // the corner badges (.mats/.ctrs) and the stat strip stay upright.
+    // The .art layer is the ONLY drawing of the card face: the tile's
+    // own background must stay plain, or an unrotated copy of the face
+    // (or of the back pattern) shows behind the rotated inner and the
+    // tile reads as two overlapping cards (user report 2026-11-03).
+    '<div class="inner"><div class="art"' + (showFace && card.code != null ? artInline(card.code, false, deckKeyOfSeat(con)) : '') + '></div>' +
+    (ownSet ? '<div class="veil"></div>' : '') +
+    (nm ? '<div class="nm' + kindCls(card.code) + '">' + nm + '</div>' : '') +
     '</div></div>';
 }
 // ATK/DEF strip rendered at the SLOT level — outside the card frame, with
@@ -3803,6 +4287,55 @@ function captureLog(state) {
   if (logHist.length > 80) logHist = logHist.slice(-80);
   logPrev = cur.slice();
 }
+// Detailed history (log-detail round): the engine mirror keeps a
+// structured detailed stream (state.dlog) next to the headline
+// log — activations with their chain links, resolution headers,
+// and outcome lines (destroyed / banished / milled / LP deltas /
+// stat changes), all composed from message data. The client
+// captures it turn-stamped like captureLog and renders it grouped
+// by turn and by chain episode, oldest first, so a duel can be
+// re-read as a story. The one thing the mirror cannot do is name
+// WHICH printed effect a chain link is — that needs fxmap, which
+// lives here; chain entries therefore arrive structured and get
+// their effect suffix at capture time from the same audited
+// resolver the prompt sheets use.
+let dlogPrev = [], histEntries = [];
+function dlogFxSuffix(code, desc, loc) {
+  const fx = resolveEffect(code, desc) || scopedEffect(code, desc, loc, 'chain');
+  if (fx && fx.n) return ' の効果' + CIRCLED_NUM[fx.n - 1];
+  const d = cardData(code);
+  if (d && (d.type & 0x6)) return ' の発動'; // Spell/Trap: the card activation itself
+  return ' の効果';
+}
+function dlogText(e) {
+  const who = e.con === HP ? '自分' : '相手';
+  if (e.k === 'act') return 'リンク' + e.link + '：' + who + ' の ' + cardName(e.code) + dlogFxSuffix(e.code, e.desc, e.loc) + (e.tgt ? '（対象：' + e.tgt + '）' : '');
+  if (e.k === 'solve') return '▼ 解決：リンク' + e.link + ' ' + cardName(e.code) + dlogFxSuffix(e.code, e.desc, e.loc);
+  if (e.k === 'neg') return who + ' の ' + cardName(e.code) + dlogFxSuffix(e.code, e.desc, e.loc) + ' の発動が無効になった（リンク' + e.link + '）';
+  if (e.k === 'dis') return who + ' の ' + cardName(e.code) + dlogFxSuffix(e.code, e.desc, e.loc) + ' の効果が無効になった（リンク' + e.link + '）';
+  return e.s || '';
+}
+function captureDLog(state) {
+  const cur = state.dlog || [];
+  // Entries are unique objects and the stream is append-only (the
+  // mirror trims from the head past 600): the last captured entry
+  // is the anchor — everything after it is fresh. A batch can
+  // never outrun the cap between two renders, so the anchor is
+  // always still present.
+  let fresh;
+  if (!dlogPrev.length) fresh = cur.slice();
+  else {
+    const idx = cur.lastIndexOf(dlogPrev[dlogPrev.length - 1]);
+    fresh = idx >= 0 ? cur.slice(idx + 1) : cur.slice();
+  }
+  // Setup entries are stamped turn 0 by the engine (the opening
+  // draws); the sheet groups them under turn 1 like the headline
+  // log's T-numbering does (frame check: a raw 0/1 split printed
+  // the ターン1 heading twice).
+  for (const e of fresh) histEntries.push({ turn: Math.max(1, e.turn), tp: e.tp, ph: e.ph, k: e.k, cid: e.cid, sol: e.sol, text: dlogText(e) });
+  if (histEntries.length > 500) histEntries = histEntries.slice(-500);
+  dlogPrev = cur.slice();
+}
 function openLogHistory() {
   // B-10 fix (2026-11-03, user report: 履歴ボタンが押しても何も
   // 起きない): do NOT gate on currentPrompt. SELECT_IDLECMD /
@@ -3814,13 +4347,49 @@ function openLogHistory() {
   // same way, and an arriving sheet prompt reclaims the sheet via
   // sheetOpen. What still blocks: a sheet or the dock already
   // owning the screen (those prompts live there).
-  if (!logHist.length) return;
+  if (!logHist.length && !histEntries.length) return;
   if ($('sheetwrap').classList.contains('on') || $('dock').className === 'on') return;
-  const rows = logHist.slice(-30).reverse().map(e =>
-    '<div class="loghistrow"><span class="lt">T' + Math.max(1, e.turn) + '</span>' + e.text + '</div>').join('');
-  sheetOpenView('<div class="ttl">対戦の履歴</div><div class="sub">直近 ' + Math.min(30, logHist.length) + ' 件（新しい順）</div>' + rows +
+  let rows, sub;
+  if (histEntries.length) {
+    // Detailed rendering: chronological (oldest first — the sheet
+    // opens scrolled to the newest entry), grouped by turn, with
+    // chain episodes boxed and each resolution header followed by
+    // its outcome lines, so activation <-> resolution correspondence
+    // can be traced by eye.
+    const entries = histEntries.slice(-240);
+    const parts = [];
+    let lastTurn = null, lastPh = null, chainOpen = false, boxCid = 0;
+    const closeChain = () => { if (chainOpen) { parts.push('</div>'); chainOpen = false; boxCid = 0; } };
+    for (const e of entries) {
+      if (e.turn !== lastTurn) {
+        closeChain();
+        parts.push('<div class="logturn">ターン' + Math.max(1, e.turn) + '（' + (e.tp === HP ? '自分' : '相手') + 'のターン）</div>');
+        lastTurn = e.turn; lastPh = null;
+      }
+      // One box per chain EPISODE: back-to-back episodes in the
+      // same phase (trigger effects firing in sequence) merge
+      // into a single box if the box only follows "has cid" —
+      // the frame check showed three episodes in one frame.
+      if (e.cid) { if (!chainOpen || boxCid !== e.cid) { closeChain(); parts.push('<div class="logchain">'); chainOpen = true; boxCid = e.cid; } }
+      else closeChain();
+      if (e.ph && e.ph !== lastPh) { parts.push('<div class="logphase">' + phaseJa(e.ph) + '</div>'); lastPh = e.ph; }
+      const cls = 'loghistrow' + (e.k === 'solve' ? ' solve' : '') + (e.k === 'neg' || e.k === 'dis' ? ' neg' : '') + (e.sol ? ' res' : '');
+      parts.push('<div class="' + cls + '">' + e.text + '</div>');
+    }
+    closeChain();
+    rows = parts.join('');
+    sub = '全 ' + histEntries.length + ' 件（古い順・効果と処理の詳細）';
+  } else {
+    rows = logHist.slice(-30).reverse().map(e =>
+      '<div class="loghistrow"><span class="lt">T' + Math.max(1, e.turn) + '</span>' + e.text + '</div>').join('');
+    sub = '直近 ' + Math.min(30, logHist.length) + ' 件（新しい順）';
+  }
+  sheetOpenView('<div class="ttl">対戦の履歴</div><div class="sub">' + sub + '</div>' + rows +
     '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">閉じる</button></div>');
   $('sheet-cancel').addEventListener('click', () => { playClick(); sheetClose(); });
+  // Open at the newest entry (the bottom of the chronological list).
+  const sh = $('sheet');
+  requestAnimationFrame(() => { try { sh.scrollTop = sh.scrollHeight; } catch (e) {} });
 }
 function render(state) {
   duelState = state;
@@ -3849,6 +4418,7 @@ function render(state) {
   $('oppPilebar').innerHTML = pileHTML(null, 1 - HP);
   $('myPilebar').innerHTML = pileHTML(null, HP);
   captureLog(state);
+  captureDLog(state);
   // hand
   $('handcount').textContent = me.hand.length;
   const handCounts = {};
@@ -3861,7 +4431,7 @@ function render(state) {
       : '<div class="hstats"></div>';
     return '<div class="hcard' + act + '" data-act="' + key + '"' + (c.code != null ? ' data-code="' + c.code + '"' : '') + '>' +
       (c.code != null && handCounts[c.code] > 1 ? '<div class="cnt">×' + handCounts[c.code] + '</div>' : '') +
-      '<div class="himg"><div class="nm">' + (c.code != null ? cardName(c.code) : '？') + '</div></div>' + st + '</div>';
+      '<div class="himg"' + (c.code != null ? artInline(c.code, false, deckKeyOfSeat(HP)) : '') + '><div class="nm' + (c.code != null ? kindCls(c.code) : '') + '">' + (c.code != null ? cardName(c.code) : '？') + '</div></div>' + st + '</div>';
   }).join('');
   // opponent hand = backs in topbar only (count); chain bar
   const cb = $('chainbar');
@@ -4038,6 +4608,52 @@ function openInfoPop(code, ref, fx) {
   $('infopop-close').addEventListener('click', () => { playClick(); closeInfoPop(); });
 }
 function closeInfoPop() { const p = $('infopop'); if (p && p.className) { p.className = ''; p.innerHTML = ''; } }
+// The one visibility rule for board info (opponent-info round):
+// a field card's public info may be shown iff it is face-up, or
+// it is the player's own card (own face-down cards ghost through
+// by design). An opponent's face-down card NEVER resolves here —
+// its code stays hidden behind this single guard, the same rule
+// the tile art and the stat strip already obey.
+function boardCardAt(key) {
+  if (!duelState || !key) return null;
+  const [con, loc, seq] = key.split(':').map(Number);
+  if (loc !== E.LOC.MZONE && loc !== E.LOC.SZONE) return null;
+  const P = duelState.players[con];
+  if (!P) return null;
+  const card = loc === E.LOC.MZONE ? P.mzone[seq] : P.szone[seq];
+  if (!card || card.code == null) return null;
+  if ((card.pos & E.POS_FACEUP) === 0 && con !== HP) return null;
+  return { code: card.code, ref: { con, loc, seq } };
+}
+// R-SEL-2 extension (opponent-info round): while a selection
+// sheet is peeked down, a tap on a board card is an INFO tap —
+// the read-only detail floats over the board, and closing it
+// returns to the peeked sheet with the selection untouched.
+// The prompt is never answered, toggled or cancelled from here.
+function peekInfoTap(key) {
+  const hit = boardCardAt(key);
+  if (!hit) return false;
+  playClick();
+  openInfoPop(hit.code, hit.ref);
+  return true;
+}
+function peekBoardTap(x, y) {
+  if (!document.elementsFromPoint) return false;
+  const els = document.elementsFromPoint(x, y);
+  for (const el of els) {
+    if (!el || !el.closest) continue;
+    const zoneEl = el.closest('[data-zone]');
+    if (zoneEl) return peekInfoTap(zoneEl.dataset.zone);
+    if (el.closest('#preview') && previewState) {
+      playClick();
+      openInfoPop(previewState.code, previewState.con != null && previewState.loc != null ? { con: previewState.con, loc: previewState.loc, seq: previewState.seq } : null);
+      return true;
+    }
+    const handEl = el.closest('#hand .hcard');
+    if (handEl && handEl.dataset.code) { setPreview(+handEl.dataset.code, null); return true; }
+  }
+  return false;
+}
 function dockClose() { $('dock').className = ''; $('dock').innerHTML = ''; }
 function clearInteraction() {
   sheetClose(); dockClose();
@@ -4074,13 +4690,20 @@ function uiAnswer(prompt, state) {
     // only, so its sheet can name whose attack it is (P1-2).
     promptAttacker = prompt.name === 'SELECT_CARD' ? pendingAttacker : null;
     pendingAttacker = null;
-    if (duel) { try { duel.refreshFieldStats(); } catch (e) {} } // live ATK/DEF behind the prompt UI
-    try {
-      dispatchPrompt(prompt, state);
-    } catch (err) {
-      // never dead-end: fall back to the bot policy answer for this prompt
-      finishPrompt(E.botAnswer(prompt, state, DATA, E.makeBotMemory()));
-    }
+    // Refresh live ATK/DEF behind the prompt UI, then dispatch. With the
+    // engine in a Worker, refreshFieldStats() returns a Promise for a
+    // worker round-trip (only serviceable while this prompt waits); the
+    // in-process Duel's version is synchronous and returns undefined, so
+    // awaiting it keeps the fallback path behaving exactly as before.
+    const refreshed = duel ? Promise.resolve().then(() => duel.refreshFieldStats()) : Promise.resolve();
+    refreshed.catch(() => {}).then(() => {
+      try {
+        dispatchPrompt(prompt, state);
+      } catch (err) {
+        // never dead-end: fall back to the bot policy answer for this prompt
+        finishPrompt(E.botAnswer(prompt, state, DATA, E.makeBotMemory()));
+      }
+    });
   });
 }
 function dispatchPrompt(prompt, state) {
@@ -4180,7 +4803,19 @@ function openActionSheet(key) {
     zoneCode = c ? c.code : null;
   }
   if (zoneCode == null && !acts.length) return;
-  if (zoneCode != null) setPreview(zoneCode, { con, loc, seq });
+  // attack-block round: in a live battle command, an own monster
+  // the core offers no 攻撃 for gets the same courtesy as a
+  // missing activation — a greyed row WITH the reason when one
+  // is mechanically certain (attackBlockReason), and the same
+  // reason on the persistent preview. A monster WITH an attack
+  // action is untouched, as is every non-battle sheet.
+  let atkReason = null;
+  if (zoneCode != null && con === HP && loc === E.LOC.MZONE &&
+      currentPrompt && currentPrompt.prompt.name === 'SELECT_BATTLECMD' &&
+      !acts.some(a => a.label === '攻撃')) {
+    atkReason = attackBlockReason(zoneCode, con, loc, seq);
+  }
+  if (zoneCode != null) setPreview(zoneCode, { con, loc, seq }, atkReason);
   const title = zoneCode != null ? cardName(zoneCode) : 'アクション';
   const txt = zoneCode != null ? cardText(zoneCode) : '';
   const meta = zoneCode != null ? cardMetaLine(zoneCode, liveMats(con, loc, seq)) : '';
@@ -4251,8 +4886,10 @@ function openActionSheet(key) {
   const fxBlocks = zoneCode != null && offeredFx.length > 1
     ? offeredFx.map(n => { const seg = effectSegments(zoneCode).find(s => s.n === n); return seg ? fxBlockHTML(zoneCode, seg) : ''; }).join('')
     : '';
+  const atkRow = atkReason ? '<div class="optbtn disabled">攻撃<span class="reason">' + atkReason + '</span></div>' : '';
   sheetOpenView('<div class="ttl">' + title + '</div><div class="sub">' + locLabel({ con, loc, seq }) + (meta ? '／' + meta : '') + '</div>' +
     acts.map((a, i) => '<button class="optbtn" data-action-idx="' + i + '">' + a.label + '</button>').join('') +
+    atkRow +
     unusable +
     (fxBlocks || (txt ? '<div class="cardtext">' + txt + '</div>' : '')) +
     // W-28 (brushup round 3): this sheet IS the pending idle
@@ -4576,18 +5213,27 @@ function uiPosition(prompt, state) {
 function gridSheet(o) {
   // o: {title, sub, cards:[{code,locLabel,extra,locked}], selected:Set(idx), valid:fn, confirmLabel, cancelable, onToggle}
   const draw = () => {
-    const tray = [...o.selected].map(i => '<span class="chip" data-chip="' + i + '">' + cardName(o.cards[i].code) + ' ✕</span>').join('') +
-      (o.locked || []).map(c => '<span class="chip locked">' + cardName(c.code) + '（固定）</span>').join('');
+    // Hidden candidates (opponent's face-down / hand / deck cards)
+    // render as the card back with a public-only label: no name, no
+    // art, no stats, no text, no detail button.
+    const hidOf = (c) => selCardHidden(c.ref || c, o.prompt);
+    const nameOf = (c) => hidOf(c) ? hiddenCardLabel(c.ref || c) : cardName(c.code);
+    const tray = [...o.selected].map(i => '<span class="chip" data-chip="' + i + '">' + nameOf(o.cards[i]) + ' ✕</span>').join('') +
+      (o.locked || []).map(c => '<span class="chip locked">' + (selCardHidden(c, o.prompt) ? hiddenCardLabel(c) : cardName(c.code)) + '（固定）</span>').join('');
     const subTxt = typeof o.sub === 'function' ? o.sub() : o.sub;
     sheetOpen('<div class="ttl">' + o.title + '</div><div class="sub" id="gsub">' + subTxt + '</div>' + contextLineHTML(o.prompt) + retryWarn(o.prompt) +
       // (W-24: a retry used to repeat the sub as a 「条件：」 line
       // under the warning — the same sentence twice. The shortfall
       // already lives on the disabled confirm button's label.)
       (tray ? '<div id="tray">' + tray + '</div>' : '<div id="tray"></div>') +
-      '<div class="grid">' + o.cards.map((c, i) =>
-        '<div class="gcard' + (o.selected.has(i) ? ' sel' : '') + '" data-grid="' + i + '"><button class="gdetail" data-gdetail="' + i + '">詳細</button><div class="loc">' + c.locLabel + '</div><div class="nm">' + cardName(c.code) + (c.extra ? ' ' + c.extra : '') + '</div>' +
-        (statsLine(c.code) ? '<div class="stats">' + statsLine(c.code) + '</div>' : '') +
-        (o.showText && cardText(c.code) ? '<div class="itext">' + cardText(c.code) + '</div>' : '') + '</div>').join('') + '</div>' +
+      '<div class="grid">' + o.cards.map((c, i) => {
+        const hid = hidOf(c);
+        return '<div class="gcard' + (hid ? ' back' : '') + (o.selected.has(i) ? ' sel' : '') + '" data-grid="' + i + '"' + (hid ? '' : artInline(c.code, false, c.ref && c.ref.con != null ? deckKeyOfSeat(c.ref.con) : deckKeyOfSeat(HP))) + '>' +
+        (hid ? '' : '<button class="gdetail" data-gdetail="' + i + '">詳細</button>') +
+        '<div class="loc">' + c.locLabel + '</div><div class="nm' + (hid ? '' : kindCls(c.code)) + '">' + (hid ? hiddenCardLabel(c.ref || c) : cardName(c.code) + (c.extra ? ' ' + c.extra : '')) + '</div>' +
+        (hid ? '' : (statsLine(c.code) ? '<div class="stats">' + statsLine(c.code) + '</div>' : '') +
+        (hid ? '' : (o.showText && cardText(c.code) ? '<div class="itext">' + cardText(c.code) + '</div>' : ''))) + '</div>';
+      }).join('') + '</div>' +
       '<div class="btnrow"><button class="bigbtn" id="grid-confirm" ' + (o.valid() ? '' : 'disabled') + '>' + (o.valid() ? (o.confirmLabel || '決定') : (o.needLabel ? o.needLabel() : (o.confirmLabel || '決定'))) + '</button>' +
       (o.cancelable ? '<button class="bigbtn sub" id="grid-cancel">選ばずにやめる</button>' : '') + '</div>');
     $('sheet').querySelectorAll('[data-grid]').forEach(g => g.addEventListener('click', (ev) => { if (ev.target.closest('[data-gdetail]')) return; playClick();
@@ -4671,10 +5317,14 @@ function uiUnselect(prompt, state) {
   if (prompt.finishable && selCount > 0 && selCount < prompt.min) hint = 'あと' + (prompt.min - selCount) + '枚選ぶと決定できます。';
   if (prompt.finishable && selCount > 0) hint += 'やめる場合は選択をすべて外してください。';
   sheetOpen('<div class="ttl">カードの選択</div><div class="sub">' + prompt.min + '〜' + prompt.max + ' 枚（現在 ' + selCount + ' 枚選択中）。タップで選択／解除します。' + (hint ? ' ' + hint : '') + '</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
-    '<div class="grid">' + combined.map((x, k) =>
-      '<div class="gcard' + (x.sel ? ' sel' : '') + '" data-unselect="' + x.idx + '"><button class="gdetail" data-uinfo="' + k + '">詳細</button><div class="loc">' + locLabel(x.c) + '</div><div class="nm">' + cardName(x.c.code) + '</div>' +
-      (statsLine(x.c.code) ? '<div class="stats">' + statsLine(x.c.code) + '</div>' : '') +
-      (cardText(x.c.code) ? '<div class="itext">' + cardText(x.c.code) + '</div>' : '') + '</div>').join('') + '</div>' +
+    '<div class="grid">' + combined.map((x, k) => {
+      const hid = selCardHidden(x.c, prompt);
+      return '<div class="gcard' + (hid ? ' back' : '') + (x.sel ? ' sel' : '') + '" data-unselect="' + x.idx + '"' + (hid ? '' : artInline(x.c.code, false, deckKeyOfSeat(x.c.con))) + '>' +
+      (hid ? '' : '<button class="gdetail" data-uinfo="' + k + '">詳細</button>') +
+      '<div class="loc">' + locLabel(x.c) + '</div><div class="nm' + (hid ? '' : kindCls(x.c.code)) + '">' + (hid ? hiddenCardLabel(x.c) : cardName(x.c.code)) + '</div>' +
+      (hid ? '' : (statsLine(x.c.code) ? '<div class="stats">' + statsLine(x.c.code) + '</div>' : '') +
+      (hid ? '' : (cardText(x.c.code) ? '<div class="itext">' + cardText(x.c.code) + '</div>' : ''))) + '</div>';
+    }).join('') + '</div>' +
     '<div class="btnrow">' +
     (prompt.finishable && selCount >= prompt.min ? '<button class="bigbtn" id="unselect-finish">決定</button>' : '') +
     (cancelTruthful ? '<button class="bigbtn sub" id="unselect-cancel">選ばずにやめる</button>' : '') + '</div>');
@@ -4729,7 +5379,7 @@ function uiCounter(prompt, state) {
   const draw = () => {
     const total = amounts.reduce((a, b) => a + b, 0);
     sheetOpen('<div class="ttl">カウンターの取り除き</div><div class="sub">合計 ' + prompt.count + ' 個（現在 ' + total + ' 個）</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
-      prompt.cards.map((c, i) => '<div class="counterrow"><span>' + cardName(c.code) + '（' + locLabel(c) + '／' + c.count + '個）</span>' +
+      prompt.cards.map((c, i) => '<div class="counterrow"><span>' + (selCardHidden(c, prompt) ? hiddenCardLabel(c) : cardName(c.code)) + '（' + locLabel(c) + '／' + c.count + '個）</span>' +
         '<span class="ctl"><button data-dec="' + i + '">−</button><b>' + amounts[i] + '</b><button data-inc="' + i + '">＋</button></span></div>').join('') +
       '<div class="btnrow"><button class="bigbtn" id="counter-confirm" ' + (total === prompt.count ? '' : 'disabled') + '>決定</button></div>');
     $('sheet').querySelectorAll('[data-inc]').forEach(b => b.addEventListener('click', () => { const i = +b.dataset.inc; if (amounts[i] < prompt.cards[i].count) amounts[i]++; playClick(); draw(); }));
@@ -4743,7 +5393,7 @@ function uiSort(prompt, state) {
   let order = prompt.cards.map((_, i) => i); // order[pos] = original index
   const draw = () => {
     sheetOpen('<div class="ttl">' + (prompt.name === 'SORT_CHAIN' ? 'チェーンの順番' : 'カードの順番') + '</div><div class="sub">' + (prompt.name === 'SORT_CHAIN' ? '上から順に処理される順番です。並べ替えて「この順番で決定」を押してください。' : '上から順に、次に使う順番に並べてください。') + '</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
-      order.map((ci, pos) => '<div class="sortrow"><span>' + (pos + 1) + '. ' + cardName(prompt.cards[ci].code) + '</span><span class="mv">' +
+      order.map((ci, pos) => '<div class="sortrow"><span>' + (pos + 1) + '. ' + (selCardHidden(prompt.cards[ci], prompt) ? hiddenCardLabel(prompt.cards[ci]) : cardName(prompt.cards[ci].code)) + '</span><span class="mv">' +
         '<button data-up="' + pos + '">↑</button><button data-down="' + pos + '">↓</button></span></div>').join('') +
       '<div class="btnrow"><button class="bigbtn" id="sort-ok">この順番で決定</button><button class="bigbtn sub" id="sort-keep">元の順番のままにする</button></div>');
     $('sheet').querySelectorAll('[data-up]').forEach(b => b.addEventListener('click', () => { const p = +b.dataset.up; if (p > 0) { [order[p-1], order[p]] = [order[p], order[p-1]]; } playClick(); draw(); }));
@@ -4755,8 +5405,8 @@ function uiSort(prompt, state) {
 }
 // ---- yes/no, option ----
 const OPTION_LABELS = {
-  '62320425|4': '自分のデッキの上から5枚を墓地へ送る', // 古衛兵アギド
-  '62320425|5': '相手のデッキの上から5枚を墓地へ送る',
+  // (古衛兵アギド's two mill-target options left with the card in
+  // the v11 recipe swap; no current pool card needs a label here.)
 };
 function optionLabelText(desc) {
   if (typeof desc !== 'number' || !isFinite(desc)) return null;
@@ -4773,6 +5423,14 @@ window.__purpose = { infer: inferSelectPurpose, phaseCtx: phaseJaContext };
 // Test surface: render the SELECT_UNSELECT_CARD sheet for a synthetic
 // prompt so its button states can be asserted without a live duel.
 window.__unselect = { open: (prompt) => uiUnselect(prompt, null) };
+// Test surface: render the SELECT_CARD grid sheet for a synthetic
+// prompt (same seam as __unselect), for test-facedown-select.js.
+window.__select = { open: (prompt) => uiSelectCards(prompt, null) };
+// Test surface (opponent-info round): the board info-tap guard
+// and the peek info tap, so test-oppinfo.js can pin the
+// visibility rule and the selection-untouched contract without
+// hit-testing (jsdom has no elementsFromPoint).
+window.__oppinfo = { boardCardAt, peekInfoTap };
 function uiYesNo(prompt, state) {
   const isEff = prompt.name === 'SELECT_EFFECTYN';
   // WHICH card and WHICH effect is being asked must be readable on
@@ -4927,7 +5585,7 @@ function uiAnnounceCard(prompt, state) {
   const draw = () => {
     sheetOpen('<div class="ttl">カードの宣言</div>' + contextLineHTML(prompt) +
       '<div class="sub">宣言するカードをタップで選び、「宣言する」を押してください。</div>' + retryWarn(prompt) +
-      '<div class="grid">' + pool.map(code => '<div class="gcard' + (chosen === code ? ' sel' : '') + '" data-code="' + code + '"><button class="gdetail" data-acinfo="' + code + '">詳細</button><div class="nm">' + cardName(code) + '</div></div>').join('') + '</div>' +
+      '<div class="grid">' + pool.map(code => '<div class="gcard' + (chosen === code ? ' sel' : '') + '" data-code="' + code + '"' + artInline(code, false, deckKeyOfCode(code)) + '><button class="gdetail" data-acinfo="' + code + '">詳細</button><div class="nm' + kindCls(code) + '">' + cardName(code) + '</div></div>').join('') + '</div>' +
       '<div class="btnrow"><button class="bigbtn" id="announce-ok" ' + (chosen == null ? 'disabled' : '') + '>' + (chosen == null ? '宣言する' : '《' + cardName(chosen) + '》を宣言する') + '</button></div>');
     $('sheet').querySelectorAll('[data-code]').forEach(g => g.addEventListener('click', (ev) => {
       if (ev.target.closest('[data-acinfo]')) return;
@@ -4993,15 +5651,29 @@ document.addEventListener('click', (ev) => {
       }
       renderPlaceHint();
       if (duelState) render(duelState);
+      return;
     }
+    // a zone the placement does not target is an INFO tap, not a
+    // placement: show the card's public info in the resident
+    // preview and leave the placement exactly as it was
+    // (opponent-info round; boardCardAt hides opponent face-down).
+    const hit = boardCardAt(key);
+    if (hit) setPreview(hit.code, hit.ref);
     return;
   }
   if (zoneEl && !placeCtx && duelState) {
-    const [zcon, zloc, zseq] = zoneEl.dataset.zone.split(':').map(Number);
-    if (zloc === E.LOC.MZONE || zloc === E.LOC.SZONE) {
-      const P = duelState.players[zcon];
-      const card = zloc === E.LOC.MZONE ? P.mzone[zseq] : P.szone[zseq];
-      if (card && card.code != null && ((card.pos & E.POS_FACEUP) !== 0 || zcon === HP)) setPreview(card.code, { con: zcon, loc: zloc, seq: zseq });
+    const hit = boardCardAt(zoneEl.dataset.zone);
+    if (hit) {
+      // attack-block round: the persistent preview carries the
+      // same certain reason the action sheet states — an own
+      // monster with no offered 攻撃 in a live battle command.
+      let reason = null;
+      const { con: zcon, loc: zloc, seq: zseq } = hit.ref;
+      if (zcon === HP && zloc === E.LOC.MZONE && currentPrompt && currentPrompt.prompt.name === 'SELECT_BATTLECMD' &&
+          !(actionMap.get(zcon + ':' + zloc + ':' + zseq) || []).some(a => a.label === '攻撃')) {
+        reason = attackBlockReason(hit.code, zcon, zloc, zseq);
+      }
+      setPreview(hit.code, hit.ref, reason);
     }
   }
   const actEl = ev.target.closest('[data-act]');
@@ -5493,10 +6165,13 @@ function renderLayoutDebug() {
 // art, name, meta, live ATK/DEF for field cards, full text (scrolls inside
 // the strip only). Tapping the strip opens the full card-info sheet.
 // Default before any tap: the first card of the opening hand.
-let previewState = null; // {code, con, loc, seq, sig}
+let previewState = null; // {code, con, loc, seq, sig, deckKey}
 function setPreview(code, ref, reason) {
   if (code == null || !DATA || !DATA.cards[code]) return;
-  previewState = { code, con: ref ? ref.con : null, loc: ref ? ref.loc : null, seq: ref ? ref.seq : null, sig: '', reason: reason || null };
+  // deck-scoped art: the instance's seat decides when a ref names
+  // one; a bare code resolves by unique deck membership instead.
+  const deckKey = ref && ref.con != null ? deckKeyOfSeat(ref.con) : deckKeyOfCode(code);
+  previewState = { code, con: ref ? ref.con : null, loc: ref ? ref.loc : null, seq: ref ? ref.seq : null, sig: '', reason: reason || null, deckKey };
   renderPreview();
 }
 function renderPreview() {
@@ -5525,11 +6200,11 @@ function renderPreview() {
   // (and truncates before the name does). Taller strips keep the
   // stacked form.
   const compact = el.classList.contains('compact');
-  const sig = previewState.code + '|' + stats + '|' + (card ? card.pos : '') + '|' + (card ? (card.materials || 0) : '') + '|' + (previewState.reason || '') + '|' + (compact ? 'c' : '');
+  const sig = previewState.code + '|' + stats + '|' + (card ? card.pos : '') + '|' + (card ? (card.materials || 0) : '') + '|' + (previewState.reason || '') + '|' + (compact ? 'c' : '') + '|' + (previewState.deckKey || '');
   if (sig === previewState.sig) return; // no DOM churn on unrelated re-renders
   previewState.sig = sig;
-  el.innerHTML = '<div class="pv-art"></div><div class="pv-body">' +
-    '<div class="pv-top"><span class="pv-name">' + cardName(previewState.code) + '</span>' +
+  el.innerHTML = '<div class="pv-art"' + artInline(previewState.code, false, previewState.deckKey) + '></div><div class="pv-body">' +
+    '<div class="pv-top"><span class="pv-name' + kindCls(previewState.code) + '">' + cardName(previewState.code) + '</span>' +
     (stats ? '<span class="pv-stats">' + stats + '</span>' : '') +
     (compact && previewState.reason ? '<span class="pv-reason-inline">' + previewState.reason + '</span>' : '') + '</div>' +
     '<div class="pv-meta">' + cardMetaLine(previewState.code, card ? (card.materials || 0) : null) + '</div>' +
@@ -5554,6 +6229,13 @@ function wireSeg(id, apply) {
   }));
 }
 (async () => {
+  // deck-select page navigation (pure DOM — wired before the data
+  // load so the pages can be walked even on the failure path, whose
+  // retry button lives on the deck page).
+  $('deckpage').style.display = 'none';
+  updateDeckSum();
+  $('todeck').addEventListener('click', () => { playClick(); $('start').style.display = 'none'; $('deckpage').style.display = 'flex'; });
+  $('deckback').addEventListener('click', () => { playClick(); $('deckpage').style.display = 'none'; $('start').style.display = 'flex'; });
   try {
     DATA = await (await fetch('data.json')).json();
     // fxmap.json: which printed effect a desc index names. A failed
@@ -5566,6 +6248,7 @@ function wireSeg(id, apply) {
       if (fm && k && fm[k] && typeof fm[k].n === 'number') FXMAP = fm;
     } catch (e) { /* identification off, display unaffected */ }
     $('loadmsg').textContent = '準備完了（カード ' + Object.keys(DATA.cards).length + ' 種）';
+    preloadCardArt([myDeckKey, opDeckKey]); // deck-select-time art preload (no blank/'?' surfaces)
     // A-03: the start button's state IS the load state — disabled
     // and labelled while loading, live only when a duel can start.
     const sb = $('startbtn'); sb.disabled = false; sb.textContent = 'デュエル開始';
@@ -5575,9 +6258,9 @@ function wireSeg(id, apply) {
     sb.addEventListener('click', () => location.reload());
     return;
   }
-  wireSeg('seg-mydeck', (v) => { myDeckKey = v; });
-  wireSeg('seg-opdeck', (v) => { opDeckKey = v; });
-  wireSeg('seg-first', (v) => { firstChoice = v; });
+  wireSeg('seg-mydeck', (v) => { myDeckKey = v; preloadCardArt([myDeckKey, opDeckKey]); updateDeckSum(); });
+  wireSeg('seg-opdeck', (v) => { opDeckKey = v; preloadCardArt([myDeckKey, opDeckKey]); updateDeckSum(); });
+  wireSeg('seg-first', (v) => { firstChoice = v; updateDeckSum(); });
   syncFxSegs(); // reflect any persisted round-B settings before wiring
   wireSeg('seg-cutin', (v) => { fxSettings.cutin = v === 'on'; fxSaveSettings(); });
   wireSeg('seg-resp', (v) => { fxSettings.resp = v; fxSaveSettings(); });
@@ -5591,6 +6274,12 @@ function wireSeg(id, apply) {
   $('sheetx').addEventListener('click', () => { playClick(); sheetClose(); });
   $('sheetwrap').addEventListener('click', (ev) => {
     if (ev.target === $('sheetwrap') && sheetKind === 'view') { playClick(); sheetClose(); }
+    // opponent-info round: while a prompt sheet is peeked down,
+    // the wrap still covers the board, so a backdrop tap is
+    // forwarded to the card under the point as a read-only info
+    // tap (peekBoardTap). It never reaches the phase/menu buttons
+    // beneath — only card surfaces answer, and only with info.
+    else if (ev.target === $('sheetwrap') && $('sheetwrap').classList.contains('peek')) peekBoardTap(ev.clientX, ev.clientY);
   });
   $('peekbtn').addEventListener('click', () => {
     playClick();
@@ -5612,6 +6301,7 @@ function wireSeg(id, apply) {
   $('startbtn').addEventListener('click', async () => {
     playClick();
     playSe('vs_start');
+    preloadCardArt([myDeckKey, opDeckKey]); // belt-and-braces: the chosen decks' art is warm before the first render
     previewState = null; // preview restarts with the duel (default: first hand card)
     applyLayout(); // fit once to this viewport, then frozen for the whole duel
     layoutSettleArmed = true; layoutSettled = false; // round 3: one post-render settle, still inside the start sequence
@@ -5621,13 +6311,15 @@ function wireSeg(id, apply) {
     HP = humanFirst ? 0 : 1;
     const deckP0 = DATA.decks[humanFirst ? myDeckKey : opDeckKey];
     const deckP1 = DATA.decks[humanFirst ? opDeckKey : myDeckKey];
+    // deck-scoped art (DECK_ART) resolves per seat from here on:
+    // seat 0 plays deckP0's key, seat 1 plays deckP1's key.
+    seatDeckKeys = [humanFirst ? myDeckKey : opDeckKey, humanFirst ? opDeckKey : myDeckKey];
     // A-01: the VS transition — matchup + first/second, ~0.9s,
     // no button (it advances on its own, as decided). It also
     // covers the engine-start wait, so the tap is never followed
     // by dead time (audit C-33).
     {
-      const dn = (k) => k === 'gg' ? 'ゲート・ガーディアン' : 'イシズ';
-      $('vssub').innerHTML = dn(myDeckKey) + ' vs ' + dn(opDeckKey) + '<br>あなたは' + (humanFirst ? '先攻' : '後攻') + 'です';
+      $('vssub').innerHTML = deckDisplayName(myDeckKey) + ' vs ' + deckDisplayName(opDeckKey) + '<br>あなたは' + (humanFirst ? '先攻' : '後攻') + 'です';
       const vs = $('vsoverlay'); vs.classList.add('on');
       try {
         // DS-07 (brushup round 3): the curtain itself is NEVER
@@ -5650,6 +6342,7 @@ function wireSeg(id, apply) {
     }
     dismissedChains = new Set();
     logHist = []; logPrev = []; // B-10 history restarts with the duel
+    dlogPrev = []; histEntries = []; // detailed history restarts too
     pendingTap = null; // triage-#2: no buffered tap survives into a new duel
     monsterLock = null; // activation lock restarts with the duel (Minerva 3rd triage)
     monsterRevived = null; reviveArm = null; reviveBatch = 0; usedFxTurn = -1; usedFxByCode.clear(); usedFxSeen = new Set(); // pool-coverage trackers restart
@@ -5661,11 +6354,12 @@ function wireSeg(id, apply) {
     fxResetDuel(); // FX snapshot/layers restart with the duel (stale overlays must not survive)
     bgmWantedRank = -1; bgmSeenKeys.clear(); // BGM stage ladder restarts with the duel
     usedNamesDuel.clear(); gravePrev = null; gravePrevNulls = 0; graveStamps = []; // brushup round 2 trackers restart with the duel
+    fieldPrev = null; summonMarks.clear(); // cannot-attack trackers restart with the duel
     setBgmScene('normal', true);
     $('start').style.display = 'none';
+    $('deckpage').style.display = 'none';
     $('logline').textContent = '対戦を準備中…';
-    const M = await OcgCoreModule();
-    duel = new E.Duel(M, DATA, {
+    duel = await createClientDuel(DATA, {
       seed: (Date.now() % 100000) + 1,
       pace: { bot: 620, botChain: 300, batch: 40 },
       deckP0, deckP1, humanTeam: HP,
@@ -5678,6 +6372,7 @@ function wireSeg(id, apply) {
         drainSeEvents(state);
         trackUsedFx(state); // this turn's own activations, for cannot-activate reasons
         trackGraveArrivals(state); // own grave arrivals by turn, for the grave-sheet reason
+        trackFieldSummons(fxEvs, state); // field arrivals by turn, for the cannot-attack reasons
         render(state);
         updateBgm(state);
         fxProcess(fxEvs, state); // presentation FX overlays (read-only; board geometry is final now)
@@ -5743,6 +6438,7 @@ function wireSeg(id, apply) {
       if (cfg.my) { myDeckKey = cfg.my; setSeg('seg-mydeck', cfg.my); }
       if (cfg.op) { opDeckKey = cfg.op; setSeg('seg-opdeck', cfg.op); }
       if (cfg.first) { firstChoice = cfg.first; setSeg('seg-first', cfg.first); }
+      updateDeckSum();
       $('startbtn').click();
     }
   } catch (e) {}

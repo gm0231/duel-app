@@ -1,0 +1,18 @@
+{
+ "620": {
+  "setTileArt": "background-image:url(../assets/card-art-kakan-ishizu-s.jpg);background-position:center top",
+  "setTileVeil": true,
+  "seatDecks": [
+   "ishizu",
+   "gg"
+  ]
+ },
+ "700": {
+  "setTileArt": "background-image:url(../assets/card-art-kakan-ishizu-s.jpg);background-position:center top",
+  "setTileVeil": true,
+  "seatDecks": [
+   "ishizu",
+   "gg"
+  ]
+ }
+}

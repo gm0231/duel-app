@@ -1,0 +1,22 @@
+{
+ "620": {
+  "handArt": "url(\"http://127.0.0.1:45083/assets/card-art-keldo-s.jpg\")",
+  "fieldArt": [
+   "url(\"http://127.0.0.1:45083/assets/card-art-mudora-s.jpg\")",
+   "url(\"http://127.0.0.1:45083/assets/card-art-agido-s.jpg\")",
+   "url(\"http://127.0.0.1:45083/assets/card-art-kelbek-s.jpg\")",
+   "url(\"http://127.0.0.1:45083/assets/card-art-keldo-s.jpg\")"
+  ],
+  "bigcard": null
+ },
+ "700": {
+  "handArt": "url(\"http://127.0.0.1:45083/assets/card-art-keldo-s.jpg\")",
+  "fieldArt": [
+   "url(\"http://127.0.0.1:45083/assets/card-art-mudora-s.jpg\")",
+   "url(\"http://127.0.0.1:45083/assets/card-art-agido-s.jpg\")",
+   "url(\"http://127.0.0.1:45083/assets/card-art-kelbek-s.jpg\")",
+   "url(\"http://127.0.0.1:45083/assets/card-art-keldo-s.jpg\")"
+  ],
+  "bigcard": null
+ }
+}

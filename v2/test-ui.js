@@ -91,7 +91,7 @@ async function playDuel(window, opts) {
       else if (q('#fb-auto', sheet)) click(q('#fb-auto', sheet));
       else if (q('[data-pile-act]', sheet)) click(q('[data-pile-act]', sheet));
       else if (q('[data-grid]:not(.sel)', sheet) || q('[data-grid]', sheet)) click(q('[data-grid]:not(.sel)', sheet) || q('[data-grid]', sheet));
-      else if (q('.optbtn', sheet)) click(q('.optbtn', sheet));
+      else if (q('.optbtn:not(.disabled)', sheet)) click(q('.optbtn:not(.disabled)', sheet)); // a disabled optbtn (e.g. an effect that cannot fire now) must not shadow #sheet-cancel — clicking it loops forever
       else if (q('#grid-cancel', sheet)) click(q('#grid-cancel', sheet));
       else if (q('#sheet-cancel', sheet)) click(q('#sheet-cancel', sheet));
     } else if (dockOn) {
@@ -135,6 +135,7 @@ async function boot() {
   const origFactory = window.OcgCoreModule;
   window.OcgCoreModule = (opts) => origFactory(Object.assign({}, opts, { wasmBinary }));
   inject('engine.js');
+  inject('duel-worker.js');
   inject('client.js');
   for (let i = 0; i < 100 && !window.document.getElementById('loadmsg').textContent.includes('準備完了'); i++)
     await new Promise(r => setTimeout(r, 50));

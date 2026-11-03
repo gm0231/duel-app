@@ -1,0 +1,14 @@
+{
+ "620": {
+  "fieldArts": [
+   "background-image:url(../assets/card-art-silky-ishizu-s.jpg);background-position:center top"
+  ],
+  "pvStyle": "background-image:url(../assets/card-art-silky-ishizu-s.jpg);background-position:center top"
+ },
+ "700": {
+  "fieldArts": [
+   "background-image:url(../assets/card-art-silky-ishizu-s.jpg);background-position:center top"
+  ],
+  "pvStyle": "background-image:url(../assets/card-art-silky-ishizu-s.jpg);background-position:center top"
+ }
+}

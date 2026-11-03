@@ -1,0 +1,42 @@
+{
+ "620": {
+  "oka": {
+   "fieldArts": [
+    "background-image:url(../assets/card-art-oka-s.jpg);background-position:center top"
+   ],
+   "pvStyle": "background-image:url(../assets/card-art-oka-s.jpg);background-position:center top"
+  },
+  "hana": {
+   "fieldArts": [
+    "background-image:url(../assets/card-art-hana-s.jpg);background-position:center top"
+   ],
+   "pvStyle": "background-image:url(../assets/card-art-hana-s.jpg);background-position:center top"
+  },
+  "mori": {
+   "fieldArts": [
+    "background-image:url(../assets/card-art-mori-s.jpg);background-position:center top"
+   ],
+   "pvStyle": "background-image:url(../assets/card-art-mori-s.jpg);background-position:center top"
+  }
+ },
+ "700": {
+  "oka": {
+   "fieldArts": [
+    "background-image:url(../assets/card-art-oka-s.jpg);background-position:center top"
+   ],
+   "pvStyle": "background-image:url(../assets/card-art-oka-s.jpg);background-position:center top"
+  },
+  "hana": {
+   "fieldArts": [
+    "background-image:url(../assets/card-art-hana-s.jpg);background-position:center top"
+   ],
+   "pvStyle": "background-image:url(../assets/card-art-hana-s.jpg);background-position:center top"
+  },
+  "mori": {
+   "fieldArts": [
+    "background-image:url(../assets/card-art-mori-s.jpg);background-position:center top"
+   ],
+   "pvStyle": "background-image:url(../assets/card-art-mori-s.jpg);background-position:center top"
+  }
+ }
+}
