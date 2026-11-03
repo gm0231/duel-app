@@ -4935,3 +4935,67 @@ shots-carbon-ishizu/): the same flow in the Ishizu deck
 now resolves tile and preview to card-art-carbon-ishizu;
 the plain stone art remains what any non-Ishizu context
 sees (fixture-pinned, as with the sisters).
+
+## Per-card illustrations, 16th delivery (2026-11-04): 《生きる偲びのシルキィ》 — plain art AND a deck-scoped variant
+
+User art for 《生きる偲びのシルキィ》 55702233 (Ishizu deck
+x2, ATK 800 / DEF 0), in BOTH forms at once:
+
+- Plain art 'silky' — source
+  ~/workspace/duel-assets/silky-user-20261103.jpg (1062x1481,
+  translucent girl in a white dress holding a broom, in a
+  warm room).
+- Ishizu-scoped variant 'silky-ishizu' — source
+  ~/workspace/duel-assets/silky-ishizu-user-20261103.jpg
+  (1062x1482, the same girl in an Egyptian white dress with
+  a gold sash, at a temple). The 6th DECK_ART entry.
+
+Standard top-anchored crops for all four files, NO start
+adjustment: plain small = y0-1062 -> 320x320 (27.7KB),
+plain big = full width x y0-1464 -> 640x882 (122.6KB);
+ishizu small = y0-1062 -> 320x320 (36.6KB), ishizu big =
+full width x y0-1464 -> 640x882 (179.0KB). Both tile
+simulations (62x88, cover / center top) keep the face whole
+at upper centre — pink hair and purple eyes for the room
+painting, the gold collar and sash reading clearly for the
+temple one — and the real-play frames below confirm the
+bright translucent subject stays legible on the dark board
+(no wash-out into the tile background).
+
+One line in CARD_ART (55702233 -> 'silky'), one line in
+DECK_ART (ishizu: 55702233 -> 'silky-ishizu'). test-cardart:
+CA0s/CA0t pin the deck membership (Ishizu x2, GG none);
+CA7z25-CA7z30 pin the maps, both resolutions and both
+preloads; the seat-0 board (CA28 / CA11aa / CA13l / CA14s /
+CA16v) expects the scoped art on tile / hand / preview and
+NONE on an opponent face-down Silky; a flipped-seat fixture
+(CA29 / CA11ab / CA11ac / CA13m / CA14t / CA16w / CA16x)
+pins the plain fallback under a non-Ishizu context, the
+Egyptian art on the Ishizu seat, and no art on a face-down
+Silky even in Ishizu context.
+
+Registering Silky retired the fallback exemplar AGAIN —
+she had held the role since Carbon's delivery. The role
+now sits with the deck's CLASSIC 《アギド》 16135253: the
+ONLY unlisted Ishizu main-deck monster left (verified by
+enumeration over data.json). The dormant CARD_ART 'agido'
+entry stays keyed to Ancient Guard Agido (62320425), a
+different card, so 16135253 itself resolves to the shared
+placeholder on every fallback surface (CA0o now counts its
+single copy; CA6 and the main fabricated board exercise it
+as before).
+
+230 checks in total, ALL PASSED. Affected suites on the
+integrated tree: setvis / facedown / layout / overlay /
+poolcov / fx / swap / strot / phase2 / ui / typecolor all
+green in one batch; logdetail-ui dropped 2 checks inside
+that batch under load and passed cleanly on a solo re-run
+(known load-flake pattern, not this change — the delivery
+touches only the art maps). Real-play frames (cap-silky.js,
+shots-silky/): Silky drawn in the opening hand, tapped
+(resident preview) and normal-summoned face-up through the
+real sheet at 390x620/700 — tile, hand and preview all
+resolve to card-art-silky-ishizu in the Ishizu deck, name /
+stat lines read 生きる偲びのシルキィ 800/0; the plain
+'silky' remains what any non-Ishizu context sees
+(fixture-pinned, as with Kakan / Carbon before her).
