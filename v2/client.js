@@ -3113,7 +3113,16 @@ function tileHTML(card, con, actKey, loc) {
   const ownSet = con === HP && !faceUp && card.code != null;
   const nm = showFace && card.code != null ? cardName(card.code) : '';
   const ctrTotal = card.counters ? (Array.isArray(card.counters) ? card.counters.reduce((a, c) => a + (c.count || 0), 0) : card.counters) : 0;
-  return '<div class="tile' + (isDef ? ' def' : '') + (showFace ? '' : ' back') + (ownSet ? ' setown' : '') +
+  // PROTO tile-color (not merged): face-up tiles also carry the kind
+  // class on the .tile itself plus a chip element, so the capture can
+  // trial frame/chip placements for the board (the name band is
+  // covered by the art there). Gated on faceUp specifically — an
+  // opponent's face-down card AND the owner's own set card get
+  // neither (no kind color on any face-down tile). Both
+  // manifestations live on .tile, outside .inner, so a defense
+  // tile's 90-degree rotation cannot disturb them.
+  const kindTile = faceUp && card.code != null ? kindCls(card.code) : '';
+  return '<div class="tile' + kindTile + (isDef ? ' def' : '') + (showFace ? '' : ' back') + (ownSet ? ' setown' : '') +
     (card.materials >= 2 ? ' mats2' : card.materials === 1 ? ' mats1' : '') +
     (actKey && actionMap.has(actKey) ? ' actionable' : '') + '"' +
     (actKey ? ' data-act="' + actKey + '"' : '') + '>' +
@@ -3129,7 +3138,7 @@ function tileHTML(card, con, actKey, loc) {
     '<div class="inner"><div class="art"' + (showFace && card.code != null ? artInline(card.code, false, deckKeyOfSeat(con)) : '') + '></div>' +
     (ownSet ? '<div class="veil"></div>' : '') +
     (nm ? '<div class="nm' + kindCls(card.code) + '">' + nm + '</div>' : '') +
-    '</div></div>';
+    '</div>' + (kindTile ? '<div class="kchip"></div>' : '') + '</div>';
 }
 // ATK/DEF strip rendered at the SLOT level — outside the card frame, with
 // ATK/DEF labels (user spec). Live (effect-modified) values from the core

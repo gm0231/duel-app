@@ -542,6 +542,23 @@
   #fxcutin .bigcard .nm:is(.k-spell,.k-trap,.k-normal,.k-effect,.k-ritual,.k-fusion,.k-synchro,.k-xyz){background:var(--kcd);}
   #preview .pv-name:is(.k-spell,.k-trap,.k-normal,.k-effect,.k-ritual,.k-fusion,.k-synchro,.k-xyz){background:var(--kcd);color:var(--txt);padding:1px 7px;border-radius:8px;}
   #preview .pv-name.k-synchro{color:#211d14;}
+  /* ---- board-tile kind colors: PROTOTYPE (2026-11-03, NOT merged —
+     awaiting the user's pick; nothing shows until the capture sets
+     a variant class on body). On the board the name band is covered
+     by the art, so the kind color needs its own placement. Face-up
+     tiles carry the kind class on .tile (full-strength --kc: these
+     are thin marks, not text bands). Face-down tiles — opponent's
+     sets and the owner's own sets alike — never carry it.
+     tc-tile-frame: a 2px kind-colored frame just inside the tile
+        edge (::after on .tile, above the art, below the corner
+        badges; .tile does not rotate, so defense tiles keep an
+        upright frame).
+     tc-tile-chip: a small kind-colored tab centered on the tile's
+        bottom edge (.kchip, likewise outside the rotating .inner;
+        on monster slots it sits directly above the ATK/DEF strip). */
+  .tile .kchip{display:none;}
+  body.tc-tile-frame .tile:is(.k-spell,.k-trap,.k-normal,.k-effect,.k-ritual,.k-fusion,.k-synchro,.k-xyz)::after{content:'';position:absolute;inset:0;border:2px solid var(--kc);border-radius:4px;pointer-events:none;}
+  body.tc-tile-chip .tile .kchip{display:block;position:absolute;left:50%;transform:translateX(-50%);bottom:0;width:44%;height:4px;border-radius:2px 2px 0 0;background:var(--kc);z-index:3;pointer-events:none;}
 </style>
 </head>
 <body>

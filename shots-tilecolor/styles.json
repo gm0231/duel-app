@@ -1,0 +1,78 @@
+{
+ "620": {
+  "base": {
+   "ownFusion": "tile k-fusion",
+   "ownDef": "tile k-effect def",
+   "ownSetTrap": "tile setown",
+   "oppDown": "tile def back",
+   "oppSetTrap": "tile back",
+   "defInnerTransform": "matrix(0, 0.82, -0.82, 0, 0, 0)"
+  },
+  "tc-tile-frame": {
+   "frameBorder": {
+    "color": "rgb(154, 111, 196)",
+    "width": "2px"
+   },
+   "defFrameBorder": {
+    "color": "rgb(207, 116, 52)",
+    "width": "2px"
+   },
+   "chip": {
+    "display": "none",
+    "bg": "rgba(0, 0, 0, 0)"
+   }
+  },
+  "tc-tile-chip": {
+   "frameBorder": {
+    "color": "rgb(232, 220, 192)",
+    "width": "0px"
+   },
+   "defFrameBorder": {
+    "color": "rgb(232, 220, 192)",
+    "width": "0px"
+   },
+   "chip": {
+    "display": "block",
+    "bg": "rgb(207, 116, 52)"
+   }
+  }
+ },
+ "700": {
+  "base": {
+   "ownFusion": "tile k-fusion",
+   "ownDef": "tile k-effect def",
+   "ownSetTrap": "tile setown",
+   "oppDown": "tile def back",
+   "oppSetTrap": "tile back",
+   "defInnerTransform": "matrix(0, 0.82, -0.82, 0, 0, 0)"
+  },
+  "tc-tile-frame": {
+   "frameBorder": {
+    "color": "rgb(154, 111, 196)",
+    "width": "2px"
+   },
+   "defFrameBorder": {
+    "color": "rgb(207, 116, 52)",
+    "width": "2px"
+   },
+   "chip": {
+    "display": "none",
+    "bg": "rgba(0, 0, 0, 0)"
+   }
+  },
+  "tc-tile-chip": {
+   "frameBorder": {
+    "color": "rgb(232, 220, 192)",
+    "width": "0px"
+   },
+   "defFrameBorder": {
+    "color": "rgb(232, 220, 192)",
+    "width": "0px"
+   },
+   "chip": {
+    "display": "block",
+    "bg": "rgb(207, 116, 52)"
+   }
+  }
+ }
+}
