@@ -91,7 +91,7 @@ async function playDuel(window, opts) {
       else if (q('#fb-auto', sheet)) click(q('#fb-auto', sheet));
       else if (q('[data-pile-act]', sheet)) click(q('[data-pile-act]', sheet));
       else if (q('[data-grid]:not(.sel)', sheet) || q('[data-grid]', sheet)) click(q('[data-grid]:not(.sel)', sheet) || q('[data-grid]', sheet));
-      else if (q('.optbtn:not(.disabled)', sheet)) click(q('.optbtn:not(.disabled)', sheet)); // driver fix: a disabled option is not a legal tap; skipping it lets the loop reach #sheet-cancel (pre-existing intermittent live-duel freeze, see NOTES BU-12 worker entry)
+      else if (q('.optbtn:not(.disabled)', sheet)) click(q('.optbtn:not(.disabled)', sheet)); // a disabled optbtn (e.g. an effect that cannot fire now) must not shadow #sheet-cancel — clicking it loops forever
       else if (q('#grid-cancel', sheet)) click(q('#grid-cancel', sheet));
       else if (q('#sheet-cancel', sheet)) click(q('#sheet-cancel', sheet));
     } else if (dockOn) {

@@ -26,11 +26,12 @@ const html = fs.readFileSync(path.join(V2, 'index.html'), 'utf8');
 const data = JSON.parse(fs.readFileSync(path.join(V2, 'data.json'), 'utf8'));
 const wasmBinary = fs.readFileSync(path.join(V2, 'build', 'ocgcore.wasm'));
 
-const MINERVA = 30100551, KALDAN = 86605515, MORI = 36745317, HANA = 62133026;
+const MINERVA = 30100551, KALDAN = 86605515, MORI = 36745317, HANA = 62133026, OKA = 9350312;
 // The reason NAMES the card whose effect imposed the lock (user
 // direction 2026-11-03: 「〜の効果の制約で発動できません」).
 const REASON_MORI = '《森と目覚の春化精》の効果の制約で、このターンは地属性以外のモンスター効果を発動できません';
 const REASON_HANA = '《花と野原の春化精》の効果の制約で、このターンは地属性以外のモンスター効果を発動できません';
+const REASON_OKA = '《丘と芽吹の春化精》の効果の制約で、このターンは地属性以外のモンスター効果を発動できません';
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -71,9 +72,9 @@ async function boot() {
   ok(!!M, 'M3-0: window.__mlock test surface exists');
 
   const cards = M.cards();
-  ok(cards.length === 2 && cards.every(c => c.attr === 1 && c.kanji === '地') &&
-     cards.some(c => c.code === MORI) && cards.some(c => c.code === HANA),
-     'M3-1: lock set derived from card texts = {森と目覚の春化精, 花と野原の春化精}, both EARTH-exception (' + JSON.stringify(cards) + ')');
+  ok(cards.length === 3 && cards.every(c => c.attr === 1 && c.kanji === '地') &&
+     cards.some(c => c.code === MORI) && cards.some(c => c.code === HANA) && cards.some(c => c.code === OKA),
+     'M3-1: lock set derived from card texts = {森と目覚の春化精, 花と野原の春化精, 丘と芽吹の春化精}, all EARTH-exception (' + JSON.stringify(cards) + ')');
 
   ok(M.active === null && M.reason(MINERVA, 1) === null, 'M3-2: no lock before any activation -> no reason stated');
 
@@ -91,6 +92,10 @@ async function boot() {
   ok(M.active === null, 'M3-8: an unrelated activation does not latch');
   M.note({ kind: 'activate', code: HANA, con: 0, loc: 2 }, { turnCount: 3 });
   ok(M.reason(MINERVA, 3) === REASON_HANA, 'M3-9: 花と野原の春化精 latches the same lock, and the reason names HER');
+
+  M.reset();
+  M.note({ kind: 'activate', code: OKA, con: 0, loc: 2 }, { turnCount: 5 });
+  ok(M.reason(MINERVA, 5) === REASON_OKA, 'M3-10: 丘と芽吹の春化精 (new in v11) latches the same lock, and the reason names HER');
 
   window.close();
   console.log(failures ? 'TEST FAIL (' + failures + ')' : 'TEST PASS');

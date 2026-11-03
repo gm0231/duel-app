@@ -24,6 +24,11 @@ const MSG = {1:'RETRY',2:'HINT',3:'WAITING',4:'START',5:'WIN',6:'UPDATE_DATA',7:
 170:'MATCH_KILL',180:'CUSTOM_MSG',190:'REMOVE_CARDS'};
 const SELECT_TYPES = new Set([10,11,12,13,14,15,16,18,19,20,21,22,23,24,25,26,132,140,141,142,143]);
 const PHASES = {1:'DRAW',2:'STANDBY',4:'MAIN1',8:'BATTLE_START',16:'BATTLE_STEP',32:'DAMAGE',64:'DAMAGE_CAL',128:'BATTLE',256:'MAIN2',512:'END'};
+// The wire carries positions both as the four single-bit values
+// and as the face-up / face-down MASKS (a set card announces
+// 0xA, a flipped spell/trap changes 0xA -> 0x5) — name all six.
+const POS_NAME = { 1: '表側攻撃表示', 2: '裏側攻撃表示', 4: '表側守備表示', 8: '裏側守備表示', 5: '表側表示', 10: '裏側表示' };
+const posName = (pos) => POS_NAME[pos & 0xF] || '表示形式不明';
 const LOC = { DECK:0x01, HAND:0x02, MZONE:0x04, SZONE:0x08, GRAVE:0x10, REMOVED:0x20, EXTRA:0x40, OVERLAY:0x80 };
 const POS = { FU_ATK:0x1, FD_ATK:0x2, FU_DEF:0x4, FD_DEF:0x8 };
 const POS_FACEUP = 0x5, POS_ATTACK = 0x3, POS_DEFENSE = 0xC;
@@ -427,11 +432,37 @@ class GameState {
     this.deckTop = [null, null];
     this.log = [];                    // recent event strings (system text only)
     this.events = [];                 // transient event queue for presentation (SE cues), drained by the client
+    this.dlog = [];                   // detailed history entries for the history sheet (see pushDLog)
+    this.chainSeq = 0;                // chain-episode counter: entries of one chain share an id
   }
   nameOf(code) { return this.names[code] || ('#' + code); }
   who(p) { return p === this.humanPlayer ? '自分' : '相手'; }
   pushLog(s) { this.log.push(s); if (this.log.length > 60) this.log.shift(); }
   pushEvent(e) { this.events.push(e); if (this.events.length > 300) this.events.splice(0, this.events.length - 300); }
+  // Detailed history (log-detail round, 2026-11-03 — user: the log
+  // only carried headlines; effects, processing and outcomes were
+  // nowhere written down). Entries are stamped with the turn, the
+  // turn player and the phase at message time so the client's
+  // history sheet can group by turn and by chain episode without
+  // re-deriving context. Two shapes:
+  //   {k:'info'|'phase'|'dmg', s}         finished Japanese text
+  //   {k:'act'|'solve'|'neg'|'dis', con, code, desc, loc, link, tgt?}
+  //     chain lines — the client appends the effect number via its
+  //     audited fx resolver (the mirror deliberately does not guess
+  //     numbers; fxmap lives client-side).
+  // `cid` = chain episode id (0 = not part of a chain), `sol` =
+  // the link whose resolution produced the entry (0 = none).
+  // Everything is composed from message payloads and mirror state
+  // only — never inferred identities for hidden cards: entries
+  // about the opponent's face-down cards stay generic, and the
+  // opponent's draws stay count-only, exactly like pushLog.
+  pushDLog(e) {
+    e.turn = this.turnCount; e.tp = this.turnPlayer; e.ph = this.phaseName || '';
+    e.cid = e.cid || 0; e.sol = e.sol || 0;
+    this.dlog.push(e);
+    if (this.dlog.length > 600) this.dlog.splice(0, this.dlog.length - 600);
+  }
+  chainCid() { return (this.chain.length || this.solvingLink) ? this.chainSeq : 0; }
   // The card whose effect is currently asking something: the link being solved,
   // else the newest chain link. Used to give every prompt a visible source.
   chainContext() {
@@ -518,13 +549,13 @@ class GameState {
   apply(msg) {
     const t = msg[0]; const r = new Reader(msg, 1);
     switch (t) {
-      case 5: this.winner = r.u8(); this.winReason = r.u8(); break; // WIN
+      case 5: { this.winner = r.u8(); this.winReason = r.u8(); this.pushDLog({ k: 'info', s: '決着：' + this.who(this.winner) + ' の勝利' }); break; } // WIN
       case 40: this.turnPlayer = r.u8(); this.turnCount++; break; // NEW_TURN
       case 41: { const ph = r.u16(); this.phase = ph; this.phaseName = PHASES[ph] || ('PH' + ph); break; } // NEW_PHASE
       case 94: { const p = r.u8(); this.players[p].lp = r.i32(); break; } // LPUPDATE
-      case 91: { const p = r.u8(); const amt = r.u32(); this.players[p].lp -= amt; this.pushLog(this.who(p) + 'に ' + amt + ' ダメージ'); this.pushEvent({ kind: 'damage', player: p, amount: amt }); break; } // DAMAGE
-      case 92: { const p = r.u8(); const amt = r.u32(); this.players[p].lp += amt; this.pushEvent({ kind: 'recover', player: p, amount: amt }); break; } // RECOVER
-      case 100: { const p = r.u8(); const amt = r.u32(); this.players[p].lp -= amt; break; } // PAY_LPCOST
+      case 91: { const p = r.u8(); const amt = r.u32(); const before = this.players[p].lp; this.players[p].lp -= amt; this.pushLog(this.who(p) + 'に ' + amt + ' ダメージ'); this.pushDLog({ k: 'dmg', cid: this.chainCid(), sol: this.solvingLink, s: this.who(p) + ' に ' + amt + ' ダメージ（LP ' + before + ' → ' + this.players[p].lp + '）' }); this.pushEvent({ kind: 'damage', player: p, amount: amt }); break; } // DAMAGE
+      case 92: { const p = r.u8(); const amt = r.u32(); const before = this.players[p].lp; this.players[p].lp += amt; this.pushDLog({ k: 'info', cid: this.chainCid(), sol: this.solvingLink, s: this.who(p) + ' は ' + amt + ' 回復（LP ' + before + ' → ' + this.players[p].lp + '）' }); this.pushEvent({ kind: 'recover', player: p, amount: amt }); break; } // RECOVER
+      case 100: { const p = r.u8(); const amt = r.u32(); const before = this.players[p].lp; this.players[p].lp -= amt; this.pushDLog({ k: 'info', cid: this.chainCid(), sol: this.solvingLink, s: this.who(p) + ' はコストとして LP を ' + amt + ' 払った（LP ' + before + ' → ' + this.players[p].lp + '）' }); break; } // PAY_LPCOST
       case 50: { // MOVE: code, from loc_info, to loc_info, reason
         const code = r.u32(); const from = r.locInfo(); const to = r.locInfo(); const reason = r.u32();
         if (code !== 0) { // code 0 = deck-internal reorder noise
@@ -584,14 +615,73 @@ class GameState {
             this.pushEvent({ kind: 'destroy', code, con: from.con, fromLoc: from.loc, battle: !!(reason & 0x20) });
           if (to.loc === LOC.REMOVED && from.loc !== LOC.REMOVED)
             this.pushEvent({ kind: 'banish', code, con: from.con });
+          // Detailed history: every publicly-visible movement gets an
+          // outcome line (destroyed / banished / sent / returned /
+          // milled / discarded), attributed to the chain link being
+          // solved when there is one. Zone ARRIVALS are covered by
+          // the summon/set/activation lines, so only departures and
+          // pile-to-pile moves are written here.
+          {
+            const sol = this.solvingLink, cid = this.chainCid();
+            const fromField = from.loc === LOC.MZONE || from.loc === LOC.SZONE;
+            const toField = to.loc === LOC.MZONE || to.loc === LOC.SZONE;
+            let s = null;
+            if (from.loc & LOC.OVERLAY) {
+              const dst = to.loc === LOC.GRAVE ? 'が墓地へ送られた' : to.loc === LOC.HAND ? 'が手札に戻った'
+                : to.loc === LOC.REMOVED ? 'が除外された' : to.loc === LOC.DECK ? 'がデッキに戻った' : null;
+              if (dst) s = this.who(from.con) + '：' + nm + '（エクシーズ素材）' + dst;
+            } else if (fromField && toField && from.con !== to.con) {
+              s = this.who(from.con) + '：' + nm + ' のコントロールが ' + this.who(to.con) + ' へ移った';
+            } else if (to.loc & LOC.OVERLAY) {
+              const host = this._hostEntry(this.players[to.con], to);
+              s = this.who(from.con) + '：' + nm + ' が' + (host && host.code ? '《' + this.nameOf(host.code) + '》' : 'モンスター') + ' のエクシーズ素材になった';
+            } else if (fromField) {
+              if (to.loc === LOC.GRAVE) s = this.who(from.con) + '：' + nm + ' は' + ((reason & 0x1) ? ((reason & 0x20) ? '戦闘で破壊され、墓地へ送られた' : '効果で破壊され、墓地へ送られた') : '墓地へ送られた');
+              else if (to.loc === LOC.REMOVED) s = this.who(from.con) + '：' + nm + ' は除外された';
+              else if (to.loc === LOC.HAND) s = this.who(from.con) + '：' + nm + ' は手札に戻った';
+              else if (to.loc === LOC.DECK) s = this.who(from.con) + '：' + nm + ' はデッキに戻った';
+              else if (to.loc === LOC.EXTRA) s = this.who(from.con) + '：' + nm + ' はEXデッキに戻った';
+            } else if (from.loc === LOC.HAND) {
+              if (to.loc === LOC.GRAVE) s = this.who(from.con) + '：' + nm + ' を' + ((reason & 0x4000) ? '手札から捨てた' : '手札から墓地へ送った');
+              else if (to.loc === LOC.REMOVED) s = this.who(from.con) + '：' + nm + ' を手札から除外した';
+              else if (to.loc === LOC.DECK) s = this.who(from.con) + '：' + nm + ' を手札からデッキに戻した';
+              else if (to.loc === LOC.EXTRA) s = this.who(from.con) + '：' + nm + ' を手札からEXデッキに戻した';
+            } else if (from.loc === LOC.DECK) {
+              if (to.loc === LOC.GRAVE) s = this.who(from.con) + '：' + nm + ' がデッキから墓地へ送られた';
+              else if (to.loc === LOC.REMOVED) s = this.who(from.con) + '：' + nm + ' がデッキから除外された';
+              else if (to.loc === LOC.HAND) s = this.who(from.con) + '：' + nm + ' をデッキから手札に加えた';
+              else if (to.loc === LOC.EXTRA) s = this.who(from.con) + '：' + nm + ' がデッキからEXデッキへ送られた';
+            } else if (from.loc === LOC.GRAVE) {
+              if (to.loc === LOC.HAND) s = this.who(from.con) + '：' + nm + ' を墓地から手札に加えた';
+              else if (to.loc === LOC.REMOVED) s = this.who(from.con) + '：' + nm + ' が墓地から除外された';
+              else if (to.loc === LOC.DECK) s = this.who(from.con) + '：' + nm + ' が墓地からデッキに戻った';
+              else if (to.loc === LOC.EXTRA) s = this.who(from.con) + '：' + nm + ' が墓地からEXデッキに戻った';
+            } else if (from.loc === LOC.REMOVED) {
+              if (to.loc === LOC.HAND) s = this.who(from.con) + '：除外されている ' + nm + ' を手札に加えた';
+              else if (to.loc === LOC.GRAVE) s = this.who(from.con) + '：' + nm + ' が除外から墓地へ送られた';
+              else if (to.loc === LOC.DECK) s = this.who(from.con) + '：' + nm + ' が除外からデッキに戻った';
+            } else if (from.loc === LOC.EXTRA) {
+              if (to.loc === LOC.GRAVE) s = this.who(from.con) + '：' + nm + ' がEXデッキから墓地へ送られた';
+              else if (to.loc === LOC.REMOVED) s = this.who(from.con) + '：' + nm + ' がEXデッキから除外された';
+              else if (to.loc === LOC.HAND) s = this.who(from.con) + '：' + nm + ' がEXデッキから手札に加わった';
+            }
+            if (s) this.pushDLog({ k: 'info', cid, sol, s });
+          }
         }
         break;
       }
       case 90: { // DRAW: player, drawn u32, per card code u32 + pos u32
-        const p = r.u8(); const n = r.u32();
-        for (let i = 0; i < n; i++) { const code = r.u32(); r.u32(); this.players[p].hand.push({ code }); }
+        const p = r.u8(); const n = r.u32(); const drawn = [];
+        for (let i = 0; i < n; i++) { const code = r.u32(); r.u32(); drawn.push(code); this.players[p].hand.push({ code }); }
         this.players[p].deckCount = Math.max(0, this.players[p].deckCount - n);
-        if (n > 0) this.pushLog(this.who(p) + '：' + n + ' 枚ドロー');
+        if (n > 0) {
+          this.pushLog(this.who(p) + '：' + n + ' 枚ドロー');
+          // Detailed: the human's own draws are named (their own
+          // information); the opponent's stay count-only — the wire
+          // knows the codes, the player must not.
+          if (p === this.humanPlayer && drawn.every(c => c)) this.pushDLog({ k: 'info', cid: this.chainCid(), sol: this.solvingLink, s: this.who(p) + '：ドロー（' + drawn.map(c => this.nameOf(c)).join('、') + '）' });
+          else this.pushDLog({ k: 'info', cid: this.chainCid(), sol: this.solvingLink, s: this.who(p) + '：' + n + ' 枚ドロー' });
+        }
         break;
       }
       case 33: { // SHUFFLE_HAND: player, count u32, codes — exact new order
@@ -599,6 +689,12 @@ class GameState {
         for (let i = 0; i < n; i++) codes.push(r.u32());
         this.players[p].hand = codes.map(code => ({ code }));
         this.pushLog(this.who(p) + 'の手札をシャッフル（' + n + ' 枚）');
+        // cid/sol stamped: a search effect shuffles the hand in
+        // the middle of its own resolution — without the stamp the
+        // line would split the chain episode's run in the sheet
+        // (frame check: the searched spell's grave-send landed in
+        // an orphan box behind the unstamped shuffle line).
+        this.pushDLog({ k: 'info', cid: this.chainCid(), sol: this.solvingLink, s: this.who(p) + '：手札をシャッフル（' + n + ' 枚）' });
         break;
       }
       case 39: { // SHUFFLE_EXTRA: player, count u32, codes
@@ -650,6 +746,7 @@ class GameState {
         this.deckTop[p] = null;
         this.graveResync.add(p);
         this.pushLog(this.who(p) + '：デッキと墓地が入れ替わった');
+        this.pushDLog({ k: 'info', cid: this.chainCid(), sol: this.solvingLink, s: this.who(p) + '：デッキと墓地が入れ替わった（デッキ ' + P.deckCount + ' 枚／墓地 ' + P.grave.length + ' 枚）' });
         break;
       }
       case 36: { // SHUFFLE_SET_CARD: loc u8, count u8, count from-loc_infos, count to-loc_infos
@@ -687,17 +784,25 @@ class GameState {
         for (let i = 0; i < ct; i++) {
           if (tos[i] && tos[i].loc !== 0 && before[i]) zoneOf(tos[i])[tos[i].seq] = before[i];
         }
+        if (ct > 0) this.pushDLog({ k: 'info', cid: this.chainCid(), sol: this.solvingLink, s: 'セットカード ' + ct + ' 枚がシャッフルされた' });
         break;
       }
       case 32: break; // SHUFFLE_DECK: player only
       case 53: { // POS_CHANGE: code, con u8, loc u8, seq u8, prevPos u8, newPos u8
-        const code = r.u32(); const con = r.u8(); const loc = r.u8(); const seq = r.u8(); r.u8(); const npos = r.u8();
+        const code = r.u32(); const con = r.u8(); const loc = r.u8(); const seq = r.u8(); const ppos = r.u8(); const npos = r.u8();
         const zone = loc === LOC.MZONE ? this.players[con].mzone : this.players[con].szone;
         // A stored code of 0 is "unknown", exactly like null: the core zeroes
         // codes on the wire for hidden cards (see case 62), so a POS_CHANGE
         // carrying the true code must fill a 0 as well as a null — and a
         // POS_CHANGE carrying 0 must never erase a known code.
         if (zone[seq]) { zone[seq].pos = npos; if (!zone[seq].code && code) zone[seq].code = code; }
+        // Detailed: a position change is an outcome worth reading —
+        // but only with a known identity (a hidden card's change is
+        // the opponent's private information in form, if not in
+        // fact: naming it would leak the set card).
+        const known = code || (zone[seq] && zone[seq].code);
+        if (ppos !== npos && known && !(con !== this.humanPlayer && (ppos & 0xA) && (npos & 0xA)))
+          this.pushDLog({ k: 'info', cid: this.chainCid(), sol: this.solvingLink, s: this.who(con) + '：' + this.nameOf(known) + ' の表示形式が ' + posName(ppos) + ' → ' + posName(npos) });
         break;
       }
       case 54: case 60: case 62: case 64: { // SET / SUMMONING / SPSUMMONING / FLIPSUMMONING: code + loc_info
@@ -715,6 +820,27 @@ class GameState {
         if (t === 60) { this.pushLog(this.who(li.con) + '：' + this.nameOf(code) + ' を召喚'); this.pushEvent({ kind: 'summon', code, con: li.con }); }
         if (t === 62) { this.pushLog(this.who(li.con) + '：' + this.nameOf(code) + ' を特殊召喚'); this.pushEvent({ kind: 'spsummon', code, con: li.con }); }
         if (t === 64) this.pushEvent({ kind: 'flipsummon', code, con: li.con });
+        // Detailed versions. A set card is named only for its owner
+        // (the opponent's set identity is hidden information; the
+        // shared wire carries it but the history must not print it).
+        // Summons are public events; a 0 code (face-down special
+        // summon) falls back to whatever the zone entry already
+        // knows, and stays generic while it knows nothing.
+        if (t === 54) {
+          this.pushDLog({ k: 'info', cid: this.chainCid(), sol: this.solvingLink, s: li.con === this.humanPlayer && code
+            ? this.who(li.con) + '：' + this.nameOf(code) + ' をセット（' + posName(li.pos) + '）'
+            : this.who(li.con) + '：カードをセット' });
+        } else {
+          const zc = (zone[li.seq] && zone[li.seq].code) || code;
+          // A face-down summon of the opponent's stays unnamed even
+          // when the mirror happens to know the code (the preceding
+          // MOVE carried it) — hidden information is hidden.
+          const nm = zc && (li.con === this.humanPlayer || !(li.pos & 0xA)) ? this.nameOf(zc) : null;
+          const verb = t === 60 ? 'を召喚' : t === 62 ? 'を特殊召喚' : 'を反転召喚';
+          this.pushDLog({ k: 'info', cid: this.chainCid(), sol: this.solvingLink, s: nm
+            ? this.who(li.con) + '：' + nm + ' ' + verb + '（' + posName(li.pos) + '）'
+            : this.who(li.con) + '：モンスター' + verb });
+        }
         break;
       }
       case 55: { // SWAP: code1, info1, code2, info2 — control swap, cards stay in their slots
@@ -727,21 +853,56 @@ class GameState {
         // the wire means "hidden", never an identity to overwrite with.
         if (z1[i1.seq] && c2) z1[i1.seq].code = c2;
         if (z2[i2.seq] && c1) z2[i2.seq].code = c1;
+        this.pushDLog({ k: 'info', cid: this.chainCid(), sol: this.solvingLink, s: c1 && c2
+          ? this.nameOf(c1) + ' と ' + this.nameOf(c2) + ' のコントロールが入れ替わった'
+          : 'モンスターのコントロールが入れ替わった' });
         break;
       }
       case 70: { // CHAINING
         const code = r.u32(); const li = r.locInfo();
         const tcon = r.u8(); const tloc = r.u8(); const tseq = r.u32(); const desc = r.u64n(); r.u32();
+        if (!this.chain.length) this.chainSeq++;
         this.chain.push({ code, con: li.con, loc: li.loc, seq: li.seq, pos: li.pos, player: tcon,
                           tloc, tseq, desc, negated: false, disabled: false, solved: false });
         this.pushLog('チェーン' + this.chain.length + '：' + this.nameOf(code));
         this.pushEvent({ kind: 'activate', code, con: li.con, loc: li.loc });
+        // Detailed: the activation line of the episode. The wire's
+        // target fields name the ACTIVATING card itself when the
+        // effect has no target (observed on every non-targeting
+        // activation in the pool) — self-reference means "no
+        // target", never a target. A real target is named only
+        // when it is public information: face-up on the field, in
+        // a public pile (grave / banished), or the human's own
+        // card. A targeted face-down card of the opponent's is
+        // designated by slot in a real game, never by identity.
+        let tgt = null;
+        if (!(tcon === li.con && tloc === li.loc && tseq === li.seq)) {
+          if (tloc === LOC.MZONE || tloc === LOC.SZONE) {
+            const tz = tloc === LOC.MZONE ? this.players[tcon].mzone[tseq] : this.players[tcon].szone[tseq];
+            if (tz && tz.code && ((tz.pos & POS_FACEUP) || tcon === this.humanPlayer)) tgt = this.nameOf(tz.code);
+          } else if (tloc === LOC.GRAVE) {
+            const gc = this.players[tcon].grave[tseq];
+            if (gc) tgt = this.nameOf(gc);
+          } else if (tloc === LOC.REMOVED) {
+            const rc = this.players[tcon].removed[tseq];
+            if (rc) tgt = this.nameOf(rc);
+          } else if (tloc === LOC.HAND && tcon === this.humanPlayer) {
+            const hc = this.players[tcon].hand[tseq];
+            if (hc && hc.code) tgt = this.nameOf(hc.code);
+          }
+        }
+        this.pushDLog({ k: 'act', cid: this.chainSeq, link: this.chain.length, con: li.con, code, desc, loc: li.loc, tgt });
         break;
       }
-      case 72: this.solvingLink = r.u8(); break; // CHAIN_SOLVING
+      case 72: { // CHAIN_SOLVING
+        this.solvingLink = r.u8();
+        const link = this.chain[this.solvingLink - 1];
+        if (link) this.pushDLog({ k: 'solve', cid: this.chainSeq, link: this.solvingLink, con: link.con, code: link.code, desc: link.desc, loc: link.loc });
+        break;
+      }
       case 73: { const n = r.u8(); const link = this.chain[n - 1]; if (link) link.solved = true; break; } // CHAIN_SOLVED
-      case 75: { const n = r.u8(); const link = this.chain[n - 1]; if (link) link.negated = true; this.pushEvent({ kind: 'negate' }); break; } // CHAIN_NEGATED
-      case 76: { const n = r.u8(); const link = this.chain[n - 1]; if (link) link.disabled = true; break; } // CHAIN_DISABLED
+      case 75: { const n = r.u8(); const link = this.chain[n - 1]; if (link) { link.negated = true; this.pushDLog({ k: 'neg', cid: this.chainSeq, link: n, con: link.con, code: link.code, desc: link.desc, loc: link.loc }); } this.pushEvent({ kind: 'negate' }); break; } // CHAIN_NEGATED
+      case 76: { const n = r.u8(); const link = this.chain[n - 1]; if (link) { link.disabled = true; this.pushDLog({ k: 'dis', cid: this.chainSeq, link: n, con: link.con, code: link.code, desc: link.desc, loc: link.loc }); } break; } // CHAIN_DISABLED
       case 74: this.chain = []; this.solvingLink = 0; break; // CHAIN_END
       case 110: { // ATTACK: attacker loc_info, target loc_info (zeroed = direct)
         const a = r.locInfo(); const tg = r.locInfo();
@@ -751,10 +912,14 @@ class GameState {
         // The log names attacker and target (W-16): a bare 「攻撃宣言」
         // left nothing searchable in the history after the fact.
         if (az && az.code) {
-          this.pushLog(tg.loc === 0 || !tz || !tz.code
+          const direct = tg.loc === 0 || !tz || !tz.code;
+          this.pushLog(direct
             ? this.who(a.con) + '：' + this.nameOf(az.code) + ' が直接攻撃'
             : this.who(a.con) + '：' + this.nameOf(az.code) + ' が ' + this.nameOf(tz.code) + ' を攻撃');
-        } else this.pushLog('攻撃宣言');
+          this.pushDLog({ k: 'info', s: direct
+            ? this.who(a.con) + '：' + this.nameOf(az.code) + ' が直接攻撃を宣言'
+            : this.who(a.con) + '：' + this.nameOf(az.code) + ' が ' + this.nameOf(tz.code) + ' に攻撃を宣言' });
+        } else { this.pushLog('攻撃宣言'); this.pushDLog({ k: 'info', s: '攻撃宣言' }); }
         this.pushEvent({ kind: 'attack', code: az ? az.code : null, con: a.con, direct: tg.loc === 0 });
         break;
       }
@@ -783,6 +948,22 @@ class GameState {
           if (shown === this.humanPlayer) {
             const names = confirmed.filter(c => c.code).map(c => this.nameOf(c.code));
             if (names.length) this.pushLog('確認：' + names.join('、'));
+            // Detailed: whose cards, from where. Deck groups are
+            // listed top-first (seq descending — the same order the
+            // confirmation sheet presents).
+            const groups = new Map();
+            for (const c of confirmed) {
+              if (!c.code) continue;
+              const key = c.con + ':' + c.loc;
+              if (!groups.has(key)) groups.set(key, []);
+              groups.get(key).push(c);
+            }
+            const LOCN = { 1: 'デッキ', 2: '手札', 4: 'フィールド', 8: 'フィールド', 16: '墓地', 32: '除外されているカード', 64: 'EXデッキ' };
+            for (const [key, cs] of groups) {
+              const [con, loc] = key.split(':').map(Number);
+              if (loc === LOC.DECK) cs.sort((a, b) => b.seq - a.seq);
+              this.pushDLog({ k: 'info', cid: this.chainCid(), sol: this.solvingLink, s: '確認：' + this.who(con) + ' の' + (LOCN[loc] || 'カード') + '（' + cs.map(c => this.nameOf(c.code)).join('、') + '）' });
+            }
           }
         }
         break;
@@ -862,11 +1043,11 @@ const CT = { MONSTER: 0x1, SPELL: 0x2, TRAP: 0x4, EFFECT: 0x20, FUSION: 0x40, TU
 const EXTRA_TYPES = CT.FUSION | CT.SYNCHRO | CT.XYZ | CT.LINK;
 // Key cards of the pool (codes), named once for the heuristics below.
 const CC = {
-  MUDORA: 99937011, KELDO: 63542003, KELBEK: 25926710, AGIDO: 62320425, ZOLGA: 31525442,
-  CARBON: 15079028, VERN_MORI: 36745317, VERN_HANA: 62133026, STONE: 12332865,
+  MUDORA: 99937011, KELDO: 63542003, KELBEK: 25926710, AGIDO: 16135253, ZOLGA: 31525442,
+  CARBON: 15079028, VERN_MORI: 36745317, VERN_HANA: 62133026, VERN_OKA: 9350312,
   CHAOS_POD: 79106360, SILKY: 55702233, SPHINX: 46148485, KALDAN: 86605515,
   HAND_DESTRUCTION: 16435215, TAIYOU: 38699854, MOON: 14087893, MISCHIEF: 51612489,
-  REBELLION: 71593652, REBORN: 28958464, COROLLA: 14108995, FOOLISH_GOODS: 35726888,
+  REBELLION: 71593652, REBORN: 83764718, COROLLA: 14108995, FOOLISH_GOODS: 35726888,
   GK_TRAP: 98715423, EXCHANGE: 17484499, BLAST_HELD: 51208877, SPIRITUAL_SWORDS: 78625592,
   TITANOCIDER: 67037924, TRANSMIGRATION: 46652477,
   LUCE: 45409943, HORUS: 36898537, PLUTO: 37706769, BAROMETT: 62967433,
@@ -883,9 +1064,11 @@ const CC = {
 const GUARDIAN_PIECES = [CC.SANGA, CC.HUGA, CC.SUIGA];
 // Cards that PROFIT from being sent to / placed in the graveyard (mill
 // triggers, grave searches, self-reset): cheap to discard, good to mill.
-const GRAVE_PROFIT = new Set([CC.KELBEK, CC.AGIDO, CC.BLAST_HELD, CC.LOST_WIND, CC.TITANOCIDER,
+const GRAVE_PROFIT = new Set([CC.KELBEK, CC.BLAST_HELD, CC.LOST_WIND, CC.TITANOCIDER,
   CC.DARK_ELEMENT, CC.FORCE_GUARDIAN, CC.DEMON_WIND, CC.JIRAI_TRAP, CC.SHADOW_GHOUL, CC.REBELLION]);
-const MILL_WHEN_SENT = new Set([CC.KELBEK, CC.AGIDO]); // sent hand/deck -> GY: mill 5 each
+const MILL_WHEN_SENT = new Set([CC.KELBEK]); // sent hand/deck -> GY: mill 5
+// (v11 recipe swap: AGIDO is now the classic 《アギド》 — it has no
+// mill/grave-profit effects; only its battle-destruction trigger.)
 const NEGATION_CODES = new Set([CC.SOLEMN_STRIKE, CC.GRAVE_HOLE]);
 
 function makeBotMemory() {
@@ -1018,9 +1201,9 @@ function handValue(code, view, data) {
   if (isMonsterCd(cd)) {
     let v = Math.max(cd.atk, cd.def * 0.72);
     if (cd.type & CT.TUNER) v += 120;
-    if (code === CC.KELBEK || code === CC.AGIDO) v += 150;
+    if (code === CC.KELBEK) v += 150;
     if (GUARDIAN_PIECES.includes(code)) v += 180;
-    if (code === CC.VERN_MORI || code === CC.VERN_HANA) v += 220; // enablers
+    if (code === CC.VERN_MORI || code === CC.VERN_HANA || code === CC.VERN_OKA) v += 220; // enablers
     if (code === CC.MUDORA || code === CC.KELDO) v += 200;
     if (code === CC.HEAVY_TANK) v += 250;
     if (code === CC.CHAOS_HUNTER) v += 150;
@@ -1054,7 +1237,7 @@ function discardCost(code, view, data) {
   }
   if (code === CC.TAIYOU && !monList(view, view.me).some(c => !c.faceUp) &&
       !monList(view, view.opp).some(c => !c.faceUp)) v -= 300; // no face-downs to flip
-  if (code === CC.COROLLA && !handCodes.some(c => c === CC.VERN_MORI || c === CC.VERN_HANA)) v -= 250;
+  if (code === CC.COROLLA && !handCodes.some(c => c === CC.VERN_MORI || c === CC.VERN_HANA || c === CC.VERN_OKA)) v -= 250;
   if (code === CC.EXCHANGE && view.grave[view.me].length + view.grave[view.opp].length < 20) v -= 250; // far from live
   return v;
 }
@@ -1303,11 +1486,17 @@ function activationScore(e, view, data, prompt) {
       const topOpp = view.grave[opp].map(c => graveValue(c, data)).sort((a, b) => b - a);
       return (topOpp[0] || 0) + (topOpp[1] || 0) >= 1500 ? 850 : 0;
     }
-    case CC.VERN_MORI: case CC.VERN_HANA: {
+    case CC.VERN_MORI: case CC.VERN_HANA: case CC.VERN_OKA: {
       const gyEarth = view.grave[me].some(c => { const d = cdOf(data, c); return isMonsterCd(d) && d.attribute === 0x01; });
       const handEarth = handCodes.some(c => { const d = cdOf(data, c); return isMonsterCd(d) && d.attribute === 0x01 && c !== e.code; });
       if (view.hand[me].length < 2) return 0;
       if (e.code === CC.VERN_HANA) return gyEarth ? 1100 : 0;
+      if (e.code === CC.VERN_OKA) {
+        // unique part is a deck search for any Vernusylph card:
+        // worth firing for the search alone, better with a revive.
+        if (gyEarth) return 1100;
+        return handEarth ? 900 : 700;
+      }
       if (gyEarth) return 1150;
       return handEarth && deckHas(rem, CC.KELBEK) !== false ? 950 : 0; // discard becomes the revive target pool
     }
@@ -1321,7 +1510,7 @@ function activationScore(e, view, data, prompt) {
       return (deckHas(rem, CC.TAIYOU) || deckHas(rem, CC.MOON) ||
               view.grave[me].includes(CC.TAIYOU) || view.grave[me].includes(CC.MOON)) ? 750 : 0;
     case CC.COROLLA:
-      return handCodes.some(c => c === CC.VERN_MORI || c === CC.VERN_HANA) ? 800 : 0;
+      return handCodes.some(c => c === CC.VERN_MORI || c === CC.VERN_HANA || c === CC.VERN_OKA) ? 800 : 0;
     case CC.TAIYOU: {
       const pod = myMons.find(c => !c.faceUp && c.code === CC.CHAOS_POD);
       const worm = myMons.find(c => !c.faceUp && c.code === CC.MEDUSA_WORM);
@@ -1693,7 +1882,7 @@ function effectYnAnswer(prompt, view, data, mem) {
   switch (prompt.code) {
     case CC.SANGA: case CC.HUGA: case CC.SUIGA:
       return i32resp(1); // zero the attacker's ATK during damage calculation: free save
-    case CC.KELBEK: case CC.AGIDO: {
+    case CC.KELBEK: {
       if (prompt.loc === LOC.GRAVE) { // ② mill trigger
         if (myDeck <= 8 && oppDeck > 6) return i32resp(0); // don't mill ourselves out
         return i32resp(1);
@@ -1718,7 +1907,7 @@ function effectYnAnswer(prompt, view, data, mem) {
     default:
       break;
   }
-  const ALWAYS_YES = new Set([CC.SPHINX, CC.STONE, CC.BLAST_HELD, CC.LOST_WIND, CC.TITANOCIDER,
+  const ALWAYS_YES = new Set([CC.SPHINX, CC.BLAST_HELD, CC.LOST_WIND, CC.TITANOCIDER,
     CC.GG_COMBINED, CC.GG_THUNDERWIND, CC.GG_WINDWATER, CC.GG_WATERTHUNDER,
     CC.SHADOW_GHOUL, CC.HORUS, CC.TRILOSUKTA, CC.BAROMETT, CC.MUDORA, CC.KELDO]);
   if (ALWAYS_YES.has(prompt.code)) return i32resp(1);
@@ -1731,7 +1920,7 @@ function effectYnAnswer(prompt, view, data, mem) {
 function yesNoAnswer(prompt, view, data, mem) {
   const me = view.me;
   const ctx = prompt.context;
-  if (ctx && ctx.code === CC.AGIDO) return i32resp(view.deckCount[me] > 12 ? 1 : 0); // optional extra mill
+  if (ctx && ctx.code === CC.AGIDO) return i32resp(1); // classic Agido: the post-dice revival is free value
   if (ctx && ctx.code === CC.KELBEK) return i32resp(1); // set a trap from the graveyard: free
   if (ctx && (ctx.code === CC.LOST_WIND || ctx.code === CC.TITANOCIDER)) return i32resp(1); // re-set itself
   if (ctx && ctx.code === CC.BAROMETT)
@@ -2723,10 +2912,22 @@ class Duel {
         if (!cell) continue;
         const q = this.queryCard(p, LOC.MZONE, s);
         if (q) {
+          const prevAtk = cell.curAtk, prevDef = cell.curDef;
           if (q.atk != null) cell.curAtk = q.atk;
           if (q.def != null) cell.curDef = q.def;
           if (q.level != null) cell.curLevel = q.level;
           if (q.pos != null) cell.queryPos = q.pos;
+          // Detailed history: a live ATK/DEF change on a face-up,
+          // identified monster is an outcome (effect modifiers
+          // landing and expiring both pass through here). First
+          // observation (prev undefined) is the baseline, never a
+          // "change". Face-down stats are not public information.
+          if (cell.code && (q.pos == null || (q.pos & POS_FACEUP))) {
+            const parts = [];
+            if (prevAtk != null && q.atk != null && prevAtk !== q.atk) parts.push('攻撃力 ' + prevAtk + ' → ' + q.atk);
+            if (prevDef != null && q.def != null && prevDef !== q.def) parts.push('守備力 ' + prevDef + ' → ' + q.def);
+            if (parts.length) st.pushDLog({ k: 'info', cid: st.chainCid(), sol: st.solvingLink, s: st.who(p) + '：' + st.nameOf(cell.code) + ' の' + parts.join('／') });
+          }
           // A slot whose set cards were shuffled (MSG_SHUFFLE_SET_CARD) had
           // its code voided by the mirror — the wire hides the permutation.
           // The live query is the core's own record: re-identify from it.

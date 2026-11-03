@@ -3970,6 +3970,97 @@ WKWebView frame rates.
   every surface above (paths inline). BU-11's worst-case
   strip (defense position, 4-digit, 40px tile) is among them.
 
+## Ishizu recipe v11 (2026-11-03): the deck becomes the user's MD build
+
+The user rebuilt Ishizu in Master Duel and pointed out the app
+still ran the v10 recipe (44 cards / EX 14). decks.ishizu is now
+the decided build (saved verbatim in
+~/workspace/yugioh/recipe_ishizu_v11.txt): main 45, extra 15,
+deck name MILLENNIUM PROPHECY (start screen + VS caption).
+Diff vs v10 — main: +丘と芽吹の春化精 x1, +死者蘇生 (classic) x1,
++アギド (classic) x1, シルキィ 1->2; -聖座天嗣ストン x1,
+-古衛兵アギド x1, -マジックカード「死者蘇生」 x1. Extra:
+カステル 2->3, プルート 1->2, バロメット 2->1. The side deck
+(9 cards incl. the four classic prints) is record-only; the app
+has no side deck.
+
+Two interpretation calls, both grounded in the MD screenshots:
+- The main-deck row reading just 「アギド」 (between ゾルガ and
+  カルダーン, where every remake sibling shows its full name) is
+  the CLASSIC 《アギド》 (16135253), not 《古衛兵アギド》 — the
+  side deck proves the user owns/uses the classic prints, and
+  the v10 recipe file also wrote plain 「アギド」.
+- 「死者蘇生」 is the classic print (83764718), NOT the
+  マジックカード retrain: the classic carries NO card-name
+  activation limit and NO cannot-attack/activate rider on the
+  revived monster. Gameplay changes accordingly.
+
+New full implementations (official text, verbatim Lua, passcodes):
+- 丘と芽吹の春化精 (9350312): its ① runs through the shared
+  Vernusylph helper (string base 9350312), ② is a continuous
+  destruction shield. fxmap: override {0:1} (the helper registers
+  the real effect at idx 0; the only SetDescription is the shield
+  marker). It carries the EARTH-lock sentence, so the derived
+  lock set is now the Vernusylph TRIO (poolcov D/E updated).
+  Client follow-up recognition: the YESNO the three Vernusylph
+  sisters ask during resolution lives under string base 9350312,
+  so with 9350312 itself in the pool, foreignFollowFx now treats
+  its descs as the family follow-up even when they decode — but
+  never for 9350312's own activations (F10 guards the foreign
+  side, F11b the own side).
+- アギド (16135253, classic): mandatory battle-destroyed trigger,
+  dice roll, level-matched Fairy revival. Its text is the
+  unnumbered old format; fxmap records one YESNO prompt ({n:1})
+  under the NO-NUMBERING classification, and poolcov registers
+  the '16135253|0' exception (no printed numbers exist).
+- 死者蘇生 (83764718, classic): plain target-and-summon, no
+  SetDescription (activation convention).
+
+Mechanisms de-hardcoded by the swap:
+- The revive-rider latch (client) keyed on the retrain's code
+  (28958464). It now DERIVES the rider card from card texts
+  (the "...攻撃できず、その効果は発動できない" sentence), so on
+  the current pool it never arms — correct, since the classic
+  has no rider. The latch itself is still exercised in
+  test-poolcov F20-F25 against a fixture DATA carrying the
+  retrain text.
+- OPTION_LABELS held only the old Agido's mill options; emptied
+  (the generic mechanism stays).
+- CPU bot: CC.AGIDO repointed to the classic (its value logic
+  rewritten — a battle-destroyed dice revival is not a mill),
+  CC.STONE removed, CC.REBORN repointed to the classic, and
+  丘と芽吹の春化精 joined the Vernusylph enabler valuations.
+
+Test maintenance: test-swap Duel A re-seeded 99 -> 17 (the
+trajectory is deck-dependent; the swap still resolves for both
+players — found by seed scan). test-phase2 D3 totals now derive
+from the deck data instead of hardcoding 113/55/58.
+test-minerva3 M3-1 expects the lock trio (+M3-10: Hills latches
+the lock and the reason names her). New test-recipe-v11.js:
+composition card-for-card, Hills search+summon in a rigged duel,
+Agido battle-destruction dice (R6a) and the full revival flow
+(R6), classic Reborn flow, bot duels on the new decks, and the
+client-side no-rider assertion (R10).
+
+Dice-sequence note (found while verifying Agido, pre-existing,
+NOT introduced by this swap): the PoC driver fixes core seed
+components 1..3 (67890/24680/13579), so the first six rolls of
+every duel land 1,1,1,3,x,1 regardless of the duel seed (the
+xoshiro state is dominated by the fixed components early on);
+rolls diverge from the 7th. Any future dice/coin card inherits
+this. Fixing it means changing the driver's seed expansion and
+rebuilding the WASM, which recalibrates every seeded test in
+the suite — its own round, not this one.
+
+Verification: all suites pass on this branch (23 files incl.
+the new test-recipe-v11 and the recalibrated swap/minerva3/
+phase2). Real-browser captures at 390x620 and 390x700:
+~/workspace/recipe-v11-shots/ (deck select shows MILLENNIUM
+PROPHECY / 45枚 for both seats; a live duel on the new deck
+shows deck 40 after the opening draw, EX 15, recipe cards in
+hand). Card faces in those local captures show the fallback
+tablet art — the image host is not reachable from the capture
+sandbox; production image delivery is unchanged.
 ## Set-card visuals (2026-11-03): double-draw defects + own-set ghost + user card back
 
 User reports (real device): (1) face-up DEFENSE tiles kept an
@@ -4222,6 +4313,20 @@ Keldo drawn and normal-summoned through the real sheet at
 four-arts board at 390x620 (Mudora / Agido / Kelbek / Keldo on
 field and in hand), cut-in via fxCutinShow as before.
 
+## Merge note (recipe v11 x card-art round, 2026-11-03)
+
+The per-card illustration round landed while this branch was in
+flight and keyed the 2nd user delivery to 《古衛兵アギド》
+(62320425) — the card recipe v11 removes. The CARD_ART entry is
+left in place but dormant: preload follows deck membership, so
+the art is never loaded or shown, and the classic 《アギド》
+(16135253) shows the standard card image. Whether the 古衛兵 art
+should be retired or the user supplies art for the classic is
+the user's call (flagged in the round report, not decided here).
+test-cardart adapted accordingly: CA0c (deck composition), CA7c
+(Agido art is NOT preloaded now), and the fabricated board's
+fourth tile is Keldo instead of the departed Agido (CA11b);
+the mechanism checks (map/inline/asymmetry/ghost) are unchanged.
 Fifth delivery: 《予見者ゾルガ》 31525442 (x1 in the Ishizu
 deck). Source: ~/workspace/duel-assets/zolga-user-20261103.jpg
 (1024x1536 — blue-masked seer in white robes, visions of the
@@ -4336,3 +4441,339 @@ main too; the substantive ST5 check passes throughout).
 Full suite on the integrated tree (main 4eb7e51 + this branch):
 all suites pass (test-worker included). Remaining unmeasured:
 real-device WKWebView profiling.
+## Log detail (2026-11-03, user report: 履歴ログが詳細でない)
+
+The history log carried headlines only — which effect activated,
+what processing happened and what the outcome was (destroyed /
+banished / damage / returned) was written nowhere, so a duel
+could not be re-read from the log. The mirror now keeps a
+STRUCTURED detailed stream next to the headline log and the
+history sheet renders it as the duel's story.
+
+### Engine: GameState.dlog (structured; headline state.log untouched)
+
+- pushDLog stamps every entry with turn / turn player / phase;
+  chain activations additionally carry a chain-episode id (cid,
+  bumped per MSG_CHAINING that starts a new chain) and outcome
+  lines produced while a link resolves carry its number (sol).
+  Cap 600, trimmed from the head.
+- CHAINING (70): activation entries are stored STRUCTURED
+  ({k:'act', link, con, code, desc, loc, tgt}) — the printed
+  effect NUMBER is resolved client-side (fxmap lives there) at
+  capture time. Target naming: the wire's target fields name
+  the activating card itself when the effect has no target
+  (observed on every non-targeting activation in the pool), so
+  self-reference is dropped as "no target"; a real target is
+  named only when public (face-up on the field, grave/banished
+  piles, or the human's own card).
+- CHAIN_SOLVING (72) emits {k:'solve'} headers; CHAIN_NEGATED /
+  CHAIN_DISABLED emit neg/dis lines with the link number.
+- MOVE (50): every public move becomes an outcome line —
+  battle vs effect destruction told apart by the reason bits
+  (0x1 / 0x20), banish, deck-from mill, grave send, returns to
+  hand/deck (incl. Extra Deck), recoveries from grave/banish/
+  Extra, control change, Xyz material attach/detach, discards
+  (0x4000), hand-to-grave sends, deck shuffles reported by the
+  core. Arrival-side field/hand/deck moves are owned by the
+  summon/set/draw lines and stay unlogged here (no duplicates).
+- DAMAGE / RECOVER / PAY_LPCOST carry LP before -> after.
+  LPUPDATE (94) is deliberately not logged (would duplicate).
+- SET (54) names the human's own set card with its position;
+  the opponent's stays "カードをセット". Summons (60/62/64)
+  carry the position; an opponent's face-down summon stays
+  unnamed even when a preceding MOVE disclosed the code.
+- POS_CHANGE (53) names the position transition; the wire also
+  uses the face-up/face-down MASKS (0x5 / 0xA — a set card
+  announces 0xA), all six forms are named. An opponent's
+  face-down -> face-down change is suppressed (identity leak).
+- DRAW (90) names the human's drawn cards; the opponent's
+  draws stay count-only. CONFIRM_CARDS (31) groups what the
+  human was shown per (controller, location), deck top-first.
+- refreshFieldStats diffs effective ATK/DEF of known face-up
+  monsters and logs the delta (first sighting is a silent
+  baseline; face-down stats stay hidden). Attribution is by
+  prompt boundary, so these lines do not carry a chain link.
+- SWAP (55), SHUFFLE_HAND (33), SWAP_GRAVE_DECK (35),
+  SHUFFLE_SET_CARD (36), WIN (5) each add their line.
+
+### What the stream cannot say (counted, not faked)
+
+- Battle vs effect damage is not separable from MSG_DAMAGE
+  alone; inside a resolution the episode grouping shows it,
+  outside it the attack declaration precedes the damage line.
+- Xyz material COUNTS are not logged (the count is not final
+  at summon-message time).
+- Stat-change lines carry no resolving link (see above).
+
+### Client: capture + rendering
+
+- captureDLog (render) prefix-diffs the stream by entry
+  identity (append-only; the anchor survives the head trim
+  between renders) and bakes each entry's text at capture time:
+  act/solve/neg/dis lines go through the audited fx resolver —
+  numbered effects render 効果①-⑯, spell/trap card activations
+  render の発動, single-effect cards render の効果 (the
+  pool-coverage convention: the card itself is the identifier).
+- openLogHistory renders the detailed stream chronologically
+  (oldest first; opens scrolled to the newest entry), grouped
+  by turn headings （ターンN（自分／相手のターン）), phase
+  sub-headings, and chain-episode boxes; resolution headers are
+  styled as sub-headings, their outcome lines indented, and
+  negation lines tinted. Last 240 entries shown; the subtitle
+  states the total. The headline rendering remains as fallback
+  when no detailed entries exist. Rows carry content-visibility
+  like the other long sheet lists (round-2 performance rule).
+- The board's one-line log strip is unchanged (headlines).
+
+Tests: test-logdetail.js (node; full duels assert act<->solve
+correspondence, outcome kinds, LP arrows, opponent secrecy,
+no placeholder garbage), test-logdetail-ui.js (jsdom; sheet
+structure with the real fxmap, incl. a deterministic numbered-
+effect stamp probe). Frame evidence: shots-logdetail/ beside
+cap-logdetail.js (390x700/620, cut-in off + response auto via
+the app's own settings).
+
+## Test-clicker wedge (found landing recipe v11, 2026-11-03)
+
+The live-duel clickers in test-fx / test-ui / test-layout /
+test-strot clicked `.optbtn` before `#sheet-cancel`. On a field
+monster's action sheet whose only effect button is DISABLED
+("今は発動できません" — e.g. a just-summoned Mudora), the clicker
+then clicked the dead button forever and the duel never advanced
+(FXL timeouts with single-digit fx records; a human just taps
+選択に戻る — not a product bug). The new deck's longer, Mudora-
+heavier trajectories made the wedge likely instead of rare. All
+four clickers now skip `.optbtn.disabled`. No assertion changed.
+Seventh delivery: 《転輪のスフィンクス》 46148485 (x1 in the
+Ishizu deck; also a KEYCARD_CODES member — her summon raises
+the BGM to the Keycard tier and fires the ace cut-in). Source:
+~/workspace/duel-assets/sphinx-user-20261103.jpg (1024x1536 —
+gold-and-purple sphinx with two floating stone tablets over a
+sunset desert). Small file = the standard top-anchored
+full-width square crop x0-1024 / y0-1024 -> 320x320 (42KB),
+no start-position adjustment: her face sits small near the
+top, but a tile-aspect simulation (center/cover, ~55px wide)
+still reads unmistakably — gold headdress, purple torso,
+rainbow shield and both tablets fill the centre column, a
+combination no other pool card has. Big file = full width x
+y0-1411 -> 640x882 (191KB). One line in CARD_ART;
+test-cardart gained CA0h/CA7l/CA7m/CA11g/CA13b/CA14e/CA16c/
+CA20 (66 checks). NOTE: Sphinx was the test suite's unlisted
+exemplar (fallback checks CA6/CA11/CA15/CA17); that role
+moved to 《森と目覚の春化精》 36745317 (UNLISTED, x3 in the
+Ishizu main deck), so the fallback contract stays pinned on a
+real pool card. Real-play frames (cap-sphinx.js,
+shots-sphinx/): Sphinx drawn in a real opening hand and
+tapped to the resident preview at 390x620/700 (the art reads
+in the hand card). Declared substitutions: the field tile is
+painted via render() inside the real session (she is level
+10 and cannot be tribute-summoned from an opening hand) on a
+fabricated seven-arts board, and the cut-in is shot via
+fxCutinShow(46148485) — the exact function the real
+keycard-summon path calls — rather than staging a full
+tribute summon; the big card shows the full illustration
+with both tablets and the shield.
+
+Eighth + ninth deliveries (the first SPELLS with individual
+art): 《太陽の書》 38699854 and 《月の書》 14087893 (x1 each in
+the Ishizu deck). Sources: ~/workspace/duel-assets/
+taiyou-user-20261103.jpg (1024x1536 — golden book on an
+altar, Anubis statue behind) and tsuki-user-20261103.jpg
+(1024x1536 — blue book in a night temple, crescent moon and
+Eye of Horus on the cover). Both books sit in the lower half
+of their frames, but the standard top-anchored full-width
+square crop x0-1024 / y0-1024 -> 320x320 (44KB / 37KB) needs
+NO start-position adjustment and does NOT break the crop
+rule: each cover's signature — the winged eye and the
+sun-wheel (Taiyou) / the crescent-and-eye medallion (Tsuki)
+— sits inside the top square, and tile-aspect simulations
+read instantly (warm gold vs deep blue tell the two apart
+at a glance). Big files = full width x y0-1411 -> 640x882
+(216KB / 170KB). Two lines in CARD_ART; test-cardart gained
+CA0i/CA0j/CA7n/CA7o/CA7p/CA7q/CA11h/CA11i/CA13c/CA14f/
+CA14g/CA16d/CA16e/CA21. Spell surfaces pinned by a dedicated
+fabricated board: own face-up S/T tile shows the art, own
+SET S/T carries the art UNDER the setown veil (CA11i), and
+opponent set S/T gets no art and no veil (CA13c). Real-play
+frames (cap-books.js, shots-books/): each book drawn in a
+real opening hand, tapped to the preview, then set through
+the real action sheet at 390x620/700 — the set tile ghosts
+the book's face under the breathing veil (styles.json pins
+the art URL + veil at both heights), plus a fabricated
+both-books board (face-up pair + set Taiyou + both in hand).
+
+Tenth delivery: 《カオスポッド》 79106360 (x2 in the Ishizu
+deck). Source: ~/workspace/duel-assets/
+chaospod-user-20261103.jpg (1024x1536 — the grinning pod
+among canopic jars). The face is large at centre frame, so
+the standard top-anchored full-width square crop x0-1024 /
+y0-1024 -> 320x320 (34KB) puts the green eye and the teeth
+squarely in the tile's centre column — the tile simulation
+reads instantly. Big file = full width x y0-1411 -> 640x882
+(136KB). One line in CARD_ART; test-cardart gained CA0k/
+CA7r/CA7s/CA11j/CA14h/CA16f (92 checks in total). Real-play
+frames (cap-chaospod.js, shots-chaospod/): the Pod drawn
+and normal-summoned face-up through the real sheet (tile +
+resident preview, eye and grin unmistakable at tile size),
+and — the surface a FLIP monster actually shows — drawn and
+set face-down through the real sheet, its face ghosting
+under the breathing setown veil, rotated with the tile.
+
+Tenth delivery, REPLACEMENT (user, 2026-11-03: "カオスポッド
+のイラストこれに変更"): new source ~/workspace/duel-assets/
+chaospod-user-20261103-v2.jpg (853x1844 — the pod on a
+middle shelf between canopic jars, taller frame than the
+first delivery). Only the two delivered files were rebuilt;
+the CARD_ART registration is unchanged and the first source
+stays in duel-assets. Small file: the standard top-anchored
+square (y0-853) puts the pod low-left and the tile's centre
+cover-crop clips it, so the crop start was adjusted to
+y350-1203 -> 320x320 (25KB) — the pod's top is still kept
+whole (nothing of the subject is cut; only the empty upper
+shelves are excluded), and the tile simulation plus the
+real-play tile show the green eye and the teeth centred.
+Big file = standard top-anchored full width x y0-1176 ->
+640x882 (98KB); the pod (y~540-905) sits fully inside, so
+no adjustment there. test-cardart: ALL PASSED. Real-play
+frames (cap-chaospod.js, shots-chaospod-v2/): drawn and
+normal-summoned face-up (tile + resident preview read
+instantly — eye and grin between the two jars) and set
+face-down under the breathing veil, at 390x620/700.
+
+Eleventh to thirteenth deliveries (user, 2026-11-03): the
+Vernusylph trio — 《丘と芽吹の春化精》 9350312 (oka),
+《花と野原の春化精》 62133026 (hana), 《森と目覚の春化精》
+36745317 (mori); sources ~/workspace/duel-assets/
+{oka,hana,mori}-user-20261103.jpg (1024x1536 each).
+MAPPING CORRECTION (user, 2026-11-03): the first assignment
+had Oka and Hana swapped — Oka is the pink-haired fairy,
+Hana is the white rabbit. The duel-assets files were
+content-swapped before this round ran; md5s were re-verified
+and both images eyeballed before generation, so the
+delivered files were built from the corrected sources.
+Standard top-anchored crops for all three, no start
+adjustment: small = y0-1024 -> 320x320 (35-39KB), big =
+full width x y0-1411 -> 640x882 (161-177KB). The tile
+simulation (cover, centre top, 62x88 box) keeps every face
+whole: the fairy's face upper-centre, the rabbit's head
+upper-centre, the forest boy in the upper half with the
+sleeping beast below. Three lines in CARD_ART.
+test-cardart: the unlisted fallback exemplar moved
+Mori -> 《地久神－カルボン》 15079028 (x3 in the deck, no
+art), and the trio gained CA0l-CA0o / CA7t-CA7y /
+CA11k-CA11m / CA13d / CA14i-CA14k / CA16g-CA16i / CA22 —
+119 checks in total, ALL PASSED. Full suite on the branch:
+green except the known test-strot ST4 reachability flake
+(ST5 passed) and one load-related test-fx FX1 failure that
+passes on an isolated rerun (ALL FX CHECKS PASSED).
+Real-play frames (cap-shunka.js, shots-shunka/): each
+sister drawn, tapped (resident preview) and normal-summoned
+face-up through the real sheet at 390x620/700 — tile,
+preview and hand all carry her own art, and the name/stat
+lines confirm the corrected mapping (Oka 200/2000 = pink
+fairy, Hana 600/1600 = rabbit, Mori 900/1800 = forest boy).
+
+## Deck-scoped illustrations (user decision, 2026-11-03)
+
+A card can now carry a different illustration while it belongs
+to a specific deck — the mechanism the future Neuron-ID deck
+import will build on. The user's shape: 《森と目覚の春化精》
+wears an Egyptian illustration ONLY inside the Ishizu deck;
+anywhere else she uses the regular forest art. A second entry
+arrived the same day (《花と野原の春化精》, same rule).
+
+### The map and the resolution order
+`DECK_ART` in client.js, next to CARD_ART:
+deck id (the data.json `decks` key) -> passcode -> slug.
+```
+DECK_ART = { ishizu: { 36745317: 'mori-ishizu', 62133026: 'hana-ishizu' } }
+```
+`cardArtFile(code, big, deckKey)` resolves: DECK_ART[deckKey]
+[code] when a deck context is supplied, else CARD_ART[code],
+else null (shared placeholder). No per-card branches anywhere:
+new decks/cards are data. Delivered files keep the standard
+shape and the user's crop rule (keep the top, cut the bottom):
+assets/card-art-mori-ishizu{-s}.jpg and
+assets/card-art-hana-ishizu{-s}.jpg, standard top-anchored
+crops with NO start adjustment (small = y0-1024 -> 320x320,
+47KB / 42KB; big = full width x y0-1411 -> 640x882, 223KB /
+201KB; both faces sit upper-centre and read whole in the
+tile simulation).
+
+### Where the deck context comes from
+Judged by the deck the card belongs to, never by the viewing
+seat (user decision): `seatDeckKeys = [seat0's key, seat1's
+key]` is recorded at duel start, and every surface derives
+its context from the seat that owns the instance:
+- board tiles: the zone's seat (con); hand: the human's seat;
+  selection grids / unselect grid: the candidate entry's con;
+- resident preview: captured into previewState at setPreview
+  time (the ref's con; a bare code falls back to
+  deckKeyOfCode — the deck key when exactly one of the two
+  duel decks contains the code, else base art);
+- the name-declaration catalogue: deckKeyOfCode (code-only
+  surface, same rule as a ref-less preview);
+- FX ghosts and cut-ins ride the same resolution: flights
+  take the departing seat, vanish/slide derive it from the
+  zone key, attack ghosts from the target's key, chain and
+  set-activation pops from the link/event con, the ace scene
+  from the summoner's con (materials from their own keys),
+  the finisher big card from the attacker's key.
+Attribution follows the client's state model (cards live in
+a player's zones/piles); there is no separate owner field,
+and control changes slide with the zone they occupy.
+
+### Preload
+preloadCardArt warms, for each selected deck, BOTH the base
+file and that deck's scoped variant for every listed card —
+so the Ishizu Mori/Hana paint their Egyptian art from the
+first frame, and the base files stay warm for surfaces whose
+context resolves the other way. The deck-select screen
+itself has no per-card art surface (both deck buttons carry
+the shared placeholder thumbnail), so nothing changes there.
+
+### Neuron-imported decks (future)
+An imported deck gets its own deck id; unless DECK_ART gains
+an entry under that id, every card in it resolves to the
+base CARD_ART art automatically. Mori in an imported deck
+shows the plain forest art — the Egyptian variant cannot
+leak into a deck it was not granted to.
+
+### Information asymmetry (unchanged)
+An opponent's face-down card receives NO art of either kind:
+tile art is only stamped when the face is visible, and FX
+face-down ghosts stay bare. The override binds exactly like
+the base art (pinned by CA13d/CA13e/CA13f).
+
+### Tests + frames
+test-cardart extended: delivered-file entries for both
+scoped pairs; CA7z1-CA7z10 (map, resolution both ways,
+preload); the Vernusylph board now expects the scoped art
+on the Ishizu seat (CA11l/CA11m/CA14j/CA14k/CA16h/CA16i);
+a flipped-seat fixture (seat keys swapped) pins the other
+direction — GG-context Mori/Hana fall back to the plain art
+on tile/hand/preview (CA11n/CA11p/CA14l/CA14m/CA16j/CA16l),
+Ishizu-context copies on the opponent's seat show the
+Egyptian art (CA11o/CA11q/CA16k/CA16m), and face-down
+Ishizu-context copies stay bare (CA13e/CA13f). Real-play
+frames (cap-deckart.js, shots-deckart/): Mori and Hana
+drawn, previewed and normal-summoned in a real Ishizu-deck
+duel at 390x620/700 — tile and preview styles pin
+card-art-mori-ishizu-s.jpg / card-art-hana-ishizu-s.jpg,
+and the frames were eyeballed (names and stats match).
+
+Third entry (same day): 《丘と芽吹の春化精》 9350312 ->
+'oka-ishizu' — the Vernusylph trio's Ishizu-scoped set is
+complete. Source ~/workspace/duel-assets/
+oka-ishizu-user-20261103.jpg (1024x1536 — the pink-haired
+fairy with a lotus basket before an Egyptian temple).
+Standard top-anchored crops, no start adjustment (small
+46KB / big 220KB; her face is upper-centre and whole in the
+tile simulation). One more value in the same DECK_ART map —
+no code path changed. test-cardart gained CA0 file entries,
+CA7z11-CA7z14, the scoped expectations on the Ishizu seat
+(CA11k/CA14i/CA16g), the flipped-seat fallbacks (CA11r/
+CA14n/CA16n plain, CA11s/CA16o scoped) and the face-down
+pin CA13g. cap-deckart.js now runs all three sisters;
+shots-deckart/ holds the trio's real-play frames at
+390x620/700 (tile + preview styles pin the scoped files).
