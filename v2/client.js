@@ -671,6 +671,8 @@ function fxStressScene() {
 function fxResetFoundation() {
   fxScenes = []; fxBursts = [];
   fxStopUntilWall = 0; fxTimeMs = 0; fxLastWall = 0;
+  fxAceSceneRef = null; fxFinisherSceneRef = null; fxAceRecent = null; // stage 3 scene refs (hosts are wiped by fxResetDuel)
+  const appEl = $('app'); if (appEl) appEl.style.transform = ''; // a finisher tilt must not survive the duel
   for (const id of ['fxcv', 'fxcvTop']) { const c = $(id); if (c && c.getContext) { const x = c.getContext('2d'); if (x) x.clearRect(0, 0, c.width, c.height); } }
 }
 
@@ -803,6 +805,27 @@ function fxProcessInner(evs, state) {
       fxRecord('portal', { method: 'revive', code });
       consumedArr.add(ar.key);
       continue;
+    }
+    // V3 stage 3: an ace arrival (cut-in roster, setting ON) is
+    // owned end-to-end by the ace scene — the round-A converge /
+    // portal and the round-B cut-in for this summon stand down.
+    if (fxSettings.cutin && code != null && FX_CUTIN_CODES.has(code)) {
+      // the summon EVENT may have beaten the state diff (the two
+      // land in different fxProcess batches): if the event pass
+      // already owns this summon, stand down completely.
+      if (fxAceRecent && fxAceRecent.code === code && fxAceRecent.con === con && fxTimeMs <= fxAceRecent.until) { consumedArr.add(ar.key); continue; }
+      const mats = (method === 'fusion' || method === 'xyz' || method === 'synchro') ? matDepsOf(con) : [];
+      const sc = fxAceSceneV3({ code, key: ar.key, con, method, mats: mats.map(m => ({ key: m.key, code: m.entry.code })) });
+      if (sc) {
+        for (const m of mats) { consumedDep.add(m.key); fxRecord('converge', { code: m.entry.code, via: 'acescene' }); }
+        fxRecord('portal', { method, code, via: 'acescene' });
+        fxRecord('cutin', { code, via: 'acescene' });
+        fxAceRecent = { code, con, until: fxTimeMs + 8000 };
+        consumedArr.add(ar.key);
+        continue;
+      }
+      // scene busy (another ace is presenting): fall through to
+      // the normal treatment below.
     }
     if (method === 'fusion' || method === 'xyz') {
       const mats = matDepsOf(con);
@@ -983,6 +1006,9 @@ function fxLpEl(con) { return con === HP ? $('myLp') : $('oppLp'); }
 // superseded mid-count restarts from the value currently shown.
 function fxLpCount(con, to, startAtFx) {
   const el = fxLpEl(con); if (!el) return;
+  // V3 stage 3: while a finisher scene owns this seat's counter
+  // (its LP drain), no count scene is started for it
+  if (fxLpScenes[con] && !fxLpScenes[con].dead && fxLpScenes[con].kind === 'finisher') return;
   if (fxLpScenes[con] && !fxLpScenes[con].dead) { const old = fxLpScenes[con]; old.dead = true; if (old.cleanup) old.cleanup(); }
   fxLpScenes[con] = null;
   const start = fxLpShown[con];
@@ -1178,18 +1204,150 @@ function fxAtkBanner() {
   fxAnim(d, [{ opacity: 0 }, { opacity: 1, offset: 0.2 }, { opacity: 1, offset: 0.75 }, { opacity: 0 }], { duration: 900, easing: 'ease-out' });
   fxKill(d, 940);
 }
-function fxFinisher(attr) {
-  // The wash rides ABOVE the result overlay: the driver hands the
-  // win to the client in the same task that spawns the wash, so
-  // inside #fxlayer (z 25, under the z-60 result) it would never be
-  // seen at all. It is a body-level fixed overlay, pointer-events
-  // none, gone in 1.3 s — the result reads through it as it fades.
-  const d = document.createElement('div');
-  d.className = 'fx-finishwash';
-  d.style.background = FX_ATTR_WASH[attr] || 'rgba(255,233,168,.5)';
-  document.body.appendChild(d);
-  fxAnim(d, [{ opacity: 0 }, { opacity: 1, offset: 0.16 }, { opacity: 1, offset: 0.55 }, { opacity: 0 }], { duration: 1300, easing: 'ease-out' });
-  fxKill(d, 1360);
+// ---- V3 stage 3: the finisher scene (proposal 1.3). Lives INSIDE
+// the layer table (#fxcutin, z35); the result display is separated
+// from it by TIME (a gate at scene-local 2300 ms, see the start
+// handler), never by stacking above it. The wash is a radial bloom
+// FROM the defender's LP plate — it has an origin and a direction.
+let fxFinisherSceneRef = null;
+function fxFinisherGateMs() {
+  const sc = fxFinisherSceneRef;
+  if (!sc || sc.dead) return 0;
+  const remain = (sc.t0 + 2300) - fxTimeMs;
+  return Math.max(0, Math.min(2400, remain));
+}
+function fxFinisherSceneV3(attr) {
+  const host = $('fxcutin'); if (!host) return;
+  const la = fxLastAttackScene; if (!la || !la.aPt) return;
+  const layer = fxLayerEl(); if (!layer) return;
+  const app = $('app'); if (!app) return;
+  const ar = fxRel(app);
+  const defCon = la.defCon;
+  const lpEl = fxLpEl(defCon);
+  const lpPt = lpEl ? fxRel(lpEl) : la.tPt;
+  if (!lpPt) return;
+  const col = FX_ATTR_COLORS[attr] || '#ffe9a8';
+  const washCol = FX_ATTR_WASH[attr] || 'rgba(255,233,168,.5)';
+  // the finisher owns the loser's counter from here: stop any count
+  // scene for that seat and take the currently-shown value as the
+  // drain's start (the LP loop defers to us via fxLpCount's guard)
+  let drainFrom = fxLpShown[defCon];
+  if (fxLpScenes[defCon] && !fxLpScenes[defCon].dead) { const old = fxLpScenes[defCon]; old.dead = true; if (old.cleanup) old.cleanup(); }
+  if (drainFrom == null) drainFrom = 4000;
+  const lpElRef = lpEl;
+  // ---- nodes: charge + vignette on the board layer; the rest in the host
+  const nodes = [];
+  const charge = fxNode('fx3-emph', la.aPt.cx, la.aPt.cy, la.aPt.w, la.aPt.h);
+  if (charge) { charge.style.borderColor = col; nodes.push(charge); }
+  const vig = document.createElement('div'); vig.className = 'fx3-vignette'; vig.style.opacity = '0'; layer.appendChild(vig); nodes.push(vig);
+  host.innerHTML = ''; host.className = 'on';
+  const hmk = (cls) => { const d = document.createElement('div'); d.className = cls; host.appendChild(d); nodes.push(d); return d; };
+  const scrim = hmk('scrim'); scrim.style.opacity = '0';
+  const bg = hmk('fx3-acebg');
+  bg.style.background = 'repeating-conic-gradient(from 0deg,' + col + '2e 0deg 14deg,transparent 14deg 30deg)';
+  bg.style.opacity = '0';
+  const vw = Math.min(window.innerWidth || 390, 430);
+  const cw = Math.round(Math.min(250, vw * 0.62)), chh = Math.round(cw * 1.38);
+  const card = hmk('bigcard');
+  card.style.width = cw + 'px'; card.style.height = chh + 'px'; card.style.opacity = '0';
+  card.innerHTML = '<div class="nm">' + cardName(la.code) + '</div>';
+  // beam: attacker -> defender LP plate (fxcutin shares the app coordinate space)
+  const dx = lpPt.cx - la.aPt.cx, dy = lpPt.cy - la.aPt.cy, len = Math.hypot(dx, dy);
+  const ang = Math.atan2(dy, dx) * 180 / Math.PI;
+  const beam = document.createElement('div');
+  beam.className = 'fx fx3-linew fx3-beam';
+  beam.style.left = la.aPt.cx + 'px'; beam.style.top = la.aPt.cy + 'px'; beam.style.width = len + 'px'; beam.style.opacity = '0';
+  beam.innerHTML = '<div class="gl"></div><div class="cl"></div>';
+  host.appendChild(beam); nodes.push(beam);
+  const core = hmk('fx fx3-core');
+  core.style.left = (lpPt.cx - 150) + 'px'; core.style.top = (lpPt.cy - 150) + 'px'; core.style.width = '300px'; core.style.height = '300px';
+  core.style.background = 'radial-gradient(circle,#ffffff 0%,' + col + ' 34%,transparent 68%)'; core.style.opacity = '0';
+  const wash = hmk('fx3-wash');
+  wash.style.left = (lpPt.cx - 360) + 'px'; wash.style.top = (lpPt.cy - 360) + 'px'; wash.style.width = '720px'; wash.style.height = '720px';
+  wash.style.background = 'radial-gradient(circle,' + washCol + ' 0%,' + washCol + ' 30%,transparent 68%)'; wash.style.opacity = '0';
+  const appEl = app;
+  const sc = fxAddScene({
+    kind: 'finisher', dur: 2900,
+    cues: [
+      { at: 1200, fn: () => playSe((ATTR_SE && ATTR_SE[attr]) || 'atk_sword_big') },  // launch
+      { at: 1420, fn: () => { fxHitStop(110); playSe('hit_critical'); } },          // impact
+    ],
+    render(t) {
+      // L1 charge 0-500: attacker glow grows, vignette closes to .55
+      if (charge) {
+        const u = fxSeg(t, 0, 500);
+        charge.style.transform = 'scale(' + (1 + 0.05 * u).toFixed(3) + ')';
+        charge.style.opacity = String(1 - fxSeg(t, 500, 700));
+        charge.style.boxShadow = '0 0 ' + Math.round(26 * u) + 'px ' + col + ', inset 0 0 14px ' + col;
+      }
+      if (vig) vig.style.opacity = String(0.55 * fxSeg(t, 0, 500) * (1 - fxSeg(t, 1900, 2400)));
+      // L2 cut-in flash 500-1250: scrim to .6 (CSS scrim is already
+      // translucent; opacity scales it), background swirl fades in
+      // and turns, the card scales in (settle) by +250
+      if (scrim) scrim.style.opacity = String(0.85 * fxSeg(t, 500, 750) * (1 - fxSeg(t, 2100, 2400)));
+      if (bg) { bg.style.opacity = String(0.8 * fxSeg(t, 500, 900) * (1 - fxSeg(t, 2100, 2400))); bg.style.transform = 'rotate(' + ((t * 12 / 1000) % 360).toFixed(1) + 'deg)'; }
+      if (card) {
+        const u = FXE.settle(fxSeg(t, 500, 750));
+        card.style.transform = 'translate(-50%,-50%) scale(' + (0.7 + 0.3 * u).toFixed(3) + ')';
+        card.style.opacity = String(fxSeg(t, 500, 620) * (1 - fxSeg(t, 2050, 2350)));
+      }
+      // L3 beam 1200-1420: accelerates to the LP plate, gone by 1600
+      if (beam) {
+        const ext = FXE.launch(fxSeg(t, 1200, 1420));
+        beam.style.transform = 'rotate(' + ang + 'deg) scaleX(' + ext.toFixed(3) + ')';
+        beam.style.opacity = String(t < 1200 ? 0 : 1 - fxSeg(t, 1450, 1600));
+      }
+      // L5 impact flash 1420-1900 at the origin
+      if (core) {
+        const u = fxSeg(t, 1420, 1900);
+        core.style.transform = 'scale(' + (0.5 + 0.6 * FXE.outCubic(u)).toFixed(3) + ')';
+        core.style.opacity = String(u <= 0 ? 0 : (1 - fxSeg(t, 1560, 1900)));
+      }
+      // L6 wash 1420-2400: radial from the origin; peak 1530, held
+      // to 1750, washOut decay to FULLY GONE at 2400
+      if (wash) {
+        let a = 0;
+        if (t >= 1420 && t < 1530) a = fxSeg(t, 1420, 1530);
+        else if (t >= 1530 && t < 1750) a = 1;
+        else if (t >= 1750 && t < 2400) a = 1 - FXE.washOut(fxSeg(t, 1750, 2400));
+        wash.style.opacity = String(a * 0.95);
+        wash.style.transform = 'scale(' + (0.55 + 0.45 * FXE.outCubic(fxSeg(t, 1420, 1900))).toFixed(3) + ')';
+      }
+      // L7 tilt 1420-2050: the frame leans 0.5 degrees and recovers
+      // (a tilt, not a shake — MD's grammar, proposal 1.3)
+      if (appEl) {
+        const tu = fxSeg(t, 1420, 2050);
+        appEl.style.transform = tu > 0 && tu < 1 ? 'rotate(' + (-0.5 * Math.sin(Math.PI * tu)).toFixed(3) + 'deg)' : '';
+      }
+      // L9 LP drain 1600-2200: accelerating (quadratic) to zero,
+      // the counter pops once when it lands
+      if (lpElRef) {
+        if (t >= 1600 && t <= 2200) {
+          const u = fxSeg(t, 1600, 2200);
+          const v = Math.max(0, Math.round(drainFrom * (1 - u * u)));
+          if (fxLpShown[defCon] !== v) { fxLpShown[defCon] = v; lpElRef.textContent = v; }
+          lpElRef.style.transform = '';
+        } else if (t > 2200 && fxLpShown[defCon] !== 0) {
+          fxLpShown[defCon] = 0; lpElRef.textContent = '0';
+          lpElRef.style.transform = 'scale(1.15)';
+          setTimeout(() => { try { lpElRef.style.transform = ''; } catch (e) {} }, 130);
+        }
+      }
+    },
+    onDone() {
+      for (const n of nodes) { try { n.remove(); } catch (e) {} }
+      host.className = '';
+      if (appEl) appEl.style.transform = '';
+      if (fxLpScenes[defCon] === sc) fxLpScenes[defCon] = null;
+      fxFinisherSceneRef = null;
+    },
+  });
+  sc.cleanup = () => {};
+  fxLpScenes[defCon] = sc; // the LP loop defers to the finisher for this seat (fxLpCount guard)
+  fxFinisherSceneRef = sc;
+  // L8 afterglow: 38 particles drift down from the origin (top canvas)
+  fxSpawnBurst('top', { seed: (Math.random() * 1e9) | 0, o: [lpPt.cx, lpPt.cy], n: 38, t0: fxTimeMs + 1530, life: [500, 900], speed: [20, 90], ang: [Math.PI / 2, 2.2], grav: 60, dragK: 0.8, size: [3, 7], cols: [col, '#ffffff', '#ffe9a8'], alpha: .8 });
+  return sc;
 }
 // The core often delivers MSG_WIN in its own trailing batch, one
 // process step AFTER the lethal damage batch — so the winner
@@ -1333,12 +1491,148 @@ function fxSetActivate(code, linkNo) {
   fxAnim(d, [{ opacity: 0 }, { opacity: 1, offset: 0.18 }, { opacity: 1, offset: 0.8 }, { opacity: 0 }], { duration: 780, easing: 'ease-out' });
   fxKill(d, 820);
 }
-// ---- ace cut-in (B6): portal flash on the zone (round A) -> the
-// scrim dims the field -> the card, large, with a name/ATK/DEF
-// banner. HUD stays readable through the translucent scrim and the
-// layer sits below the dock/sheet, so a prompt is never covered.
-// ~4.7 s; any tap skips it (the tap itself is never consumed) and
-// the duel never waits for it.
+// ---- V3 stage 3: the ace appearance scene (proposal 1.1). ONE
+// timeline (4,600 ms) owns the whole event — materials, portal,
+// flash, cut-in, landing — so the round-A converge/portal and the
+// round-B cut-in for the same summon are suppressed (takeover is
+// total or not at all). The hold is ALIVE: background vortex and
+// light streaks keep turning, particles drift up, the card's glow
+// breathes, and the banner's ATK/DEF count up to their real
+// values. A tap skips to the exit (the tap is never consumed).
+let fxAceSceneRef = null;
+// stage 3: cross-batch ace takeover marker {code, con, until} —
+// the state diff and the summon event land in different
+// fxProcess batches, so the marker must outlive a single call.
+let fxAceRecent = null;
+const FX_PORTAL_COLS = { fusion: ['#b286ff', '#4a2cb2'], synchro: ['#6fe08a', '#1d7a3a'], xyz: ['#59d8f2', '#1a6f8a'], generic: ['#ffd94d', '#c9a227'], revive: ['#ffe9a8', '#c9a227'] };
+function fxAceSkip() {
+  const sc = fxAceSceneRef;
+  if (!sc || sc.dead || sc.skipLocal != null) return;
+  const local = fxTimeMs - sc.t0;
+  if (local < 3900) { sc.skipLocal = local; sc.dur = local + 700; } // exit (300) + landing (350) + margin
+}
+function fxAceSceneV3(o) {
+  const layer = fxLayerEl(); if (!layer) return null;
+  const host = $('fxcutin'); if (!host) return null;
+  const app = $('app'); if (!app) return null;
+  const ar = fxRel(app);
+  const slotEl = fxSlotEl(o.key);
+  // geometry fallback: with no painted slot (synthetic drives), the
+  // zone side uses a nominal rect on the summoner's half — the
+  // presentation must still run (the cut-in is the payload)
+  const zr = slotEl ? fxRel(slotEl) : { cx: ar.cx, cy: ar.y + ar.h * (o.con === HP ? 0.60 : 0.28), w: 56, h: 76 };
+  const d = cardData(o.code);
+  const cols = FX_PORTAL_COLS[o.method] || FX_PORTAL_COLS.generic;
+  const nodes = [];
+  // ---- zone side (#fxlayer)
+  const preglow = fxNode('fx fx3-core', zr.cx, zr.cy, Math.max(30, zr.w * 2.2), Math.max(30, zr.w * 2.2)); // L3
+  if (preglow) { preglow.style.background = 'radial-gradient(circle,' + cols[0] + '88 0%,transparent 65%)'; preglow.style.opacity = '0'; nodes.push(preglow); }
+  const psize = Math.max(zr.w, zr.h) * 1.35 || 60;
+  const vA = fxNode('fx3-vortexA', zr.cx, zr.cy, psize, psize); // L4 outer vortex
+  if (vA) { vA.style.background = 'repeating-conic-gradient(from 10deg,' + cols[0] + 'f2 0deg 16deg,' + cols[1] + '4d 16deg 34deg)'; vA.style.webkitMask = vA.style.mask = 'radial-gradient(circle,transparent 52%,#000 62%,#000 88%,transparent 96%)'; vA.style.opacity = '0'; nodes.push(vA); }
+  const vB = fxNode('fx3-vortexB', zr.cx, zr.cy, psize * 0.62, psize * 0.62); // L4 inner counter-vortex
+  if (vB) { vB.style.background = 'repeating-conic-gradient(from 190deg,' + cols[0] + 'd9 0deg 10deg,' + cols[1] + '33 10deg 26deg)'; vB.style.webkitMask = vB.style.mask = 'radial-gradient(circle,transparent 50%,#000 62%,#000 84%,transparent 94%)'; vB.style.opacity = '0'; nodes.push(vB); }
+  const flash = fxNode('fx fx3-core', zr.cx, zr.cy, 90, 90); // L6 converge flash
+  if (flash) { flash.style.background = 'radial-gradient(circle,#ffffff 0%,#ffffffcc 40%,transparent 70%)'; flash.style.opacity = '0'; nodes.push(flash); }
+  const matGhosts = []; // L1/L2 materials
+  for (const m of o.mats) {
+    const pt = fxPtOfKey(m.key); if (!pt) continue;
+    const g = fxPlaceGhost(m.code, false, pt, Math.max(10, pt.w - 2), Math.max(10, pt.h - 24));
+    if (g) { matGhosts.push({ el: g, pt }); nodes.push(g); }
+  }
+  const land = fxNode('fx3-ring', zr.cx, zr.cy, 64, 64); // L17 landing ring
+  if (land) { land.style.borderColor = cols[0]; land.style.opacity = '0'; nodes.push(land); }
+  const zoneGlowL = fxNode('fx3-emph', zr.cx, zr.cy, zr.w, zr.h); // L17 zone glow
+  if (zoneGlowL) { zoneGlowL.style.borderColor = cols[0]; zoneGlowL.style.opacity = '0'; nodes.push(zoneGlowL); }
+  fxSpawnBurst('low', { mode: 'spiral', seed: (Math.random() * 1e9) | 0, o: [zr.cx, zr.cy], n: 46, t0: fxTimeMs + 300, life: [500, 850], r: [46, 96], turns: 1.6, size: [3, 7], cols: [cols[0], '#ffffff', cols[1]], delayMax: 300, alpha: .95 }); // L5
+  fxSpawnBurst('low', { seed: (Math.random() * 1e9) | 0, o: [zr.cx, zr.cy], n: 10, t0: fxTimeMs + 4200, life: [300, 520], speed: [40, 120], ang: [0, Math.PI * 2], grav: 380, dragK: 1.6, size: [2, 5], cols: ['#ffe9a8', '#ffffff'], alpha: .8 }); // L17 dust
+  // ---- presentation side (#fxcutin)
+  host.innerHTML = ''; host.className = 'on';
+  const hmk = (cls) => { const n2 = document.createElement('div'); n2.className = cls; host.appendChild(n2); nodes.push(n2); return n2; };
+  const scrim = hmk('scrim'); scrim.style.opacity = '0'; // L7
+  const bg = hmk('fx3-acebg'); bg.style.background = 'repeating-conic-gradient(from 0deg,' + cols[0] + '30 0deg 14deg,transparent 14deg 30deg)'; bg.style.opacity = '0'; // L8
+  const streaks = hmk('fx3-acestreaks'); streaks.style.background = 'repeating-conic-gradient(from 0deg,rgba(255,240,200,.14) 0deg 2deg,transparent 2deg 18deg)'; streaks.style.opacity = '0'; // L8
+  const vw = Math.min(window.innerWidth || 390, 430);
+  const cw = Math.round(Math.min(250, vw * 0.62)), chh = Math.round(cw * 1.38);
+  const card = hmk('bigcard'); card.style.width = cw + 'px'; card.style.height = chh + 'px'; card.style.opacity = '0'; // L9
+  card.innerHTML = '<div class="nm">' + cardName(o.code) + '</div>';
+  const banner = hmk('banner'); banner.style.opacity = '0'; // L12/L13
+  banner.innerHTML = '<div class="cn">' + cardName(o.code) + '</div><div class="cs"></div>';
+  const csEl = banner.querySelector('.cs');
+  const ccx = ar.cx, ccy = ar.y + ar.h * 0.40;
+  const ringMk = () => { const r = hmk('fx fx3-ring'); r.style.left = (ccx - 32) + 'px'; r.style.top = (ccy - 32) + 'px'; r.style.width = '64px'; r.style.height = '64px'; r.style.borderColor = cols[0]; r.style.opacity = '0'; return r; };
+  const ringA = ringMk(), ringB = ringMk(); // L10
+  fxSpawnBurst('top', { seed: (Math.random() * 1e9) | 0, o: [ccx, ccy], n: 24, t0: fxTimeMs + 950, life: [380, 720], speed: [120, 300], ang: [0, Math.PI * 2], grav: 300, dragK: 2.2, size: [3, 7], cols: [cols[0], '#ffffff', cols[1]], alpha: .95 }); // L11
+  fxSpawnBurst('top', { seed: (Math.random() * 1e9) | 0, o: [ccx, ccy + 40], n: 26, t0: fxTimeMs + 1300, life: [1800, 2600], speed: [8, 26], ang: [-Math.PI / 2, .9], grav: -14, dragK: .4, size: [2, 5], cols: [cols[0], '#ffffff'], delayMax: 800, alpha: .55 }); // L14
+  const portalAngle = (te) => { const ds = (te - 300) / 1000; if (ds <= 0) return 0; if (ds < 0.4) return 625 * ds * ds; return 100 + 500 * (ds - 0.4); };
+  const sc = fxAddScene({
+    kind: 'ace', dur: 4600,
+    cues: [{ at: 700, fn: () => playSe('summon_big') }], // L6 is the SE sync point A (the landing sound of the special summon)
+    render(t) {
+      const te = sc.skipLocal != null && t > sc.skipLocal ? 3900 + (t - sc.skipLocal) : t;
+      // L1/L2: materials glow red-hot, then converge into the point
+      for (const mg of matGhosts) {
+        const glow = FXE.outCubic(fxSeg(te, 0, 250));
+        const cu = FXE.inCubic(fxSeg(te, 150, 550));
+        mg.el.style.filter = 'brightness(' + (1 + 1.1 * glow).toFixed(2) + ') saturate(' + (1 + 0.6 * glow).toFixed(2) + ') hue-rotate(' + (-18 * glow).toFixed(0) + 'deg)';
+        mg.el.style.transform = 'translate(' + ((zr.cx - mg.pt.cx) * cu).toFixed(1) + 'px,' + ((zr.cy - mg.pt.cy) * cu).toFixed(1) + 'px) scale(' + (1 - 0.78 * cu).toFixed(3) + ')';
+        mg.el.style.opacity = String(1 - fxSeg(te, 500, 560));
+      }
+      // L3: the zone lights before the portal opens
+      if (preglow) preglow.style.opacity = String(0.85 * fxSeg(te, 250, 380) * (1 - fxSeg(te, 480, 800)));
+      // L4: rotation RAMPS 0 -> 500 deg/s (300-700), inner ring counter-rotates at -1.6x
+      if (vA || vB) {
+        const th = portalAngle(te);
+        const ps = 0.55 + 0.45 * FXE.settle(fxSeg(te, 300, 700));
+        const po = fxSeg(te, 300, 380) * (1 - fxSeg(te, 1020, 1180));
+        if (vA) { vA.style.transform = 'rotate(' + th.toFixed(1) + 'deg) scale(' + ps.toFixed(3) + ')'; vA.style.opacity = String(po); }
+        if (vB) { vB.style.transform = 'rotate(' + (-1.6 * th).toFixed(1) + 'deg) scale(' + ps.toFixed(3) + ')'; vB.style.opacity = String(po); }
+      }
+      // L6: the converge flash — the beat the whole build-up pays off
+      if (flash) { const u = fxSeg(te, 700, 820); flash.style.transform = 'scale(' + (0.3 + 1.4 * FXE.outCubic(u)).toFixed(3) + ')'; flash.style.opacity = String(0.95 * (1 - u) * (te >= 700 ? 1 : 0)); }
+      // L7/L8: scrim in; background vortex + streaks turn for the WHOLE hold
+      const holdOut = 1 - fxSeg(te, 3900, 4200);
+      if (scrim) scrim.style.opacity = String(0.78 * fxSeg(te, 750, 1000) * holdOut);
+      if (bg) { bg.style.opacity = String(0.85 * fxSeg(te, 750, 1100) * holdOut); bg.style.transform = 'rotate(' + (((te - 750) * 12 / 1000) % 360).toFixed(1) + 'deg)'; }
+      if (streaks) { streaks.style.opacity = String(0.7 * fxSeg(te, 750, 1100) * holdOut); streaks.style.transform = 'rotate(' + (-((te - 750) * 6 / 1000) % 360).toFixed(1) + 'deg)'; }
+      // L9/L15/L16: card settles in, its glow breathes (2.4 s period), exits small
+      if (card) {
+        const sIn = 1.35 - 0.35 * FXE.settle(fxSeg(te, 900, 1350));
+        const sOut = 1 - 0.15 * fxSeg(te, 3900, 4200);
+        card.style.transform = 'translate(-50%,-50%) scale(' + (sIn * sOut).toFixed(3) + ')';
+        card.style.opacity = String(fxSeg(te, 900, 1030) * holdOut);
+        const pulse = te >= 1400 && te < 3900 ? 42 + 6 * Math.sin(2 * Math.PI * (te - 1400) / 2400) : 42;
+        card.style.boxShadow = '0 0 ' + pulse.toFixed(0) + 'px ' + cols[0] + '77, 0 6px 24px #000c';
+      }
+      // L10: burst rings, 150 ms apart
+      if (ringA) { const u = FXE.outCubic(fxSeg(te, 950, 1550)); ringA.style.transform = 'scale(' + (0.4 + 1.2 * u).toFixed(3) + ')'; ringA.style.opacity = String(0.8 * (1 - u) * (te >= 950 ? 1 : 0)); }
+      if (ringB) { const u = FXE.outCubic(fxSeg(te, 1100, 1700)); ringB.style.transform = 'scale(' + (0.4 + 1.2 * u).toFixed(3) + ')'; ringB.style.opacity = String(0.7 * (1 - u) * (te >= 1100 ? 1 : 0)); }
+      // L12/L13: banner snaps in; ATK/DEF count up to the real values
+      if (banner) {
+        banner.style.opacity = String(fxSeg(te, 1100, 1400) * holdOut);
+        banner.style.transform = 'translateX(' + (-26 * (1 - FXE.snap(fxSeg(te, 1100, 1400)))).toFixed(1) + 'px)';
+        if (csEl && d && d.atk != null) {
+          const u = FXE.outCubic(fxSeg(te, 1200, 1600));
+          csEl.textContent = 'ATK ' + Math.round(d.atk * u) + ' ／ DEF ' + Math.round(d.def * u);
+        }
+      }
+      // L17: the landing beat on the real board zone
+      if (land) { const u = FXE.outCubic(fxSeg(te, 4200, 4550)); land.style.transform = 'scale(' + (0.5 + 0.8 * u).toFixed(3) + ')'; land.style.opacity = String(0.9 * (1 - u) * (te >= 4200 ? 1 : 0)); }
+      if (zoneGlowL) zoneGlowL.style.opacity = String(0.9 * Math.sin(Math.PI * fxSeg(te, 4200, 4550)));
+    },
+    onDone() {
+      for (const n of nodes) { try { n.remove(); } catch (e) {} }
+      if (host.className === 'on') host.className = '';
+      fxAceSceneRef = null;
+    },
+  });
+  fxAceSceneRef = sc;
+  return sc;
+}
+// ---- ace cut-in (B6, legacy path for arrivals the stage-3 scene
+// does not take over — revivals): portal flash on the zone (round
+// A) -> the scrim dims the field -> the card, large, with a
+// name/ATK/DEF banner. ~4.7 s; any tap skips it.
 let fxCutinTimer = null, fxCutinGen = 0;
 function fxCutinShow(code) {
   const host = $('fxcutin'); if (!host) return;
@@ -1362,13 +1656,14 @@ function fxCutinShow(code) {
   fxCutinTimer = setTimeout(() => fxCutinHide(), 4400);
 }
 function fxCutinHide() {
+  if (fxAceSceneRef && !fxAceSceneRef.dead) return; // V3 stage 3: the ace scene owns the host (tap = its skip)
   const host = $('fxcutin'); if (!host || host.className !== 'on') return;
   const gen = ++fxCutinGen;
   if (fxCutinTimer) { clearTimeout(fxCutinTimer); fxCutinTimer = null; }
   [...host.children].forEach(ch => fxAnim(ch, [{ opacity: 1 }, { opacity: 0 }], { duration: 260, easing: 'ease-in' }));
   setTimeout(() => { if (fxCutinGen === gen) { host.className = ''; host.innerHTML = ''; } }, 280);
 }
-document.addEventListener('pointerdown', () => { fxCutinHide(); }, true); // tap anywhere skips; never consumes the tap
+document.addEventListener('pointerdown', () => { if (fxAceSceneRef && !fxAceSceneRef.dead) fxAceSkip(); else fxCutinHide(); }, true); // tap anywhere skips; never consumes the tap
 // ---- in-place position changes (B9): flips and ATK<->DEF rotation
 function fxRoundBChanged(ch, evs, prev, cur) {
   const [con, loc] = ch.key.split(':').map(Number);
@@ -1397,10 +1692,24 @@ function fxRoundBChanged(ch, evs, prev, cur) {
 }
 function fxRoundBEvents(evs, prev, cur, diff) {
   const st = diff.state;
-  // ---- ace cut-in (B6)
+  // ---- ace cut-in (B6; V3 stage 3: arrivals the ace scene took
+  // over are skipped here — the scene already presented them)
   if (fxSettings.cutin) {
     for (const ev of evs) {
       if ((ev.kind === 'summon' || ev.kind === 'spsummon') && ev.code != null && FX_CUTIN_CODES.has(ev.code)) {
+        // arrivals pass already owns this summon (the marker
+        // survives across fxProcess batches; the state diff and
+        // the summon event routinely land in different batches)
+        if (fxAceRecent && fxAceRecent.code === ev.code && fxAceRecent.con === ev.con && fxTimeMs <= fxAceRecent.until) { fxAceRecent = null; continue; }
+        // fallback: the event beat the state diff — take the
+        // summon over from here so it still gets exactly one
+        // presentation, the scene (materials unknown on this
+        // path; the presentation runs without the converge)
+        let key = null;
+        for (const k in cur.z) { const ze = cur.z[k]; if (ze && ze.code === ev.code && k.split(':')[0] === String(ev.con) && k.split(':')[1] === String(E.LOC.MZONE)) { key = k; break; } }
+        const sc = key ? fxAceSceneV3({ code: ev.code, key, con: ev.con, method: null, mats: [] }) : null;
+        if (sc) { fxRecord('cutin', { code: ev.code, via: 'acescene-event' }); fxAceRecent = { code: ev.code, con: ev.con, until: fxTimeMs + 8000 }; continue; }
+        if (fxAceSceneRef && !fxAceSceneRef.dead) continue; // an ace scene is presenting; never poster over it
         fxCutinShow(ev.code);
         fxRecord('cutin', { code: ev.code });
       }
@@ -1454,7 +1763,7 @@ function fxRoundBEvents(evs, prev, cur, diff) {
     }
     if (aPt && tPt) {
       const sc = fxAttackSceneV3({ aPt, tPt, attr, direct, targetCode, destroyed });
-      if (sc) fxLastAttackScene = { t0: sc.t0, defCon: 1 - ev.con };
+      if (sc) fxLastAttackScene = { t0: sc.t0, defCon: 1 - ev.con, aPt, tPt, attr, code: ev.code, aKey };
     }
     if (direct) fxAtkBanner();
     fxRecord('attackline', { code: ev.code, direct: !!direct });
@@ -1465,7 +1774,7 @@ function fxRoundBEvents(evs, prev, cur, diff) {
   // full-screen wash (attribute-tinted); the result overlay follows.
   // Keyed on the winner transition + a recent hit (see fxLastHitAt)
   if (cur.winner != null && prev.winner == null && fxLastHitAt && performance.now() - fxLastHitAt < 5000) {
-    fxFinisher(lastAtkAttr != null ? lastAtkAttr : fxLastHitAttr);
+    fxFinisherSceneV3(lastAtkAttr != null ? lastAtkAttr : fxLastHitAttr);
     fxRecord('finisher', { attr: lastAtkAttr != null ? lastAtkAttr : fxLastHitAttr });
   }
   // ---- chain (B8): newest link pops forward; solving is recorded
@@ -2771,6 +3080,12 @@ function wireSeg(id, apply) {
     const stats = await duel.run();
     const st = duel.state;
     render(st);
+    // V3 stage 3: the result waits for the finisher's result beat
+    // (scene-local 2300 ms, when the wash is fully gone) — the
+    // separation is by TIME inside the layer table, so the result
+    // is never seen under an active wash (the round-B defect).
+    const gateMs = fxFinisherGateMs();
+    if (gateMs > 0) await new Promise(r => setTimeout(r, gateMs));
     setBgmScene(st.winner === HP ? 'win' : 'lose', true);
     $('resultTitle').textContent = st.winner === HP ? '勝利！' : '敗北';
     $('resultDetail').textContent = 'ターン ' + stats.turns + '／決着理由：' + (st.winReason === 1 ? 'LP' : st.winReason === 2 ? 'デッキ切れ' : 'その他') +
