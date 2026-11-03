@@ -5852,9 +5852,18 @@ Tests: test-neuron extended (V1-V2e visual fixtures vs HTML
 ground truth; U0-U3 URL helpers, stubbed relay flows incl.
 two-hop code flow and total-failure honesty) — all pass.
 test-neuron-url.js is the real-network Chromium E2E (real
-share link + real deck code; retries the full flow up to 3x
-per case against relay flakiness). Frames: cap-neuron.js adds
-panel-guidance and import-visual shots (390x620 / 390x700).
+share link + real deck code; retries the full flow per case
+against relay flakiness). Measured outcome 2026-11-04: BOTH
+cases passed in real-browser runs (share link on attempt 3 of
+its run; deck code -> search -> member_deck -> auto-save on
+attempt 1 of a later run), and both also failed whole runs
+inside bad relay windows — from this VM the relays are
+time-window dependent, which is exactly the durability caveat
+above; the failure path shown to users in those windows is
+the honest message, verified live. Shots:
+shot-neuron-url-share.png / shot-neuron-url-code.png.
+Frames: cap-neuron.js adds panel-guidance and import-visual
+shots (390x620 / 390x700).
 
 ## 2026-11-04: classic Agido aliases the Ancient Guard art (user ruling)
 - The user ruled that the art delivered for 《古衛兵アギド》 (62320425) is also used for the deck's classic 《アギド》 (16135253): CARD_ART gains `16135253: 'agido'` (same two files, no new assets). The entry for 62320425 stays for when that card returns to a deck.
