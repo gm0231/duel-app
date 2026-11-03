@@ -2927,3 +2927,136 @@ D-40). They remain in fx-proto/audit-raw.md and in the
 proposal for the next round / the daily brush-up loop.
 Unmeasured as before: sound feel, real-device WKWebView
 frame rate and rendering.
+
+## Audit-27 round (the 23 untouched + 4 partial items from the v3 audit)
+Implemented on feat/audit-27 from f288d69; wording/layout/flow
+items first, presentation-adjacent items (signal colours) last.
+All 16 test suites pass (test-phase2's sampling-dependent C/A2
+checks failed on the pristine base with 0 sampled ANNOUNCE_CARD
+prompts and passed on re-run — a pre-existing flake, unchanged).
+Frame-verified at 390x620/700 in real duels (a27shots/).
+
+- A-02: start screen now reaches the start button at 390x620
+  with no scrolling (scrollH 669->649 after compression;
+  btnBottom 615 <= 620). Savings came from UA-default heading
+  margins and whitespace, not content. Only the load-count
+  footnote (A-04's kept line) sits below the fold at 620.
+- A-04: verified in code — the start button IS the load state
+  (disabled + label), failure turns it into a reload button;
+  the failure wording no longer names files (see C-33 note).
+- B-09: #opppiles removed (element + render write) — the
+  topbar duplication is gone; pile bars carry the counts.
+- B-10: client-kept, turn-tagged log history (engine mirror
+  caps at 60 lines); 履歴 button in the idle chain band opens
+  the last 30 entries. Button height is 19px: the band's
+  height is frozen by the layout budget (recorded trade-off).
+- B-11: actionable piles carry a 発動可 label and a gold dot
+  in addition to the frame colour.
+- B-12: zone numbers 9px in a brighter tone; the field zone
+  shows no number and a blue-grey frame (.slot.fzone).
+- B-13: one signal grammar — gold = waiting for your input
+  (field tiles, hand cards, piles, chain candidates, placement
+  slots as before), green = selected, red = targeted.
+- B-16 (partial): hand card names are a fixed 10px and
+  duplicate copies carry a xN badge. The audited 56px minimum
+  hand width is NOT enforced: hand width derives from the tile
+  width inside the frozen layout budget.
+- B-17: the idle chain band shows the previous log event.
+- C-20: sheets carry a kind — view sheets (action, pile,
+  card info, dismissal manager, FX settings, menu) can be
+  left via backdrop tap or the x button (same single exit as
+  their own close button); prompt sheets ignore backdrop
+  taps. .btnrow is sticky at the sheet's bottom edge.
+- C-22: a disabled grid confirm button states the remainder
+  (決定（あとN枚） / 決定（合計あとN）); tapping past the cap
+  answers in the sub line instead of silence; disabled-button
+  contrast raised (#b3a077 on #4a3d22). SELECT_SUM sheets get
+  no "remaining" label: the engine's sum check is a two-value
+  combination search, so a remainder cannot be stated
+  honestly; their sub keeps the condition itself.
+- C-23: grid card names ellipsize on one line; grid card text
+  ends with an ellipsis via line-clamp (the audit's fallback
+  route — the text itself stays, detail is one tap away).
+- C-24: option buttons resolve their descriptors through a
+  curated map (optionLabelText). Re-verified: the core sends
+  Stringids (code*16+idx); the ONLY SELECT_OPTION reachable
+  in the 63-card pool is Agido (Duel.SelectEffect), and both
+  of its descriptors resolve to Japanese labels (checked
+  against the English string table in babelcdb cards.cdb and
+  the card's own script). Unresolved descriptors fall back
+  to a numbered button. A general solution needs a Japanese
+  official string table the client does not hold; extend
+  OPTION_LABELS if the pool grows a SelectEffect user.
+  window.__optLabel.resolve(desc) is the test surface.
+- C-26: the placement banner names the card being placed
+  when the identity is certain — the just-chosen procedure
+  action's card (lastPlaceCard; summon/set actions place the
+  acted card by rule). Effect activations do not set it (the
+  banner keeps the context form rather than a wrong name).
+  The banner sits directly under the midbar, never takes
+  taps, and a retry adds a second line naming the next
+  action. The card being placed keeps a gold frame in hand.
+- C-27: the per-turn confirmation count appears only from
+  the 3rd confirmation in a turn. SELECT_EFFECTYN sheets
+  offer duel-long suppression per card+effect descriptor
+  (duelNoConfirm): the sheet button answers "no" once and
+  later prompts auto-answer with an autopass flash. This
+  also closes backlog BU-06; BU-08's exit side lands here.
+- C-28: the in-duel settings sheet uses the start screen's
+  words （おまかせ/毎回/自動） with one outcome line each;
+  its seg buttons are 39px like the start screen's.
+- C-29: the phase-bar button and its sheet agree: その他.
+- C-30: the disabled phase button distinguishes 相手のターン
+  from 処理中….
+- C-32: pile sheets name their empty states with counts;
+  pile rows carry a chevron (they open the card detail).
+- C-34: a retried grid sheet re-states its condition under
+  the warning; placement retries use the C-26 second line.
+  (Retries only occur on rejected answers, so by design no
+  legal-play frame exists; test-ui asserts the warning never
+  appears in legal play.)
+- C-35: deck buttons state their main-deck counts (44/40,
+  read from data.json).
+- C-36: the settings heading is one sentence, effect first.
+- C-37 -> D-37 (partial): sheet padding 12px, option buttons
+  12px, topbar padding 4px, button-row margin 12px applied.
+  The segrow value from the audit table (8px) lost to A-02's
+  620 fit and is 5px 0 3px; field padding is untouched
+  (frozen board).
+- D-38: remaining functional 8px text raised to the 9px
+  floor (zone numbers via B-12, FX ghost names). Rule of
+  record: functional text is 9px or larger.
+- D-39: covered by A-01's VS transition (it spans the
+  engine-start wait); this round's captures show no dead
+  screen between the start tap and the duel.
+- D-40: counter +/- buttons are 36px. OPERATIONAL RULE:
+  when a counter-using card enters the pool, merge requires
+  live-play screenshots of SELECT_COUNTER in both the
+  total-match and total-mismatch states (the pool currently
+  has no counter user, so the sheet is still unreached).
+- Also fixed in passing (stage-4 residuals observed while
+  working): C-33's two strings were still developer-worded
+  (load failure named data.json; the fallback sheet said
+  専用UIがまだありません) — both now player-worded. C-21:
+  uiUnselect's cancel still read キャンセル — now
+  選ばずにやめる, matching the grid sheets.
+- Backlog: BU-01 (own set cards carry a 裏 badge; the surface
+  shown to the owner is unchanged by design), BU-02 (hand
+  cards with no legal action grey out while a command prompt
+  is open; the one mechanically certain reason — battle-phase
+  summoning — is stated in the preview), BU-09 (the chain
+  dismissal is a labelled text button: このチェーンでは
+  聞かない / 聞くに戻す).
+- BU-04 needs a decision, not code: dismissedDuel is keyed
+  by chainKey (code+controller+location+seq+desc), i.e. per
+  card INSTANCE at a location — the same card is re-asked
+  after it changes zones, which matches the backlog's
+  observation. Whether the scope should be the card class
+  (by name) is a spec choice; left as judgment-waiting.
+- Observed, pre-existing, NOT this round's items: at
+  390x620 the ATK/DEF strip lines overflow horizontally by
+  3-6px (scrollWidth 37-40 vs clientWidth 34) — measured
+  identically on pristine f288d69, so not a regression; it
+  belongs to B-15's territory and is filed in the brush-up
+  backlog for the daily loop.
+Unmeasured as before: sound feel, real-device WKWebView.
