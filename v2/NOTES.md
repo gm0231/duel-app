@@ -4999,3 +4999,72 @@ resolve to card-art-silky-ishizu in the Ishizu deck, name /
 stat lines read 生きる偲びのシルキィ 800/0; the plain
 'silky' remains what any non-Ishizu context sees
 (fixture-pinned, as with Kakan / Carbon before her).
+
+## Cannot-attack reasons (2026-11-04, user report: バロメットが召喚したターンに攻撃できなかった)
+
+Investigation (~/workspace/duel-app-baromett-investigation/) proved
+the ruling was CORRECT: the opponent's 《ラビリンス・ウォール・
+シャドウ》 (34771947) bars monsters summoned that turn from
+attacking, except original-Level-5+; Baromett is an Xyz monster
+and has no Level, so the exception never applies to it. The
+defect was display-only: the core simply never offered the attack
+and the sheet said nothing — the cannot-activate reasons had no
+attack twin.
+
+Fix (client.js, "cannot-attack reasons" block; test surface
+window.__atkblock; gate test-atkblock.js, 21 checks): while a
+SELECT_BATTLECMD is live, an own face-up attack-position monster
+with no offered 攻撃 action gets the greyed 攻撃 row WITH the
+reason (the cannot-activate row's exact form), and the same
+reason rides the persistent preview. Monsters WITH an attack
+action are untouched, as is every other sheet. Derivations are
+text-derived from the pool, evidence is the client's own
+records, and a reason is stated only when it fully explains the
+missing command:
+
+  (1) FIELD summon-turn block — a face-up field spell (szone[5],
+      either player; the effect ranges over both fields) whose
+      text bars this-turn summons except original Level N+.
+      Derivation == {34771947: 5}. "Summoned this turn" is a
+      zone-diff arrival tracker (trackFieldSummons, fed the
+      presentation-event copy in onUpdate): normal summon, set
+      and special summon all arrive; a set flipped face-up by an
+      effect keeps its arrival turn (STATUS_SUMMON_TURN parity);
+      a flip summon of a monster set on an EARLIER turn arrives
+      via the flipsummon event, marked only when exactly one
+      zone turned face-up with that observation (ambiguity =
+      silence). Identity-less previous occupants mint no claim.
+  (2) SELF summon-turn block — the monster's own printed clause
+      「このカードは召喚したターンには攻撃できない」, armed only
+      by a kind-attributed normal summon / set (its script hooks
+      SUMMON_SUCCESS). Derivation == {《迷宮の重魔戦車》35026117}.
+      It sits in the GG deck, so today it can only ever matter
+      under a future control change; the derivation is pool-
+      general regardless.
+  (3) The revive rider's attack half — rides the existing
+      monsterRevived latch (same proof, attack wording). NO pool
+      card carries the rider today (audit C1), so this arms only
+      for a future pool card.
+
+Enumerated NOT covered (pool audit, test-atkblock B/C): the pool
+holds exactly 4 attack-barring clauses. The other two:
+  - 《メタファイズ・ホルス・ドラゴン》's Pendulum-material rider
+    (a stolen monster cannot attack this turn) — UNREACHABLE:
+    the pool holds zero Pendulum monsters, so the branch can
+    never arm; it is also the pool's only control-change text.
+  - 《光の護封霊剣》② (this turn the opponent's monsters cannot
+    direct attack) — the card sits only in the HUMAN's deck, so
+    the blocked side is always the CPU, which has no sheet; the
+    human's attack surface can never be its surface.
+Watcher for future pools: SELECT_COUNTER-style re-audit — if a
+Pendulum monster, an opponent-played direct-attack block, or a
+control-change card enters the pool, B1 fails until the case is
+classified and (where reachable) covered.
+
+Real frames (cap-atkblock.js, shots-atkblock/): rigged decks
+(40x Mudora + Baromett vs 40x Shadow) played through the real
+UI — T1 NS Mudora, CPU T2 Shadow, T3 NS + Xyz Baromett, BP, tap
+Baromett at 390x620/700. The sheet shows the greyed 攻撃 row:
+《ラビリンス・ウォール・シャドウ》の効果で、召喚したターンの
+モンスターは攻撃できません, and the preview carries the same
+reason (asserted from the DOM and read off the frames).
