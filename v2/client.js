@@ -765,6 +765,13 @@ function fxExcerpt(fx) { // one-line preview of an effect body
   const s = (fx.body || '').replace(/\s+/g, ' ');
   return s.length > 28 ? s.slice(0, 28) + '…' : s;
 }
+// BU-28: whether fxExcerpt actually cut anything — the chain
+// dock prints its guide to the full text only when it did, so
+// the truncation is never silent.
+function fxTruncated(fx) {
+  const s = (fx.body || '').replace(/\s+/g, ' ');
+  return s.length > 28;
+}
 // The effect behind a prompt ENTRY (chain candidate / command
 // activation): resolveEffect first; when the core sends NO desc
 // for a Spell/Trap entry, the entry IS the card activation itself
@@ -4934,7 +4941,7 @@ function render(state) {
       const n = i + 1;
       const cls = 'link' + (state.solvingLink === n ? ' solving' : '') + (l.negated || l.disabled ? ' negated' : '') +
         (l.solved ? ' done' : '') + (fxChainLanded.has(n) ? ' landed' : '') + (!state.solvingLink && i === state.chain.length - 1 ? ' newest' : '');
-      return '<span class="' + cls + '"><span class="no">' + n + '</span> ' + cardName(l.code) + (l.solved ? ' ✓' : '') + '</span>';
+      return '<span class="' + cls + '"><span class="no">' + n + '</span> ' + cardName(l.code) + (state.solvingLink === n ? '<span class="solvingtag">解決中</span>' : '') + (l.solved ? ' ✓' : '') + '</span>';
     }).join('');
   } else {
     // B-17: the reserved band is not wasted while no chain is
@@ -5029,6 +5036,7 @@ function sheetOpen(html, kind) {
   sheetAnimCancel(sheet); sheetAnimCancel(wrap);
   sheet.innerHTML = html;
   wrap.className = 'on';
+  clearPeekBar(); // a fresh sheet resets peek (className above); its mirrors die with the old content
   wrap.dataset.kind = sheetKind;
   const pk = $('peekbtn'); if (pk) pk.textContent = '盤面を見る';
   if (!wasOpen) {
@@ -5046,6 +5054,7 @@ function sheetOpen(html, kind) {
 function sheetClose() {
   settleConfirmSheet(); // any exit from the confirm sheet ends its wait
   closeInfoPop();
+  clearPeekBar();
   const wrap = $('sheetwrap'), sheet = $('sheet');
   if (!wrap.classList.contains('on')) { wrap.removeAttribute('data-kind'); sheet.innerHTML = ''; return; }
   if (wrap.dataset.closing) return; // a close motion is already in flight
@@ -5071,6 +5080,37 @@ function sheetClose() {
     delete wrap.dataset.closing;
     sheet.innerHTML = '';
   }, 185);
+}
+// BU-22 (R-SEL-2): peeking the sheet down to look at the board
+// used to take the answer buttons off-screen with it — checking
+// the board cost the player their place in the question. While
+// peeked, the sheet's answer controls (big buttons, option
+// buttons, position tiles — never the view sheet's close) are
+// mirrored into #peekbar, a bottom band that stays put; a tap
+// on a mirror clicks the original control, so the answer path
+// is the sheet's own, handlers and disabled state included.
+// Sheet content is static while peeked (the grid is off-screen,
+// and any redraw goes through sheetOpen, which resets peek), so
+// the mirrors cannot go stale mid-peek.
+function clearPeekBar() {
+  const bar = $('peekbar'); if (!bar) return;
+  bar.innerHTML = ''; bar.classList.remove('onbar');
+}
+function syncPeekBar() {
+  const bar = $('peekbar'); if (!bar) return;
+  clearPeekBar();
+  const wrap = $('sheetwrap');
+  if (!wrap.classList.contains('on') || !wrap.classList.contains('peek')) return;
+  const srcs = $('sheet').querySelectorAll('button.bigbtn:not(#sheet-cancel), button.optbtn, .posbtn');
+  srcs.forEach(el => {
+    const b = document.createElement('button');
+    b.className = 'bigbtn' + (el.classList.contains('sub') ? ' sub' : '');
+    b.textContent = (el.textContent || '').trim();
+    if (el.disabled) b.disabled = true;
+    b.addEventListener('click', () => { el.click(); });
+    bar.appendChild(b);
+  });
+  if (bar.children.length) bar.classList.add('onbar');
 }
 // R-SEL-1: a read-only detail that floats OVER whatever selection
 // is in progress — opening or closing it never answers, toggles
@@ -5151,7 +5191,7 @@ function peekBoardTap(x, y) {
   }
   return false;
 }
-function dockClose() { $('dock').className = ''; $('dock').innerHTML = ''; }
+function dockClose() { $('dock').className = ''; $('dock').innerHTML = ''; syncAutoPassChipPos(); }
 function clearInteraction() {
   sheetClose(); dockClose();
   cmdPromptOpen = false;
@@ -5525,11 +5565,26 @@ function chainPassDecision(prompt, state) {
   if (allDuel) return 'flash';
   return allAny ? 'pass' : 'show';
 }
+// BU-15: the auto-pass chip's home (CSS bottom: hand height +
+// 33px) sits INSIDE the chain dock's span whenever the dock is
+// open, straddling its dismissal buttons and splitting their
+// labels. A state display must never cover the controls it
+// describes: while the dock is up, the chip rides directly
+// above the dock's top edge (the dock's own duelsection still
+// lists the same state inside); when the dock closes, the
+// inline bottom is dropped and the CSS home applies again.
+function syncAutoPassChipPos() {
+  const el = $('autopass'); if (!el) return;
+  const dock = $('dock');
+  if (dock && dock.className === 'on' && dock.offsetHeight) el.style.bottom = (dock.offsetHeight + 6) + 'px';
+  else el.style.bottom = '';
+}
 function updateAutoPassChip() {
   const el = $('autopass'); if (!el) return;
   if (Date.now() < autoPassFlashUntil) return; // flash text still showing
   if (dismissedDuel.size) { el.textContent = '自動パス設定中：' + dismissedDuel.size + ' 件（タップで管理）'; el.className = 'on'; }
   else { el.className = ''; el.textContent = ''; }
+  syncAutoPassChipPos();
 }
 function flashAutoPass(names) {
   const el = $('autopass'); if (!el) return;
@@ -5626,7 +5681,7 @@ function uiChain(prompt, state) {
         const cfx = entryEffect(e, 'chain');
         return '<div class="cand' + (disChain ? ' dismissed' : '') + '" data-chain="' + i + '">' + cardName(e.code) +
           '<div class="loc">' + locLabel(e) + (disChain ? '（このチェーンでは聞かない）' : '') + '</div>' +
-          (cfx && cfx.n ? '<div class="fxline">' + (cfx.act ? '発動：' : '効果' + CIRCLED_NUM[cfx.n - 1] + '：') + fxExcerpt(cfx) + '</div>' : '') +
+          (cfx && cfx.n ? '<div class="fxline">' + (cfx.act ? '発動：' : '効果' + CIRCLED_NUM[cfx.n - 1] + '：') + fxExcerpt(cfx) + (fxTruncated(cfx) ? '<span class="fxmore">（続きは「詳細」で読めます）</span>' : '') + '</div>' : '') +
           (prompt.forced ? '' : '<span class="dismiss" data-dismiss="' + i + '">' + (disChain ? '聞くに戻す' : 'このチェーンでは聞かない') + '</span>') +
           (prompt.forced || disChain ? '' : '<span class="dueldismiss" data-dueldismiss="' + i + '">このデュエル中は聞かない（この場所でのこの効果のみ）</span>') +
           '<span class="candinfo" data-info="' + i + '">詳細</span></div>';
@@ -5693,6 +5748,7 @@ function uiChain(prompt, state) {
     }));
     const pass = $('chain-pass');
     if (pass) pass.addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(-1)); });
+    syncAutoPassChipPos(); // BU-15: the chip clears the dock it now sits over
   };
   draw();
 }
@@ -5752,9 +5808,20 @@ function uiPosition(prompt, state) {
     { bit: E.POS.FD_ATK, label: '裏側攻撃表示', cls: 'back' },
     { bit: E.POS.FD_DEF, label: '裏側守備表示', cls: 'def back' },
   ].filter(d => prompt.mask & d.bit);
-  sheetOpen('<div class="ttl">' + cardName(prompt.code) + ' の表示形式</div><div class="sub">表示形式を選んでください。タップするとその表示形式で確定します。</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
+  sheetOpen('<div class="ttl">' + cardName(prompt.code) + ' の表示形式</div><div class="sub">表示形式を選んでください。タップした表示形式で即確定し、取り消すことはできません。</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
     '<div class="posrow">' + defs.map(d => '<div class="posbtn" data-pos="' + d.bit + '"><div class="glyph ' + d.cls + '"></div>' + d.label + '</div>').join('') + '</div>');
   $('sheet').querySelectorAll('[data-pos]').forEach(b => b.addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(+b.dataset.pos)); }));
+}
+// BU-23: whether a grid selection is mandatory must be readable
+// BEFORE the first tap, and it is derived from the prompt's own
+// terms only — never guessed: a cancel exit makes it optional
+// (the whole operation can be abandoned), a zero minimum makes
+// it optional (confirm with nothing), anything else is a
+// requirement the core will enforce with a retry.
+function gridReqNote(o) {
+  if (o.cancelable) return '（任意：選ばずにやめることもできます）';
+  if (o.prompt && o.prompt.min === 0) return '（任意：0枚でも決定できます）';
+  return '（必須）';
 }
 // ---- generic card-grid selection sheet (tray conventions) ----
 function gridSheet(o) {
@@ -5770,7 +5837,7 @@ function gridSheet(o) {
     const tray = [...o.selected].map(i => '<span class="chip" data-chip="' + i + '">' + nameOf(o.cards[i]) + ' ✕</span>').join('') +
       (o.locked || []).map(c => '<span class="chip locked">' + (selCardHidden(c, o.prompt) ? hiddenCardLabel(c) : cardName(c.code)) + '（固定）</span>').join('');
     const subTxt = typeof o.sub === 'function' ? o.sub() : o.sub;
-    sheetOpen('<div class="ttl">' + o.title + '</div>' + (o.purpose ? '<div class="purpose">' + o.purpose + '</div>' : '') + '<div class="sub" id="gsub">' + subTxt + '</div>' + contextLineHTML(o.prompt) + retryWarn(o.prompt) +
+    sheetOpen('<div class="ttl">' + o.title + '</div>' + (o.purpose ? '<div class="purpose">' + o.purpose + '</div>' : '') + '<div class="sub" id="gsub">' + subTxt + gridReqNote(o) + '</div>' + contextLineHTML(o.prompt) + retryWarn(o.prompt) +
       // (W-24: a retry used to repeat the sub as a 「条件：」 line
       // under the warning — the same sentence twice. The shortfall
       // already lives on the disabled confirm button's label.)
@@ -5939,8 +6006,14 @@ function uiUnselect(prompt, state) {
   let hint = '';
   if (prompt.finishable && selCount > 0 && selCount < prompt.min) hint = 'あと' + (prompt.min - selCount) + '枚選ぶと決定できます。';
   if (prompt.finishable && selCount > 0) hint += 'やめる場合は選択をすべて外してください。';
+  // BU-23: same derived mandatory/optional note as the grid
+  // sheet — a truthful cancel exit says so, no cancel at all
+  // says 必須, and the middle case (cancel exists but a live
+  // selection would turn it into a confirm) is already spelled
+  // out by the hint above, so it gets no tag rather than a lie.
   const purpose = selectPurposeText(prompt);
-  sheetOpen('<div class="ttl">カードの選択</div>' + (purpose ? '<div class="purpose">' + purpose + '</div>' : '') + '<div class="sub">' + prompt.min + '〜' + prompt.max + ' 枚（現在 ' + selCount + ' 枚選択中）。タップで選択／解除します。' + (hint ? ' ' + hint : '') + '</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
+  const reqNoteU = cancelTruthful ? '（任意：選ばずにやめることもできます）' : (!prompt.cancelable ? '（必須）' : '');
+  sheetOpen('<div class="ttl">カードの選択</div>' + (purpose ? '<div class="purpose">' + purpose + '</div>' : '') + '<div class="sub">' + prompt.min + '〜' + prompt.max + ' 枚（現在 ' + selCount + ' 枚選択中）。タップで選択／解除します。' + reqNoteU + (hint ? ' ' + hint : '') + '</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
     '<div class="grid">' + combined.map((x, k) => {
       const hid = selCardHidden(x.c, prompt);
       return '<div class="gcard' + (hid ? ' back' : '') + (x.sel ? ' sel' : '') + '" data-unselect="' + x.idx + '"' + (hid ? '' : artInline(x.c.code, false, deckKeyOfSeat(x.c.con))) + '>' +
@@ -6057,6 +6130,11 @@ window.__select = { open: (prompt) => uiSelectCards(prompt, null) };
 // visibility rule and the selection-untouched contract without
 // hit-testing (jsdom has no elementsFromPoint).
 window.__oppinfo = { boardCardAt, peekInfoTap };
+// Test surface (selection-clarity round): the BU-15 chip
+// placement, the BU-22 peek answer band, the BU-23 derived
+// requirement notes and the BU-28 truncation flag, so
+// test-clarity.js can pin them without a live duel.
+window.__clarity = { syncChipPos: syncAutoPassChipPos, syncPeekBar, gridReqNote, announceDupNote, fxTruncated };
 function uiYesNo(prompt, state) {
   const isEff = prompt.name === 'SELECT_EFFECTYN';
   // WHICH card and WHICH effect is being asked must be readable on
@@ -6192,6 +6270,19 @@ function uiAnnounceNumber(prompt, state) {
     (prompt.context && prompt.context.code ? fxBlockHTML(prompt.context.code, null) : ''));
   $('sheet').querySelectorAll('[data-num]').forEach(b => b.addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(+b.dataset.num)); }));
 }
+// BU-23 (declare grid): copies of the SAME code are fungible —
+// announcing any of them announces that code, so the grid may
+// say so. Same NAME on different codes is a different matter:
+// those are different declarations and must never carry the
+// note. The pool is built from Object.keys(DATA.cards), so a
+// repeated code cannot occur today; the note is wired to the
+// literal condition so a future pool source that ever feeds
+// copies gets the line, and nothing else ever does.
+function announceDupNote(codes) {
+  const seen = new Set();
+  for (const c of codes) { if (seen.has(c)) return '同名カードはどれを選んでも同じです。'; seen.add(c); }
+  return '';
+}
 function uiAnnounceCard(prompt, state) {
   // Offer only cards the core will accept: the prompt's opcode filter is the
   // core's own declarable rule (is_declarable in playerop.cpp), ported to
@@ -6210,7 +6301,7 @@ function uiAnnounceCard(prompt, state) {
   let chosen = null;
   const draw = () => {
     sheetOpen('<div class="ttl">カードの宣言</div>' + contextLineHTML(prompt) +
-      '<div class="sub">宣言するカードをタップで選び、「宣言する」を押してください。</div>' + retryWarn(prompt) +
+      '<div class="sub">宣言するカードをタップで選び、「宣言する」を押してください。（必須）' + (announceDupNote(pool) ? ' ' + announceDupNote(pool) : '') + '</div>' + retryWarn(prompt) +
       '<div class="grid">' + pool.map(code => '<div class="gcard' + (chosen === code ? ' sel' : '') + '" data-code="' + code + '"' + artInline(code, false, deckKeyOfCode(code)) + '><button class="gdetail" data-acinfo="' + code + '">詳細</button><div class="nm' + kindCls(code) + '">' + cardName(code) + '</div></div>').join('') + '</div>' +
       '<div class="btnrow"><button class="bigbtn" id="announce-ok" ' + (chosen == null ? 'disabled' : '') + '>' + (chosen == null ? '宣言する' : '《' + cardName(chosen) + '》を宣言する') + '</button></div>');
     $('sheet').querySelectorAll('[data-code]').forEach(g => g.addEventListener('click', (ev) => {
@@ -6942,6 +7033,7 @@ function wireSeg(id, apply) {
     playClick();
     const w = $('sheetwrap'); const on = w.classList.toggle('peek');
     $('peekbtn').textContent = on ? '選択に戻る' : '盤面を見る';
+    syncPeekBar(); // BU-22: the answer band follows the peek state
   });
   // reflect the persisted audio preference in the switch at boot
   $('soundbtn').classList.toggle('on', audioOn);

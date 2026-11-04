@@ -141,7 +141,7 @@
   .loghistrow.res{padding-left:14px;}
   .loghistrow.neg{color:#e08a8a;}
   .link{flex:0 0 auto;font-size:10px;border:1px solid var(--gold-dim);border-radius:10px;padding:2px 7px;background:var(--panel2);white-space:nowrap;}
-  .link.solving{border-color:#ffd94d;background:#4a3a10;color:#fff;box-shadow:0 0 10px #ffd94d99,0 0 0 1px #ffd94d;}
+  .link.solving{border-color:#ffd94d;background:#4a3a10;color:#fff;box-shadow:0 0 10px #ffd94d99,0 0 0 2px #ffd94d;}
   .link.negated{text-decoration:line-through;opacity:.55;}
   .link .no{color:var(--gold);font-weight:700;}
   #logline{font-size:10px;color:var(--txt-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:15px;line-height:15px;}
@@ -247,6 +247,15 @@
   #sheetwrap.on[data-kind="view"] #sheetx{display:block;}
   #sheetwrap.peek #sheetx{bottom:auto;top:10px;}
   #sheetwrap.peek #peekbtn{bottom:auto;top:10px;}
+  /* BU-22 (selection-clarity round): while the sheet is peeked
+     down, its answer controls are mirrored into this bottom band
+     (built by syncPeekBar in client.js), so a yes/no or a grid
+     confirm can be answered while looking at the board (R-SEL-2).
+     The band exists only in peek mode and only when the sheet
+     actually carries answer controls (.onbar). */
+  #peekbar{display:none;position:absolute;left:0;right:0;bottom:0;z-index:52;background:#1d1811;border-top:2px solid var(--gold);padding:8px;flex-wrap:wrap;gap:6px;max-height:34dvh;overflow-y:auto;}
+  #sheetwrap.peek #peekbar.onbar{display:flex;}
+  #peekbar .bigbtn{flex:1 1 40%;}
   #sheet .seg button{min-height:39px;}
   #midbar{position:relative;}
   #midbar.busy::after{content:'';position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);background-size:40% 100%;background-repeat:no-repeat;animation:busyslide 1.1s linear infinite;pointer-events:none;}
@@ -342,6 +351,11 @@
   details.fxfull .cardtext{margin-top:4px;color:var(--txt-dim);}
   #infopop .fxlab{font-size:10px;font-weight:700;color:var(--gold);margin-top:8px;}
   .cand .fxline{font-size:10px;line-height:1.45;color:var(--gold);margin-top:2px;}
+  /* BU-28 (selection-clarity round): when a candidate's effect
+     line is truncated, the guide to the full text is printed on
+     the line itself (the candidate's 詳細 button floats the full
+     text without answering). */
+  .cand .fxmore{color:var(--txt-dim);text-decoration:underline dotted;text-underline-offset:2px;}
   .gcard{position:relative;}
   .gcard .stats{font-size:10px;color:var(--gold);background:#000a;padding:0 3px;border-radius:2px;margin-top:2px;}
   .gcard .gdetail{position:absolute;top:3px;right:3px;font-size:10px;background:#000c;color:var(--gold);border:1px solid var(--gold-dim);border-radius:5px;padding:4px 7px;cursor:pointer;z-index:2;}
@@ -580,6 +594,11 @@
   #chainbar .link.landed{box-shadow:0 0 0 1.5px #c9a227;}
   .link.newest{border-color:#59d8f2;background:#12222b;color:#dff8ff;transform:scale(1.12);}
   .link.done{opacity:.45;}
+  /* BU-24 (selection-clarity round): the resolving link also says
+     so in words — a filled gold tag inside the chip, so the state
+     does not ride on glow alone (the chip row is 21px-frozen; the
+     tag is inline and adds no height). */
+  #chainbar .link .solvingtag{font-size:9px;font-weight:700;color:#191104;background:#ffd94d;border-radius:6px;padding:0 5px;margin-left:3px;white-space:nowrap;}
   /* detail preview: modified ATK/DEF in MD's light blue */
   #preview .pv-stats .mod{color:#8fd8ff;font-weight:700;}
   /* defense position (round B, MD-style): the card ARTWORK rotates
@@ -776,7 +795,7 @@
   <div id="fxcutin"><canvas id="fxcvTop"></canvas></div>
   <div id="dock"></div>
   <div id="autopass"></div>
-  <div id="sheetwrap"><button id="sheetx" title="閉じる">×</button><button id="peekbtn">盤面を見る</button><div id="sheet"></div></div>
+  <div id="sheetwrap"><button id="sheetx" title="閉じる">×</button><button id="peekbtn">盤面を見る</button><div id="sheet"></div><div id="peekbar"></div></div>
   <div id="infopop"></div>
   <div class="overlay" id="start">
     <h1><span>MILLENNIUM</span><span>DUELISTS</span></h1>
