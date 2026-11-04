@@ -344,6 +344,8 @@ const codesText = (main, extra, side) =>
     ok(lib.extractImportUrl('https://example.com/deck') === null, 'U0c: foreign URLs are not import URLs');
     ok(lib.isDeckCode('2t9x91u') && !lib.isDeckCode('2t9x91') && !lib.isDeckCode('剣神官ムドラ'), 'U0d: deck code is exactly 7 alphanumerics');
     ok(lib.deckCodeSearchUrl('2t9x91u').includes('deck_search.action?ope=1&deck_code=2t9x91u'), 'U0e: search URL is built from the code');
+    ok(lib.extractImportUrl('#遊戯王ニューロン\nhttps://neuron.konami.net/link/wkmqz2oarqk3lcga') === 'https://neuron.konami.net/link/wkmqz2oarqk3lcga',
+      'U0f: the Neuron list-save copy (title line + share URL, the composite clipboard text) extracts the URL untouched by the prefix');
     window.close();
   }
 
@@ -382,6 +384,18 @@ const codesText = (main, extra, side) =>
     window.close();
   }
 
+  // ------------------------------------------------ URL flow: the list-save copy pasted as-is
+  {
+    const relayDeck = async (u) => /allorigins|codetabs/.test(u) ? { ok: true, status: 200, text: async () => fixture } : null;
+    const window = await boot(null, relayDeck);
+    const doc = window.document;
+    doc.getElementById('todeck').click();
+    const res = await importUrlFlow(window, '#遊戯王ニューロン\nhttps://neuron.konami.net/link/qae5uv7gmv1b9qrt', '自動で保存しました');
+    ok(res.textContent.includes('MILLENNIUM PROPHECY') && res.textContent.includes('自動で保存しました'),
+      'U1d: the list-save copy (title + URL composite text) pasted as-is imports and auto-saves');
+    window.close();
+  }
+
   // ------------------------------------------------ URL flow: every route down -> honest failure, no save
   {
     const allDown = async () => null;
@@ -392,6 +406,35 @@ const codesText = (main, extra, side) =>
     ok(res.textContent.includes('取得できませんでした') && res.textContent.includes('中継サービス') && res.textContent.includes('貼り付けてください'),
       'U3: total fetch failure explains the relay situation and the paste fallback');
     ok(!window.localStorage.getItem('v2saveddecks'), 'U3b: nothing is saved when the fetch fails');
+    window.close();
+  }
+
+  // ------------------------------------------------ URL flow: relays answer, but the link is not a deck (private deck)
+  {
+    const topPage = '<html><head><title>遊戯王ニューロン | KONAMI</title></head><body>' + 'ニューロントップページ。'.repeat(600) + '</body></html>';
+    const notDeck = async (u) => /allorigins|codetabs/.test(u) ? { ok: true, status: 200, text: async () => topPage } : null;
+    const window = await boot(null, notDeck);
+    const doc = window.document;
+    doc.getElementById('todeck').click();
+    const res = await importUrlFlow(window, 'https://neuron.konami.net/link/wkmqz2oarqk3lcga', 'リンク先からデッキを取得できませんでした');
+    ok(res.textContent.includes('リンク先からデッキを取得できませんでした') && res.textContent.includes('非公開だと取り込めません') && res.textContent.includes('公開設定にしてから'),
+      'U4: a link that resolves to a non-deck page (private deck) gets the not-a-deck message naming the private-deck cause');
+    ok(!res.textContent.includes('応答がありませんでした'), 'U4b: the not-a-deck message does not blame the relays');
+    ok(!window.localStorage.getItem('v2saveddecks'), 'U4c: nothing is saved for a non-deck link');
+    window.close();
+  }
+
+  // ------------------------------------------------ payload classifier (unit)
+  {
+    const window = await boot();
+    const classify = (t) => window.eval('neuronClassifyPayload(' + JSON.stringify(t) + ')');
+    const topPage = '<html><head><title>x</title></head><body>' + 'y'.repeat(5000) + '</body></html>';
+    const hopPage = '<html><body><a href="https://www.db.yugioh-card.com/yugiohdb/member_deck.action?ope=1&cgid=77ea9998fb9d10ecc6e6f70c1056a5d9&dno=71">deck</a></body></html>';
+    ok(classify(fixture) === 'deck', 'U5: a real deck page classifies as deck');
+    ok(classify(hopPage) === 'searchlink', 'U5b: a page carrying a member_deck link classifies as searchlink');
+    ok(classify(topPage) === 'page', 'U5c: a full non-deck page classifies as page');
+    ok(classify('The API has been rate limited') === 'junk' && classify('') === 'junk' && classify('<html><body>app stub</body></html>') === 'junk',
+      'U5d: rate-limit bodies, empty answers and small stubs classify as junk');
     window.close();
   }
 
