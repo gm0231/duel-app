@@ -58,9 +58,17 @@ const CARD_ART = { 99937011: 'mudora', 62320425: 'agido', 16135253: 'agido', 259
 // 《生きる偲びのシルキィ》 (55702233): the translucent girl
 // wears an Egyptian white dress with a gold sash inside the
 // Ishizu deck, and keeps her plain room painting anywhere
-// else. Generic by design: new decks and cards are data, not
-// branches.
-const DECK_ART = { ishizu: { 36745317: 'mori-ishizu', 62133026: 'hana-ishizu', 9350312: 'oka-ishizu', 14108995: 'kakan-ishizu', 15079028: 'carbon-ishizu', 55702233: 'silky-ishizu' } }; // 森と目覚の春化精 / 花と野原の春化精 / 丘と芽吹の春化精 / 春化精の花冠 / 地久神－カルボン / 生きる偲びのシルキィ (Egyptian art, Ishizu deck only)
+// else. The 7th entry is 《宵闇のルーチェ》 (45409943,
+// user art 2026-11-05, the deck-override companion to the
+// 19th delivery): the white-winged painting stays in
+// CARD_ART as the plain art any other deck sees, while
+// inside the Ishizu deck — the only deck that runs her —
+// she wears the all-gold Egyptian form (golden wings,
+// Eye-of-Horus shields, the pyramids and the Nile below).
+// As a keycard, her summon cut-in inside an Ishizu duel
+// resolves this art too. Generic by design: new decks and
+// cards are data, not branches.
+const DECK_ART = { ishizu: { 36745317: 'mori-ishizu', 62133026: 'hana-ishizu', 9350312: 'oka-ishizu', 14108995: 'kakan-ishizu', 15079028: 'carbon-ishizu', 55702233: 'silky-ishizu', 45409943: 'luce-ishizu' } }; // 森と目覚の春化精 / 花と野原の春化精 / 丘と芽吹の春化精 / 春化精の花冠 / 地久神－カルボン / 生きる偲びのシルキィ / 宵闇のルーチェ (Egyptian art, Ishizu deck only)
 // Which deck each core seat is playing this duel ([seat0, seat1]),
 // set at duel start; nulls outside a duel. Every art surface
 // derives its deck context from the seat that owns the card
