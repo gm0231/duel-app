@@ -7,7 +7,10 @@
    - openCardInfo (the read-only detail sheet) leads with the
      BIG art: cardArtFile(code, true) as an inline background on
      .infoart, background-position pinned to center top (the
-     standing keep-the-top crop rule). Unlisted cards get NO
+     standing keep-the-top crop rule) — except the ART_FOCUS
+     slugs (user ruling 2026-11-05: chaospod / luce /
+     luce-ishizu), whose bands shift so the subject is inside
+     the band (CV15-CV17). Unlisted cards get NO
      inline image — the .infoart class background is the shared
      placeholder, the same fallback the FX big card uses.
    - Deck-scoped art resolves on the detail sheet exactly like
@@ -49,6 +52,7 @@ const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (
 const MUDORA = 99937011, KELBEK = 25926710, MORI = 36745317, HORUS = 36898537;
 const UNLISTED = 17484499;      // Gensei to Meikai no Gyakuten — Ishizu main, no individual art (see test-cardart; classic Agido gained the agido alias by the 2026-11-04 user ruling)
 const PLUTO = 37706769;         // 冥府の執行者 プルート — Ishizu EX, no individual art (the unlisted-EX exemplar role sat with Luce 45409943 until she gained art in the 19th delivery, 2026-11-05)
+const CHAOSPOD = 79106360, LUCE = 45409943; // ART_FOCUS exemplars (focus-exception round, 2026-11-05)
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -214,6 +218,25 @@ async function boot() {
   {
     const pop = doc.getElementById('infopop');
     ok(pop.className !== 'on' && !pop.querySelector('.popart'), 'CV14: a null code never opens the pop (secrecy guard intact)');
+  }
+
+  // ---- focus exceptions on the real bands (user ruling 2026-11-05) ----
+  window.eval('openCardInfo(' + CHAOSPOD + ')');
+  {
+    const art = doc.querySelector('#sheet .infoart');
+    ok(!!art && art.style.backgroundImage.includes('card-art-chaospod.jpg'), 'CV15: the Chaos Pod detail art is the BIG file');
+    ok(!!art && art.style.backgroundPosition === 'center 85%', 'CV15b: the Chaos Pod detail band shifts to its focus exception (center 85%) — the pod itself sits inside the band');
+  }
+  window.eval('openInfoPop(' + CHAOSPOD + ')');
+  {
+    const art = doc.querySelector('#infopop .popart');
+    ok(!!art && art.style.backgroundPosition === 'center 85%', 'CV16: the Chaos Pod pop band uses the same focus exception');
+  }
+  window.eval('closeInfoPop()');
+  window.eval('openCardInfo(' + LUCE + ')');
+  {
+    const art = doc.querySelector('#sheet .infoart');
+    ok(!!art && art.style.backgroundImage.includes('card-art-luce-ishizu.jpg') && art.style.backgroundPosition === 'center 38%', 'CV17: Luce (unique to the Ishizu deck here) detail band shows the gold art at its focus position (center 38%)');
   }
 
   console.log(failures ? ('FAILURES: ' + failures) : 'ALL PASS');

@@ -91,18 +91,50 @@ function deckKeyOfCode(code) {
   }
   return found.size === 1 ? [...found][0] : null;
 }
-function cardArtFile(code, big, deckKey) {
+function artSlug(code, deckKey) {
   if (code == null) return null;
   const over = deckKey ? (DECK_ART[deckKey] || {})[code] : null;
-  const s = over || CARD_ART[code];
+  return over || CARD_ART[code] || null;
+}
+function cardArtFile(code, big, deckKey) {
+  const s = artSlug(code, deckKey);
   return s ? '../assets/card-art-' + s + (big ? '.jpg' : '-s.jpg') : null;
+}
+// ---- focus exceptions for the wide BIG-art bands (user ruling
+// 2026-11-05): the crop rule above stays the default — top
+// anchored, 'center top' — but a painting whose subject sits so
+// low in the frame that a top-only crop leaves the subject
+// essentially OUT of the band may shift its band position, that
+// card only. Measured 2026-11-05 over every registered art (26
+// slugs) by reproducing both bands (detail sheet 390 x 280, info
+// pop 390 x 180, background-size cover) from the delivered big
+// files; full table in the brushup cropfix report. Only three
+// qualified: 《カオスポッド》 — the pod itself sits at y 55-85% of
+// the frame, so the band showed the shelf and jar tops only;
+// 《宵闇のルーチェ》 (both paintings) — her head and torso sit at
+// the sheet band's bottom edge and fall outside the pop band
+// entirely, leaving wings and tower. Keyed by slug, so a base art
+// and its deck variant are judged — and shifted — separately.
+// Consulted only for the BIG file: the bands (.infoart/.popart)
+// and the cut-in cards. (On the cut-ins the shift is a numerical
+// no-op: the bigcard box, 242 x 334 at phone width, matches the
+// 640 x 882 file's aspect to under a pixel of cover overflow, so
+// no position can move anything there.) The small square file
+// keeps 'center top' everywhere: it is itself a top-anchored
+// crop in which every subject already reads fine on tiles, hand
+// and grid (measured in the same pass).
+const ART_FOCUS = { chaospod: 'center 85%', luce: 'center 38%', 'luce-ishizu': 'center 38%' };
+function artPosition(code, big, deckKey) {
+  if (!big) return 'center top';
+  const s = artSlug(code, deckKey);
+  return (s && ART_FOCUS[s]) || 'center top';
 }
 // inline style for an HTML-string surface (tile art, hand, preview,
 // grid cards): empty string for unlisted codes, so their markup is
 // byte-identical to before.
 function artCss(code, big, deckKey) {
   const f = cardArtFile(code, big, deckKey);
-  return f ? 'background-image:url(' + f + ');background-position:center top' : '';
+  return f ? 'background-image:url(' + f + ');background-position:' + artPosition(code, big, deckKey) : '';
 }
 function artInline(code, big, deckKey) {
   const css = artCss(code, big, deckKey);
@@ -114,7 +146,7 @@ function artApply(el, code, big, deckKey) {
   const f = code != null ? cardArtFile(code, big, deckKey) : null;
   if (!f || !el) return;
   el.style.backgroundImage = 'url(' + f + ')';
-  el.style.backgroundPosition = 'center top';
+  el.style.backgroundPosition = artPosition(code, big, deckKey);
 }
 const artPreloaded = new Set();
 function preloadCardArt(deckKeys) {

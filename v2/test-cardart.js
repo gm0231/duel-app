@@ -9,6 +9,13 @@
    - Cropping rule (user, 2026-11-03): keep the TOP, cut from the
      bottom — artInline/artCss pin background-position to center top,
      and the delivered files are top-anchored crops.
+   - Focus exceptions (user ruling 2026-11-05): a painting whose
+     subject sits so low that the wide BIG-art bands would crop it
+     away may shift its band position, that card only — ART_FOCUS,
+     keyed by slug, consulted for the BIG file only (bands + cut-in
+     cards). Exactly three slugs qualify (measured over all 26):
+     chaospod 'center 85%', luce / luce-ishizu 'center 38%'. The
+     small file keeps center top on every surface (CAF block).
    - Surfaces: board tile art (face-visible states only), hand,
      resident preview, selection-grid cards, FX ghosts, cut-in big
      cards. An opponent's face-down card must NEVER receive the art
@@ -284,6 +291,18 @@ async function boot() {
     luceIshizuBig: cardArtFile(${LUCE}, true, 'ishizu'),
     luceIshizuInline: artInline(${LUCE}, false, 'ishizu'),
     luceGg: cardArtFile(${LUCE}, false, 'gg'),
+    focusTable: ART_FOCUS,
+    focusChaosBig: artCss(${CHAOSPOD}, true),
+    focusChaosSmall: artCss(${CHAOSPOD}, false),
+    focusLuceBig: artCss(${LUCE}, true),
+    focusLuceBigIshizu: artCss(${LUCE}, true, 'ishizu'),
+    focusLuceBigGg: artCss(${LUCE}, true, 'gg'),
+    focusLuceSmallIshizu: artCss(${LUCE}, false, 'ishizu'),
+    focusMudoraBig: artCss(${MUDORA}, true),
+    focusPosUnlisted: artPosition(${UNLISTED}, true),
+    focusApplyChaos: (() => { const d = document.createElement('div'); artApply(d, ${CHAOSPOD}, true); return d.style.backgroundPosition; })(),
+    focusApplyMudora: (() => { const d = document.createElement('div'); artApply(d, ${MUDORA}, true); return d.style.backgroundPosition; })(),
+    focusApplyChaosSmall: (() => { const d = document.createElement('div'); artApply(d, ${CHAOSPOD}, false); return d.style.backgroundPosition; })(),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.classicAgidoSlug === 'agido' && helpers.classicAgidoInline.includes('card-art-agido-s.jpg'), 'CA7b2: user ruling 2026-11-04 — the CLASSIC Agido (16135253) aliases the same agido art');
@@ -357,6 +376,18 @@ async function boot() {
   ok(helpers.luceIshizuSmall === '../assets/card-art-luce-ishizu-s.jpg' && helpers.luceIshizuBig === '../assets/card-art-luce-ishizu.jpg' && helpers.luceIshizuInline.includes('card-art-luce-ishizu-s.jpg'), 'CA7z43: Ishizu context resolves Luce to the all-gold Egyptian art (small + big)');
   ok(helpers.luceGg === '../assets/card-art-luce-s.jpg', 'CA7z44: GG context resolves Luce to the plain white-winged art');
   ok(helpers.preloaded.includes('../assets/card-art-luce-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-luce-ishizu.jpg'), 'CA7z45: boot preloads the deck-scoped Luce art too (EXTRA-deck membership warms it)');
+  // ---- focus exceptions (user ruling 2026-11-05): ART_FOCUS shifts
+  // the BIG-file band position for the three measured slugs only ----
+  ok(Object.keys(helpers.focusTable).length === 3 && helpers.focusTable.chaospod === 'center 85%' && helpers.focusTable.luce === 'center 38%' && helpers.focusTable['luce-ishizu'] === 'center 38%', 'CAF1: ART_FOCUS holds exactly the three measured exceptions (chaospod 85%, luce / luce-ishizu 38%)');
+  ok(helpers.focusChaosBig.includes('card-art-chaospod.jpg') && helpers.focusChaosBig.includes('background-position:center 85%'), 'CAF2: Chaos Pod BIG art carries its focus position (center 85%)');
+  ok(helpers.focusChaosSmall.includes('card-art-chaospod-s.jpg') && helpers.focusChaosSmall.includes('background-position:center top'), 'CAF3: Chaos Pod SMALL art keeps center top (the exception is big-file only)');
+  ok(helpers.focusLuceBig.includes('card-art-luce.jpg') && helpers.focusLuceBig.includes('background-position:center 38%'), 'CAF4: Luce BIG art carries its focus position (center 38%)');
+  ok(helpers.focusLuceBigIshizu.includes('card-art-luce-ishizu.jpg') && helpers.focusLuceBigIshizu.includes('background-position:center 38%'), 'CAF5: Luce in the Ishizu deck resolves the gold art WITH its own focus entry (slug-keyed, not code-keyed)');
+  ok(helpers.focusLuceBigGg.includes('card-art-luce.jpg') && !helpers.focusLuceBigGg.includes('ishizu') && helpers.focusLuceBigGg.includes('background-position:center 38%'), 'CAF6: Luce in any other deck keeps the plain art and the same focus position');
+  ok(helpers.focusLuceSmallIshizu.includes('card-art-luce-ishizu-s.jpg') && helpers.focusLuceSmallIshizu.includes('background-position:center top'), 'CAF7: the deck-variant SMALL art keeps center top too');
+  ok(helpers.focusMudoraBig.includes('card-art-mudora.jpg') && helpers.focusMudoraBig.includes('background-position:center top'), 'CAF8: a non-exception BIG art (Mudora) keeps center top — the rule did not move');
+  ok(helpers.focusPosUnlisted === 'center top', 'CAF9: an unlisted code resolves the default position (no crash, no leak of the table)');
+  ok(helpers.focusApplyChaos === 'center 85%' && helpers.focusApplyMudora === 'center top' && helpers.focusApplyChaosSmall === 'center top', 'CAF10: artApply (cut-in / ghost path) agrees with artCss: exception for the big file, center top otherwise');
   ok(helpers.kakanSlug === 'kakan' && helpers.kakanInline.includes('card-art-kakan-s.jpg') && helpers.kakanInline.includes('background-position:center top'), 'CA7aa: Kakan maps and stamps like the others (plain art = the forest painting)');
   ok(helpers.preloaded.includes('../assets/card-art-kakan-s.jpg') && helpers.preloaded.includes('../assets/card-art-kakan.jpg'), 'CA7ab: boot preloads Kakan too (same deck)');
   ok(helpers.deckArtKakan === 'kakan-ishizu', 'CA7z17: DECK_ART registers Kakan -> kakan-ishizu for the Ishizu deck (4th entry, first SPELL with an override)');
