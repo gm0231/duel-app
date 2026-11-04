@@ -22,6 +22,14 @@
      thumbnails, nothing to resolve.
    - Row -> detail flow is unchanged: tapping a known row opens
      the detail sheet (now with the big art on top).
+   - openInfoPop (the FLOATING detail: board taps, chain rows,
+     grid 詳細 buttons, confirm-sheet rows) leads with the same
+     BIG art on a .popart band — it was the one detail surface
+     still text-only. Deck context resolves like setPreview: the
+     instance's seat when a ref names one, else deckKeyOfCode.
+     Unlisted cards get NO inline image (the .popart class
+     background is the shared placeholder). A null code still
+     never opens the pop (the secrecy guard upstream is intact).
    Method: boot the real client in jsdom (harness as
    test-cardart), fabricate a duel state, open the real sheets
    and assert the DOM contract. */
@@ -173,6 +181,39 @@ async function boot() {
     const art = doc.querySelector('#sheet .infoart');
     ok(!!art && art.style.backgroundImage.includes('card-art-mudora.jpg'), 'CV10: tapping a grave row still opens the detail, now with the big art');
     ok(doc.getElementById('sheet').textContent.includes(data.names[MUDORA]), 'CV10b: the opened detail is Mudora\'s');
+  }
+
+  // ---- floating pop (openInfoPop): the big art band leads ----
+  window.eval('openInfoPop(' + MUDORA + ')');
+  {
+    const pop = doc.getElementById('infopop');
+    const art = pop.querySelector('.popart');
+    ok(!!art, 'CV11: the floating pop leads with a big-art band');
+    ok(!!art && art.style.backgroundImage.includes('card-art-mudora.jpg') && !art.style.backgroundImage.includes('-s.jpg'), 'CV11b: the pop art is the BIG Mudora file (not the small one)');
+    ok(!!art && art.style.backgroundPosition === 'center top', 'CV11c: the pop art keeps the top-anchored crop (center top)');
+    ok(pop.innerHTML.indexOf('popart') < pop.innerHTML.indexOf('cardtext'), 'CV11d: name/text follow below the pop art');
+    ok(pop.textContent.includes(data.names[MUDORA]), 'CV11e: the pop still names the card');
+  }
+  window.eval('openInfoPop(' + UNLISTED + ')');
+  {
+    const art = doc.querySelector('#infopop .popart');
+    ok(!!art && art.style.backgroundImage === '', 'CV12: an unlisted card\'s pop art is the bare placeholder surface (no inline image)');
+  }
+  window.eval('openInfoPop(' + MORI + ')');
+  {
+    const art = doc.querySelector('#infopop .popart');
+    ok(!!art && art.style.backgroundImage.includes('card-art-mori-ishizu.jpg'), 'CV13: a bare-code pop resolves the deck-scoped BIG art (Mori in the Ishizu deck)');
+  }
+  window.eval('openInfoPop(' + MORI + ', { con: 1, loc: 4, seq: 0 })');
+  {
+    const art = doc.querySelector('#infopop .popart');
+    ok(!!art && art.style.backgroundImage.includes('card-art-mori.jpg') && !art.style.backgroundImage.includes('ishizu'), 'CV13b: a ref pop resolves the art by the instance seat (Mori on the GG seat = plain art)');
+  }
+  window.eval('closeInfoPop()');
+  window.eval('openInfoPop(null)');
+  {
+    const pop = doc.getElementById('infopop');
+    ok(pop.className !== 'on' && !pop.querySelector('.popart'), 'CV14: a null code never opens the pop (secrecy guard intact)');
   }
 
   console.log(failures ? ('FAILURES: ' + failures) : 'ALL PASS');

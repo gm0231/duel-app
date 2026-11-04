@@ -5082,7 +5082,19 @@ function openInfoPop(code, ref, fx) {
   const mats = ref ? liveMats(ref.con, ref.loc, ref.seq) : null;
   const meta = cardMetaLine(code, mats);
   const st = statsLine(code);
-  $('infopop').innerHTML = '<div class="ttl">' + cardName(code) + '</div>' +
+  // card-view rule (user, 2026-11-04): every surface that shows a
+  // card's detail leads with its BIG art. The floating pop was the
+  // one surface still missing it; the band resolves its deck
+  // context exactly like setPreview does (the instance's seat when
+  // a ref names one, unique deck membership for a bare code), and
+  // unlisted cards fall back to the shared placeholder through the
+  // .popart class background, exactly like .infoart. The secrecy
+  // guard is unchanged: a null/hidden code never reaches this
+  // function (boardCardAt and friends), so no art or name can leak
+  // for an opponent's face-down card.
+  const popDeckKey = ref && ref.con != null ? deckKeyOfSeat(ref.con) : deckKeyOfCode(code);
+  $('infopop').innerHTML = '<div class="popart"' + artInline(code, true, popDeckKey) + '></div>' +
+    '<div class="ttl">' + cardName(code) + '</div>' +
     '<div class="sub">' + [meta, st].filter(Boolean).join('／') + '</div>' +
     (cardText(code) ? (fx ? fxBlockHTML(code, fx) : '<div class="cardtext">' + cardText(code) + '</div>') : '<div class="sub">このカードのテキストは表示できません</div>') +
     // W-28: the detail pop floats over whatever is beneath it;
