@@ -52,6 +52,12 @@
      individual art, and one of the two keycard-activation
      presentation targets, so its BIG file is also the
      cut-in-grade stage art (test-keycardact pins that side).
+   - The 19th delivery (2026-11-05) is 《宵闇のルーチェ》
+     (45409943): plain art 'luce' (the white-and-gold winged
+     figure with the halo spire and coin discs over a night
+     sky) in CARD_ART, NO deck-scoped override — an EXTRA-deck
+     monster like the 17th, and an Ishizu KEYCARD, so its BIG
+     file is also the summon cut-in / Keycard BGM stage art.
    Method: boot the real client in jsdom (harness as test-setvis),
    paint a fabricated board through the client's own render() and
    assert the DOM contract in one synchronous eval. */
@@ -68,7 +74,7 @@ const wasmBinary = fs.readFileSync(path.join(V2, 'build', 'ocgcore.wasm'));
 let failures = 0;
 const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (!cond) failures++; };
 
-const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317, KAKAN = 14108995, CARBON = 15079028, SILKY = 55702233, HORUS = 36898537, HAKAMORI = 98715423;
+const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317, KAKAN = 14108995, CARBON = 15079028, SILKY = 55702233, HORUS = 36898537, HAKAMORI = 98715423, LUCE = 45409943;
 // The unlisted exemplar moved Zolga -> Sphinx (5th delivery) ->
 // Mori (after the 7th) -> Carbon (after the 13th) -> Shilkey
 // (after the 15th), and Shilkey gained art in the 16th
@@ -107,7 +113,8 @@ for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.
                          ['card-art-silky-s.jpg', 320, 320], ['card-art-silky.jpg', 640, 882],
                          ['card-art-silky-ishizu-s.jpg', 320, 320], ['card-art-silky-ishizu.jpg', 640, 882],
                          ['card-art-horus-s.jpg', 320, 320], ['card-art-horus.jpg', 640, 882],
-                         ['card-art-hakamori-s.jpg', 320, 320], ['card-art-hakamori.jpg', 640, 882]]) {
+                         ['card-art-hakamori-s.jpg', 320, 320], ['card-art-hakamori.jpg', 640, 882],
+                         ['card-art-luce-s.jpg', 320, 320], ['card-art-luce.jpg', 640, 882]]) {
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
@@ -136,6 +143,8 @@ ok(data.decks.ishizu.extra.filter(c => c === HORUS).length === 2, 'CA0u: the Ish
 ok(!data.decks.gg.main.includes(HORUS) && !data.decks.gg.extra.includes(HORUS), 'CA0v: the GG deck does NOT run Horus (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
 ok(data.decks.ishizu.main.filter(c => c === HAKAMORI).length === 3, 'CA0w: the Ishizu deck runs 3 copies of Hakamori-no-Wana (18th delivery — the first trap with individual art)');
 ok(!data.decks.gg.main.includes(HAKAMORI) && !data.decks.gg.extra.includes(HAKAMORI), 'CA0x: the GG deck does NOT run Hakamori (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
+ok(data.decks.ishizu.extra.filter(c => c === LUCE).length === 3, 'CA0y: the Ishizu EXTRA deck runs 3 copies of Luce (19th delivery — an Ishizu keycard)');
+ok(!data.decks.gg.main.includes(LUCE) && !data.decks.gg.extra.includes(LUCE), 'CA0z: the GG deck does NOT run Luce (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -254,6 +263,12 @@ async function boot() {
     hakamoriBig: cardArtFile(${HAKAMORI}, true),
     hakamoriDeckArt: DECK_ART.ishizu && DECK_ART.ishizu[${HAKAMORI}],
     hakamoriIshizu: cardArtFile(${HAKAMORI}, false, 'ishizu'),
+    luceSlug: CARD_ART[${LUCE}],
+    luceInline: artInline(${LUCE}),
+    luceSmall: cardArtFile(${LUCE}, false),
+    luceBig: cardArtFile(${LUCE}, true),
+    luceDeckArt: DECK_ART.ishizu && DECK_ART.ishizu[${LUCE}],
+    luceIshizu: cardArtFile(${LUCE}, false, 'ishizu'),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.classicAgidoSlug === 'agido' && helpers.classicAgidoInline.includes('card-art-agido-s.jpg'), 'CA7b2: user ruling 2026-11-04 — the CLASSIC Agido (16135253) aliases the same agido art');
@@ -320,6 +335,10 @@ async function boot() {
   ok(helpers.hakamoriSmall === '../assets/card-art-hakamori-s.jpg' && helpers.hakamoriBig === '../assets/card-art-hakamori.jpg', 'CA7z36: Hakamori art files resolve (small + big)');
   ok(helpers.preloaded.includes('../assets/card-art-hakamori-s.jpg') && helpers.preloaded.includes('../assets/card-art-hakamori.jpg'), 'CA7z37: boot preloads Hakamori too (main-deck membership warms the art from deck-select time)');
   ok(helpers.hakamoriDeckArt === undefined && helpers.hakamoriIshizu === '../assets/card-art-hakamori-s.jpg', 'CA7z38: Hakamori has NO deck-scoped override — plain registration, Ishizu context keeps the base art');
+  ok(helpers.luceSlug === 'luce' && helpers.luceInline.includes('card-art-luce-s.jpg') && helpers.luceInline.includes('background-position:center top'), 'CA7z39: Luce maps and stamps like the others (19th delivery)');
+  ok(helpers.luceSmall === '../assets/card-art-luce-s.jpg' && helpers.luceBig === '../assets/card-art-luce.jpg', 'CA7z40: Luce art files resolve (small + big)');
+  ok(helpers.preloaded.includes('../assets/card-art-luce-s.jpg') && helpers.preloaded.includes('../assets/card-art-luce.jpg'), 'CA7z41: boot preloads Luce too (EXTRA-deck membership warms the art from deck-select time)');
+  ok(helpers.luceDeckArt === undefined && helpers.luceIshizu === '../assets/card-art-luce-s.jpg', 'CA7z42: Luce has NO deck-scoped override — plain registration, Ishizu context keeps the base art');
   ok(helpers.kakanSlug === 'kakan' && helpers.kakanInline.includes('card-art-kakan-s.jpg') && helpers.kakanInline.includes('background-position:center top'), 'CA7aa: Kakan maps and stamps like the others (plain art = the forest painting)');
   ok(helpers.preloaded.includes('../assets/card-art-kakan-s.jpg') && helpers.preloaded.includes('../assets/card-art-kakan.jpg'), 'CA7ab: boot preloads Kakan too (same deck)');
   ok(helpers.deckArtKakan === 'kakan-ishizu', 'CA7z17: DECK_ART registers Kakan -> kakan-ishizu for the Ishizu deck (4th entry, first SPELL with an override)');
@@ -921,6 +940,39 @@ async function boot() {
   ok(res12.oppUp.includes('card-art-horus-s.jpg'), 'CA11ae: opponent FACE-UP Horus shows the art too (public information)');
   ok(res12.oppDown === '' && !String(res12.oppDown).includes('horus'), 'CA13n: opponent FACE-DOWN Horus gets NO art (asymmetry / no leak)');
   ok(res12.pv.includes('card-art-horus-s.jpg'), 'CA16y: resident preview shows the Horus art (unique deck membership: Ishizu)');
+
+  // ---- Luce board (19th delivery): an EXTRA-deck monster
+  // and an Ishizu keycard. A plain CARD_ART registration (no
+  // override), so every deck context resolves to the same
+  // 'luce' painting — the same fabricated post-summon board
+  // contract as Horus: own face-up tile and the resident
+  // preview carry the art, an opponent face-up Luce (public
+  // information) carries it too, and an opponent FACE-DOWN
+  // Luce must NOT (asymmetry, as ever). ----
+  const res13 = await window.eval(`
+    (() => {
+      const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
+      const P = () => ({ mzone: [null,null,null,null,null,null,null], szone: [null,null,null,null,null,null], grave: [], removed: [], extra: [], hand: [], deckCount: 38, lp: 8000 });
+      const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
+      b.players[0].mzone[0] = mon(${LUCE}, 0x1);  // own face-up ATK Luce (post-Synchro)
+      b.players[1].mzone[0] = mon(${LUCE}, 0x1);  // opp face-up Luce (public: art shows)
+      b.players[1].mzone[1] = mon(${LUCE}, 0x8);  // opp face-down DEF Luce (MUST stay hidden)
+      render(b);
+      const artOf = (zone) => {
+        const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
+        const a = slot && slot.querySelector('.tile .art');
+        return a ? (a.getAttribute('style') || '') : null;
+      };
+      setPreview(${LUCE}, null);
+      const pv = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      return { ownUp: artOf('0:4:0'), oppUp: artOf('1:4:0'), oppDown: artOf('1:4:1'), pv };
+    })()
+  `);
+  ok(res13.ownUp !== null && res13.oppUp !== null && res13.oppDown !== null, 'CA31: non-vacuity — Luce board rendered');
+  ok(res13.ownUp.includes('card-art-luce-s.jpg'), 'CA11af: own face-up Luce tile shows the new art (19th delivery)');
+  ok(res13.oppUp.includes('card-art-luce-s.jpg'), 'CA11ag: opponent FACE-UP Luce shows the art too (public information)');
+  ok(res13.oppDown === '' && !String(res13.oppDown).includes('luce'), 'CA13p: opponent FACE-DOWN Luce gets NO art (asymmetry / no leak)');
+  ok(res13.pv.includes('card-art-luce-s.jpg'), 'CA16z2: resident preview shows the Luce art (unique deck membership: Ishizu)');
 
   window.close();
   console.log(failures === 0 ? 'ALL CARDART CHECKS PASSED' : failures + ' CARDART CHECK(S) FAILED');
