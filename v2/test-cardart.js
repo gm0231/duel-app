@@ -36,7 +36,12 @@
      《生きる偲びのシルキィ》 (55702233, 16th delivery): plain
      art 'silky' (the translucent girl in a room) in CARD_ART,
      'silky-ishizu' (the same girl in Egyptian dress at a
-     temple) in DECK_ART under ishizu. The opponent
+     temple) in DECK_ART under ishizu. The 7th entry is
+     《宵闇のルーチェ》 (45409943, 19th delivery): plain art
+     'luce' (the white-winged painting) in CARD_ART,
+     'luce-ishizu' (the all-gold Egyptian form) in DECK_ART
+     under ishizu — the first EXTRA-deck monster and the
+     first keycard with an override. The opponent
      face-down rule binds the overrides exactly like the base art.
    - The 17th delivery (2026-11-04) is 《メタファイズ・
      ホルス・ドラゴン》 (36898537): plain art 'horus' (the
@@ -55,9 +60,14 @@
    - The 19th delivery (2026-11-05) is 《宵闇のルーチェ》
      (45409943): plain art 'luce' (the white-and-gold winged
      figure with the halo spire and coin discs over a night
-     sky) in CARD_ART, NO deck-scoped override — an EXTRA-deck
-     monster like the 17th, and an Ishizu KEYCARD, so its BIG
-     file is also the summon cut-in / Keycard BGM stage art.
+     sky) in CARD_ART — an EXTRA-deck monster like the 17th,
+     and an Ishizu KEYCARD, so its BIG file is also the
+     summon cut-in / Keycard BGM stage art. The same day's
+     follow-up delivery adds her deck-scoped override (the
+     7th DECK_ART entry above): inside the Ishizu deck she
+     resolves to 'luce-ishizu', the all-gold Egyptian form
+     (golden wings, Eye-of-Horus shields, pyramids and the
+     Nile below); any other deck context keeps 'luce'.
    Method: boot the real client in jsdom (harness as test-setvis),
    paint a fabricated board through the client's own render() and
    assert the DOM contract in one synchronous eval. */
@@ -114,7 +124,8 @@ for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.
                          ['card-art-silky-ishizu-s.jpg', 320, 320], ['card-art-silky-ishizu.jpg', 640, 882],
                          ['card-art-horus-s.jpg', 320, 320], ['card-art-horus.jpg', 640, 882],
                          ['card-art-hakamori-s.jpg', 320, 320], ['card-art-hakamori.jpg', 640, 882],
-                         ['card-art-luce-s.jpg', 320, 320], ['card-art-luce.jpg', 640, 882]]) {
+                         ['card-art-luce-s.jpg', 320, 320], ['card-art-luce.jpg', 640, 882],
+                         ['card-art-luce-ishizu-s.jpg', 320, 320], ['card-art-luce-ishizu.jpg', 640, 882]]) {
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
@@ -269,6 +280,10 @@ async function boot() {
     luceBig: cardArtFile(${LUCE}, true),
     luceDeckArt: DECK_ART.ishizu && DECK_ART.ishizu[${LUCE}],
     luceIshizu: cardArtFile(${LUCE}, false, 'ishizu'),
+    luceIshizuSmall: cardArtFile(${LUCE}, false, 'ishizu'),
+    luceIshizuBig: cardArtFile(${LUCE}, true, 'ishizu'),
+    luceIshizuInline: artInline(${LUCE}, false, 'ishizu'),
+    luceGg: cardArtFile(${LUCE}, false, 'gg'),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.classicAgidoSlug === 'agido' && helpers.classicAgidoInline.includes('card-art-agido-s.jpg'), 'CA7b2: user ruling 2026-11-04 — the CLASSIC Agido (16135253) aliases the same agido art');
@@ -338,7 +353,10 @@ async function boot() {
   ok(helpers.luceSlug === 'luce' && helpers.luceInline.includes('card-art-luce-s.jpg') && helpers.luceInline.includes('background-position:center top'), 'CA7z39: Luce maps and stamps like the others (19th delivery)');
   ok(helpers.luceSmall === '../assets/card-art-luce-s.jpg' && helpers.luceBig === '../assets/card-art-luce.jpg', 'CA7z40: Luce art files resolve (small + big)');
   ok(helpers.preloaded.includes('../assets/card-art-luce-s.jpg') && helpers.preloaded.includes('../assets/card-art-luce.jpg'), 'CA7z41: boot preloads Luce too (EXTRA-deck membership warms the art from deck-select time)');
-  ok(helpers.luceDeckArt === undefined && helpers.luceIshizu === '../assets/card-art-luce-s.jpg', 'CA7z42: Luce has NO deck-scoped override — plain registration, Ishizu context keeps the base art');
+  ok(helpers.luceDeckArt === 'luce-ishizu', 'CA7z42: DECK_ART registers Luce -> luce-ishizu for the Ishizu deck (7th entry — the first EXTRA-deck monster and the first keycard with an override)');
+  ok(helpers.luceIshizuSmall === '../assets/card-art-luce-ishizu-s.jpg' && helpers.luceIshizuBig === '../assets/card-art-luce-ishizu.jpg' && helpers.luceIshizuInline.includes('card-art-luce-ishizu-s.jpg'), 'CA7z43: Ishizu context resolves Luce to the all-gold Egyptian art (small + big)');
+  ok(helpers.luceGg === '../assets/card-art-luce-s.jpg', 'CA7z44: GG context resolves Luce to the plain white-winged art');
+  ok(helpers.preloaded.includes('../assets/card-art-luce-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-luce-ishizu.jpg'), 'CA7z45: boot preloads the deck-scoped Luce art too (EXTRA-deck membership warms it)');
   ok(helpers.kakanSlug === 'kakan' && helpers.kakanInline.includes('card-art-kakan-s.jpg') && helpers.kakanInline.includes('background-position:center top'), 'CA7aa: Kakan maps and stamps like the others (plain art = the forest painting)');
   ok(helpers.preloaded.includes('../assets/card-art-kakan-s.jpg') && helpers.preloaded.includes('../assets/card-art-kakan.jpg'), 'CA7ab: boot preloads Kakan too (same deck)');
   ok(helpers.deckArtKakan === 'kakan-ishizu', 'CA7z17: DECK_ART registers Kakan -> kakan-ishizu for the Ishizu deck (4th entry, first SPELL with an override)');
@@ -941,14 +959,16 @@ async function boot() {
   ok(res12.oppDown === '' && !String(res12.oppDown).includes('horus'), 'CA13n: opponent FACE-DOWN Horus gets NO art (asymmetry / no leak)');
   ok(res12.pv.includes('card-art-horus-s.jpg'), 'CA16y: resident preview shows the Horus art (unique deck membership: Ishizu)');
 
-  // ---- Luce board (19th delivery): an EXTRA-deck monster
-  // and an Ishizu keycard. A plain CARD_ART registration (no
-  // override), so every deck context resolves to the same
-  // 'luce' painting — the same fabricated post-summon board
-  // contract as Horus: own face-up tile and the resident
-  // preview carry the art, an opponent face-up Luce (public
-  // information) carries it too, and an opponent FACE-DOWN
-  // Luce must NOT (asymmetry, as ever). ----
+  // ---- Luce board (19th delivery + its deck-scoped
+  // override): an EXTRA-deck monster and an Ishizu keycard.
+  // Seat 0 plays the Ishizu deck in this boot, so her own
+  // surfaces carry the DECK-SCOPED all-gold art
+  // (luce-ishizu); the opponent's face-up Luce sits under
+  // the GG deck context and keeps the plain 'luce' painting
+  // (public information shows the art of the OWNER's deck);
+  // an opponent FACE-DOWN Luce must NOT carry any art
+  // (asymmetry, as ever). The flipped-seat fixture below
+  // pins the same split from the other chair. ----
   const res13 = await window.eval(`
     (() => {
       const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
@@ -969,10 +989,54 @@ async function boot() {
     })()
   `);
   ok(res13.ownUp !== null && res13.oppUp !== null && res13.oppDown !== null, 'CA31: non-vacuity — Luce board rendered');
-  ok(res13.ownUp.includes('card-art-luce-s.jpg'), 'CA11af: own face-up Luce tile shows the new art (19th delivery)');
-  ok(res13.oppUp.includes('card-art-luce-s.jpg'), 'CA11ag: opponent FACE-UP Luce shows the art too (public information)');
+  ok(res13.ownUp.includes('card-art-luce-ishizu-s.jpg'), 'CA11af: own face-up Luce tile in the Ishizu deck (seat 0) shows the DECK-SCOPED all-gold art');
+  ok(res13.oppUp.includes('card-art-luce-s.jpg') && !res13.oppUp.includes('luce-ishizu'), 'CA11ag: opponent FACE-UP Luce under the GG deck context shows the plain art (public information, owner-deck resolution)');
   ok(res13.oppDown === '' && !String(res13.oppDown).includes('luce'), 'CA13p: opponent FACE-DOWN Luce gets NO art (asymmetry / no leak)');
-  ok(res13.pv.includes('card-art-luce-s.jpg'), 'CA16z2: resident preview shows the Luce art (unique deck membership: Ishizu)');
+  ok(res13.pv.includes('card-art-luce-ishizu-s.jpg'), 'CA16z2: resident preview shows the deck-scoped Luce art (unique deck membership: Ishizu)');
+
+  // ---- Luce, flipped seats (fixture): the 7th override
+  // under the same lens as Carbon's and Silky's — a Luce
+  // instance owned by a NON-Ishizu deck context falls back
+  // to the plain white-winged art on the tile, the hand and
+  // the preview, while the Ishizu seat keeps the all-gold
+  // variant; the Ishizu seat's face-down Luce stays
+  // invisible (asymmetry binds the 7th override too).
+  // (Fabricated post-summon, exactly like res13: the GG
+  // deck does not run Luce, so the non-Ishizu context is
+  // fabricated by swapping the recorded seat deck keys.) ----
+  const res14 = await window.eval(`
+    (() => {
+      const saved = seatDeckKeys;
+      seatDeckKeys = ['gg', 'ishizu']; // seat 0 now "plays" GG; seat 1 plays Ishizu
+      const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
+      const P = () => ({ mzone: [null,null,null,null,null,null,null], szone: [null,null,null,null,null,null], grave: [], removed: [], extra: [], hand: [], deckCount: 38, lp: 8000 });
+      const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
+      b.players[0].mzone[0] = mon(${LUCE}, 0x1);  // Luce under a GG deck context (fixture)
+      b.players[1].mzone[0] = mon(${LUCE}, 0x1);  // Luce in the Ishizu deck (seat 1)
+      b.players[1].mzone[1] = mon(${LUCE}, 0x8);  // opp face-down Luce, Ishizu context (MUST stay hidden)
+      b.players[0].hand = [{ code: ${LUCE} }];
+      render(b);
+      const artOf = (zone) => {
+        const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
+        const a = slot && slot.querySelector('.tile .art');
+        return a ? (a.getAttribute('style') || '') : null;
+      };
+      const h = document.querySelector('#hand .hcard[data-code="${LUCE}"] .himg');
+      setPreview(${LUCE}, { con: 0, loc: E.LOC.MZONE, seq: 0 });
+      const pvSeat0 = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      setPreview(${LUCE}, { con: 1, loc: E.LOC.MZONE, seq: 0 });
+      const pvSeat1 = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      seatDeckKeys = saved;
+      return { ggTile: artOf('0:4:0'), ishizuTile: artOf('1:4:0'), ishizuDown: artOf('1:4:1'), hand: h ? (h.getAttribute('style') || '') : null, pvSeat0, pvSeat1 };
+    })()
+  `);
+  ok(res14.ggTile !== null && res14.ishizuTile !== null && res14.ishizuDown !== null, 'CA32: non-vacuity — flipped-seat Luce board rendered');
+  ok(res14.ggTile.includes('card-art-luce-s.jpg') && !res14.ggTile.includes('luce-ishizu'), 'CA11ah: Luce under a non-Ishizu deck context falls back to the plain white-winged art (tile)');
+  ok(res14.ishizuTile.includes('card-art-luce-ishizu-s.jpg'), 'CA11ai: Luce in the Ishizu deck shows the all-gold art even on the opponent’s seat (deck, not chair)');
+  ok(res14.ishizuDown === '' && !String(res14.ishizuDown).includes('luce'), 'CA13q: opponent FACE-DOWN Luce gets NO art even in Ishizu context (asymmetry binds the 7th override too)');
+  ok(res14.hand !== null && res14.hand.includes('card-art-luce-s.jpg') && !res14.hand.includes('luce-ishizu'), 'CA14u: hand Luce under a non-Ishizu deck context falls back to the plain art');
+  ok(res14.pvSeat0.includes('card-art-luce-s.jpg') && !res14.pvSeat0.includes('luce-ishizu'), 'CA16z3: preview of a GG-context Luce (instance ref) shows the plain art');
+  ok(res14.pvSeat1.includes('card-art-luce-ishizu-s.jpg'), 'CA16z4: preview of an Ishizu-context Luce (instance ref) shows the all-gold art');
 
   window.close();
   console.log(failures === 0 ? 'ALL CARDART CHECKS PASSED' : failures + ' CARDART CHECK(S) FAILED');
