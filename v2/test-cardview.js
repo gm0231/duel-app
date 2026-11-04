@@ -48,7 +48,7 @@ const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (
 
 const MUDORA = 99937011, KELBEK = 25926710, MORI = 36745317, HORUS = 36898537;
 const UNLISTED = 17484499;      // Gensei to Meikai no Gyakuten — Ishizu main, no individual art (see test-cardart; classic Agido gained the agido alias by the 2026-11-04 user ruling)
-const LUCE = 45409943;          // 宵闇のルーチェ — Ishizu EX, no individual art
+const PLUTO = 37706769;         // 冥府の執行者 プルート — Ishizu EX, no individual art (the unlisted-EX exemplar role sat with Luce 45409943 until she gained art in the 19th delivery, 2026-11-05)
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -90,9 +90,9 @@ async function boot() {
     seatDeckKeys = ['ishizu', 'gg'];
     b.players[0].grave = [${UNLISTED}, ${MUDORA}];            // listed at the top (list renders reversed)
     b.players[0].removed = [null, ${KELBEK}];                 // a face-down banished (null) + a known card
-    b.players[0].extra = [{ code: ${LUCE} }, { code: ${HORUS} }];
+    b.players[0].extra = [{ code: ${PLUTO} }, { code: ${HORUS} }];
     b.players[1].grave = [${KELBEK}];
-    b.players[1].extra = [{ code: ${HORUS} }, { code: ${LUCE} }]; // never rendered as rows (count only)
+    b.players[1].extra = [{ code: ${HORUS} }, { code: ${PLUTO} }]; // never rendered as rows (count only)
     duelState = b; render(b);
     return true;
   })()`);
@@ -130,7 +130,7 @@ async function boot() {
   // ---- EX sheet (own): thumbnails, deck context on the seat ----
   window.eval('openPileSheet("extra", 0)');
   {
-    const rH = rowFor(HORUS), rL = rowFor(LUCE);
+    const rH = rowFor(HORUS), rL = rowFor(PLUTO);
     const thH = rH && rH.querySelector('.pthumb');
     ok(!!thH && thH.style.backgroundImage.includes('card-art-horus-s.jpg'), 'CV4: the EX sheet thumbnails Horus with its small art');
     const thL = rL && rL.querySelector('.pthumb');

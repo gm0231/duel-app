@@ -5751,6 +5751,33 @@ Frames: cap-cardview.js (grave / detail / keyact at 390x620
 and 390x700) in ~/workspace/duel-app-cardview-shots/.
 Unmeasured, as ever: real-device WKWebView look and feel, SE
 timing by ear.
+
+4) Individual art #19: 《宵闇のルーチェ》 (45409943) -> 'luce'
+(user art ~/workspace/duel-assets/luce-user-20261105.jpg,
+1024x1536 — the white-and-gold winged figure with the halo
+spire and coin discs over a night sky). Plain CARD_ART
+registration, no deck override; the Ishizu EXTRA deck runs
+3 copies. Files generated with the standard top-anchored
+procedure (JPEG q88 — byte-calibrated against the #18
+delivery: full-width crop y0-1411 -> 640x882, 164KB; square
+crop x0-1024 / y0-1024 -> 320x320, 39KB). Visual check of
+both delivered files: the spire, the feathered wing, the
+head and the sword all stay inside the frame; the cut is
+bottom-only (lowest clouds), per the standing rule. Luce
+is an Ishizu KEYCARD, so the summon cut-in stage and the
+Keycard BGM tier now resolve this illustration through
+cardArtFile/CARD_ART with no further wiring. test-cardart
+gained the #19 entries (CA0y/z, CA7z39-42, CA31, CA11af/ag,
+CA13p, CA16z2 — the fabricated-board asymmetry contract
+included: an opponent face-down Luce gets NO art).
+Knock-on: test-cardview's unlisted-EX exemplar WAS Luce
+(CV4b fabricated her EX row as the bare placeholder); the
+role passes to 《冥府の執行者 プルート》 37706769 (Ishizu
+EX, still unlisted), same convention as the test-cardart
+exemplar moves. Regression on this branch: test-cardart,
+test-cardview, test-keycardact, test-bgm all pass.
+Unmeasured, as ever: real-device WKWebView look and feel,
+SE timing by ear.
 ## Neuron import guidance fix + URL import (2026-11-04 訂正)
 
 CORRECTION of the Phase 1 section above. Its panel guidance told
