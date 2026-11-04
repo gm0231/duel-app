@@ -21,7 +21,7 @@ let lastPlaceCard = null;   // {key, code} of a just-chosen summon/set action
 let pendingAttacker = null; // {code} of a just-chosen 攻撃 action (BATTLECMD)
 let promptAttacker = null;  // pendingAttacker, bound to the prompt it preceded
 let dismissedChains = new Set(); // chain-candidate dismissals (this chain only)
-let dismissedDuel = new Map();   // chain-candidate dismissals (whole duel): chainKey -> {code}
+let dismissedDuel = new Map();   // chain-candidate dismissals (whole duel): duelKey (card+effect class) -> {code, desc, loc}
 // start-screen choices (Phase 2 item 5)
 let myDeckKey = 'ishizu', opDeckKey = 'gg', firstChoice = 'first';
 let autoPassFlashUntil = 0;
@@ -5534,6 +5534,21 @@ function openCardInfo(code) {
 }
 // ---- chain dock (EDOPro-style; numbered links live in the mid bar) ----
 function chainKey(e) { return e.code + '|' + e.con + '|' + e.loc + '|' + e.seq + '|' + e.desc; }
+// Duel-long dismissal class (BU-04, user ruling 2026-11-05): the
+// card + its effect, nothing else. Location, copy (seq) and the
+// scene/timing the question arrived in are NOT part of the class —
+// the same card's same effect is never asked again this duel,
+// wherever it currently sits. Effect identity comes from the same
+// resolution that names the class for the player (entryEffect,
+// chain scope — dismissalName), so the key and the shown name can
+// never describe different classes. An entry whose effect cannot
+// be pinned (a bare card activation, fx.act, or nothing resolvable)
+// classes by the card alone.
+function duelKey(e) {
+  const fx = entryEffect(e, 'chain');
+  if (fx && fx.n && !fx.act) return e.code + '|fx' + fx.n;
+  return e.code + '|card';
+}
 // Does this SELECT_CHAIN prompt have any option worth asking about?
 // Returns:
 //   'pass'  — no live candidate: answer pass (-1) at once, show
@@ -5558,9 +5573,9 @@ function chainPassDecision(prompt, state) {
   if (state && !state.chain.length) dismissedChains = new Set();
   let allDuel = true, allAny = true;
   for (const e of entries) {
-    const k = chainKey(e);
-    if (!dismissedDuel.has(k)) allDuel = false;
-    if (!dismissedDuel.has(k) && !dismissedChains.has(k)) allAny = false;
+    const dk = duelKey(e); // duel dismissals key on the card+effect class (BU-04)
+    if (!dismissedDuel.has(dk)) allDuel = false;
+    if (!dismissedDuel.has(dk) && !dismissedChains.has(chainKey(e))) allAny = false;
   }
   if (allDuel) return 'flash';
   return allAny ? 'pass' : 'show';
@@ -5598,7 +5613,7 @@ function openDismissManager() {
   const rows = [...dismissedDuel.entries()].map(([k, v]) =>
     '<div class="sortrow"><span>' + dismissalName(v) + '</span><span class="mv"><button data-undismiss="' + k + '">解除</button></span></div>').join('');
   sheetOpenView('<div class="ttl">自動パスの設定（このデュエル）</div>' +
-    '<div class="sub">ここにあるカードだけが残ったチェーン確認は、自動でパスされます。他に候補がある確認は通常どおり表示されます。</div>' +
+    '<div class="sub">ここにある「カードの効果」だけが残ったチェーン確認は、自動でパスされます。同じカードの同じ効果なら、置かれた場所・コピー・場面が変わっても聞きません。他に候補がある確認は通常どおり表示されます。</div>' +
     (rows || '<div class="sub">設定中のカードはありません</div>') +
     '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">閉じる</button></div>');
   $('sheet').querySelectorAll('[data-undismiss]').forEach(b => b.addEventListener('click', () => {
@@ -5647,13 +5662,13 @@ function uiChain(prompt, state) {
   // per-chain / per-duel dismissals neither hide candidates nor
   // auto-pass. 'auto' keeps the item-4 behaviour exactly as before.
   const noDismiss = fxSettings.resp === 'on';
-  const hidden = (e) => !noDismiss && (dismissedChains.has(chainKey(e)) || dismissedDuel.has(chainKey(e)));
+  const hidden = (e) => !noDismiss && (dismissedChains.has(chainKey(e)) || dismissedDuel.has(duelKey(e)));
   const visibleIdx = () => prompt.entries.map((e, i) => i).filter(i => prompt.forced || !hidden(prompt.entries[i]));
   // Duel-long dismissal (item 4): auto-answer pass ONLY when every remaining
   // candidate belongs to a dismissed card class. Prompts with any other
   // candidate, and all forced prompts, are shown normally. A visible flash
   // indicator tells the player the auto-pass happened.
-  if (!noDismiss && !prompt.forced && prompt.entries.length > 0 && prompt.entries.every(e => dismissedDuel.has(chainKey(e)))) {
+  if (!noDismiss && !prompt.forced && prompt.entries.length > 0 && prompt.entries.every(e => dismissedDuel.has(duelKey(e)))) {
     flashAutoPass([...new Set(prompt.entries.map(e => dismissalName(e)))].join('・'));
     const cp = currentPrompt;
     clearInteraction(); // board is inert during the short delay: no stale actions can fire
@@ -5673,7 +5688,7 @@ function uiChain(prompt, state) {
       '<div class="ctx">' + timingText(state) + '｜' + (top ? 'チェーン' + state.chain.length + '：<span class="toplink" data-topinfo="1">' + cardName(top.code) + '</span> への応答' : '効果への応答') + (prompt.forced ? '（発動必須）' : '') + tag + '</div>' +
       retryWarn(prompt) +
       '<div class="cands">' + prompt.entries.map((e, i) => {
-        if (!noDismiss && dismissedDuel.has(chainKey(e))) return ''; // duel-dismissed: hidden here, managed in the section below
+        if (!noDismiss && dismissedDuel.has(duelKey(e))) return ''; // duel-dismissed: hidden here, managed in the section below
         const disChain = dismissedChains.has(chainKey(e));
         // the candidate's own effect, named on the candidate itself
         // (a card with several chainable effects must not read as
@@ -5683,14 +5698,16 @@ function uiChain(prompt, state) {
           '<div class="loc">' + locLabel(e) + (disChain ? '（このチェーンでは聞かない）' : '') + '</div>' +
           (cfx && cfx.n ? '<div class="fxline">' + (cfx.act ? '発動：' : '効果' + CIRCLED_NUM[cfx.n - 1] + '：') + fxExcerpt(cfx) + (fxTruncated(cfx) ? '<span class="fxmore">（続きは「詳細」で読めます）</span>' : '') + '</div>' : '') +
           (prompt.forced ? '' : '<span class="dismiss" data-dismiss="' + i + '">' + (disChain ? '聞くに戻す' : 'このチェーンでは聞かない') + '</span>') +
-          (prompt.forced || disChain ? '' : '<span class="dueldismiss" data-dueldismiss="' + i + '">このデュエル中は聞かない（この場所でのこの効果のみ）</span>') +
+          (prompt.forced || disChain ? '' : '<span class="dueldismiss" data-dueldismiss="' + i + '">このデュエル中は聞かない（このカードのこの効果）</span>') +
           '<span class="candinfo" data-info="' + i + '">詳細</span></div>';
       }).join('') + '</div>' +
       (() => {
-        const dd = prompt.entries.filter(e => dismissedDuel.has(chainKey(e)));
+        // one row per dismissed CLASS: two copies of one card's
+        // effect in a single prompt are the same class (BU-04)
+        const dd = [...new Map(prompt.entries.filter(e => dismissedDuel.has(duelKey(e))).map(e => [duelKey(e), e])).values()];
         if (noDismiss || !dd.length) return '';
         return '<div class="duelsection">自動パス設定中：' + [...new Set(dd.map(e => dismissalName(e)))].join('・') +
-          dd.map(e => '<button data-undismiss="' + chainKey(e) + '">' + dismissalName(e) + ' を解除</button>').join('') + '</div>';
+          dd.map(e => '<button data-undismiss="' + duelKey(e) + '">' + dismissalName(e) + ' を解除</button>').join('') + '</div>';
       })() +
       '<div class="row">' + (prompt.forced ? '' : '<button class="bigbtn" id="chain-pass">パス</button>') + '</div>' +
       // W-17: what パス commits to, and that the question can
@@ -5729,10 +5746,10 @@ function uiChain(prompt, state) {
     $('dock').querySelectorAll('[data-dueldismiss]').forEach(x => x.addEventListener('click', (ev) => {
       ev.stopPropagation(); playClick();
       const e = prompt.entries[+x.dataset.dueldismiss];
-      dismissedDuel.set(chainKey(e), { code: e.code, desc: e.desc });
+      dismissedDuel.set(duelKey(e), { code: e.code, desc: e.desc, loc: e.loc });
       updateAutoPassChip();
       // if that was the last visible candidate class, the prompt now auto-passes
-      if (!prompt.forced && prompt.entries.every(en => dismissedDuel.has(chainKey(en)))) {
+      if (!prompt.forced && prompt.entries.every(en => dismissedDuel.has(duelKey(en)))) {
         flashAutoPass([...new Set(prompt.entries.map(en => dismissalName(en)))].join('・'));
         const cp = currentPrompt;
         clearInteraction();
