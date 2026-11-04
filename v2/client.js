@@ -257,6 +257,7 @@ function ensureGenesysData() {
   return genesysDataPromise;
 }
 let neuronPending = null; // record candidate from the last successful parse
+let neuronUrlFetchRunning = false; // re-entry guard: one relay chain at a time (a second paste/click mid-fetch must not start a competing chain over the same panel)
 function neuronProvisionalName() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
@@ -309,36 +310,52 @@ function renderNeuronResult(deck, val, pool) {
 // relays are third-party services that can stop without notice;
 // when the whole chain fails the panel says so plainly and
 // points at the copy-paste fallback instead of failing silently.
-const NEURON_FETCH_TIMEOUT_MS = 25000;
-async function neuronFetchOnce(url) {
+//
+// Robustness round (2026-11-04, after a real-device total
+// failure at 08:35): every candidate relay was re-measured from
+// the app's own origin in a real Chromium (full table in
+// NOTES.md). Only routes that have actually delivered a deck
+// page are in the chain. Design: 20s per attempt, up to 2 rounds
+// over the route list with a 3s pause, one 150s deadline shared
+// by both hops, and progress callbacks so the panel shows which
+// route is being tried. Failures are classified by what the
+// relays actually returned:
+//   - 'deck' / 'searchlink': usable payloads (success paths).
+//   - 'page': a relay DID answer with a real page that is not a
+//     deck page. A private deck's share link resolves server-side
+//     to the Neuron top page, so when two different routes agree
+//     on a non-deck page the chain stops early and the panel
+//     reports the link itself (private deck is the main cause)
+//     instead of blaming the relays.
+//   - nothing usable at all: the relays did not answer; the
+//     panel keeps the relay explanation + paste fallback.
+const NEURON_FETCH_TIMEOUT_MS = 20000;
+const NEURON_FETCH_ROUNDS = 2;
+const NEURON_FETCH_ROUND_PAUSE_MS = 3000;
+const NEURON_FETCH_BUDGET_MS = 150000;
+const NEURON_ROUTES = [
+  { id: 'direct', wrap: u => u }, // expected to fail by CORS today; kept first so a future ACAO header just works
+  { id: 'allorigins-raw', wrap: u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u) }, // measured working 2026-11-04 (follows the share link's redirect to the deck page)
+  { id: 'codetabs', wrap: u => 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(u) }, // measured working 2026-11-04
+  { id: 'allorigins-get', wrap: u => 'https://api.allorigins.win/get?url=' + encodeURIComponent(u) }, // same service as raw, JSON envelope; a differently-shaped request when raw is refused
+];
+async function neuronFetchOnce(url, timeoutMs) {
   const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-  const to = ctl ? setTimeout(() => ctl.abort(), NEURON_FETCH_TIMEOUT_MS) : null;
+  const to = ctl ? setTimeout(() => ctl.abort(), timeoutMs || NEURON_FETCH_TIMEOUT_MS) : null;
   try {
     const r = await fetch(url, ctl ? { signal: ctl.signal } : undefined);
-    if (!r || !r.ok) return null;
-    return await r.text();
-  } catch (e) { return null; }
-  finally { if (to) clearTimeout(to); }
+    if (!r) return { kind: 'error' };
+    const text = await r.text().catch(() => '');
+    return { kind: r.ok ? 'ok' : 'http', status: r.status, text };
+  } catch (e) {
+    return { kind: (e && e.name === 'AbortError') ? 'timeout' : 'error' };
+  } finally { if (to) clearTimeout(to); }
 }
-const NEURON_WRAPS = [
-  u => u, // direct (expected to fail by CORS today; kept first so a future ACAO header just works)
-  u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u), // measured working 2026-11-04 (follows the share link's redirect to the deck page)
-  u => 'https://api.allorigins.win/get?url=' + encodeURIComponent(u), // same service, JSON envelope
-  u => 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(u),
-  u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u), // retries: the measured routes are flaky
-  u => 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(u),
-];
-async function neuronFetchViaChain(targetUrl, preferredWrap) {
-  const wraps = preferredWrap ? [preferredWrap, ...NEURON_WRAPS.filter(w => w !== preferredWrap)] : NEURON_WRAPS;
-  for (const w of wraps) {
-    let t = await neuronFetchOnce(w(targetUrl));
-    if (t == null) continue;
-    if (t.includes('"contents"')) { // allorigins /get envelope
-      try { const j = JSON.parse(t); if (j && typeof j.contents === 'string') t = j.contents; } catch (e) {}
-    }
-    if (t) return { text: t, wrap: w };
+function neuronUnwrapEnvelope(t) {
+  if (t && t.includes('"contents"')) { // allorigins /get envelope
+    try { const j = JSON.parse(t); if (j && typeof j.contents === 'string') return j.contents; } catch (e) {}
   }
-  return null;
+  return t;
 }
 function neuronLooksLikeDeckHtml(t) {
   return !!t && t.includes('link_value') && t.includes('cid=') && /(monster_list|spell_list|extra_list)/.test(t);
@@ -353,21 +370,66 @@ function neuronExtractMemberDeckUrl(html) {
   }
   return null;
 }
-async function neuronFetchDeckHtml(startUrl) {
-  const first = await neuronFetchViaChain(startUrl);
-  if (first && neuronLooksLikeDeckHtml(first.text)) return { ok: true, html: first.text };
-  if (first) {
+// Classify one answered payload. 'junk' covers error bodies,
+// rate-limit notices, app stubs and empty answers — none of them
+// say anything about the target link, so the chain keeps trying.
+function neuronClassifyPayload(t) {
+  if (!t) return 'junk';
+  if (neuronLooksLikeDeckHtml(t)) return 'deck';
+  if (neuronExtractMemberDeckUrl(t)) return 'searchlink';
+  if (/<html[\s>]/i.test(t) && t.length > 4000) return 'page';
+  return 'junk';
+}
+async function neuronFetchViaChain(targetUrl, opts) {
+  opts = opts || {};
+  const onProgress = opts.onProgress || null;
+  const deadline = opts.deadline || (Date.now() + NEURON_FETCH_BUDGET_MS);
+  const routes = opts.preferredRoute
+    ? [opts.preferredRoute, ...NEURON_ROUTES.filter(r => r !== opts.preferredRoute)]
+    : NEURON_ROUTES;
+  let sawPage = false;
+  const pageRoutes = new Set();
+  for (let round = 1; round <= NEURON_FETCH_ROUNDS; round++) {
+    for (let i = 0; i < routes.length; i++) {
+      const remain = deadline - Date.now();
+      if (remain <= 0) return { ok: false, sawPage };
+      const route = routes[i];
+      if (onProgress) onProgress({ index: i + 1, total: routes.length, round });
+      const res = await neuronFetchOnce(route.wrap(targetUrl), Math.min(NEURON_FETCH_TIMEOUT_MS, remain));
+      if (res.kind !== 'ok' && res.kind !== 'http') continue;
+      const text = neuronUnwrapEnvelope(res.text || '');
+      const cls = neuronClassifyPayload(text);
+      if (cls === 'deck' || cls === 'searchlink') return { ok: true, text, route, cls };
+      if (cls === 'page') {
+        // Two DIFFERENT routes returning a real non-deck page is
+        // conclusive about the link (the relays are only
+        // couriers); stop instead of burning the whole budget.
+        sawPage = true; pageRoutes.add(route.id);
+        if (pageRoutes.size >= 2) return { ok: false, sawPage };
+      }
+    }
+    if (round < NEURON_FETCH_ROUNDS && deadline - Date.now() > 0)
+      await new Promise(r => setTimeout(r, NEURON_FETCH_ROUND_PAUSE_MS));
+  }
+  return { ok: false, sawPage };
+}
+async function neuronFetchDeckHtml(startUrl, onProgress) {
+  const deadline = Date.now() + NEURON_FETCH_BUDGET_MS;
+  const first = await neuronFetchViaChain(startUrl, { onProgress, deadline });
+  if (first.ok && first.cls === 'deck') return { ok: true, html: first.text };
+  if (first.ok && first.cls === 'searchlink') {
     // a deck-search result page (or any page) that links the deck:
     // follow the embedded member_deck URL once, trying first the
     // relay that just answered (it is the likeliest to answer
     // again right now).
     const next = neuronExtractMemberDeckUrl(first.text);
     if (next && next !== startUrl) {
-      const second = await neuronFetchViaChain(next, first.wrap);
-      if (second && neuronLooksLikeDeckHtml(second.text)) return { ok: true, html: second.text };
+      const second = await neuronFetchViaChain(next, { onProgress, deadline, preferredRoute: first.route });
+      if (second.ok && second.cls === 'deck') return { ok: true, html: second.text };
+      return { ok: false, reason: second.sawPage ? 'notdeck' : 'noanswer' };
     }
   }
-  return { ok: false };
+  return { ok: false, reason: first.sawPage ? 'notdeck' : 'noanswer' };
 }
 function neuronSaveRecord(rec) {
   while (SAVED_DECKS['saved:' + rec.id]) rec = Object.assign({}, rec, { id: rec.id + 'x' });
@@ -418,14 +480,25 @@ async function neuronDoParse() {
   // CONTAINS official URLs and must stay on the paste path.
   const url = rawText.trim().length <= 500 ? NeuronLib.extractImportUrl(rawText) : null;
   const code = !url && NeuronLib.isDeckCode(rawText) ? rawText.trim() : null;
+  if ((url || code) && neuronUrlFetchRunning) { finishBtn(); return; } // a URL fetch is already in flight; never run two chains over one panel
   if (url || code) {
+    neuronUrlFetchRunning = true;
     const startUrl = url || NeuronLib.deckCodeSearchUrl(code);
-    resEl.innerHTML = '<div class="np-pt">公式デッキページを取得しています…（外部の中継サービス経由のため、時間がかかることがあります）</div>';
-    const got = await neuronFetchDeckHtml(startUrl);
+    const showProgress = (p) => {
+      resEl.innerHTML = '<div class="np-pt">公式デッキページを取得しています…（中継経路 ' + p.index + '/' + p.total + (p.round > 1 ? '・' + p.round + '回目' : '') + '。外部の中継サービス経由のため、時間がかかることがあります）</div>';
+    };
+    showProgress({ index: 1, total: NEURON_ROUTES.length, round: 1 });
+    const got = await neuronFetchDeckHtml(startUrl, showProgress);
+    neuronUrlFetchRunning = false;
     finishBtn();
     if (!got.ok) {
-      resEl.innerHTML = '<div class="np-err">デッキページを取得できませんでした</div>' +
-        '<div class="np-pt">公式サイトはアプリからの直接の取得を許可していないため、外部の中継サービス経由で取得を試しましたが、応答がありませんでした。中継サービスは予告なく止まることがあります。時間をおいて再度お試しいただくか、リンクをブラウザで開いてページ全体を選択コピーし、ここに貼り付けてください（そのまま読み込めます）。</div>';
+      if (got.reason === 'notdeck') {
+        resEl.innerHTML = '<div class="np-err">リンク先からデッキを取得できませんでした</div>' +
+          '<div class="np-pt">共有リンクの飛び先がデッキページではありませんでした。デッキが非公開だと取り込めません。ニューロンでデッキを公開設定にしてから、リンクを貼り直してください（取り込みが終われば、非公開に戻して構いません）。公開済みの場合は、リンクが正しいか確認してください。</div>';
+      } else {
+        resEl.innerHTML = '<div class="np-err">デッキページを取得できませんでした</div>' +
+          '<div class="np-pt">公式サイトはアプリからの直接の取得を許可していないため、外部の中継サービス経由で取得を試しましたが、応答がありませんでした。中継サービスは予告なく止まることがあります。時間をおいて再度お試しいただくか、リンクをブラウザで開いてページ全体を選択コピーし、ここに貼り付けてください（そのまま読み込めます）。</div>';
+      }
       return;
     }
     neuronPresentResult(NeuronLib.parseImport(got.html, (h) => new DOMParser().parseFromString(h, 'text/html')), true);

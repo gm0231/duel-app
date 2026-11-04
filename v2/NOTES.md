@@ -5868,3 +5868,158 @@ shots (390x620 / 390x700).
 ## 2026-11-04: classic Agido aliases the Ancient Guard art (user ruling)
 - The user ruled that the art delivered for 《古衛兵アギド》 (62320425) is also used for the deck's classic 《アギド》 (16135253): CARD_ART gains `16135253: 'agido'` (same two files, no new assets). The entry for 62320425 stays for when that card returns to a deck.
 - test-cardart / test-cardview: the unlisted-fallback exemplar moves from 16135253 to 《現世と冥界の逆転》 (17484499) — with the alias, no Ishizu main-deck monster remains unlisted. CA7c inverts (the agido art is now preloaded via the classic card's deck membership); CA7b2 pins the alias itself.
+
+## 2026-11-04: URL import robustness round (relay re-measurement + failure classification)
+
+Trigger: at 08:35 the user pasted a fresh share link on a real
+iPhone and the whole chain failed with "デッキページを取得
+できませんでした"; the parent's same-hour probes saw allorigins
+408/522 and codetabs 522. The chain was rebuilt around measured
+behaviour, not assumptions.
+
+### Relay survey (real Chromium, page origin = the app's own
+https://gm0231.github.io, fetches via this VM's egress,
+2026-11-04 ~08:44-09:15 JST, per-attempt cap 30s in the survey)
+
+Targets: the Mai share link, a member_deck URL, the private
+share link wkmqz2oarqk3lcga, and https://example.com/ as a
+control. Three runs over the share target, one over the rest.
+This network was in a bad window for the whole survey (the
+same window as the user's failure):
+
+- direct: CORS neterror in ~0.6-1.1s on every target (expected;
+  kept first so a future ACAO header just works).
+- allorigins /raw: neterror ~6-21s on every probe (both deck
+  hosts and the control). NOT one answer this window — but it
+  delivered real deck pages earlier the same day (E2E passes
+  above), so it stays as the lead relay.
+- allorigins /get: same pattern as /raw (one 0.14s fast fail).
+  Stays third: same service, different request shape.
+- codetabs: neterror ~19.5-19.9s on every probe this window;
+  delivered earlier the same day. Promoted above /get (no
+  envelope round-trip).
+- proxy.corsfix.com (both ?<url> and ?url= forms): the ONLY
+  service that answered every probe, in 0.2-0.8s — with
+  403 {"corsfix_error":"domain_not_registered"}: corsfix only
+  serves origins registered with it. NOT adopted (unusable
+  until gm0231.github.io is registered at corsfix — a free
+  owner action; if done, adding
+  `u => 'https://proxy.corsfix.com/?' + u` as route 2 is a
+  one-line change and it was measurably the fastest responder).
+- corsproxy.io (both forms): 401 "A valid API key is required"
+  within ~0.03-6s. Not adoptable without a key. Excluded.
+- api.cors.lol: fast neterror (0.2-1s) or 30s timeout; never
+  answered (earlier round: rate-limited). Excluded.
+- proxy.cors.eu.org: 30s timeout everywhere. Excluded.
+- proxy.cors.sh: 30s timeout everywhere (needs a key in any
+  case). Excluded. test.cors.workers.dev: fast neterror
+  (dead). cors.bridged.cc: timeouts (dead).
+  cors-proxy.htmldriven.com: neterror ~11s. yacdn.org/proxy:
+  neterror ~1.3s. All excluded.
+- The ~19.7s neterror pattern hit allorigins AND codetabs AND
+  the control target alike, i.e. part of this window's failure
+  sits in this VM's egress path, not only in the relays; the
+  user's phone network is a different path. Numbers here are
+  evidence for THIS network, stated as such.
+
+### Chain design (client.js, neuronFetch*)
+- Routes: direct -> allorigins /raw -> codetabs -> allorigins
+  /get. 20s per attempt (was 25s), up to 2 rounds with a 3s
+  pause, one 150s deadline shared across both hops (was: up to
+  ~25s x 6 wraps x 2 hops with no progress and no rounds
+  structure). Hop 2 still tries the route that answered hop 1
+  first. The panel now shows progress: （中継経路 i/4・n回目）.
+- Payload classification (neuronClassifyPayload): 'deck' /
+  'searchlink' are success; 'page' = a real full HTML page that
+  is not a deck (junk = error bodies, rate-limit notices, the
+  app stub, empties — the chain keeps trying on junk). When two
+  DIFFERENT routes return a 'page', the chain stops early:
+  relays are couriers, two agreeing non-deck pages are
+  conclusive about the link.
+- Failure verdicts split by evidence:
+  - reason 'notdeck' (a relay answered; the link did not lead
+    to a deck): 「リンク先からデッキを取得できませんでした」
+    + the private-deck explanation — a private deck cannot be
+    imported; make it public in Neuron and paste again (it may
+    be set back to private afterwards). The user's wkmqz link
+    was confirmed private by the user, and resolves
+    server-side to the Neuron top page.
+  - reason 'noanswer' (nothing usable answered): the previous
+    relay wording + paste fallback, unchanged.
+- Panel guidance corrected twice: (1) a line now states only
+  public decks can be imported; (2) the list-save note was
+  wrong as written — the Neuron "リスト保存" copy is a
+  composite clipboard (sheet IMAGE + "#遊戯王ニューロン" +
+  share URL text); in the app's text field it pastes as text
+  and imports as a link. The note now says exactly that (the
+  sheet image itself is still unreadable).
+
+### Tests
+- test-neuron: U0f (composite list-save text extracts the URL
+  verbatim), U1d (the composite text pasted as-is drives the
+  full flow to auto-save), U4/U4b/U4c (relays answering with a
+  landing page -> the not-a-deck verdict naming the private
+  cause, no relay blame, nothing saved), U5 (classifier unit:
+  deck / searchlink / page / junk). All pass, no regressions
+  (N/V/U series complete).
+- Regression: test-deckpage, test-layout all pass.
+- test-neuron-url.js: Case C added (private link -> failure
+  verdict; the kind — not-a-deck vs relay-down — is logged,
+  and the private-cause wording is asserted whenever the
+  not-a-deck verdict is reached; shot-neuron-url-private.png
+  on that path). Run records are appended below as they land.
+
+### E2E run records (test-neuron-url.js, real Chromium, new chain)
+- Run 1 (2026-11-04, after this round's changes): ALL PASS.
+  Case A (Mai share link): success on flow attempt 1 (44/15/3,
+  51pt, cutoff verdict naming both cards). Case B (deck code
+  2t9x91u): success on attempt 1, auto-saved. Case C (private
+  link): verdict kind = not-a-deck — a relay answered with the
+  Neuron landing page and the panel showed the private-deck
+  wording (shot-neuron-url-private.png; the guidance lines for
+  public-only import and the corrected list-save note are also
+  visible in the same frame). One flow attempt now packs up to
+  2 rounds x 4 routes per hop, so "attempt 1" is much denser
+  than the old single-pass chain.
+- Run 2 (2026-11-04, same morning): MIXED, recorded as-is.
+  Case A FAILED all 3 flow tries — the final panel text was
+  the honest relay-down message (nothing saved; the failure
+  path did its job inside a bad relay window). Case B passed
+  on attempt 1. Case C: the not-a-deck verdict text itself
+  appeared in the attempt logs twice, but the harness's kind
+  line misreported it as relay-down — a harness race: runFlow
+  started a retry while the previous chain was still in
+  flight, and concurrent flows overwrote each other's panel.
+  Two fixes followed: (app) neuronDoParse gained a re-entry
+  guard so a second paste/click mid-fetch cannot start a
+  competing chain over the same panel; (harness) runFlow now
+  hard-waits for the parse button to settle (> the 150s
+  budget) before a retry and reads results after a settle
+  pause. test-neuron re-verified after the guard (66 checks,
+  all pass).
+- Run 3 (2026-11-04, after the guard + harness settle-wait):
+  ABORTED by hand during Case B. Case A failed all 3 tries in
+  the bad window (final panel text was the honest relay-down
+  verdict; nothing saved). Case A's failed tries also exposed
+  a rig artifact: in the hidden headless page, Chrome's
+  intensive timer throttling clamps setTimeout, inflating the
+  app's abort timers so all-failure flows overran the harness
+  marker waits — not app behaviour (a foreground phone app is
+  never throttled, and the app's budget itself is Date.now()-
+  based). The rig now launches with
+  --disable-background-timer-throttling /
+  --disable-backgrounding-occluded-windows /
+  --disable-renderer-backgrounding so it measures the app.
+- Run 4 (2026-11-04, throttling-free rig): ALL PASS. Case A
+  on attempt 2 (attempt 1 outlasted the 200s marker wait in
+  the still-bad window), Case B on attempt 1, Case C on
+  attempt 1 with verdict kind = relay-down (no relay could
+  deliver even the landing page in this run — the not-a-deck
+  kind was proven in run 1 and in test-neuron U4). Summary
+  across the round's four runs: the new chain lands the real
+  imports whenever any relay answers at all, denser retries
+  turned several would-be total failures into attempt-1/2
+  successes, and in the worst windows the failure shown is
+  the honest, correctly-classified one. The relays remain
+  time-window dependent from this network; that durability
+  caveat is unchanged and is stated in the panel itself.
