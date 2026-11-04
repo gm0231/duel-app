@@ -79,10 +79,41 @@ ok(P.phaseCtx('DAMAGE') === 'ダメージ計算の確認', 'W4: DAMAGE -> ダメ
 ok(P.phaseCtx('DAMAGE_CAL') === 'ダメージ計算の確認', 'W5: DAMAGE_CAL -> ダメージ計算の確認');
 ok(P.phaseCtx('MAIN1') === 'メイン1' && P.phaseCtx('END') === 'エンド' && P.phaseCtx('DRAW') === 'ドロー', 'W6: other phases keep their names');
 
+// ---- select-hint purpose line (2026-11-05): the hint value ->
+// purpose sentence mapping is a mechanical table over the
+// HINTMSG_* system ids (constant.lua). Representative values
+// pin the wording; everything that proves no specific purpose
+// (generic SELECT, a raw card code, an aux.Stringid card-string
+// id, non-numbers) must yield null so the sheet keeps the
+// generic heading instead of a guessed purpose.
+ok(typeof P.hintText === 'function' && typeof P.purposeText === 'function', 'H0: hint purpose surface exists');
+ok(P.hintText(509) === '特殊召喚するカードを選択', 'H1: HINTMSG_SPSUMMON -> 特殊召喚するカードを選択');
+ok(P.hintText(503) === '除外するカードを選択', 'H2: HINTMSG_REMOVE -> 除外するカードを選択');
+ok(P.hintText(506) === '手札に加えるカードを選択', 'H3: HINTMSG_ATOHAND -> 手札に加えるカードを選択');
+ok(P.hintText(502) === '破壊するカードを選択', 'H4: HINTMSG_DESTROY -> 破壊するカードを選択');
+ok(P.hintText(501) === '捨てるカードを選択', 'H5: HINTMSG_DISCARD -> 捨てるカードを選択');
+ok(P.hintText(504) === '墓地へ送るカードを選択', 'H6: HINTMSG_TOGRAVE -> 墓地へ送るカードを選択');
+ok(P.hintText(507) === 'デッキに戻すカードを選択', 'H7: HINTMSG_TODECK -> デッキに戻すカードを選択');
+ok(P.hintText(505) === '手札に戻すカードを選択', 'H8: HINTMSG_RTOHAND -> 手札に戻すカードを選択');
+ok(P.hintText(500) === 'リリースするカードを選択' && P.hintText(531) === 'リリースするカードを選択', 'H9: RELEASE / TRIBUTE -> リリース');
+ok(P.hintText(511) === '融合素材にするカードを選択' && P.hintText(512) === 'シンクロ素材にするカードを選択' && P.hintText(513) === 'エクシーズ素材にするカードを選択', 'H10: material hints -> 素材にするカードを選択');
+ok(P.hintText(519) === '取り除くエクシーズ素材を選択', 'H11: HINTMSG_REMOVEXYZ');
+ok(P.hintText(551) === '対象とするカードを選択', 'H12: HINTMSG_TARGET');
+ok(P.hintText(510) === 'セットするカードを選択' && P.hintText(527) === 'フィールドに出すカードを選択' && P.hintText(579) === '墓地に戻すカードを選択', 'H13: SET / TOFIELD / RTOGRAVE');
+ok(P.hintText(560) === null, 'H14: HINTMSG_SELECT (bare "select") proves nothing -> null');
+ok(P.hintText(529) === null && P.hintText(530) === null, 'H15: SELF / OPPO name sides, not purposes -> null');
+ok(P.hintText(14087893) === null, 'H16: a raw card code is not a generic purpose -> null');
+ok(P.hintText(2035286017) === null, 'H17: an aux.Stringid card-string id is not a generic purpose -> null');
+ok(P.hintText(null) === null && P.hintText(undefined) === null && P.hintText('509') === null, 'H18: non-numbers -> null');
+ok(P.purposeText({ selectHint: 509 }) === '特殊召喚するカードを選択', 'H19: purposeText reads prompt.selectHint');
+ok(P.purposeText({}) === null && P.purposeText(null) === null && P.purposeText({ selectHint: 560 }) === null, 'H20: no provable purpose -> null (generic heading kept)');
+
 const clientSrc = fs.readFileSync(path.join(V2, 'client.js'), 'utf8');
 ok(!/vs\.animate\(\[\{ opacity: 0 \}, \{ opacity: 1 \}\]/.test(clientSrc), 'D1: the VS curtain is not opacity-faded (DS-07)');
 ok(!clientSrc.includes('id="sheet-cancel">盤面に戻る'), 'D2: no close button says 盤面に戻る anymore (W-28)');
 ok(clientSrc.includes('手札の上限') && clientSrc.includes('このカードを捨てる'), 'D3: hand-limit title + discard confirm are wired');
+ok(clientSrc.includes('class="purpose"'), 'D4: the purpose line is rendered by the selection sheets');
+ok(clientSrc.includes('contextLineHTML(o.prompt)'), 'D5: the effect context line still renders beside the purpose line');
 
 console.log(fails ? ('\n' + fails + ' FAILURES') : '\nALL PURPOSE CHECKS PASSED');
 process.exit(fails ? 1 : 0);
