@@ -5746,7 +5746,9 @@ function uiPosition(prompt, state) {
 }
 // ---- generic card-grid selection sheet (tray conventions) ----
 function gridSheet(o) {
-  // o: {title, sub, cards:[{code,locLabel,extra,locked}], selected:Set(idx), valid:fn, confirmLabel, cancelable, onToggle}
+  // o: {title, purpose?, sub, cards:[{code,locLabel,extra,locked}], selected:Set(idx), valid:fn, confirmLabel, cancelable, onToggle}
+  // purpose: the plain-words purpose line (selectPurposeText), rendered
+  // under the title when present; absent = the sheet renders as before.
   const draw = () => {
     // Hidden candidates (opponent's face-down / hand / deck cards)
     // render as the card back with a public-only label: no name, no
@@ -5756,7 +5758,7 @@ function gridSheet(o) {
     const tray = [...o.selected].map(i => '<span class="chip" data-chip="' + i + '">' + nameOf(o.cards[i]) + ' ✕</span>').join('') +
       (o.locked || []).map(c => '<span class="chip locked">' + (selCardHidden(c, o.prompt) ? hiddenCardLabel(c) : cardName(c.code)) + '（固定）</span>').join('');
     const subTxt = typeof o.sub === 'function' ? o.sub() : o.sub;
-    sheetOpen('<div class="ttl">' + o.title + '</div><div class="sub" id="gsub">' + subTxt + '</div>' + contextLineHTML(o.prompt) + retryWarn(o.prompt) +
+    sheetOpen('<div class="ttl">' + o.title + '</div>' + (o.purpose ? '<div class="purpose">' + o.purpose + '</div>' : '') + '<div class="sub" id="gsub">' + subTxt + '</div>' + contextLineHTML(o.prompt) + retryWarn(o.prompt) +
       // (W-24: a retry used to repeat the sub as a 「条件：」 line
       // under the warning — the same sentence twice. The shortfall
       // already lives on the disabled confirm button's label.)
@@ -5784,18 +5786,20 @@ function gridSheet(o) {
   };
   draw();
 }
-// BU-13 (brushup round 3): the core sends no purpose tag with
-// SELECT_CARD, so this client states only the purpose it can
-// PROVE from the prompt + state alone — the rule-process
-// hand-limit discard in the end phase. Every guard must hold:
-// END phase, no chain in progress and no asking effect (context
-// null), not cancelable, every candidate is the asked player's
-// own hand card, and min == max == exactly the over-limit count
-// (hand - 6). Effect-driven selections from the hand (a discard
-// COST, a target, a material) fail at least the context / chain
-// / count guards and keep the generic title — a guessed purpose
-// that mislabels a cost as a rule discard would be worse than
-// none. Returns 'handlimit' or null.
+// BU-13 (brushup round 3): SELECT_CARD itself carries no purpose
+// tag, so for the one selection the CORE asks on its own behalf —
+// the rule-process hand-limit discard — this client states only
+// the purpose it can PROVE from the prompt + state alone. Every
+// guard must hold: END phase, no chain in progress and no asking
+// effect (context null), not cancelable, every candidate is the
+// asked player's own hand card, and min == max == exactly the
+// over-limit count (hand - 6). Effect-driven selections from the
+// hand (a discard COST, a target, a material) fail at least the
+// context / chain / count guards and keep the generic title — a
+// guessed purpose that mislabels a cost as a rule discard would
+// be worse than none. Returns 'handlimit' or null.
+// (Effect-driven purposes come from the core's own declaration
+// instead — see selectPurposeText below.)
 function inferSelectPurpose(prompt, state) {
   if (!state || !prompt || prompt.name !== 'SELECT_CARD' || prompt.context) return null;
   if (state.phaseName !== 'END' || (state.chain && state.chain.length)) return null;
@@ -5807,6 +5811,74 @@ function inferSelectPurpose(prompt, state) {
   if (!prompt.cards.length || prompt.cards.some(c => c.con !== prompt.player || c.loc !== E.LOC.HAND)) return null;
   return 'handlimit';
 }
+// ---- select purpose (user instruction 2026-11-05: when an
+// effect asks for cards, say in plain words WHAT the selection
+// is for — "特殊召喚するカードを選択", "除外するカードを選択" —
+// for every card, not per-card patches; the effect context line
+// stays as it was, this line is added, never a replacement).
+// Primary source: the core's own declaration. Before a scripted
+// selection, the effect script (or a core procedure) calls
+// Duel.Hint(HINT_SELECTMSG, player, value); the driver attaches
+// the value to the prompt as prompt.selectHint (engine.js,
+// consume-on-dispatch, so it cannot be stale). Generic values
+// are the HINTMSG_* system ids from the bundled constant.lua and
+// map mechanically through the table below — no per-card text.
+// Anything else (560 HINTMSG_SELECT = a bare "select", a raw card
+// code, an aux.Stringid card-string id, or no hint at all) proves
+// NO specific purpose and yields null: the sheet then keeps the
+// generic heading rather than printing a guessed purpose. The
+// provable-inference fallback for the core's own rule process
+// (hand-limit discard, BU-13) already renders as that sheet's
+// title/sub, so it is not repeated here.
+const SELECT_HINT_PURPOSE = {
+  500: 'リリースするカードを選択',          // HINTMSG_RELEASE
+  501: '捨てるカードを選択',                // HINTMSG_DISCARD
+  502: '破壊するカードを選択',              // HINTMSG_DESTROY
+  503: '除外するカードを選択',              // HINTMSG_REMOVE
+  504: '墓地へ送るカードを選択',            // HINTMSG_TOGRAVE
+  505: '手札に戻すカードを選択',            // HINTMSG_RTOHAND
+  506: '手札に加えるカードを選択',          // HINTMSG_ATOHAND
+  507: 'デッキに戻すカードを選択',          // HINTMSG_TODECK
+  508: '召喚するカードを選択',              // HINTMSG_SUMMON
+  509: '特殊召喚するカードを選択',          // HINTMSG_SPSUMMON
+  510: 'セットするカードを選択',            // HINTMSG_SET
+  511: '融合素材にするカードを選択',        // HINTMSG_FMATERIAL
+  512: 'シンクロ素材にするカードを選択',    // HINTMSG_SMATERIAL
+  513: 'エクシーズ素材にするカードを選択',  // HINTMSG_XMATERIAL
+  514: '表側表示にするカードを選択',        // HINTMSG_FACEUP
+  515: '裏側表示にするカードを選択',        // HINTMSG_FACEDOWN
+  516: '攻撃表示にするカードを選択',        // HINTMSG_ATTACK
+  517: '守備表示にするカードを選択',        // HINTMSG_DEFENSE
+  518: '装備するカードを選択',              // HINTMSG_EQUIP
+  519: '取り除くエクシーズ素材を選択',      // HINTMSG_REMOVEXYZ
+  520: 'コントロールを得るカードを選択',    // HINTMSG_CONTROL
+  521: '破壊の身代わりになるカードを選択',  // HINTMSG_DESREPLACE
+  522: '表側攻撃表示にするカードを選択',    // HINTMSG_FACEUPATTACK
+  523: '表側守備表示にするカードを選択',    // HINTMSG_FACEUPDEFENSE
+  524: '裏側攻撃表示にするカードを選択',    // HINTMSG_FACEDOWNATTACK
+  525: '裏側守備表示にするカードを選択',    // HINTMSG_FACEDOWNDEFENSE
+  526: '確認するカードを選択',              // HINTMSG_CONFIRM
+  527: 'フィールドに出すカードを選択',      // HINTMSG_TOFIELD
+  528: '表示形式を変更するカードを選択',    // HINTMSG_POSCHANGE
+  531: 'リリースするカードを選択',          // HINTMSG_TRIBUTE
+  533: 'リンク素材にするカードを選択',      // HINTMSG_LMATERIAL
+  549: '攻撃対象のカードを選択',            // HINTMSG_ATTACKTARGET
+  551: '対象とするカードを選択',            // HINTMSG_TARGET
+  575: '発動を無効にするカードを選択',      // HINTMSG_NEGATE
+  576: '攻撃力・守備力が変わるカードを選択', // HINTMSG_ATKDEF
+  578: 'エクシーズ素材として重ねるカードを選択', // HINTMSG_ATTACH
+  579: '墓地に戻すカードを選択',            // HINTMSG_RTOGRAVE
+};
+function selectHintPurpose(value) {
+  if (typeof value !== 'number' || !isFinite(value)) return null;
+  return SELECT_HINT_PURPOSE[value] || null;
+}
+// The purpose line for a card-selection prompt, or null when no
+// purpose is provable (the sheet then renders exactly as before).
+function selectPurposeText(prompt) {
+  if (!prompt) return null;
+  return selectHintPurpose(prompt.selectHint);
+}
 function uiSelectCards(prompt, state) {
   const isTrib = prompt.name === 'SELECT_TRIBUTE';
   const atk = !isTrib && promptAttacker ? promptAttacker : null;
@@ -5815,6 +5887,10 @@ function uiSelectCards(prompt, state) {
   const sum = () => [...selected].reduce((a, i) => a + (prompt.cards[i].releaseParam || 0), 0);
   gridSheet({
     prompt,
+    // Tribute / attack-target / hand-limit sheets already state
+    // their purpose in the title or sub — the purpose line would
+    // only repeat it, so it is suppressed there.
+    purpose: (isTrib || atk || isHandLimit) ? null : selectPurposeText(prompt),
     title: isTrib ? 'リリースするカード' : atk ? cardName(atk.code) + ' の攻撃' : isHandLimit ? '手札の上限' : 'カードの選択',
     sub: () => isTrib ? '合計 ' + prompt.min + ' 以上になるよう選んでください（現在 ' + sum() + '）'
                       : atk ? '攻撃する相手を選んでください'
@@ -5851,7 +5927,8 @@ function uiUnselect(prompt, state) {
   let hint = '';
   if (prompt.finishable && selCount > 0 && selCount < prompt.min) hint = 'あと' + (prompt.min - selCount) + '枚選ぶと決定できます。';
   if (prompt.finishable && selCount > 0) hint += 'やめる場合は選択をすべて外してください。';
-  sheetOpen('<div class="ttl">カードの選択</div><div class="sub">' + prompt.min + '〜' + prompt.max + ' 枚（現在 ' + selCount + ' 枚選択中）。タップで選択／解除します。' + (hint ? ' ' + hint : '') + '</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
+  const purpose = selectPurposeText(prompt);
+  sheetOpen('<div class="ttl">カードの選択</div>' + (purpose ? '<div class="purpose">' + purpose + '</div>' : '') + '<div class="sub">' + prompt.min + '〜' + prompt.max + ' 枚（現在 ' + selCount + ' 枚選択中）。タップで選択／解除します。' + (hint ? ' ' + hint : '') + '</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
     '<div class="grid">' + combined.map((x, k) => {
       const hid = selCardHidden(x.c, prompt);
       return '<div class="gcard' + (hid ? ' back' : '') + (x.sel ? ' sel' : '') + '" data-unselect="' + x.idx + '"' + (hid ? '' : artInline(x.c.code, false, deckKeyOfSeat(x.c.con))) + '>' +
@@ -5886,6 +5963,7 @@ function uiSelectSum(prompt, state) {
   };
   gridSheet({
     prompt,
+    purpose: selectPurposeText(prompt),
     title: 'カードの選択（合計値）',
     sub: () => {
       const s = span();
@@ -5953,8 +6031,9 @@ function optionLabelText(desc) {
 window.__optLabel = { resolve: optionLabelText };
 // Test surface (brushup round 3): the SELECT_CARD purpose
 // inference and the context-line phase granularity, so the
-// guard set is pinned by test-purpose.js.
-window.__purpose = { infer: inferSelectPurpose, phaseCtx: phaseJaContext };
+// guard set is pinned by test-purpose.js. hintText /
+// purposeText pin the select-hint purpose line (2026-11-05).
+window.__purpose = { infer: inferSelectPurpose, phaseCtx: phaseJaContext, hintText: selectHintPurpose, purposeText: selectPurposeText };
 // Test surface: render the SELECT_UNSELECT_CARD sheet for a synthetic
 // prompt so its button states can be asserted without a live duel.
 window.__unselect = { open: (prompt) => uiUnselect(prompt, null) };

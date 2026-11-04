@@ -6023,3 +6023,65 @@ same window as the user's failure):
   the honest, correctly-classified one. The relays remain
   time-window dependent from this network; that durability
   caveat is unchanged and is stated in the panel itself.
+
+## Select-purpose line (2026-11-05, user instruction: 効果でカードを選ぶ時に「何のために選ぶか」を簡単に)
+- Ask: when an effect makes the player select cards, the sheet must
+  say in plain words what the selection is FOR (e.g. reviving from
+  the grave -> 「自分フィールドに特殊召喚するカードを選択」-class
+  wording; banishing -> 「除外するカードを選択」), for every card,
+  as an ADDED line — the existing effect context line stays.
+- Where the purpose actually lives: not in SELECT_CARD (no purpose
+  field on the wire) but in MSG_HINT. Scripts/procedures call
+  Duel.Hint(HINT_SELECTMSG, player, value) right before selecting;
+  GameState.apply dropped MSG_HINT entirely (default: break), so
+  the declaration never reached the UI. Duel.run now taps it
+  (Engine.parseHint), keeps the latest selectmsg value per player,
+  and attaches it to that player's next prompt as
+  prompt.selectHint, CONSUMED on any prompt dispatch for that
+  player (a stale purpose would be a fabrication). Measured on
+  the real core before adopting the rule (12 bot duels, every
+  pairing): all 492 card-select prompts kept their own hint under
+  consume-on-dispatch.
+- Client: SELECT_HINT_PURPOSE maps the generic HINTMSG_* system
+  ids (bundled constant.lua, values 500-579) mechanically to
+  Japanese purpose sentences; gridSheet renders it as a .purpose
+  line under the title, uiUnselect renders the same; uiSelectSum
+  passes it through gridSheet. Fallbacks, in order: (a) the core
+  hint via the table; (b) the BU-13 provable inference (hand-limit
+  discard — already that sheet's title/sub, not duplicated);
+  (c) nothing — the sheet renders exactly as before. Bare
+  HINTMSG_SELECT (560), side labels (SELF/OPPO), raw card codes
+  and aux.Stringid card-string ids prove no generic purpose and
+  yield no line. Tribute / attack-target / hand-limit sheets
+  suppress the line (their title/sub already states the purpose).
+  The hint rides only the selecting player's own prompt object;
+  nothing about the opponent is derived or displayed.
+- Coverage census (counted, not sampled silently):
+  static — 82 card-selection call sites across the 63 pool-card
+  scripts: 80 declare a generic HINTMSG_* purpose (incl. 2 passed
+  as the hint argument of aux.SelectUnselectGroup), 1 declares a
+  card-specific string (メタバース 89208725, s.activate: its
+  aux.Stringid hint names the card's own string, so no generic
+  purpose is provable — that selection keeps the generic heading
+  + context line), 1 is the no-hint condition-check invocation of
+  the Dark Guardian summon procedure (s.spproccon; the actual
+  selection invocation passes HINTMSG_TODECK). Global procedure
+  scripts (fusion/synchro/xyz material) declare their own hints
+  (511/512/513) and are covered by the same path.
+  dynamic — 12 bot duels on the new engine, two samples:
+  396/398 and 409/411 card-select prompts render a purpose line;
+  the only unrendered case in both samples is メタバース 効果①
+  above. Core-driven selections also gain purposes (attack target
+  549, tribute 500). SELECT_SUM / SELECT_COUNTER prompts did not
+  occur in the samples (counter selection is unreachable in this
+  pool, cf. BU-13; ritual material flows through SELECT_UNSELECT).
+- Pins: test-hintpurpose.js (parseHint layout; end-to-end plumbing
+  vs an independent raw-stream simulation over 4 duels — 0
+  mismatches, 112/112 card-selects with hint; jsdom rendering:
+  line present/absent per hint kind, tribute suppression, context
+  line preserved) + test-purpose.js H0-H20/D4/D5 (mapping wording,
+  null fallbacks). Pre-existing flaky gates unrelated to this
+  round: test-logdetail-ui D11/D12 and test-strot premise checks
+  fail intermittently on unmodified main as well (trajectory
+  depends on the crypto shuffle); both were observed failing and
+  passing on pristine checkouts during this round.
