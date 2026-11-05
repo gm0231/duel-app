@@ -118,6 +118,8 @@ async function boot() {
     const recs = activateTrap(KEY2, 0);
     ok(has(recs, 'keycardact', r => r.code === KEY2), 'KA3: activating 《現世と冥界の逆転》 fires the keycard presentation (human seat)');
     ok(!has(recs, 'setactivate', r => r.code === KEY2), 'KA3b: no generic stacking on this seat either');
+    const bc = doc.querySelector('#fxcutin .bigcard');
+    ok(!!bc && bc.style.backgroundImage.includes('card-art-gensei.jpg') && bc.style.backgroundPosition === 'center 30%', 'KA3c: the stage art resolves through CARD_ART — the trap\'s own BIG illustration (26th delivery), carrying its ART_FOCUS position (center 30%; on the aspect-matched cut-in box the shift itself is numerically inert, exactly the Hakamori path of KA2i)');
   }
 
   // ---- control: a non-key trap keeps the generic presentation ----
