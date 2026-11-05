@@ -57,7 +57,7 @@ const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (
 const MUDORA = 99937011, KELBEK = 25926710, MORI = 36745317, HORUS = 36898537;
 const UNLISTED = 17484499;      // Gensei to Meikai no Gyakuten — Ishizu main, no individual art (see test-cardart; classic Agido gained the agido alias by the 2026-11-04 user ruling)
 const LABYRINTH = 99551425;     // 迷宮の魔戦車 (Labyrinth Tank) — GG EX, no individual art (the unlisted-EX exemplar role sat with Luce 45409943 until the 19th delivery, then with Pluto 37706769 until the 23rd, then with Trilosukuta 21368273 until the 24th, then with Hyperion 63101468 until the 25th delivery, 2026-11-06 — Hyperion's registration completes the Ishizu EXTRA deck, so the role crosses to the GG deck: Labyrinth Tank is its only EX card that is neither a keycard nor art-registered)
-const HYPERION = 63101468;      // マスターフレア・ヒュペリオン — 25th delivery (2026-11-06), plain CARD_ART with NO focus exception (his helmeted head sits high, crest ~4% / masked face ~10-13% of the big file, so center top frames helmet, face and torso in both bands); NOT a keycard (removed from the keycard list by the user's decision)
+const HYPERION = 63101468;      // マスターフレア・ヒュペリオン — 25th delivery (2026-11-06), plain CARD_ART with NO focus exception (his helmeted head sits high, crest ~4% / masked face ~10-13% of the big file, so center top frames helmet, face and torso in both bands); NOT a keycard (removed from the keycard list by the user's decision); follow-up (#25b) adds the 13th DECK_ART entry ('hyperion-ishizu', the Egyptian variant) with NO focus exception of its own either (measured separately — his crowned head sits high in the Egyptian painting too, sun-disc crown ~2-8% / masked face ~10-14% of the big file)
 const TRILO = 21368273;         // マナドゥム・トリロスークタ — 24th delivery (2026-11-06), plain CARD_ART with NO focus exception (his face sits high, ~17-19% of the big file, so center top frames helmet, face and torso in both bands); follow-up (#24b) adds the 12th DECK_ART entry ('trilo-ishizu', the Egyptian variant) with NO focus exception of its own either (measured separately — the face sits high in the Egyptian painting too, eyes ~18% / chin ~22% of the big file, sun disc and headdress framed at center top)
 const PLUTO = 37706769;         // 冥府の執行者 プルート — 23rd delivery (2026-11-06), plain CARD_ART with NO focus exception (his face sits high, ~16-25% of the big file, so center top frames head, wings and the star orb in both bands); follow-up (#23b) adds the 11th DECK_ART entry ('pluto-ishizu', the Egyptian variant) with NO focus exception of its own either (measured separately — his face sits high in the Egyptian painting too, eyes ~19% / chin ~24% of the big file)
 const CHAOSPOD = 79106360, LUCE = 45409943; // ART_FOCUS exemplars (focus-exception round, 2026-11-05)
@@ -315,13 +315,13 @@ async function boot() {
   window.eval('openCardInfo(' + HYPERION + ')');
   {
     const art = doc.querySelector('#sheet .infoart');
-    ok(!!art && art.style.backgroundImage.includes('card-art-hyperion.jpg') && !art.style.backgroundImage.includes('-s.jpg'), 'CV26: Hyperion detail art is the plain BIG file (25th delivery, no deck override)');
-    ok(!!art && art.style.backgroundPosition === 'center top', 'CV26b: the Hyperion detail band keeps center top (no focus exception — his helmeted head sits high, crest ~4% / masked face ~10-13% of the big file, framed with face and torso)');
+    ok(!!art && art.style.backgroundImage.includes('card-art-hyperion-ishizu.jpg') && !art.style.backgroundImage.includes('-s.jpg'), 'CV26: Hyperion (unique to the Ishizu deck here) detail art is the deck-scoped BIG file (13th DECK_ART entry)');
+    ok(!!art && art.style.backgroundPosition === 'center top', 'CV26b: the Hyperion detail band keeps center top (no focus exception for the variant either — measured separately: his crowned head sits high in the Egyptian painting too, sun-disc crown ~2-8% / masked face ~10-14% of the big file, framed mid-band)');
   }
   window.eval('openInfoPop(' + HYPERION + ')');
   {
     const art = doc.querySelector('#infopop .popart');
-    ok(!!art && art.style.backgroundImage.includes('card-art-hyperion.jpg') && art.style.backgroundPosition === 'center top', 'CV26c: the Hyperion pop band shows the plain BIG art at center top too');
+    ok(!!art && art.style.backgroundImage.includes('card-art-hyperion-ishizu.jpg') && art.style.backgroundPosition === 'center top', 'CV26c: the Hyperion pop band shows the deck-scoped BIG art at center top too');
   }
   window.eval('closeInfoPop()');
 
