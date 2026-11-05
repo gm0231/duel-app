@@ -10,9 +10,11 @@
      standing keep-the-top crop rule) — except the ART_FOCUS
      slugs (user ruling 2026-11-05: chaospod / luce /
      luce-ishizu, plus minerva and minerva-ishizu from the
-     20th delivery and its deck-override follow-up), whose
+     20th delivery and its deck-override follow-up, plus
+     castel-ishizu from the 21st delivery's deck-override
+     follow-up), whose
      bands shift so the subject is inside the band
-     (CV15-CV19b). Unlisted cards get NO
+     (CV15-CV21b). Unlisted cards get NO
      inline image — the .infoart class background is the shared
      placeholder, the same fallback the FX big card uses.
    - Deck-scoped art resolves on the detail sheet exactly like
@@ -56,6 +58,7 @@ const UNLISTED = 17484499;      // Gensei to Meikai no Gyakuten — Ishizu main,
 const PLUTO = 37706769;         // 冥府の執行者 プルート — Ishizu EX, no individual art (the unlisted-EX exemplar role sat with Luce 45409943 until she gained art in the 19th delivery, 2026-11-05)
 const CHAOSPOD = 79106360, LUCE = 45409943; // ART_FOCUS exemplars (focus-exception round, 2026-11-05)
 const MINERVA = 30100551;       // ライトロード・セイント ミネルバ — 20th delivery (2026-11-05), plain CARD_ART + the 4th ART_FOCUS entry ('center 20%' on the v2 painting); same-day follow-up adds the 8th DECK_ART entry ('minerva-ishizu', the Egyptian temple variant) with its own 5th ART_FOCUS entry ('center 20%', measured separately)
+const CASTEL = 82633039;        // 鳥銃士カステル — 21st delivery (2026-11-06), plain CARD_ART with NO focus exception (his head sits high); follow-up (#21b) adds the 9th DECK_ART entry ('castel-ishizu', the Egyptian variant) with its own 6th ART_FOCUS entry ('center 20%', measured separately — the tall nemes headdress pushes his face lower than on the plain painting)
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -252,6 +255,19 @@ async function boot() {
     const art = doc.querySelector('#infopop .popart');
     ok(!!art && art.style.backgroundImage.includes('card-art-minerva-ishizu.jpg'), 'CV19: the Minerva pop band shows the deck-scoped BIG art too');
     ok(!!art && art.style.backgroundPosition === 'center 20%', 'CV19b: the Minerva pop band uses the variant\'s focus exception (center top pushes her face to the band bottom edge, mouth and chin outside)');
+  }
+  window.eval('closeInfoPop()');
+  window.eval('openCardInfo(' + CASTEL + ')');
+  {
+    const art = doc.querySelector('#sheet .infoart');
+    ok(!!art && art.style.backgroundImage.includes('card-art-castel-ishizu.jpg') && !art.style.backgroundImage.includes('-s.jpg'), 'CV20: Castel (unique to the Ishizu deck here) detail art is the deck-scoped BIG file (9th DECK_ART entry)');
+    ok(!!art && art.style.backgroundPosition === 'center 20%', 'CV20b: the Castel detail band shifts to the variant\'s own focus exception (center 20%) — on the Egyptian painting the tall nemes headdress pushes his face lower than on the plain painting, centered in the band');
+  }
+  window.eval('openInfoPop(' + CASTEL + ')');
+  {
+    const art = doc.querySelector('#infopop .popart');
+    ok(!!art && art.style.backgroundImage.includes('card-art-castel-ishizu.jpg'), 'CV21: the Castel pop band shows the deck-scoped BIG art too');
+    ok(!!art && art.style.backgroundPosition === 'center 20%', 'CV21b: the Castel pop band uses the variant\'s focus exception (center top leaves his face at the band bottom edge, beak outside)');
   }
   window.eval('closeInfoPop()');
 
