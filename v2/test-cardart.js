@@ -111,6 +111,18 @@
      She is also the 4th ART_FOCUS entry ('center 20%'),
      and the variant is the 5th ('center 20%', measured
      separately — see above).
+   - The 21st delivery (2026-11-06) is 《鳥銃士カステル》
+     (82633039): plain art 'castel' (the purple-winged
+     bird musketeer over the canyon) in CARD_ART, NOT a
+     keycard and NO deck-scoped override — the third
+     EXTRA-deck monster of the Ishizu deck with individual
+     art (x3 in the v11 EX). Band check, measured like the
+     others: his head (crest ~12%, eyes ~26%, beak ~29-33%
+     of the big file) sits high enough that center top
+     frames head and torso in the sheet band and crest,
+     helmet, eye and beak in the pop band, so NO ART_FOCUS
+     entry (reproductions: castel-band-{sheet,pop}-top.jpg
+     in the cropfix folder). CAF1 stays at five entries.
    Method: boot the real client in jsdom (harness as test-setvis),
    paint a fabricated board through the client's own render() and
    assert the DOM contract in one synchronous eval. */
@@ -127,7 +139,7 @@ const wasmBinary = fs.readFileSync(path.join(V2, 'build', 'ocgcore.wasm'));
 let failures = 0;
 const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (!cond) failures++; };
 
-const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317, KAKAN = 14108995, CARBON = 15079028, SILKY = 55702233, HORUS = 36898537, HAKAMORI = 98715423, LUCE = 45409943, MINERVA = 30100551;
+const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317, KAKAN = 14108995, CARBON = 15079028, SILKY = 55702233, HORUS = 36898537, HAKAMORI = 98715423, LUCE = 45409943, MINERVA = 30100551, CASTEL = 82633039;
 // The unlisted exemplar moved Zolga -> Sphinx (5th delivery) ->
 // Mori (after the 7th) -> Carbon (after the 13th) -> Shilkey
 // (after the 15th), and Shilkey gained art in the 16th
@@ -170,7 +182,8 @@ for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.
                          ['card-art-luce-s.jpg', 320, 320], ['card-art-luce.jpg', 640, 882],
                          ['card-art-luce-ishizu-s.jpg', 320, 320], ['card-art-luce-ishizu.jpg', 640, 882],
                          ['card-art-minerva-s.jpg', 320, 320], ['card-art-minerva.jpg', 640, 882],
-                         ['card-art-minerva-ishizu-s.jpg', 320, 320], ['card-art-minerva-ishizu.jpg', 640, 882]]) {
+                         ['card-art-minerva-ishizu-s.jpg', 320, 320], ['card-art-minerva-ishizu.jpg', 640, 882],
+                         ['card-art-castel-s.jpg', 320, 320], ['card-art-castel.jpg', 640, 882]]) {
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
@@ -203,6 +216,8 @@ ok(data.decks.ishizu.extra.filter(c => c === LUCE).length === 3, 'CA0y: the Ishi
 ok(!data.decks.gg.main.includes(LUCE) && !data.decks.gg.extra.includes(LUCE), 'CA0z: the GG deck does NOT run Luce (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
 ok(data.decks.ishizu.extra.filter(c => c === MINERVA).length === 2, 'CA0z2: the Ishizu EXTRA deck runs 2 copies of Minerva (20th delivery — recipe v11)');
 ok(!data.decks.gg.main.includes(MINERVA) && !data.decks.gg.extra.includes(MINERVA), 'CA0z3: the GG deck does NOT run Minerva (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
+ok(data.decks.ishizu.extra.filter(c => c === CASTEL).length === 3, 'CA0z4: the Ishizu EXTRA deck runs 3 copies of Castel (21st delivery — recipe v11)');
+ok(!data.decks.gg.main.includes(CASTEL) && !data.decks.gg.extra.includes(CASTEL), 'CA0z5: the GG deck does NOT run Castel (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -341,6 +356,13 @@ async function boot() {
     minervaIshizuBig: cardArtFile(${MINERVA}, true, 'ishizu'),
     minervaIshizuInline: artInline(${MINERVA}, false, 'ishizu'),
     minervaGg: cardArtFile(${MINERVA}, false, 'gg'),
+    castelSlug: CARD_ART[${CASTEL}],
+    castelInline: artInline(${CASTEL}),
+    castelSmall: cardArtFile(${CASTEL}, false),
+    castelBig: cardArtFile(${CASTEL}, true),
+    castelDeckArt: DECK_ART.ishizu && DECK_ART.ishizu[${CASTEL}],
+    castelIshizu: cardArtFile(${CASTEL}, false, 'ishizu'),
+    castelGg: cardArtFile(${CASTEL}, false, 'gg'),
     focusTable: ART_FOCUS,
     focusChaosBig: artCss(${CHAOSPOD}, true),
     focusChaosSmall: artCss(${CHAOSPOD}, false),
@@ -360,6 +382,9 @@ async function boot() {
     focusMinervaBigGg: artCss(${MINERVA}, true, 'gg'),
     focusMinervaSmallIshizu: artCss(${MINERVA}, false, 'ishizu'),
     focusApplyMinervaIshizu: (() => { const d = document.createElement('div'); artApply(d, ${MINERVA}, true, 'ishizu'); return d.style.backgroundPosition; })(),
+    focusCastelBig: artCss(${CASTEL}, true),
+    focusCastelSmall: artCss(${CASTEL}, false),
+    focusApplyCastel: (() => { const d = document.createElement('div'); artApply(d, ${CASTEL}, true); return d.style.backgroundPosition; })(),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.classicAgidoSlug === 'agido' && helpers.classicAgidoInline.includes('card-art-agido-s.jpg'), 'CA7b2: user ruling 2026-11-04 — the CLASSIC Agido (16135253) aliases the same agido art');
@@ -440,6 +465,10 @@ async function boot() {
   ok(helpers.minervaIshizuSmall === '../assets/card-art-minerva-ishizu-s.jpg' && helpers.minervaIshizuBig === '../assets/card-art-minerva-ishizu.jpg' && helpers.minervaIshizuInline.includes('card-art-minerva-ishizu-s.jpg'), 'CA7z51: Ishizu context resolves Minerva to the Egyptian temple art (small + big)');
   ok(helpers.minervaGg === '../assets/card-art-minerva-s.jpg', 'CA7z52: GG context resolves Minerva to the plain floating-cathedral art');
   ok(helpers.preloaded.includes('../assets/card-art-minerva-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-minerva-ishizu.jpg'), 'CA7z53: boot preloads the deck-scoped Minerva art too (EXTRA-deck membership warms it)');
+  ok(helpers.castelSlug === 'castel' && helpers.castelInline.includes('card-art-castel-s.jpg') && helpers.castelInline.includes('background-position:center top'), 'CA7z54: Castel maps and stamps like the others (21st delivery)');
+  ok(helpers.castelSmall === '../assets/card-art-castel-s.jpg' && helpers.castelBig === '../assets/card-art-castel.jpg', 'CA7z55: Castel art files resolve (small + big)');
+  ok(helpers.preloaded.includes('../assets/card-art-castel-s.jpg') && helpers.preloaded.includes('../assets/card-art-castel.jpg'), 'CA7z56: boot preloads Castel too (EXTRA-deck membership warms the art from deck-select time)');
+  ok(helpers.castelDeckArt == null && helpers.castelIshizu === '../assets/card-art-castel-s.jpg' && helpers.castelGg === '../assets/card-art-castel-s.jpg', 'CA7z57: Castel has NO deck-scoped override — every deck context resolves the plain art');
   // ---- focus exceptions (user ruling 2026-11-05): ART_FOCUS shifts
   // the BIG-file band position for the three measured slugs only ----
   ok(Object.keys(helpers.focusTable).length === 5 && helpers.focusTable.chaospod === 'center 85%' && helpers.focusTable.luce === 'center 38%' && helpers.focusTable['luce-ishizu'] === 'center 38%' && helpers.focusTable.minerva === 'center 20%' && helpers.focusTable['minerva-ishizu'] === 'center 20%', 'CAF1: ART_FOCUS holds exactly the five measured exceptions (chaospod 85%, luce / luce-ishizu 38%, minerva / minerva-ishizu 20%)');
@@ -459,6 +488,8 @@ async function boot() {
   ok(helpers.focusMinervaBigGg.includes('card-art-minerva.jpg') && !helpers.focusMinervaBigGg.includes('ishizu') && helpers.focusMinervaBigGg.includes('background-position:center 20%'), 'CAF15: Minerva in any other deck keeps the plain art and the same focus position');
   ok(helpers.focusMinervaSmallIshizu.includes('card-art-minerva-ishizu-s.jpg') && helpers.focusMinervaSmallIshizu.includes('background-position:center top'), 'CAF16: the deck-variant SMALL art keeps center top too');
   ok(helpers.focusApplyMinervaIshizu === 'center 20%', 'CAF17: artApply agrees with artCss for the Ishizu-deck Minerva (big file, center 20%)');
+  ok(helpers.focusCastelBig.includes('card-art-castel.jpg') && helpers.focusCastelBig.includes('background-position:center top'), 'CAF18: Castel BIG art keeps center top — measured 2026-11-06: his head sits high (eyes ~26% of the big file), so both bands frame it and NO focus exception was added');
+  ok(helpers.focusCastelSmall.includes('card-art-castel-s.jpg') && helpers.focusCastelSmall.includes('background-position:center top') && helpers.focusApplyCastel === 'center top', 'CAF19: Castel SMALL art and the artApply path also keep center top');
   ok(helpers.kakanSlug === 'kakan' && helpers.kakanInline.includes('card-art-kakan-s.jpg') && helpers.kakanInline.includes('background-position:center top'), 'CA7aa: Kakan maps and stamps like the others (plain art = the forest painting)');
   ok(helpers.preloaded.includes('../assets/card-art-kakan-s.jpg') && helpers.preloaded.includes('../assets/card-art-kakan.jpg'), 'CA7ab: boot preloads Kakan too (same deck)');
   ok(helpers.deckArtKakan === 'kakan-ishizu', 'CA7z17: DECK_ART registers Kakan -> kakan-ishizu for the Ishizu deck (4th entry, first SPELL with an override)');
@@ -1173,6 +1204,36 @@ async function boot() {
   ok(res15.oppUp.includes('card-art-minerva-s.jpg') && !res15.oppUp.includes('minerva-ishizu'), 'CA11ak: opponent FACE-UP Minerva under the GG deck context shows the plain art (public information, owner-deck resolution)');
   ok(res15.oppDown === '' && !String(res15.oppDown).includes('minerva'), 'CA13r: opponent FACE-DOWN Minerva gets NO art (asymmetry / no leak)');
   ok(res15.pv.includes('card-art-minerva-ishizu-s.jpg'), 'CA16z5: resident preview shows the deck-scoped Minerva art (unique deck membership: Ishizu)');
+
+  // ---- Castel board (21st delivery): an EXTRA-deck
+  // monster with plain CARD_ART only (no override, no
+  // focus exception). Both seats' face-up tiles carry the
+  // same plain art; an opponent FACE-DOWN Castel must NOT
+  // carry any art. ----
+  const res16 = await window.eval(`
+    (() => {
+      const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
+      const P = () => ({ mzone: [null,null,null,null,null,null,null], szone: [null,null,null,null,null,null], grave: [], removed: [], extra: [], hand: [], deckCount: 38, lp: 8000 });
+      const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
+      b.players[0].mzone[0] = mon(${CASTEL}, 0x1);  // own face-up ATK Castel (post-Xyz)
+      b.players[1].mzone[0] = mon(${CASTEL}, 0x1);  // opp face-up Castel (public: art shows)
+      b.players[1].mzone[1] = mon(${CASTEL}, 0x8);  // opp face-down DEF Castel (MUST stay hidden)
+      render(b);
+      const artOf = (zone) => {
+        const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
+        const a = slot && slot.querySelector('.tile .art');
+        return a ? (a.getAttribute('style') || '') : null;
+      };
+      setPreview(${CASTEL}, null);
+      const pv = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      return { ownUp: artOf('0:4:0'), oppUp: artOf('1:4:0'), oppDown: artOf('1:4:1'), pv };
+    })()
+  `);
+  ok(res16.ownUp !== null && res16.oppUp !== null && res16.oppDown !== null, 'CA34: non-vacuity — Castel board rendered');
+  ok(res16.ownUp.includes('card-art-castel-s.jpg'), 'CA11al: own face-up Castel tile (seat 0) shows the new art');
+  ok(res16.oppUp.includes('card-art-castel-s.jpg'), 'CA11am: opponent FACE-UP Castel shows the art too (public information)');
+  ok(res16.oppDown === '' && !String(res16.oppDown).includes('castel'), 'CA13s: opponent FACE-DOWN Castel gets NO art (asymmetry / no leak)');
+  ok(res16.pv.includes('card-art-castel-s.jpg'), 'CA16z6: resident preview shows the Castel art (unique deck membership: Ishizu)');
 
   window.close();
   console.log(failures === 0 ? 'ALL CARDART CHECKS PASSED' : failures + ' CARDART CHECK(S) FAILED');
