@@ -269,6 +269,30 @@
      unlisted-EX exemplar role on to 《マスターフレア・
      ヒュペリオン》 (63101468) — now the only EX card
      of the Ishizu deck still without individual art.
+   - The 25th delivery (2026-11-06) is 《マスター
+     フレア・ヒュペリオン》 (63101468): plain art
+     'hyperion' (the gold-and-crimson armoured titan
+     wreathed in golden flame, the winged helmet with
+     its single blue eye) in CARD_ART — the seventh
+     EXTRA-deck monster of the Ishizu deck with
+     individual art (x1 in the v11 EX), with NO
+     deck-scoped override. NOT a keycard: the user
+     removed him from the keycard list, so no keycard
+     list or keycard test is touched by this round.
+     Band check, measured like the others: his
+     helmeted head sits high (crest ~4%, masked face
+     ~10-13% of the big file), so center top frames
+     helmet, face, torso and both clawed hands in the
+     sheet band and the whole helmeted head in the
+     pop band — NO ART_FOCUS entry (reproductions:
+     hyperion-band-{sheet,pop}-top.jpg in the cropfix
+     folder). CAF1 stays at eight entries. His
+     registration completes the Ishizu EXTRA deck —
+     every card in it now has individual art — so
+     test-cardview's unlisted-EX exemplar role crosses
+     to the GG deck: 《迷宮の魔戦車》 (99551425), the
+     GG EXTRA deck's only card that is neither a
+     keycard nor art-registered.
    Method: boot the real client in jsdom (harness as test-setvis),
    paint a fabricated board through the client's own render() and
    assert the DOM contract in one synchronous eval. */
@@ -285,7 +309,7 @@ const wasmBinary = fs.readFileSync(path.join(V2, 'build', 'ocgcore.wasm'));
 let failures = 0;
 const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (!cond) failures++; };
 
-const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317, KAKAN = 14108995, CARBON = 15079028, SILKY = 55702233, HORUS = 36898537, HAKAMORI = 98715423, LUCE = 45409943, MINERVA = 30100551, CASTEL = 82633039, BAROMETT = 62967433, PLUTO = 37706769, TRILO = 21368273;
+const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317, KAKAN = 14108995, CARBON = 15079028, SILKY = 55702233, HORUS = 36898537, HAKAMORI = 98715423, LUCE = 45409943, MINERVA = 30100551, CASTEL = 82633039, BAROMETT = 62967433, PLUTO = 37706769, TRILO = 21368273, HYPERION = 63101468;
 // The unlisted exemplar moved Zolga -> Sphinx (5th delivery) ->
 // Mori (after the 7th) -> Carbon (after the 13th) -> Shilkey
 // (after the 15th), and Shilkey gained art in the 16th
@@ -335,7 +359,8 @@ for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.
                          ['card-art-baromett-ishizu-s.jpg', 320, 320], ['card-art-baromett-ishizu.jpg', 640, 882],
                          ['card-art-pluto-s.jpg', 320, 320], ['card-art-pluto.jpg', 640, 882],
                          ['card-art-pluto-ishizu-s.jpg', 320, 320], ['card-art-pluto-ishizu.jpg', 640, 882],
-                         ['card-art-trilo-s.jpg', 320, 320], ['card-art-trilo.jpg', 640, 882]]) {
+                         ['card-art-trilo-s.jpg', 320, 320], ['card-art-trilo.jpg', 640, 882],
+                         ['card-art-hyperion-s.jpg', 320, 320], ['card-art-hyperion.jpg', 640, 882]]) {
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
@@ -376,6 +401,8 @@ ok(data.decks.ishizu.extra.filter(c => c === PLUTO).length === 2, 'CA0z8: the Is
 ok(!data.decks.gg.main.includes(PLUTO) && !data.decks.gg.extra.includes(PLUTO), 'CA0z9: the GG deck does NOT run Pluto (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
 ok(data.decks.ishizu.extra.filter(c => c === TRILO).length === 1, 'CA0z10: the Ishizu EXTRA deck runs 1 copy of Trilosukuta (24th delivery — recipe v11)');
 ok(!data.decks.gg.main.includes(TRILO) && !data.decks.gg.extra.includes(TRILO), 'CA0z11: the GG deck does NOT run Trilosukuta (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
+ok(data.decks.ishizu.extra.filter(c => c === HYPERION).length === 1, 'CA0z12: the Ishizu EXTRA deck runs 1 copy of Hyperion (25th delivery — recipe v11)');
+ok(!data.decks.gg.main.includes(HYPERION) && !data.decks.gg.extra.includes(HYPERION), 'CA0z13: the GG deck does NOT run Hyperion (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -550,6 +577,12 @@ async function boot() {
     triloBig: cardArtFile(${TRILO}, true),
     triloDeckArt: DECK_ART.ishizu && DECK_ART.ishizu[${TRILO}],
     triloIshizu: cardArtFile(${TRILO}, false, 'ishizu'),
+    hyperionSlug: CARD_ART[${HYPERION}],
+    hyperionInline: artInline(${HYPERION}),
+    hyperionSmall: cardArtFile(${HYPERION}, false),
+    hyperionBig: cardArtFile(${HYPERION}, true),
+    hyperionDeckArt: DECK_ART.ishizu && DECK_ART.ishizu[${HYPERION}],
+    hyperionIshizu: cardArtFile(${HYPERION}, false, 'ishizu'),
     focusTable: ART_FOCUS,
     focusChaosBig: artCss(${CHAOSPOD}, true),
     focusChaosSmall: artCss(${CHAOSPOD}, false),
@@ -593,6 +626,9 @@ async function boot() {
     focusTriloBig: artCss(${TRILO}, true),
     focusTriloSmall: artCss(${TRILO}, false),
     focusApplyTrilo: (() => { const d = document.createElement('div'); artApply(d, ${TRILO}, true); return d.style.backgroundPosition; })(),
+    focusHyperionBig: artCss(${HYPERION}, true),
+    focusHyperionSmall: artCss(${HYPERION}, false),
+    focusApplyHyperion: (() => { const d = document.createElement('div'); artApply(d, ${HYPERION}, true); return d.style.backgroundPosition; })(),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.classicAgidoSlug === 'agido' && helpers.classicAgidoInline.includes('card-art-agido-s.jpg'), 'CA7b2: user ruling 2026-11-04 — the CLASSIC Agido (16135253) aliases the same agido art');
@@ -698,6 +734,10 @@ async function boot() {
   ok(helpers.triloSmall === '../assets/card-art-trilo-s.jpg' && helpers.triloBig === '../assets/card-art-trilo.jpg', 'CA7z76: Trilosukuta art files resolve (small + big)');
   ok(helpers.preloaded.includes('../assets/card-art-trilo-s.jpg') && helpers.preloaded.includes('../assets/card-art-trilo.jpg'), 'CA7z77: boot preloads Trilosukuta too (EXTRA-deck membership warms the art from deck-select time)');
   ok(helpers.triloDeckArt === undefined && helpers.triloIshizu === '../assets/card-art-trilo-s.jpg', 'CA7z78: Trilosukuta has NO deck-scoped override — Ishizu context keeps the plain art');
+  ok(helpers.hyperionSlug === 'hyperion' && helpers.hyperionInline.includes('card-art-hyperion-s.jpg') && helpers.hyperionInline.includes('background-position:center top'), 'CA7z79: Hyperion maps and stamps like the others (25th delivery)');
+  ok(helpers.hyperionSmall === '../assets/card-art-hyperion-s.jpg' && helpers.hyperionBig === '../assets/card-art-hyperion.jpg', 'CA7z80: Hyperion art files resolve (small + big)');
+  ok(helpers.preloaded.includes('../assets/card-art-hyperion-s.jpg') && helpers.preloaded.includes('../assets/card-art-hyperion.jpg'), 'CA7z81: boot preloads Hyperion too (EXTRA-deck membership warms the art from deck-select time)');
+  ok(helpers.hyperionDeckArt === undefined && helpers.hyperionIshizu === '../assets/card-art-hyperion-s.jpg', 'CA7z82: Hyperion has NO deck-scoped override — Ishizu context keeps the plain art');
   // ---- focus exceptions (user ruling 2026-11-05): ART_FOCUS shifts
   // the BIG-file band position for the three measured slugs only ----
   ok(Object.keys(helpers.focusTable).length === 8 && helpers.focusTable.chaospod === 'center 85%' && helpers.focusTable.luce === 'center 38%' && helpers.focusTable['luce-ishizu'] === 'center 38%' && helpers.focusTable.minerva === 'center 20%' && helpers.focusTable['minerva-ishizu'] === 'center 20%' && helpers.focusTable['castel-ishizu'] === 'center 20%' && helpers.focusTable.baromett === 'center 40%' && helpers.focusTable['baromett-ishizu'] === 'center 40%', 'CAF1: ART_FOCUS holds exactly the eight measured exceptions (chaospod 85%, luce / luce-ishizu 38%, minerva / minerva-ishizu / castel-ishizu 20%, baromett / baromett-ishizu 40%)');
@@ -737,6 +777,8 @@ async function boot() {
   ok(helpers.focusPlutoSmallIshizu.includes('card-art-pluto-ishizu-s.jpg') && helpers.focusPlutoSmallIshizu.includes('background-position:center top') && helpers.focusApplyPlutoIshizu === 'center top', 'CAF35: the deck-variant SMALL art and the artApply path keep center top too');
   ok(helpers.focusTriloBig.includes('card-art-trilo.jpg') && helpers.focusTriloBig.includes('background-position:center top'), 'CAF36: the Trilosukuta BIG art keeps center top — measured 2026-11-06: his face sits high (eyes ~17-19% of the big file), so both bands frame helmet, face and torso and the plain painting has NO focus exception');
   ok(helpers.focusTriloSmall.includes('card-art-trilo-s.jpg') && helpers.focusTriloSmall.includes('background-position:center top') && helpers.focusApplyTrilo === 'center top', 'CAF37: the Trilosukuta SMALL art and the artApply path also keep center top');
+  ok(helpers.focusHyperionBig.includes('card-art-hyperion.jpg') && helpers.focusHyperionBig.includes('background-position:center top'), 'CAF38: the Hyperion BIG art keeps center top — measured 2026-11-06: his helmeted head sits high (crest ~4%, masked face ~10-13% of the big file), so both bands frame helmet, face and torso and the plain painting has NO focus exception');
+  ok(helpers.focusHyperionSmall.includes('card-art-hyperion-s.jpg') && helpers.focusHyperionSmall.includes('background-position:center top') && helpers.focusApplyHyperion === 'center top', 'CAF39: the Hyperion SMALL art and the artApply path also keep center top');
   ok(helpers.kakanSlug === 'kakan' && helpers.kakanInline.includes('card-art-kakan-s.jpg') && helpers.kakanInline.includes('background-position:center top'), 'CA7aa: Kakan maps and stamps like the others (plain art = the forest painting)');
   ok(helpers.preloaded.includes('../assets/card-art-kakan-s.jpg') && helpers.preloaded.includes('../assets/card-art-kakan.jpg'), 'CA7ab: boot preloads Kakan too (same deck)');
   ok(helpers.deckArtKakan === 'kakan-ishizu', 'CA7z17: DECK_ART registers Kakan -> kakan-ishizu for the Ishizu deck (4th entry, first SPELL with an override)');
@@ -1578,6 +1620,37 @@ async function boot() {
   ok(res19.oppUp.includes('card-art-trilo-s.jpg'), 'CA11as: opponent FACE-UP Trilosukuta shows the plain art too (public information)');
   ok(res19.oppDown === '' && !String(res19.oppDown).includes('trilo'), 'CA13v: opponent FACE-DOWN Trilosukuta gets NO art (asymmetry / no leak)');
   ok(res19.pv.includes('card-art-trilo-s.jpg'), 'CA16z9: resident preview shows the Trilosukuta art (unique deck membership: Ishizu)');
+
+  // ---- 25th delivery board: Hyperion (63101468), the
+  // seventh EXTRA-deck monster with individual art —
+  // plain art only (NO deck-scoped override): both
+  // seats' face-up tiles show the plain 'hyperion' art
+  // under their own deck context; an opponent FACE-DOWN
+  // Hyperion must NOT carry any art. ----
+  const res20 = await window.eval(`
+    (() => {
+      const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
+      const P = () => ({ mzone: [null,null,null,null,null,null,null], szone: [null,null,null,null,null,null], grave: [], removed: [], extra: [], hand: [], deckCount: 38, lp: 8000 });
+      const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
+      b.players[0].mzone[0] = mon(${HYPERION}, 0x1);  // own face-up ATK Hyperion (post-Synchro)
+      b.players[1].mzone[0] = mon(${HYPERION}, 0x1);  // opp face-up Hyperion (public: art shows)
+      b.players[1].mzone[1] = mon(${HYPERION}, 0x8);  // opp face-down DEF Hyperion (MUST stay hidden)
+      render(b);
+      const artOf = (zone) => {
+        const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
+        const a = slot && slot.querySelector('.tile .art');
+        return a ? (a.getAttribute('style') || '') : null;
+      };
+      setPreview(${HYPERION}, null);
+      const pv = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      return { ownUp: artOf('0:4:0'), oppUp: artOf('1:4:0'), oppDown: artOf('1:4:1'), pv };
+    })()
+  `);
+  ok(res20.ownUp !== null && res20.oppUp !== null && res20.oppDown !== null, 'CA38: non-vacuity — Hyperion board rendered');
+  ok(res20.ownUp.includes('card-art-hyperion-s.jpg'), 'CA11at: own face-up Hyperion tile (seat 0) shows the plain art (no deck override)');
+  ok(res20.oppUp.includes('card-art-hyperion-s.jpg'), 'CA11au: opponent FACE-UP Hyperion shows the plain art too (public information)');
+  ok(res20.oppDown === '' && !String(res20.oppDown).includes('hyperion'), 'CA13w: opponent FACE-DOWN Hyperion gets NO art (asymmetry / no leak)');
+  ok(res20.pv.includes('card-art-hyperion-s.jpg'), 'CA16z10: resident preview shows the Hyperion art (unique deck membership: Ishizu)');
 
   window.close();
   console.log(failures === 0 ? 'ALL CARDART CHECKS PASSED' : failures + ' CARDART CHECK(S) FAILED');
