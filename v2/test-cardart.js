@@ -345,6 +345,42 @@
      (reproductions: hyperion-ishizu-band-
      {sheet,pop}-{top,20}.jpg in the cropfix
      folder). CAF1 stays at eight entries.
+   - The 26th delivery (2026-11-06) is 《現世と冥界の
+     逆転》 (17484499): plain art 'gensei' (the red
+     skeleton warrior and the blue armored warrior
+     swapping places inside the vortex between the
+     living world and the underworld) in CARD_ART —
+     the second TRAP with individual art (x1 in the
+     v11 main deck), with NO deck-scoped override.
+     She is an Ishizu KEYCARD that fires on
+     ACTIVATION: the keycardact stage art resolves
+     this BIG file through CARD_ART exactly like
+     《墓守の罠》 (pinned in test-keycardact KA3c);
+     the keycard lists themselves are untouched —
+     17484499 was already in KEYCARD_ACTIVATE_CODES.
+     Band check, measured like the others: the
+     painting has no human face; its subjects are
+     the two warriors mid-frame (the skeleton's
+     skull at ~26-33% of the big file, its ribcage
+     to ~45%), so center top keeps the skeleton in
+     the sheet band but leaves the pop band showing
+     the paradise window and the vortex with only
+     the demon blade, one arm and the crown of the
+     skull at its bottom edge — the subject
+     essentially absent there. 'center 30%' seats
+     the skeleton's head and ribcage mid-band in
+     both bands (40% starts clipping the blade and
+     head at the pop band's top), so she takes the
+     9th ART_FOCUS entry ('center 30%';
+     reproductions: gensei-band-{sheet,pop}-
+     {top,30,40}.jpg in the cropfix folder, with
+     -before / -after aliases for the top / 30%
+     pair). CAF1 grows to nine entries. Her
+     registration also retires her from this file's
+     UNLISTED exemplar role (see below): the role
+     passes to 《転生の予言》 (46652477), another
+     real Ishizu main-deck card (x1) with no
+     individual art.
    Method: boot the real client in jsdom (harness as test-setvis),
    paint a fabricated board through the client's own render() and
    assert the DOM contract in one synchronous eval. */
@@ -361,20 +397,16 @@ const wasmBinary = fs.readFileSync(path.join(V2, 'build', 'ocgcore.wasm'));
 let failures = 0;
 const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (!cond) failures++; };
 
-const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317, KAKAN = 14108995, CARBON = 15079028, SILKY = 55702233, HORUS = 36898537, HAKAMORI = 98715423, LUCE = 45409943, MINERVA = 30100551, CASTEL = 82633039, BAROMETT = 62967433, PLUTO = 37706769, TRILO = 21368273, HYPERION = 63101468;
+const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317, KAKAN = 14108995, CARBON = 15079028, SILKY = 55702233, HORUS = 36898537, HAKAMORI = 98715423, LUCE = 45409943, MINERVA = 30100551, CASTEL = 82633039, BAROMETT = 62967433, PLUTO = 37706769, TRILO = 21368273, HYPERION = 63101468, GENSEI = 17484499;
 // The unlisted exemplar moved Zolga -> Sphinx (5th delivery) ->
 // Mori (after the 7th) -> Carbon (after the 13th) -> Shilkey
-// (after the 15th), and Shilkey gained art in the 16th
-// delivery, so the role now sits with the deck's CLASSIC
-// 《現世と冥界の逆転》 17484499: a real Ishizu main-deck card
-// (x1) with no individual art. The previous exemplar, the
-// deck's CLASSIC 《アギド》 16135253, gained the 'agido' art
-// by the user's ruling of 2026-11-04 (the Ancient Guard
-// Agido art is used for the classic card too), leaving no
-// unlisted monster in the deck; the role passes to this
-// card. Usable on every fallback surface (tile / hand /
-// preview / ghost), like every exemplar before it.
-const UNLISTED = 17484499;
+// (after the 15th) -> the deck's CLASSIC 《アギド》 16135253
+// -> 《現世と冥界の逆転》 17484499, and Gensei gained art in
+// the 26th delivery, so the role now sits with 《転生の予言》
+// 46652477: a real Ishizu main-deck card (x1) with no
+// individual art. Usable on every fallback surface (tile /
+// hand / preview / ghost), like every exemplar before it.
+const UNLISTED = 46652477;
 
 // ---- delivered art files (existence + top-anchored dimensions) ----
 for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.jpg', 640, 882],
@@ -414,7 +446,8 @@ for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.
                          ['card-art-trilo-s.jpg', 320, 320], ['card-art-trilo.jpg', 640, 882],
                          ['card-art-trilo-ishizu-s.jpg', 320, 320], ['card-art-trilo-ishizu.jpg', 640, 882],
                          ['card-art-hyperion-s.jpg', 320, 320], ['card-art-hyperion.jpg', 640, 882],
-                         ['card-art-hyperion-ishizu-s.jpg', 320, 320], ['card-art-hyperion-ishizu.jpg', 640, 882]]) {
+                         ['card-art-hyperion-ishizu-s.jpg', 320, 320], ['card-art-hyperion-ishizu.jpg', 640, 882],
+                         ['card-art-gensei-s.jpg', 320, 320], ['card-art-gensei.jpg', 640, 882]]) {
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
@@ -433,7 +466,7 @@ ok(data.decks.ishizu.main.filter(c => c === CHAOSPOD).length === 2, 'CA0k: the I
 ok(data.decks.ishizu.main.filter(c => c === OKA).length === 1, 'CA0l: the Ishizu deck runs 1 copy of Oka');
 ok(data.decks.ishizu.main.filter(c => c === HANA).length === 2, 'CA0m: the Ishizu deck runs 2 copies of Hana');
 ok(data.decks.ishizu.main.filter(c => c === MORI).length === 3, 'CA0n: the Ishizu deck runs 3 copies of Mori');
-ok(data.decks.ishizu.main.filter(c => c === UNLISTED).length === 1, 'CA0o: the Ishizu deck runs 1 copy of the unlisted exemplar (Gensei to Meikai no Gyakuten)');
+ok(data.decks.ishizu.main.filter(c => c === UNLISTED).length === 1, 'CA0o: the Ishizu deck runs 1 copy of the unlisted exemplar (Tensei no Yogen — the role passed from Gensei in the 26th delivery)');
 ok(data.decks.ishizu.main.filter(c => c === CARBON).length === 3, 'CA0p: the Ishizu deck runs 3 copies of Carbon');
 ok(data.decks.ishizu.main.filter(c => c === KAKAN).length === 1, 'CA0q: the Ishizu deck runs 1 copy of Kakan (Vernusylph Flower Crown)');
 ok(!data.decks.gg.main.includes(KAKAN) && !data.decks.gg.extra.includes(KAKAN), 'CA0r: the GG deck does NOT run Kakan (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
@@ -457,6 +490,8 @@ ok(data.decks.ishizu.extra.filter(c => c === TRILO).length === 1, 'CA0z10: the I
 ok(!data.decks.gg.main.includes(TRILO) && !data.decks.gg.extra.includes(TRILO), 'CA0z11: the GG deck does NOT run Trilosukuta (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
 ok(data.decks.ishizu.extra.filter(c => c === HYPERION).length === 1, 'CA0z12: the Ishizu EXTRA deck runs 1 copy of Hyperion (25th delivery — recipe v11)');
 ok(!data.decks.gg.main.includes(HYPERION) && !data.decks.gg.extra.includes(HYPERION), 'CA0z13: the GG deck does NOT run Hyperion (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
+ok(data.decks.ishizu.main.filter(c => c === GENSEI).length === 1, 'CA0z14: the Ishizu deck runs 1 copy of Gensei to Meikai no Gyakuten (26th delivery — recipe v11)');
+ok(!data.decks.gg.main.includes(GENSEI) && !data.decks.gg.extra.includes(GENSEI), 'CA0z15: the GG deck does NOT run Gensei (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -645,6 +680,13 @@ async function boot() {
     hyperionIshizuBig: cardArtFile(${HYPERION}, true, 'ishizu'),
     hyperionIshizuInline: artInline(${HYPERION}, false, 'ishizu'),
     hyperionGg: cardArtFile(${HYPERION}, false, 'gg'),
+    genseiSlug: CARD_ART[${GENSEI}],
+    genseiInline: artInline(${GENSEI}),
+    genseiSmall: cardArtFile(${GENSEI}, false),
+    genseiBig: cardArtFile(${GENSEI}, true),
+    genseiDeckArt: DECK_ART.ishizu && DECK_ART.ishizu[${GENSEI}],
+    genseiIshizu: cardArtFile(${GENSEI}, false, 'ishizu'),
+    genseiGg: cardArtFile(${GENSEI}, false, 'gg'),
     focusTable: ART_FOCUS,
     focusChaosBig: artCss(${CHAOSPOD}, true),
     focusChaosSmall: artCss(${CHAOSPOD}, false),
@@ -699,6 +741,9 @@ async function boot() {
     focusHyperionBigGg: artCss(${HYPERION}, true, 'gg'),
     focusHyperionSmallIshizu: artCss(${HYPERION}, false, 'ishizu'),
     focusApplyHyperionIshizu: (() => { const d = document.createElement('div'); artApply(d, ${HYPERION}, true, 'ishizu'); return d.style.backgroundPosition; })(),
+    focusGenseiBig: artCss(${GENSEI}, true),
+    focusGenseiSmall: artCss(${GENSEI}, false),
+    focusApplyGensei: (() => { const d = document.createElement('div'); artApply(d, ${GENSEI}, true); return d.style.backgroundPosition; })(),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.classicAgidoSlug === 'agido' && helpers.classicAgidoInline.includes('card-art-agido-s.jpg'), 'CA7b2: user ruling 2026-11-04 — the CLASSIC Agido (16135253) aliases the same agido art');
@@ -814,9 +859,13 @@ async function boot() {
   ok(helpers.hyperionIshizuSmall === '../assets/card-art-hyperion-ishizu-s.jpg' && helpers.hyperionIshizuBig === '../assets/card-art-hyperion-ishizu.jpg' && helpers.hyperionIshizuInline.includes('card-art-hyperion-ishizu-s.jpg'), 'CA7z87: Ishizu context resolves Hyperion to the Egyptian art (small + big)');
   ok(helpers.hyperionGg === '../assets/card-art-hyperion-s.jpg', 'CA7z88: GG context resolves Hyperion to the plain flame art');
   ok(helpers.preloaded.includes('../assets/card-art-hyperion-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-hyperion-ishizu.jpg'), 'CA7z89: boot preloads the deck-scoped Hyperion art too (EXTRA-deck membership warms it)');
+  ok(helpers.genseiSlug === 'gensei' && helpers.genseiInline.includes('card-art-gensei-s.jpg') && helpers.genseiInline.includes('background-position:center top'), 'CA7z90: Gensei maps and stamps like the others (26th delivery)');
+  ok(helpers.genseiSmall === '../assets/card-art-gensei-s.jpg' && helpers.genseiBig === '../assets/card-art-gensei.jpg', 'CA7z91: Gensei art files resolve (small + big)');
+  ok(helpers.preloaded.includes('../assets/card-art-gensei-s.jpg') && helpers.preloaded.includes('../assets/card-art-gensei.jpg'), 'CA7z92: boot preloads Gensei too (main-deck membership warms the art from deck-select time)');
+  ok(helpers.genseiDeckArt === undefined && helpers.genseiIshizu === '../assets/card-art-gensei-s.jpg' && helpers.genseiGg === '../assets/card-art-gensei-s.jpg', 'CA7z93: Gensei has NO deck-scoped override — plain registration, every deck context keeps the base art');
   // ---- focus exceptions (user ruling 2026-11-05): ART_FOCUS shifts
   // the BIG-file band position for the three measured slugs only ----
-  ok(Object.keys(helpers.focusTable).length === 8 && helpers.focusTable.chaospod === 'center 85%' && helpers.focusTable.luce === 'center 38%' && helpers.focusTable['luce-ishizu'] === 'center 38%' && helpers.focusTable.minerva === 'center 20%' && helpers.focusTable['minerva-ishizu'] === 'center 20%' && helpers.focusTable['castel-ishizu'] === 'center 20%' && helpers.focusTable.baromett === 'center 40%' && helpers.focusTable['baromett-ishizu'] === 'center 40%', 'CAF1: ART_FOCUS holds exactly the eight measured exceptions (chaospod 85%, luce / luce-ishizu 38%, minerva / minerva-ishizu / castel-ishizu 20%, baromett / baromett-ishizu 40%)');
+  ok(Object.keys(helpers.focusTable).length === 9 && helpers.focusTable.chaospod === 'center 85%' && helpers.focusTable.luce === 'center 38%' && helpers.focusTable['luce-ishizu'] === 'center 38%' && helpers.focusTable.minerva === 'center 20%' && helpers.focusTable['minerva-ishizu'] === 'center 20%' && helpers.focusTable['castel-ishizu'] === 'center 20%' && helpers.focusTable.baromett === 'center 40%' && helpers.focusTable['baromett-ishizu'] === 'center 40%' && helpers.focusTable.gensei === 'center 30%', 'CAF1: ART_FOCUS holds exactly the nine measured exceptions (chaospod 85%, luce / luce-ishizu 38%, minerva / minerva-ishizu / castel-ishizu 20%, baromett / baromett-ishizu 40%, gensei 30%)');
   ok(helpers.focusChaosBig.includes('card-art-chaospod.jpg') && helpers.focusChaosBig.includes('background-position:center 85%'), 'CAF2: Chaos Pod BIG art carries its focus position (center 85%)');
   ok(helpers.focusChaosSmall.includes('card-art-chaospod-s.jpg') && helpers.focusChaosSmall.includes('background-position:center top'), 'CAF3: Chaos Pod SMALL art keeps center top (the exception is big-file only)');
   ok(helpers.focusLuceBig.includes('card-art-luce.jpg') && helpers.focusLuceBig.includes('background-position:center 38%'), 'CAF4: Luce BIG art carries its focus position (center 38%)');
@@ -861,6 +910,9 @@ async function boot() {
   ok(helpers.focusHyperionBigIshizu.includes('card-art-hyperion-ishizu.jpg') && helpers.focusHyperionBigIshizu.includes('background-position:center top'), 'CAF43: Hyperion in the Ishizu deck resolves the Egyptian art at center top — measured separately on the Egyptian painting (2026-11-06): his crowned head sits high there too (sun-disc crown ~2-8%, masked face ~10-14% of the big file), so both bands frame crown, head and torso and the variant has NO focus exception either');
   ok(helpers.focusHyperionBigGg.includes('card-art-hyperion.jpg') && !helpers.focusHyperionBigGg.includes('ishizu') && helpers.focusHyperionBigGg.includes('background-position:center top'), 'CAF44: Hyperion in any other deck keeps the plain art at center top');
   ok(helpers.focusHyperionSmallIshizu.includes('card-art-hyperion-ishizu-s.jpg') && helpers.focusHyperionSmallIshizu.includes('background-position:center top') && helpers.focusApplyHyperionIshizu === 'center top', 'CAF45: the deck-variant SMALL art and the artApply path keep center top too');
+  ok(helpers.focusGenseiBig.includes('card-art-gensei.jpg') && helpers.focusGenseiBig.includes('background-position:center 30%'), 'CAF46: Gensei BIG art carries its focus position (center 30% — measured 2026-11-06: the two warriors sit mid-frame, the skeleton skull at ~26-33% of the big file, so center top leaves the pop band showing the paradise window and vortex with the subject essentially absent)');
+  ok(helpers.focusGenseiSmall.includes('card-art-gensei-s.jpg') && helpers.focusGenseiSmall.includes('background-position:center top'), 'CAF47: Gensei SMALL art keeps center top (the exception is big-file only)');
+  ok(helpers.focusApplyGensei === 'center 30%', 'CAF48: artApply agrees with artCss for Gensei (big file, center 30%)');
   ok(helpers.kakanSlug === 'kakan' && helpers.kakanInline.includes('card-art-kakan-s.jpg') && helpers.kakanInline.includes('background-position:center top'), 'CA7aa: Kakan maps and stamps like the others (plain art = the forest painting)');
   ok(helpers.preloaded.includes('../assets/card-art-kakan-s.jpg') && helpers.preloaded.includes('../assets/card-art-kakan.jpg'), 'CA7ab: boot preloads Kakan too (same deck)');
   ok(helpers.deckArtKakan === 'kakan-ishizu', 'CA7z17: DECK_ART registers Kakan -> kakan-ishizu for the Ishizu deck (4th entry, first SPELL with an override)');
@@ -1736,6 +1788,46 @@ async function boot() {
   ok(res20.oppUp.includes('card-art-hyperion-s.jpg') && !res20.oppUp.includes('hyperion-ishizu'), 'CA11au: opponent FACE-UP Hyperion under the GG deck context shows the plain art (public information, owner-deck resolution)');
   ok(res20.oppDown === '' && !String(res20.oppDown).includes('hyperion'), 'CA13w: opponent FACE-DOWN Hyperion gets NO art (asymmetry / no leak)');
   ok(res20.pv.includes('card-art-hyperion-ishizu-s.jpg'), 'CA16z10: resident preview shows the deck-scoped Hyperion art (unique deck membership: Ishizu)');
+
+  // ---- 26th delivery board: Gensei to Meikai no
+  // Gyakuten (17484499), the second TRAP with individual
+  // art — plain registration, NO deck-scoped override:
+  // the same S/T surfaces as Hakamori (own SET under the
+  // setown veil, own face-up, hand, preview), and the
+  // asymmetry that matters most for a trap — the
+  // opponent's SET copy stays fully hidden. The big
+  // file's stage life (the keycard activation cut-in)
+  // is pinned in test-keycardact ----
+  const res21 = await window.eval(`
+    (() => {
+      const st = (code, pos) => ({ code, pos, materials: 0 });
+      const P = () => ({ mzone: [null,null,null,null,null,null,null], szone: [null,null,null,null,null,null], grave: [], removed: [], extra: [], hand: [], deckCount: 38, lp: 8000 });
+      const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
+      b.players[0].szone[0] = st(${GENSEI}, 0xa);  // own SET Gensei (veil ghost)
+      b.players[0].szone[1] = st(${GENSEI}, 0x5);  // own face-up Gensei
+      b.players[1].szone[0] = st(${GENSEI}, 0xa);  // opp SET Gensei (MUST stay hidden)
+      b.players[0].hand = [{ code: ${GENSEI} }];
+      render(b);
+      const tileOf = (zone) => {
+        const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
+        const t = slot && slot.querySelector('.tile');
+        if (!t) return null;
+        const a = t.querySelector('.art');
+        return { cls: t.className, veil: !!t.querySelector('.veil'), art: a ? (a.getAttribute('style') || '') : null };
+      };
+      const handImgs = [...document.querySelectorAll('#hand .hcard')].map(h => ({ code: h.dataset.code, style: (h.querySelector('.himg') || {}).getAttribute ? (h.querySelector('.himg').getAttribute('style') || '') : '' }));
+      setPreview(${GENSEI}, null);
+      const pv = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      return { ownSet: tileOf('0:8:0'), ownUp: tileOf('0:8:1'), oppSet: tileOf('1:8:0'), handImgs, pv };
+    })()
+  `);
+  ok(res21.ownSet !== null && res21.ownUp !== null && res21.oppSet !== null, 'CA39: non-vacuity — Gensei board rendered');
+  ok(res21.ownUp.art !== null && res21.ownUp.art.includes('card-art-gensei-s.jpg') && !res21.ownUp.veil, 'CA11av: own face-up Gensei S/T tile shows its own art');
+  ok(res21.ownSet.art !== null && res21.ownSet.art.includes('card-art-gensei-s.jpg') && res21.ownSet.veil && res21.ownSet.cls.split(/\s+/).includes('setown'), 'CA11aw: own SET Gensei carries its art under the setown veil (owner ghost)');
+  ok(res21.oppSet.art === '' && !res21.oppSet.veil && !String(res21.oppSet.art).includes('gensei'), 'CA13x: opponent SET Gensei gets NO art and NO veil (asymmetry / no leak)');
+  const hGensei = res21.handImgs.find(h => h.code === String(GENSEI));
+  ok(!!hGensei && hGensei.style.includes('card-art-gensei-s.jpg'), 'CA14v: hand Gensei shows the art');
+  ok(res21.pv.includes('card-art-gensei-s.jpg'), 'CA16z11: resident preview shows the art for Gensei');
 
   window.close();
   console.log(failures === 0 ? 'ALL CARDART CHECKS PASSED' : failures + ' CARDART CHECK(S) FAILED');

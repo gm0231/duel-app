@@ -55,7 +55,7 @@ let failures = 0;
 const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (!cond) failures++; };
 
 const MUDORA = 99937011, KELBEK = 25926710, MORI = 36745317, HORUS = 36898537;
-const UNLISTED = 17484499;      // Gensei to Meikai no Gyakuten — Ishizu main, no individual art (see test-cardart; classic Agido gained the agido alias by the 2026-11-04 user ruling)
+const UNLISTED = 46652477;      // Tensei no Yogen — Ishizu main, no individual art (see test-cardart; the exemplar role sat with Gensei to Meikai no Gyakuten 17484499 until the 26th delivery gave it art, 2026-11-06)
 const LABYRINTH = 99551425;     // 迷宮の魔戦車 (Labyrinth Tank) — GG EX, no individual art (the unlisted-EX exemplar role sat with Luce 45409943 until the 19th delivery, then with Pluto 37706769 until the 23rd, then with Trilosukuta 21368273 until the 24th, then with Hyperion 63101468 until the 25th delivery, 2026-11-06 — Hyperion's registration completes the Ishizu EXTRA deck, so the role crosses to the GG deck: Labyrinth Tank is its only EX card that is neither a keycard nor art-registered)
 const HYPERION = 63101468;      // マスターフレア・ヒュペリオン — 25th delivery (2026-11-06), plain CARD_ART with NO focus exception (his helmeted head sits high, crest ~4% / masked face ~10-13% of the big file, so center top frames helmet, face and torso in both bands); NOT a keycard (removed from the keycard list by the user's decision); follow-up (#25b) adds the 13th DECK_ART entry ('hyperion-ishizu', the Egyptian variant) with NO focus exception of its own either (measured separately — his crowned head sits high in the Egyptian painting too, sun-disc crown ~2-8% / masked face ~10-14% of the big file)
 const TRILO = 21368273;         // マナドゥム・トリロスークタ — 24th delivery (2026-11-06), plain CARD_ART with NO focus exception (his face sits high, ~17-19% of the big file, so center top frames helmet, face and torso in both bands); follow-up (#24b) adds the 12th DECK_ART entry ('trilo-ishizu', the Egyptian variant) with NO focus exception of its own either (measured separately — the face sits high in the Egyptian painting too, eyes ~18% / chin ~22% of the big file, sun disc and headdress framed at center top)
@@ -64,6 +64,7 @@ const CHAOSPOD = 79106360, LUCE = 45409943; // ART_FOCUS exemplars (focus-except
 const MINERVA = 30100551;       // ライトロード・セイント ミネルバ — 20th delivery (2026-11-05), plain CARD_ART + the 4th ART_FOCUS entry ('center 20%' on the v2 painting); same-day follow-up adds the 8th DECK_ART entry ('minerva-ishizu', the Egyptian temple variant) with its own 5th ART_FOCUS entry ('center 20%', measured separately)
 const CASTEL = 82633039;        // 鳥銃士カステル — 21st delivery (2026-11-06), plain CARD_ART with NO focus exception (his head sits high); follow-up (#21b) adds the 9th DECK_ART entry ('castel-ishizu', the Egyptian variant) with its own 6th ART_FOCUS entry ('center 20%', measured separately — the tall nemes headdress pushes his face lower than on the plain painting)
 const BAROMETT = 62967433;      // 神羊樹バロメット — 22nd delivery (2026-11-06), plain CARD_ART + the 7th ART_FOCUS entry ('center 40%' — her face sits mid-frame, eyes ~47% of the big file, so center top leaves the sheep essentially out of the pop band); follow-up (#22b) adds the 10th DECK_ART entry ('baromett-ishizu', the Egyptian variant) with its own 8th ART_FOCUS entry ('center 40%', measured separately — in the Egyptian painting her face sits mid-frame just as in the plain one, eyes ~50% of the big file)
+const GENSEI = 17484499;        // 現世と冥界の逆転 — 26th delivery (2026-11-06), plain CARD_ART with NO deck-scoped override + the 9th ART_FOCUS entry ('center 30%' — the two warriors sit mid-frame, the skeleton skull at ~26-33% of the big file, so center top leaves the pop band showing the paradise window and vortex with the subject essentially absent); an Ishizu keycard that fires on ACTIVATION (the keycardact stage art is pinned in test-keycardact KA3c)
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -322,6 +323,18 @@ async function boot() {
   {
     const art = doc.querySelector('#infopop .popart');
     ok(!!art && art.style.backgroundImage.includes('card-art-hyperion-ishizu.jpg') && art.style.backgroundPosition === 'center top', 'CV26c: the Hyperion pop band shows the deck-scoped BIG art at center top too');
+  }
+  window.eval('closeInfoPop()');
+  window.eval('openCardInfo(' + GENSEI + ')');
+  {
+    const art = doc.querySelector('#sheet .infoart');
+    ok(!!art && art.style.backgroundImage.includes('card-art-gensei.jpg') && !art.style.backgroundImage.includes('-s.jpg'), 'CV27: Gensei detail art is the plain BIG file (26th delivery — no deck-scoped override)');
+    ok(!!art && art.style.backgroundPosition === 'center 30%', 'CV27b: the Gensei detail band shifts to its own focus exception (center 30%) — the two warriors sit mid-frame, centered in the band');
+  }
+  window.eval('openInfoPop(' + GENSEI + ')');
+  {
+    const art = doc.querySelector('#infopop .popart');
+    ok(!!art && art.style.backgroundImage.includes('card-art-gensei.jpg') && art.style.backgroundPosition === 'center 30%', 'CV27c: the Gensei pop band shows the BIG art at the same focus exception (center top shows the paradise window and vortex, the warriors essentially absent)');
   }
   window.eval('closeInfoPop()');
 
