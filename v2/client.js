@@ -77,7 +77,7 @@ const CARD_ART = { 99937011: 'mudora', 62320425: 'agido', 16135253: 'agido', 259
 // monster; unlike her she is not a keycard, so no cut-in
 // or BGM surface keys off this entry. Generic by design:
 // new decks and cards are data, not branches.
-const DECK_ART = { ishizu: { 36745317: 'mori-ishizu', 62133026: 'hana-ishizu', 9350312: 'oka-ishizu', 14108995: 'kakan-ishizu', 15079028: 'carbon-ishizu', 55702233: 'silky-ishizu', 45409943: 'luce-ishizu', 30100551: 'minerva-ishizu', 82633039: 'castel-ishizu', 62967433: 'baromett-ishizu' } }; // 森と目覚の春化精 / 花と野原の春化精 / 丘と芽吹の春化精 / 春化精の花冠 / 地久神－カルボン / 生きる偲びのシルキィ / 宵闇のルーチェ / ライトロード・セイント ミネルバ / 鳥銃士カステル / 神羊樹バロメット (Egyptian art, Ishizu deck only)
+const DECK_ART = { ishizu: { 36745317: 'mori-ishizu', 62133026: 'hana-ishizu', 9350312: 'oka-ishizu', 14108995: 'kakan-ishizu', 15079028: 'carbon-ishizu', 55702233: 'silky-ishizu', 45409943: 'luce-ishizu', 30100551: 'minerva-ishizu', 82633039: 'castel-ishizu', 62967433: 'baromett-ishizu', 37706769: 'pluto-ishizu' } }; // 森と目覚の春化精 / 花と野原の春化精 / 丘と芽吹の春化精 / 春化精の花冠 / 地久神－カルボン / 生きる偲びのシルキィ / 宵闇のルーチェ / ライトロード・セイント ミネルバ / 鳥銃士カステル / 神羊樹バロメット / 冥府の執行者 プルート (Egyptian art, Ishizu deck only)
 // Which deck each core seat is playing this duel ([seat0, seat1]),
 // set at duel start; nulls outside a duel. Every art surface
 // derives its deck context from the seat that owns the card

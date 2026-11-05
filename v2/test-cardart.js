@@ -119,6 +119,14 @@
      crown and ankh collar, lotus and the Nile below)
      in DECK_ART under ishizu — the fourth EXTRA-deck
      monster with an override, not a keycard.
+     The 11th entry is 《冥府の執行者 プルート》
+     (37706769, 23rd delivery follow-up): plain art
+     'pluto' (the purple-winged executor with his star
+     orb) in CARD_ART, 'pluto-ishizu' (the Egyptian
+     variant — gold-and-hieroglyph regalia, the ankh
+     sphere, the golden celestial dome with its scarab)
+     in DECK_ART under ishizu — the fifth EXTRA-deck
+     monster with an override, not a keycard.
      The opponent face-down rule binds the overrides exactly
      like the base art.
    - The 17th delivery (2026-11-04) is 《メタファイズ・
@@ -217,17 +225,32 @@
      purple-winged executor holding a star orb over a
      cratered planet) in CARD_ART, NOT a keycard — the
      fifth EXTRA-deck monster of the Ishizu deck with
-     individual art (x2 in the v11 EX), with NO
-     deck-scoped override. Band check, measured like the
-     others: his face sits high (eyes ~19%, chin ~25%
-     of the big file), so center top frames head, wings,
-     torso and the orb in the sheet band and the whole
-     face in the pop band — NO ART_FOCUS entry
+     individual art (x2 in the v11 EX), initially with
+     NO deck-scoped override. Band check, measured like
+     the others: his face sits high (eyes ~19%, chin
+     ~25% of the big file), so center top frames head,
+     wings, torso and the orb in the sheet band and the
+     whole face in the pop band — NO ART_FOCUS entry
      (reproductions: pluto-band-{sheet,pop}-top.jpg in
      the cropfix folder). CAF1 stays at eight entries.
      His registration also moves test-cardview's
      unlisted-EX exemplar role on to 《マナドゥム・
      トリロスークタ》 (21368273).
+     A follow-up the same day (#23b) adds his
+     deck-scoped override (the 11th DECK_ART entry):
+     inside the Ishizu deck he resolves to
+     'pluto-ishizu', the Egyptian variant (gold-and-
+     hieroglyph regalia, the ankh sphere, the golden
+     celestial dome with its scarab); any other deck
+     context keeps 'pluto'. The variant was band-
+     measured separately like the other pairs: his
+     face sits high in the Egyptian painting too
+     (eyes ~19%, chin ~24% of the big file), so
+     center top seats the whole face mid-band in both
+     bands — NO ART_FOCUS entry for the variant
+     either (reproductions: pluto-ishizu-band-
+     {sheet,pop}-{top,20}.jpg in the cropfix folder).
+     CAF1 stays at eight entries.
    Method: boot the real client in jsdom (harness as test-setvis),
    paint a fabricated board through the client's own render() and
    assert the DOM contract in one synchronous eval. */
@@ -292,7 +315,8 @@ for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.
                          ['card-art-castel-ishizu-s.jpg', 320, 320], ['card-art-castel-ishizu.jpg', 640, 882],
                          ['card-art-baromett-s.jpg', 320, 320], ['card-art-baromett.jpg', 640, 882],
                          ['card-art-baromett-ishizu-s.jpg', 320, 320], ['card-art-baromett-ishizu.jpg', 640, 882],
-                         ['card-art-pluto-s.jpg', 320, 320], ['card-art-pluto.jpg', 640, 882]]) {
+                         ['card-art-pluto-s.jpg', 320, 320], ['card-art-pluto.jpg', 640, 882],
+                         ['card-art-pluto-ishizu-s.jpg', 320, 320], ['card-art-pluto-ishizu.jpg', 640, 882]]) {
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
@@ -495,6 +519,10 @@ async function boot() {
     plutoBig: cardArtFile(${PLUTO}, true),
     plutoDeckArt: DECK_ART.ishizu && DECK_ART.ishizu[${PLUTO}],
     plutoIshizu: cardArtFile(${PLUTO}, false, 'ishizu'),
+    plutoIshizuSmall: cardArtFile(${PLUTO}, false, 'ishizu'),
+    plutoIshizuBig: cardArtFile(${PLUTO}, true, 'ishizu'),
+    plutoIshizuInline: artInline(${PLUTO}, false, 'ishizu'),
+    plutoGg: cardArtFile(${PLUTO}, false, 'gg'),
     focusTable: ART_FOCUS,
     focusChaosBig: artCss(${CHAOSPOD}, true),
     focusChaosSmall: artCss(${CHAOSPOD}, false),
@@ -531,6 +559,10 @@ async function boot() {
     focusPlutoBig: artCss(${PLUTO}, true),
     focusPlutoSmall: artCss(${PLUTO}, false),
     focusApplyPluto: (() => { const d = document.createElement('div'); artApply(d, ${PLUTO}, true); return d.style.backgroundPosition; })(),
+    focusPlutoBigIshizu: artCss(${PLUTO}, true, 'ishizu'),
+    focusPlutoBigGg: artCss(${PLUTO}, true, 'gg'),
+    focusPlutoSmallIshizu: artCss(${PLUTO}, false, 'ishizu'),
+    focusApplyPlutoIshizu: (() => { const d = document.createElement('div'); artApply(d, ${PLUTO}, true, 'ishizu'); return d.style.backgroundPosition; })(),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.classicAgidoSlug === 'agido' && helpers.classicAgidoInline.includes('card-art-agido-s.jpg'), 'CA7b2: user ruling 2026-11-04 — the CLASSIC Agido (16135253) aliases the same agido art');
@@ -628,7 +660,10 @@ async function boot() {
   ok(helpers.plutoSlug === 'pluto' && helpers.plutoInline.includes('card-art-pluto-s.jpg') && helpers.plutoInline.includes('background-position:center top'), 'CA7z68: Pluto maps and stamps like the others (23rd delivery)');
   ok(helpers.plutoSmall === '../assets/card-art-pluto-s.jpg' && helpers.plutoBig === '../assets/card-art-pluto.jpg', 'CA7z69: Pluto art files resolve (small + big)');
   ok(helpers.preloaded.includes('../assets/card-art-pluto-s.jpg') && helpers.preloaded.includes('../assets/card-art-pluto.jpg'), 'CA7z70: boot preloads Pluto too (EXTRA-deck membership warms the art from deck-select time)');
-  ok(helpers.plutoDeckArt === undefined && helpers.plutoIshizu === '../assets/card-art-pluto-s.jpg', 'CA7z71: Pluto has NO deck-scoped override — Ishizu context keeps the plain art');
+  ok(helpers.plutoDeckArt === 'pluto-ishizu', 'CA7z71: DECK_ART registers Pluto -> pluto-ishizu for the Ishizu deck (11th entry — the fifth EXTRA-deck monster with an override)');
+  ok(helpers.plutoIshizuSmall === '../assets/card-art-pluto-ishizu-s.jpg' && helpers.plutoIshizuBig === '../assets/card-art-pluto-ishizu.jpg' && helpers.plutoIshizuInline.includes('card-art-pluto-ishizu-s.jpg'), 'CA7z72: Ishizu context resolves Pluto to the Egyptian art (small + big)');
+  ok(helpers.plutoGg === '../assets/card-art-pluto-s.jpg', 'CA7z73: GG context resolves Pluto to the plain star-orb art');
+  ok(helpers.preloaded.includes('../assets/card-art-pluto-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-pluto-ishizu.jpg'), 'CA7z74: boot preloads the deck-scoped Pluto art too (EXTRA-deck membership warms it)');
   // ---- focus exceptions (user ruling 2026-11-05): ART_FOCUS shifts
   // the BIG-file band position for the three measured slugs only ----
   ok(Object.keys(helpers.focusTable).length === 8 && helpers.focusTable.chaospod === 'center 85%' && helpers.focusTable.luce === 'center 38%' && helpers.focusTable['luce-ishizu'] === 'center 38%' && helpers.focusTable.minerva === 'center 20%' && helpers.focusTable['minerva-ishizu'] === 'center 20%' && helpers.focusTable['castel-ishizu'] === 'center 20%' && helpers.focusTable.baromett === 'center 40%' && helpers.focusTable['baromett-ishizu'] === 'center 40%', 'CAF1: ART_FOCUS holds exactly the eight measured exceptions (chaospod 85%, luce / luce-ishizu 38%, minerva / minerva-ishizu / castel-ishizu 20%, baromett / baromett-ishizu 40%)');
@@ -663,6 +698,9 @@ async function boot() {
   ok(helpers.focusApplyBaromettIshizu === 'center 40%', 'CAF30: artApply agrees with artCss for the Ishizu-deck Baromett (big file, center 40%)');
   ok(helpers.focusPlutoBig.includes('card-art-pluto.jpg') && helpers.focusPlutoBig.includes('background-position:center top'), 'CAF31: the Pluto BIG art keeps center top — measured 2026-11-06: his face sits high (eyes ~19%, chin ~25% of the big file), so both bands frame head, wings and orb and the plain painting has NO focus exception');
   ok(helpers.focusPlutoSmall.includes('card-art-pluto-s.jpg') && helpers.focusPlutoSmall.includes('background-position:center top') && helpers.focusApplyPluto === 'center top', 'CAF32: the Pluto SMALL art and the artApply path also keep center top');
+  ok(helpers.focusPlutoBigIshizu.includes('card-art-pluto-ishizu.jpg') && helpers.focusPlutoBigIshizu.includes('background-position:center top'), 'CAF33: Pluto in the Ishizu deck resolves the Egyptian art at center top — measured separately on the Egyptian painting (2026-11-06): his face sits high there too (eyes ~19%, chin ~24% of the big file), so both bands frame the whole face and the variant has NO focus exception either');
+  ok(helpers.focusPlutoBigGg.includes('card-art-pluto.jpg') && !helpers.focusPlutoBigGg.includes('ishizu') && helpers.focusPlutoBigGg.includes('background-position:center top'), 'CAF34: Pluto in any other deck keeps the plain art at center top');
+  ok(helpers.focusPlutoSmallIshizu.includes('card-art-pluto-ishizu-s.jpg') && helpers.focusPlutoSmallIshizu.includes('background-position:center top') && helpers.focusApplyPlutoIshizu === 'center top', 'CAF35: the deck-variant SMALL art and the artApply path keep center top too');
   ok(helpers.kakanSlug === 'kakan' && helpers.kakanInline.includes('card-art-kakan-s.jpg') && helpers.kakanInline.includes('background-position:center top'), 'CA7aa: Kakan maps and stamps like the others (plain art = the forest painting)');
   ok(helpers.preloaded.includes('../assets/card-art-kakan-s.jpg') && helpers.preloaded.includes('../assets/card-art-kakan.jpg'), 'CA7ab: boot preloads Kakan too (same deck)');
   ok(helpers.deckArtKakan === 'kakan-ishizu', 'CA7z17: DECK_ART registers Kakan -> kakan-ishizu for the Ishizu deck (4th entry, first SPELL with an override)');
@@ -1442,12 +1480,13 @@ async function boot() {
   ok(res17.oppDown === '' && !String(res17.oppDown).includes('baromett'), 'CA13t: opponent FACE-DOWN Baromett gets NO art (asymmetry / no leak)');
   ok(res17.pv.includes('card-art-baromett-ishizu-s.jpg'), 'CA16z7: resident preview shows the deck-scoped Baromett art (unique deck membership: Ishizu)');
 
-  // ---- 23rd delivery board: Pluto (37706769), the fifth
-  // EXTRA-deck monster with individual art — plain art
-  // only (NO deck-scoped override): both seats' face-up
-  // tiles show the plain 'pluto' art under their own deck
-  // context; an opponent FACE-DOWN Pluto must NOT carry
-  // any art. ----
+  // ---- Pluto board (23rd delivery + #23b override):
+  // an EXTRA-deck monster whose owner-deck resolution
+  // mirrors the Baromett board above: seat 0 (Ishizu)
+  // shows the DECK-SCOPED Egyptian art (pluto-ishizu);
+  // the opponent's face-up Pluto under the GG deck
+  // context keeps the plain art; an opponent FACE-DOWN
+  // Pluto must NOT carry any art. ----
   const res18 = await window.eval(`
     (() => {
       const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
@@ -1468,10 +1507,10 @@ async function boot() {
     })()
   `);
   ok(res18.ownUp !== null && res18.oppUp !== null && res18.oppDown !== null, 'CA36: non-vacuity — Pluto board rendered');
-  ok(res18.ownUp.includes('card-art-pluto-s.jpg'), 'CA11ap: own face-up Pluto tile (seat 0) shows the plain art (no deck override)');
-  ok(res18.oppUp.includes('card-art-pluto-s.jpg'), 'CA11aq: opponent FACE-UP Pluto shows the plain art too (public information)');
+  ok(res18.ownUp.includes('card-art-pluto-ishizu-s.jpg'), 'CA11ap: own face-up Pluto tile in the Ishizu deck (seat 0) shows the DECK-SCOPED Egyptian art');
+  ok(res18.oppUp.includes('card-art-pluto-s.jpg') && !res18.oppUp.includes('pluto-ishizu'), 'CA11aq: opponent FACE-UP Pluto under the GG deck context shows the plain art (public information, owner-deck resolution)');
   ok(res18.oppDown === '' && !String(res18.oppDown).includes('pluto'), 'CA13u: opponent FACE-DOWN Pluto gets NO art (asymmetry / no leak)');
-  ok(res18.pv.includes('card-art-pluto-s.jpg'), 'CA16z8: resident preview shows the Pluto art (unique deck membership: Ishizu)');
+  ok(res18.pv.includes('card-art-pluto-ishizu-s.jpg'), 'CA16z8: resident preview shows the deck-scoped Pluto art (unique deck membership: Ishizu)');
 
   window.close();
   console.log(failures === 0 ? 'ALL CARDART CHECKS PASSED' : failures + ' CARDART CHECK(S) FAILED');
