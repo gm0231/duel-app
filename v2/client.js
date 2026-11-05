@@ -117,7 +117,14 @@ function cardArtFile(code, big, deckKey) {
 // card only. Measured 2026-11-05 over every registered art (26
 // slugs) by reproducing both bands (detail sheet 390 x 280, info
 // pop 390 x 180, background-size cover) from the delivered big
-// files; full table in the brushup cropfix report. Only three
+// files; full table in the brushup cropfix report.
+// Re-measured 2026-11-06 for the detail-band-400 round (the
+// sheet band grew to 390 x 400; the pop band is unchanged): at
+// any position the new sheet window strictly contains the old
+// one and the pop window is identical, and the reproductions
+// (cropfix band400-<slug>-*) confirm every subject still sits
+// inside both bands — all nine exceptions below stand with
+// their values unchanged. Only three
 // qualified: 《カオスポッド》 — the pod itself sits at y 55-85% of
 // the frame, so the band showed the shelf and jar tops only;
 // 《宵闇のルーチェ》 (both paintings) — her head and torso sit at

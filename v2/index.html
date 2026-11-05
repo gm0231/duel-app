@@ -301,8 +301,22 @@
      placeholder the cut-in big card falls back to). Near full sheet
      width; the height cap crops from the BOTTOM only — the inline
      style pins background-position to center top, per the standing
-     keep-the-top rule. */
-  #sheet .infoart{width:100%;height:min(280px,44dvh);border-radius:8px;border:1px solid var(--gold-dim);background:#3a2f1d url('../assets/card-art-placeholder.jpg') center/cover;margin-bottom:10px;}
+     keep-the-top rule.
+     detail-band-400 round (user ruling 2026-11-06): the band grows
+     280px -> 400px at the 390px reference width — the portrait art
+     was wasted in a landscape band; at 390 wide the big file scales
+     to ~537px tall, so 400px shows ~74% of it (was ~52%). The dvh
+     cap keeps the same office as the old 44dvh one (the band may
+     not monopolise a short viewport): 60dvh reaches the full 400px
+     from a 667px-tall viewport up, and still gives 372px at 620px,
+     with the rest of the sheet (name / stats / text / the sticky
+     close row) reached by the sheet's own internal scroll, as
+     before. The .popart band is NOT part of this ruling and keeps
+     min(180px,30dvh). The nine ART_FOCUS exceptions were
+     re-measured against the new band (cropfix band400-*): the new
+     sheet window strictly contains the old one at every position
+     and the pop window is unchanged, so all nine values stand. */
+  #sheet .infoart{width:100%;height:min(400px,60dvh);border-radius:8px;border:1px solid var(--gold-dim);background:#3a2f1d url('../assets/card-art-placeholder.jpg') center/cover;margin-bottom:10px;}
   /* brushup round 2 (sheet-open stall): long sheet lists skip the
      layout/paint of rows below the fold until they scroll near
      (content-visibility:auto; the 'auto' intrinsic size is the
