@@ -77,7 +77,7 @@ const CARD_ART = { 99937011: 'mudora', 62320425: 'agido', 16135253: 'agido', 259
 // monster; unlike her she is not a keycard, so no cut-in
 // or BGM surface keys off this entry. Generic by design:
 // new decks and cards are data, not branches.
-const DECK_ART = { ishizu: { 36745317: 'mori-ishizu', 62133026: 'hana-ishizu', 9350312: 'oka-ishizu', 14108995: 'kakan-ishizu', 15079028: 'carbon-ishizu', 55702233: 'silky-ishizu', 45409943: 'luce-ishizu', 30100551: 'minerva-ishizu', 82633039: 'castel-ishizu' } }; // 森と目覚の春化精 / 花と野原の春化精 / 丘と芽吹の春化精 / 春化精の花冠 / 地久神－カルボン / 生きる偲びのシルキィ / 宵闇のルーチェ / ライトロード・セイント ミネルバ / 鳥銃士カステル (Egyptian art, Ishizu deck only)
+const DECK_ART = { ishizu: { 36745317: 'mori-ishizu', 62133026: 'hana-ishizu', 9350312: 'oka-ishizu', 14108995: 'kakan-ishizu', 15079028: 'carbon-ishizu', 55702233: 'silky-ishizu', 45409943: 'luce-ishizu', 30100551: 'minerva-ishizu', 82633039: 'castel-ishizu', 62967433: 'baromett-ishizu' } }; // 森と目覚の春化精 / 花と野原の春化精 / 丘と芽吹の春化精 / 春化精の花冠 / 地久神－カルボン / 生きる偲びのシルキィ / 宵闇のルーチェ / ライトロード・セイント ミネルバ / 鳥銃士カステル / 神羊樹バロメット (Egyptian art, Ishizu deck only)
 // Which deck each core seat is playing this duel ([seat0, seat1]),
 // set at duel start; nulls outside a duel. Every art surface
 // derives its deck context from the seat that owns the card
@@ -170,7 +170,20 @@ function cardArtFile(code, big, deckKey) {
 // both bands (reproductions in the cropfix folder:
 // baromett-band-{sheet,pop}-{top,30,40,50}.jpg, with
 // -before / -after aliases for the top / 40% pair).
-const ART_FOCUS = { chaospod: 'center 85%', luce: 'center 38%', 'luce-ishizu': 'center 38%', minerva: 'center 20%', 'minerva-ishizu': 'center 20%', 'castel-ishizu': 'center 20%', baromett: 'center 40%' };
+// An 8th entry arrived with delivery #22b (2026-11-06), the
+// deck-scoped override for 《神羊樹バロメット》 (the 10th
+// DECK_ART entry), judged separately like the other pairs:
+// in the Egyptian painting her face sits mid-frame just as
+// in the plain one (eyes ~50% of the delivered big file),
+// so center top again leaves the pop band showing rainbow
+// light and vine curls with the sheep essentially absent,
+// while 'center 40%' — the same value as the plain
+// painting — seats the whole head, golden crown, horns,
+// face, muzzle and ankh collar mid-band in both bands
+// (reproductions in the cropfix folder:
+// baromett-ishizu-band-{sheet,pop}-{top,40,50}.jpg, with
+// -before / -after aliases for the top / 40% pair).
+const ART_FOCUS = { chaospod: 'center 85%', luce: 'center 38%', 'luce-ishizu': 'center 38%', minerva: 'center 20%', 'minerva-ishizu': 'center 20%', 'castel-ishizu': 'center 20%', baromett: 'center 40%', 'baromett-ishizu': 'center 40%' };
 function artPosition(code, big, deckKey) {
   if (!big) return 'center top';
   const s = artSlug(code, deckKey);
