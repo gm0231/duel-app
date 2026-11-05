@@ -22,6 +22,14 @@
      (2026-11-05 replacement): center top leaves her face at the
      pop band's bottom edge with the chin clipped, the old 40%
      cuts her eyes off, 20% centers the face in both bands.
+     A 5th arrived with her deck-scoped override, judged
+     separately like luce / luce-ishizu: minerva-ishizu —
+     in the Egyptian painting her face sits at the same height
+     as on the v2 plain painting (eyes ~29% of the big file),
+     so center top again leaves her mouth and chin outside
+     the pop band, and 'center 20%' centers face, torso and
+     owl in both bands (reproductions: minerva-ishizu-band-
+     {sheet,pop}-{top,20}.jpg in the cropfix folder).
      The small file keeps center top on every surface
      (CAF block).
    - Surfaces: board tile art (face-visible states only), hand,
@@ -56,7 +64,14 @@
      'luce' (the white-winged painting) in CARD_ART,
      'luce-ishizu' (the all-gold Egyptian form) in DECK_ART
      under ishizu — the first EXTRA-deck monster and the
-     first keycard with an override. The opponent
+     first keycard with an override. The 8th entry is
+     《ライトロード・セイント ミネルバ》 (30100551,
+     20th delivery follow-up): plain art 'minerva' (the
+     floating cathedral painting) in CARD_ART,
+     'minerva-ishizu' (the Egyptian temple variant —
+     blue-and-gold feathered wings, hieroglyph pillars)
+     in DECK_ART under ishizu — the second EXTRA-deck
+     monster with an override, not a keycard. The opponent
      face-down rule binds the overrides exactly like the base art.
    - The 17th delivery (2026-11-04) is 《メタファイズ・
      ホルス・ドラゴン》 (36898537): plain art 'horus' (the
@@ -87,10 +102,15 @@
      セイント ミネルバ》 (30100551): plain art 'minerva'
      (the winged saint with her owl; v2 painting — floating
      in the cathedral — replaced v1 the same day) in CARD_ART,
-     NO deck-scoped override and NOT a keycard — the second
-     EXTRA-deck monster of the Ishizu deck with individual
-     art (x2 in the v11 EX). She is also the 4th ART_FOCUS
-     entry ('center 20%', see above).
+     NOT a keycard — the second EXTRA-deck monster of the
+     Ishizu deck with individual art (x2 in the v11 EX).
+     A same-day follow-up adds her deck-scoped override
+     (the 8th DECK_ART entry): inside the Ishizu deck she
+     resolves to 'minerva-ishizu', the Egyptian temple
+     variant; any other deck context keeps 'minerva'.
+     She is also the 4th ART_FOCUS entry ('center 20%'),
+     and the variant is the 5th ('center 20%', measured
+     separately — see above).
    Method: boot the real client in jsdom (harness as test-setvis),
    paint a fabricated board through the client's own render() and
    assert the DOM contract in one synchronous eval. */
@@ -149,7 +169,8 @@ for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.
                          ['card-art-hakamori-s.jpg', 320, 320], ['card-art-hakamori.jpg', 640, 882],
                          ['card-art-luce-s.jpg', 320, 320], ['card-art-luce.jpg', 640, 882],
                          ['card-art-luce-ishizu-s.jpg', 320, 320], ['card-art-luce-ishizu.jpg', 640, 882],
-                         ['card-art-minerva-s.jpg', 320, 320], ['card-art-minerva.jpg', 640, 882]]) {
+                         ['card-art-minerva-s.jpg', 320, 320], ['card-art-minerva.jpg', 640, 882],
+                         ['card-art-minerva-ishizu-s.jpg', 320, 320], ['card-art-minerva-ishizu.jpg', 640, 882]]) {
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
@@ -316,6 +337,10 @@ async function boot() {
     minervaBig: cardArtFile(${MINERVA}, true),
     minervaDeckArt: DECK_ART.ishizu && DECK_ART.ishizu[${MINERVA}],
     minervaIshizu: cardArtFile(${MINERVA}, false, 'ishizu'),
+    minervaIshizuSmall: cardArtFile(${MINERVA}, false, 'ishizu'),
+    minervaIshizuBig: cardArtFile(${MINERVA}, true, 'ishizu'),
+    minervaIshizuInline: artInline(${MINERVA}, false, 'ishizu'),
+    minervaGg: cardArtFile(${MINERVA}, false, 'gg'),
     focusTable: ART_FOCUS,
     focusChaosBig: artCss(${CHAOSPOD}, true),
     focusChaosSmall: artCss(${CHAOSPOD}, false),
@@ -331,6 +356,10 @@ async function boot() {
     focusMinervaBig: artCss(${MINERVA}, true),
     focusMinervaSmall: artCss(${MINERVA}, false),
     focusApplyMinerva: (() => { const d = document.createElement('div'); artApply(d, ${MINERVA}, true); return d.style.backgroundPosition; })(),
+    focusMinervaBigIshizu: artCss(${MINERVA}, true, 'ishizu'),
+    focusMinervaBigGg: artCss(${MINERVA}, true, 'gg'),
+    focusMinervaSmallIshizu: artCss(${MINERVA}, false, 'ishizu'),
+    focusApplyMinervaIshizu: (() => { const d = document.createElement('div'); artApply(d, ${MINERVA}, true, 'ishizu'); return d.style.backgroundPosition; })(),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.classicAgidoSlug === 'agido' && helpers.classicAgidoInline.includes('card-art-agido-s.jpg'), 'CA7b2: user ruling 2026-11-04 — the CLASSIC Agido (16135253) aliases the same agido art');
@@ -407,10 +436,13 @@ async function boot() {
   ok(helpers.minervaSlug === 'minerva' && helpers.minervaInline.includes('card-art-minerva-s.jpg') && helpers.minervaInline.includes('background-position:center top'), 'CA7z46: Minerva maps and stamps like the others (20th delivery)');
   ok(helpers.minervaSmall === '../assets/card-art-minerva-s.jpg' && helpers.minervaBig === '../assets/card-art-minerva.jpg', 'CA7z47: Minerva art files resolve (small + big)');
   ok(helpers.preloaded.includes('../assets/card-art-minerva-s.jpg') && helpers.preloaded.includes('../assets/card-art-minerva.jpg'), 'CA7z48: boot preloads Minerva too (EXTRA-deck membership warms the art from deck-select time)');
-  ok(!helpers.minervaDeckArt && helpers.minervaIshizu === '../assets/card-art-minerva-s.jpg', 'CA7z49: Minerva has NO deck-scoped override — the Ishizu context resolves the plain art');
+  ok(helpers.minervaDeckArt === 'minerva-ishizu', 'CA7z50: DECK_ART registers Minerva -> minerva-ishizu for the Ishizu deck (8th entry — the second EXTRA-deck monster with an override)');
+  ok(helpers.minervaIshizuSmall === '../assets/card-art-minerva-ishizu-s.jpg' && helpers.minervaIshizuBig === '../assets/card-art-minerva-ishizu.jpg' && helpers.minervaIshizuInline.includes('card-art-minerva-ishizu-s.jpg'), 'CA7z51: Ishizu context resolves Minerva to the Egyptian temple art (small + big)');
+  ok(helpers.minervaGg === '../assets/card-art-minerva-s.jpg', 'CA7z52: GG context resolves Minerva to the plain floating-cathedral art');
+  ok(helpers.preloaded.includes('../assets/card-art-minerva-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-minerva-ishizu.jpg'), 'CA7z53: boot preloads the deck-scoped Minerva art too (EXTRA-deck membership warms it)');
   // ---- focus exceptions (user ruling 2026-11-05): ART_FOCUS shifts
   // the BIG-file band position for the three measured slugs only ----
-  ok(Object.keys(helpers.focusTable).length === 4 && helpers.focusTable.chaospod === 'center 85%' && helpers.focusTable.luce === 'center 38%' && helpers.focusTable['luce-ishizu'] === 'center 38%' && helpers.focusTable.minerva === 'center 20%', 'CAF1: ART_FOCUS holds exactly the four measured exceptions (chaospod 85%, luce / luce-ishizu 38%, minerva 20% — re-measured on the v2 painting)');
+  ok(Object.keys(helpers.focusTable).length === 5 && helpers.focusTable.chaospod === 'center 85%' && helpers.focusTable.luce === 'center 38%' && helpers.focusTable['luce-ishizu'] === 'center 38%' && helpers.focusTable.minerva === 'center 20%' && helpers.focusTable['minerva-ishizu'] === 'center 20%', 'CAF1: ART_FOCUS holds exactly the five measured exceptions (chaospod 85%, luce / luce-ishizu 38%, minerva / minerva-ishizu 20%)');
   ok(helpers.focusChaosBig.includes('card-art-chaospod.jpg') && helpers.focusChaosBig.includes('background-position:center 85%'), 'CAF2: Chaos Pod BIG art carries its focus position (center 85%)');
   ok(helpers.focusChaosSmall.includes('card-art-chaospod-s.jpg') && helpers.focusChaosSmall.includes('background-position:center top'), 'CAF3: Chaos Pod SMALL art keeps center top (the exception is big-file only)');
   ok(helpers.focusLuceBig.includes('card-art-luce.jpg') && helpers.focusLuceBig.includes('background-position:center 38%'), 'CAF4: Luce BIG art carries its focus position (center 38%)');
@@ -423,6 +455,10 @@ async function boot() {
   ok(helpers.focusMinervaBig.includes('card-art-minerva.jpg') && helpers.focusMinervaBig.includes('background-position:center 20%'), 'CAF11: Minerva BIG art carries her focus position (center 20% — re-measured on the v2 painting, 2026-11-05)');
   ok(helpers.focusMinervaSmall.includes('card-art-minerva-s.jpg') && helpers.focusMinervaSmall.includes('background-position:center top'), 'CAF12: Minerva SMALL art keeps center top (the exception is big-file only)');
   ok(helpers.focusApplyMinerva === 'center 20%', 'CAF13: artApply agrees with artCss for Minerva (big file, center 20%)');
+  ok(helpers.focusMinervaBigIshizu.includes('card-art-minerva-ishizu.jpg') && helpers.focusMinervaBigIshizu.includes('background-position:center 20%'), 'CAF14: Minerva in the Ishizu deck resolves the Egyptian art WITH its own focus entry (slug-keyed, center 20% — measured on the Egyptian painting)');
+  ok(helpers.focusMinervaBigGg.includes('card-art-minerva.jpg') && !helpers.focusMinervaBigGg.includes('ishizu') && helpers.focusMinervaBigGg.includes('background-position:center 20%'), 'CAF15: Minerva in any other deck keeps the plain art and the same focus position');
+  ok(helpers.focusMinervaSmallIshizu.includes('card-art-minerva-ishizu-s.jpg') && helpers.focusMinervaSmallIshizu.includes('background-position:center top'), 'CAF16: the deck-variant SMALL art keeps center top too');
+  ok(helpers.focusApplyMinervaIshizu === 'center 20%', 'CAF17: artApply agrees with artCss for the Ishizu-deck Minerva (big file, center 20%)');
   ok(helpers.kakanSlug === 'kakan' && helpers.kakanInline.includes('card-art-kakan-s.jpg') && helpers.kakanInline.includes('background-position:center top'), 'CA7aa: Kakan maps and stamps like the others (plain art = the forest painting)');
   ok(helpers.preloaded.includes('../assets/card-art-kakan-s.jpg') && helpers.preloaded.includes('../assets/card-art-kakan.jpg'), 'CA7ab: boot preloads Kakan too (same deck)');
   ok(helpers.deckArtKakan === 'kakan-ishizu', 'CA7z17: DECK_ART registers Kakan -> kakan-ishizu for the Ishizu deck (4th entry, first SPELL with an override)');
@@ -1104,11 +1140,15 @@ async function boot() {
   ok(res14.pvSeat0.includes('card-art-luce-s.jpg') && !res14.pvSeat0.includes('luce-ishizu'), 'CA16z3: preview of a GG-context Luce (instance ref) shows the plain art');
   ok(res14.pvSeat1.includes('card-art-luce-ishizu-s.jpg'), 'CA16z4: preview of an Ishizu-context Luce (instance ref) shows the all-gold art');
 
-  // ---- Minerva board (20th delivery): an EXTRA-deck
-  // monster with a PLAIN registration — no deck override,
-  // so every deck context resolves the same 'minerva'
-  // painting. The opponent face-down rule binds her
-  // exactly like the base arts. ----
+  // ---- Minerva board (20th delivery + its deck-scoped
+  // override, the 8th DECK_ART entry): an EXTRA-deck
+  // monster. Seat 0 plays the Ishizu deck in this boot, so
+  // her own tile and the code-only resident preview carry
+  // the DECK-SCOPED Egyptian art (minerva-ishizu); the
+  // opponent's face-up Minerva sits under the GG deck
+  // context and keeps the plain 'minerva' painting; an
+  // opponent FACE-DOWN Minerva must NOT carry any art
+  // (asymmetry binds the 8th override too). ----
   const res15 = await window.eval(`
     (() => {
       const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
@@ -1129,10 +1169,10 @@ async function boot() {
     })()
   `);
   ok(res15.ownUp !== null && res15.oppUp !== null && res15.oppDown !== null, 'CA33: non-vacuity — Minerva board rendered');
-  ok(res15.ownUp.includes('card-art-minerva-s.jpg'), 'CA11aj: own face-up Minerva tile shows the new art (20th delivery)');
-  ok(res15.oppUp.includes('card-art-minerva-s.jpg'), 'CA11ak: opponent FACE-UP Minerva shows the art too (public information)');
+  ok(res15.ownUp.includes('card-art-minerva-ishizu-s.jpg'), 'CA11aj: own face-up Minerva tile in the Ishizu deck (seat 0) shows the DECK-SCOPED Egyptian art');
+  ok(res15.oppUp.includes('card-art-minerva-s.jpg') && !res15.oppUp.includes('minerva-ishizu'), 'CA11ak: opponent FACE-UP Minerva under the GG deck context shows the plain art (public information, owner-deck resolution)');
   ok(res15.oppDown === '' && !String(res15.oppDown).includes('minerva'), 'CA13r: opponent FACE-DOWN Minerva gets NO art (asymmetry / no leak)');
-  ok(res15.pv.includes('card-art-minerva-s.jpg'), 'CA16z5: resident preview shows the Minerva art (unique deck membership: Ishizu)');
+  ok(res15.pv.includes('card-art-minerva-ishizu-s.jpg'), 'CA16z5: resident preview shows the deck-scoped Minerva art (unique deck membership: Ishizu)');
 
   window.close();
   console.log(failures === 0 ? 'ALL CARDART CHECKS PASSED' : failures + ' CARDART CHECK(S) FAILED');

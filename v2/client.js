@@ -66,9 +66,18 @@ const CARD_ART = { 99937011: 'mudora', 62320425: 'agido', 16135253: 'agido', 259
 // she wears the all-gold Egyptian form (golden wings,
 // Eye-of-Horus shields, the pyramids and the Nile below).
 // As a keycard, her summon cut-in inside an Ishizu duel
-// resolves this art too. Generic by design: new decks and
-// cards are data, not branches.
-const DECK_ART = { ishizu: { 36745317: 'mori-ishizu', 62133026: 'hana-ishizu', 9350312: 'oka-ishizu', 14108995: 'kakan-ishizu', 15079028: 'carbon-ishizu', 55702233: 'silky-ishizu', 45409943: 'luce-ishizu' } }; // 森と目覚の春化精 / 花と野原の春化精 / 丘と芽吹の春化精 / 春化精の花冠 / 地久神－カルボン / 生きる偲びのシルキィ / 宵闇のルーチェ (Egyptian art, Ishizu deck only)
+// resolves this art too. The 8th entry is 《ライトロード・
+// セイント ミネルバ》 (30100551, user art 2026-11-05, the
+// deck-override companion to the 20th delivery): the
+// floating cathedral painting stays in CARD_ART as the
+// plain art any other deck sees, while inside the Ishizu
+// deck she floats over an Egyptian temple hall instead —
+// blue-and-gold feathered wings, hieroglyph pillars, the
+// same owl on her hand. Like Luce she is an EXTRA-deck
+// monster; unlike her she is not a keycard, so no cut-in
+// or BGM surface keys off this entry. Generic by design:
+// new decks and cards are data, not branches.
+const DECK_ART = { ishizu: { 36745317: 'mori-ishizu', 62133026: 'hana-ishizu', 9350312: 'oka-ishizu', 14108995: 'kakan-ishizu', 15079028: 'carbon-ishizu', 55702233: 'silky-ishizu', 45409943: 'luce-ishizu', 30100551: 'minerva-ishizu' } }; // 森と目覚の春化精 / 花と野原の春化精 / 丘と芽吹の春化精 / 春化精の花冠 / 地久神－カルボン / 生きる偲びのシルキィ / 宵闇のルーチェ / ライトロード・セイント ミネルバ (Egyptian art, Ishizu deck only)
 // Which deck each core seat is playing this duel ([seat0, seat1]),
 // set at duel start; nulls outside a duel. Every art surface
 // derives its deck context from the seat that owns the card
@@ -131,7 +140,17 @@ function cardArtFile(code, big, deckKey) {
 // centers her face in the pop band and seats face and torso
 // mid-band in the sheet band (before/after reproductions in the
 // cropfix folder: minerva-band-{sheet,pop}-{before,after}.jpg).
-const ART_FOCUS = { chaospod: 'center 85%', luce: 'center 38%', 'luce-ishizu': 'center 38%', minerva: 'center 20%' };
+// A 5th entry arrived the same day with her deck-scoped
+// override (the 8th DECK_ART entry), judged separately like
+// luce / luce-ishizu: in the Egyptian painting her face sits
+// at the same height as the v2 plain painting (eyes ~29% of
+// the delivered big file), so center top again pushes her
+// face to the pop band's bottom edge with the mouth and chin
+// outside it, while 'center 20%' — the same value as the
+// plain painting — centers face, torso and owl in both
+// bands (reproductions in the cropfix folder:
+// minerva-ishizu-band-{sheet,pop}-{top,20}.jpg).
+const ART_FOCUS = { chaospod: 'center 85%', luce: 'center 38%', 'luce-ishizu': 'center 38%', minerva: 'center 20%', 'minerva-ishizu': 'center 20%' };
 function artPosition(code, big, deckKey) {
   if (!big) return 'center top';
   const s = artSlug(code, deckKey);
