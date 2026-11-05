@@ -54,7 +54,7 @@ const MUDORA = 99937011, KELBEK = 25926710, MORI = 36745317, HORUS = 36898537;
 const UNLISTED = 17484499;      // Gensei to Meikai no Gyakuten — Ishizu main, no individual art (see test-cardart; classic Agido gained the agido alias by the 2026-11-04 user ruling)
 const PLUTO = 37706769;         // 冥府の執行者 プルート — Ishizu EX, no individual art (the unlisted-EX exemplar role sat with Luce 45409943 until she gained art in the 19th delivery, 2026-11-05)
 const CHAOSPOD = 79106360, LUCE = 45409943; // ART_FOCUS exemplars (focus-exception round, 2026-11-05)
-const MINERVA = 30100551;       // ライトロード・セイント ミネルバ — 20th delivery (2026-11-05), plain CARD_ART + the 4th ART_FOCUS entry ('center 40%')
+const MINERVA = 30100551;       // ライトロード・セイント ミネルバ — 20th delivery (2026-11-05), plain CARD_ART + the 4th ART_FOCUS entry ('center 20%' on the v2 painting)
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -244,12 +244,12 @@ async function boot() {
   {
     const art = doc.querySelector('#sheet .infoart');
     ok(!!art && art.style.backgroundImage.includes('card-art-minerva.jpg') && !art.style.backgroundImage.includes('-s.jpg'), 'CV18: the Minerva detail art is the BIG file (20th delivery)');
-    ok(!!art && art.style.backgroundPosition === 'center 40%', 'CV18b: the Minerva detail band shifts to its focus exception (center 40%) — her face sits inside the band, not at its bottom edge');
+    ok(!!art && art.style.backgroundPosition === 'center 20%', 'CV18b: the Minerva detail band shifts to its focus exception (center 20%) — on the v2 painting her face sits centered in the band');
   }
   window.eval('openInfoPop(' + MINERVA + ')');
   {
     const art = doc.querySelector('#infopop .popart');
-    ok(!!art && art.style.backgroundPosition === 'center 40%', 'CV19: the Minerva pop band uses the same focus exception (center top would show dome, light rays and banner only)');
+    ok(!!art && art.style.backgroundPosition === 'center 20%', 'CV19: the Minerva pop band uses the same focus exception (center top pushes her face to the band bottom edge, chin clipped; the v1 value 40% would cut her eyes off on the v2 painting)');
   }
   window.eval('closeInfoPop()');
 
