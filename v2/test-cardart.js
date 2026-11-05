@@ -16,9 +16,13 @@
      cards). Three slugs qualified in the full pass (measured over
      all 26): chaospod 'center 85%', luce / luce-ishizu
      'center 38%'. A 4th arrived with the 20th delivery, measured
-     the same way on its own: minerva 'center 40%' (her face sits
-     at ~43% of the frame — the pop band showed dome and banner
-     alone). The small file keeps center top on every surface
+     the same way on its own: minerva — originally 'center 40%'
+     for the enthroned v1 painting (face at ~43% of the frame);
+     re-measured at 'center 20%' for the floating v2 painting
+     (2026-11-05 replacement): center top leaves her face at the
+     pop band's bottom edge with the chin clipped, the old 40%
+     cuts her eyes off, 20% centers the face in both bands.
+     The small file keeps center top on every surface
      (CAF block).
    - Surfaces: board tile art (face-visible states only), hand,
      resident preview, selection-grid cards, FX ghosts, cut-in big
@@ -81,11 +85,12 @@
      Nile below); any other deck context keeps 'luce'.
    - The 20th delivery (2026-11-05) is 《ライトロード・
      セイント ミネルバ》 (30100551): plain art 'minerva'
-     (the winged saint enthroned with her owl) in CARD_ART,
+     (the winged saint with her owl; v2 painting — floating
+     in the cathedral — replaced v1 the same day) in CARD_ART,
      NO deck-scoped override and NOT a keycard — the second
      EXTRA-deck monster of the Ishizu deck with individual
      art (x2 in the v11 EX). She is also the 4th ART_FOCUS
-     entry ('center 40%', see above).
+     entry ('center 20%', see above).
    Method: boot the real client in jsdom (harness as test-setvis),
    paint a fabricated board through the client's own render() and
    assert the DOM contract in one synchronous eval. */
@@ -405,7 +410,7 @@ async function boot() {
   ok(!helpers.minervaDeckArt && helpers.minervaIshizu === '../assets/card-art-minerva-s.jpg', 'CA7z49: Minerva has NO deck-scoped override — the Ishizu context resolves the plain art');
   // ---- focus exceptions (user ruling 2026-11-05): ART_FOCUS shifts
   // the BIG-file band position for the three measured slugs only ----
-  ok(Object.keys(helpers.focusTable).length === 4 && helpers.focusTable.chaospod === 'center 85%' && helpers.focusTable.luce === 'center 38%' && helpers.focusTable['luce-ishizu'] === 'center 38%' && helpers.focusTable.minerva === 'center 40%', 'CAF1: ART_FOCUS holds exactly the four measured exceptions (chaospod 85%, luce / luce-ishizu 38%, minerva 40%)');
+  ok(Object.keys(helpers.focusTable).length === 4 && helpers.focusTable.chaospod === 'center 85%' && helpers.focusTable.luce === 'center 38%' && helpers.focusTable['luce-ishizu'] === 'center 38%' && helpers.focusTable.minerva === 'center 20%', 'CAF1: ART_FOCUS holds exactly the four measured exceptions (chaospod 85%, luce / luce-ishizu 38%, minerva 20% — re-measured on the v2 painting)');
   ok(helpers.focusChaosBig.includes('card-art-chaospod.jpg') && helpers.focusChaosBig.includes('background-position:center 85%'), 'CAF2: Chaos Pod BIG art carries its focus position (center 85%)');
   ok(helpers.focusChaosSmall.includes('card-art-chaospod-s.jpg') && helpers.focusChaosSmall.includes('background-position:center top'), 'CAF3: Chaos Pod SMALL art keeps center top (the exception is big-file only)');
   ok(helpers.focusLuceBig.includes('card-art-luce.jpg') && helpers.focusLuceBig.includes('background-position:center 38%'), 'CAF4: Luce BIG art carries its focus position (center 38%)');
@@ -415,9 +420,9 @@ async function boot() {
   ok(helpers.focusMudoraBig.includes('card-art-mudora.jpg') && helpers.focusMudoraBig.includes('background-position:center top'), 'CAF8: a non-exception BIG art (Mudora) keeps center top — the rule did not move');
   ok(helpers.focusPosUnlisted === 'center top', 'CAF9: an unlisted code resolves the default position (no crash, no leak of the table)');
   ok(helpers.focusApplyChaos === 'center 85%' && helpers.focusApplyMudora === 'center top' && helpers.focusApplyChaosSmall === 'center top', 'CAF10: artApply (cut-in / ghost path) agrees with artCss: exception for the big file, center top otherwise');
-  ok(helpers.focusMinervaBig.includes('card-art-minerva.jpg') && helpers.focusMinervaBig.includes('background-position:center 40%'), 'CAF11: Minerva BIG art carries her focus position (center 40% — measured on delivery, 2026-11-05)');
+  ok(helpers.focusMinervaBig.includes('card-art-minerva.jpg') && helpers.focusMinervaBig.includes('background-position:center 20%'), 'CAF11: Minerva BIG art carries her focus position (center 20% — re-measured on the v2 painting, 2026-11-05)');
   ok(helpers.focusMinervaSmall.includes('card-art-minerva-s.jpg') && helpers.focusMinervaSmall.includes('background-position:center top'), 'CAF12: Minerva SMALL art keeps center top (the exception is big-file only)');
-  ok(helpers.focusApplyMinerva === 'center 40%', 'CAF13: artApply agrees with artCss for Minerva (big file, center 40%)');
+  ok(helpers.focusApplyMinerva === 'center 20%', 'CAF13: artApply agrees with artCss for Minerva (big file, center 20%)');
   ok(helpers.kakanSlug === 'kakan' && helpers.kakanInline.includes('card-art-kakan-s.jpg') && helpers.kakanInline.includes('background-position:center top'), 'CA7aa: Kakan maps and stamps like the others (plain art = the forest painting)');
   ok(helpers.preloaded.includes('../assets/card-art-kakan-s.jpg') && helpers.preloaded.includes('../assets/card-art-kakan.jpg'), 'CA7ab: boot preloads Kakan too (same deck)');
   ok(helpers.deckArtKakan === 'kakan-ishizu', 'CA7z17: DECK_ART registers Kakan -> kakan-ishizu for the Ishizu deck (4th entry, first SPELL with an override)');

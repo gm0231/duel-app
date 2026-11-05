@@ -131,7 +131,7 @@ function cardArtFile(code, big, deckKey) {
 // centers her face in the pop band and seats face and torso
 // mid-band in the sheet band (before/after reproductions in the
 // cropfix folder: minerva-band-{sheet,pop}-{before,after}.jpg).
-const ART_FOCUS = { chaospod: 'center 85%', luce: 'center 38%', 'luce-ishizu': 'center 38%', minerva: 'center 40%' };
+const ART_FOCUS = { chaospod: 'center 85%', luce: 'center 38%', 'luce-ishizu': 'center 38%', minerva: 'center 20%' };
 function artPosition(code, big, deckKey) {
   if (!big) return 'center top';
   const s = artSlug(code, deckKey);
