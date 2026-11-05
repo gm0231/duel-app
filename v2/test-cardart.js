@@ -40,6 +40,17 @@
      whole head mid-band in both bands (reproductions:
      castel-ishizu-band-{sheet,pop}-{top,20}.jpg in the
      cropfix folder).
+     A 7th arrived with the 22nd delivery:
+     baromett — her face sits mid-frame (eyes ~47% of the
+     big file), so center top leaves the sheet band showing
+     wool, horn and vines with the face cut off at its
+     bottom edge, and the pop band shows rainbow light and
+     vine curls with the sheep essentially absent;
+     'center 40%' seats the whole head — horns, face,
+     muzzle — mid-band in both bands (reproductions:
+     baromett-band-{sheet,pop}-{top,30,40,50}.jpg in the
+     cropfix folder, with -before / -after aliases for
+     the top / 40% pair).
      The small file keeps center top on every surface
      (CAF block).
    - Surfaces: board tile art (face-visible states only), hand,
@@ -150,6 +161,23 @@
      his face lower (face and beak ~29-37% of the big
      file), so center top leaves the beak outside the
      pop band. CAF1 grows to six entries.
+   - The 22nd delivery (2026-11-06) is 《神羊樹バロメット》
+     (62967433): plain art 'baromett' (the white sheep with
+     curled horns asleep in the vines) in CARD_ART, NOT a
+     keycard — the fourth EXTRA-deck monster of the Ishizu
+     deck with individual art (x1 in the v11 EX), and NO
+     deck-scoped override. The painting is the first
+     delivered at 3:4 (1086x1448) instead of 2:3, so the
+     big file cannot take the usual full-width window: it
+     keeps the FULL height and takes the 640:882 window
+     horizontally (x=35, width 1051 — the 35px comes off
+     the left edge, background only; horns, face and body
+     are untouched). The small file is the standard
+     top-anchored square (candidates at y=120 / y=180 were
+     compared; y=0 already frames face and body, so the
+     standing rule holds). She is also the 7th ART_FOCUS
+     entry ('center 40%') — see above. CAF1 grows to
+     seven entries.
    Method: boot the real client in jsdom (harness as test-setvis),
    paint a fabricated board through the client's own render() and
    assert the DOM contract in one synchronous eval. */
@@ -166,7 +194,7 @@ const wasmBinary = fs.readFileSync(path.join(V2, 'build', 'ocgcore.wasm'));
 let failures = 0;
 const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (!cond) failures++; };
 
-const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317, KAKAN = 14108995, CARBON = 15079028, SILKY = 55702233, HORUS = 36898537, HAKAMORI = 98715423, LUCE = 45409943, MINERVA = 30100551, CASTEL = 82633039;
+const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317, KAKAN = 14108995, CARBON = 15079028, SILKY = 55702233, HORUS = 36898537, HAKAMORI = 98715423, LUCE = 45409943, MINERVA = 30100551, CASTEL = 82633039, BAROMETT = 62967433;
 // The unlisted exemplar moved Zolga -> Sphinx (5th delivery) ->
 // Mori (after the 7th) -> Carbon (after the 13th) -> Shilkey
 // (after the 15th), and Shilkey gained art in the 16th
@@ -211,7 +239,8 @@ for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.
                          ['card-art-minerva-s.jpg', 320, 320], ['card-art-minerva.jpg', 640, 882],
                          ['card-art-minerva-ishizu-s.jpg', 320, 320], ['card-art-minerva-ishizu.jpg', 640, 882],
                          ['card-art-castel-s.jpg', 320, 320], ['card-art-castel.jpg', 640, 882],
-                         ['card-art-castel-ishizu-s.jpg', 320, 320], ['card-art-castel-ishizu.jpg', 640, 882]]) {
+                         ['card-art-castel-ishizu-s.jpg', 320, 320], ['card-art-castel-ishizu.jpg', 640, 882],
+                         ['card-art-baromett-s.jpg', 320, 320], ['card-art-baromett.jpg', 640, 882]]) {
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
@@ -246,6 +275,8 @@ ok(data.decks.ishizu.extra.filter(c => c === MINERVA).length === 2, 'CA0z2: the 
 ok(!data.decks.gg.main.includes(MINERVA) && !data.decks.gg.extra.includes(MINERVA), 'CA0z3: the GG deck does NOT run Minerva (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
 ok(data.decks.ishizu.extra.filter(c => c === CASTEL).length === 3, 'CA0z4: the Ishizu EXTRA deck runs 3 copies of Castel (21st delivery — recipe v11)');
 ok(!data.decks.gg.main.includes(CASTEL) && !data.decks.gg.extra.includes(CASTEL), 'CA0z5: the GG deck does NOT run Castel (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
+ok(data.decks.ishizu.extra.filter(c => c === BAROMETT).length === 1, 'CA0z6: the Ishizu EXTRA deck runs 1 copy of Baromett (22nd delivery — recipe v11)');
+ok(!data.decks.gg.main.includes(BAROMETT) && !data.decks.gg.extra.includes(BAROMETT), 'CA0z7: the GG deck does NOT run Baromett (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -394,6 +425,12 @@ async function boot() {
     castelIshizuBig: cardArtFile(${CASTEL}, true, 'ishizu'),
     castelIshizuInline: artInline(${CASTEL}, false, 'ishizu'),
     castelGg: cardArtFile(${CASTEL}, false, 'gg'),
+    baromettSlug: CARD_ART[${BAROMETT}],
+    baromettInline: artInline(${BAROMETT}),
+    baromettSmall: cardArtFile(${BAROMETT}, false),
+    baromettBig: cardArtFile(${BAROMETT}, true),
+    baromettDeckArt: DECK_ART.ishizu && DECK_ART.ishizu[${BAROMETT}],
+    baromettIshizu: cardArtFile(${BAROMETT}, false, 'ishizu'),
     focusTable: ART_FOCUS,
     focusChaosBig: artCss(${CHAOSPOD}, true),
     focusChaosSmall: artCss(${CHAOSPOD}, false),
@@ -420,6 +457,9 @@ async function boot() {
     focusCastelBigGg: artCss(${CASTEL}, true, 'gg'),
     focusCastelSmallIshizu: artCss(${CASTEL}, false, 'ishizu'),
     focusApplyCastelIshizu: (() => { const d = document.createElement('div'); artApply(d, ${CASTEL}, true, 'ishizu'); return d.style.backgroundPosition; })(),
+    focusBaromettBig: artCss(${BAROMETT}, true),
+    focusBaromettSmall: artCss(${BAROMETT}, false),
+    focusApplyBaromett: (() => { const d = document.createElement('div'); artApply(d, ${BAROMETT}, true); return d.style.backgroundPosition; })(),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.classicAgidoSlug === 'agido' && helpers.classicAgidoInline.includes('card-art-agido-s.jpg'), 'CA7b2: user ruling 2026-11-04 — the CLASSIC Agido (16135253) aliases the same agido art');
@@ -507,9 +547,13 @@ async function boot() {
   ok(helpers.castelIshizuSmall === '../assets/card-art-castel-ishizu-s.jpg' && helpers.castelIshizuBig === '../assets/card-art-castel-ishizu.jpg' && helpers.castelIshizuInline.includes('card-art-castel-ishizu-s.jpg'), 'CA7z58: Ishizu context resolves Castel to the Egyptian art (small + big)');
   ok(helpers.castelGg === '../assets/card-art-castel-s.jpg', 'CA7z59: GG context resolves Castel to the plain canyon art');
   ok(helpers.preloaded.includes('../assets/card-art-castel-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-castel-ishizu.jpg'), 'CA7z60: boot preloads the deck-scoped Castel art too (EXTRA-deck membership warms it)');
+  ok(helpers.baromettSlug === 'baromett' && helpers.baromettInline.includes('card-art-baromett-s.jpg') && helpers.baromettInline.includes('background-position:center top'), 'CA7z61: Baromett maps and stamps like the others (22nd delivery)');
+  ok(helpers.baromettSmall === '../assets/card-art-baromett-s.jpg' && helpers.baromettBig === '../assets/card-art-baromett.jpg', 'CA7z62: Baromett art files resolve (small + big)');
+  ok(helpers.preloaded.includes('../assets/card-art-baromett-s.jpg') && helpers.preloaded.includes('../assets/card-art-baromett.jpg'), 'CA7z63: boot preloads Baromett too (EXTRA-deck membership warms the art from deck-select time)');
+  ok(helpers.baromettDeckArt === undefined && helpers.baromettIshizu === '../assets/card-art-baromett-s.jpg', 'CA7z64: Baromett has NO deck-scoped override — plain registration, Ishizu context keeps the base art');
   // ---- focus exceptions (user ruling 2026-11-05): ART_FOCUS shifts
   // the BIG-file band position for the three measured slugs only ----
-  ok(Object.keys(helpers.focusTable).length === 6 && helpers.focusTable.chaospod === 'center 85%' && helpers.focusTable.luce === 'center 38%' && helpers.focusTable['luce-ishizu'] === 'center 38%' && helpers.focusTable.minerva === 'center 20%' && helpers.focusTable['minerva-ishizu'] === 'center 20%' && helpers.focusTable['castel-ishizu'] === 'center 20%', 'CAF1: ART_FOCUS holds exactly the six measured exceptions (chaospod 85%, luce / luce-ishizu 38%, minerva / minerva-ishizu / castel-ishizu 20%)');
+  ok(Object.keys(helpers.focusTable).length === 7 && helpers.focusTable.chaospod === 'center 85%' && helpers.focusTable.luce === 'center 38%' && helpers.focusTable['luce-ishizu'] === 'center 38%' && helpers.focusTable.minerva === 'center 20%' && helpers.focusTable['minerva-ishizu'] === 'center 20%' && helpers.focusTable['castel-ishizu'] === 'center 20%' && helpers.focusTable.baromett === 'center 40%', 'CAF1: ART_FOCUS holds exactly the seven measured exceptions (chaospod 85%, luce / luce-ishizu 38%, minerva / minerva-ishizu / castel-ishizu 20%, baromett 40%)');
   ok(helpers.focusChaosBig.includes('card-art-chaospod.jpg') && helpers.focusChaosBig.includes('background-position:center 85%'), 'CAF2: Chaos Pod BIG art carries its focus position (center 85%)');
   ok(helpers.focusChaosSmall.includes('card-art-chaospod-s.jpg') && helpers.focusChaosSmall.includes('background-position:center top'), 'CAF3: Chaos Pod SMALL art keeps center top (the exception is big-file only)');
   ok(helpers.focusLuceBig.includes('card-art-luce.jpg') && helpers.focusLuceBig.includes('background-position:center 38%'), 'CAF4: Luce BIG art carries its focus position (center 38%)');
@@ -532,6 +576,9 @@ async function boot() {
   ok(helpers.focusCastelBigGg.includes('card-art-castel.jpg') && !helpers.focusCastelBigGg.includes('ishizu') && helpers.focusCastelBigGg.includes('background-position:center top'), 'CAF21: Castel in any other deck keeps the plain art at center top (the exception is keyed to the variant slug only)');
   ok(helpers.focusCastelSmallIshizu.includes('card-art-castel-ishizu-s.jpg') && helpers.focusCastelSmallIshizu.includes('background-position:center top'), 'CAF22: the deck-variant SMALL art keeps center top too');
   ok(helpers.focusApplyCastelIshizu === 'center 20%', 'CAF23: artApply agrees with artCss for the Ishizu-deck Castel (big file, center 20%)');
+  ok(helpers.focusBaromettBig.includes('card-art-baromett.jpg') && helpers.focusBaromettBig.includes('background-position:center 40%'), 'CAF24: Baromett BIG art carries her focus position (center 40% — measured 2026-11-06: her face sits mid-frame, eyes ~47% of the big file, so center top shows wool and vines in the sheet band and leaves the sheep essentially out of the pop band)');
+  ok(helpers.focusBaromettSmall.includes('card-art-baromett-s.jpg') && helpers.focusBaromettSmall.includes('background-position:center top'), 'CAF25: Baromett SMALL art keeps center top (the exception is big-file only)');
+  ok(helpers.focusApplyBaromett === 'center 40%', 'CAF26: artApply agrees with artCss for Baromett (big file, center 40%)');
   ok(helpers.kakanSlug === 'kakan' && helpers.kakanInline.includes('card-art-kakan-s.jpg') && helpers.kakanInline.includes('background-position:center top'), 'CA7aa: Kakan maps and stamps like the others (plain art = the forest painting)');
   ok(helpers.preloaded.includes('../assets/card-art-kakan-s.jpg') && helpers.preloaded.includes('../assets/card-art-kakan.jpg'), 'CA7ab: boot preloads Kakan too (same deck)');
   ok(helpers.deckArtKakan === 'kakan-ishizu', 'CA7z17: DECK_ART registers Kakan -> kakan-ishizu for the Ishizu deck (4th entry, first SPELL with an override)');
@@ -1278,6 +1325,39 @@ async function boot() {
   ok(res16.oppUp.includes('card-art-castel-s.jpg') && !res16.oppUp.includes('castel-ishizu'), 'CA11am: opponent FACE-UP Castel under the GG deck context shows the plain art (public information, owner-deck resolution)');
   ok(res16.oppDown === '' && !String(res16.oppDown).includes('castel'), 'CA13s: opponent FACE-DOWN Castel gets NO art (asymmetry / no leak)');
   ok(res16.pv.includes('card-art-castel-ishizu-s.jpg'), 'CA16z6: resident preview shows the deck-scoped Castel art (unique deck membership: Ishizu)');
+
+  // ---- Baromett board (22nd delivery): an EXTRA-deck
+  // monster with a PLAIN registration (no override, like
+  // Horus), so every deck context resolves to the same
+  // 'baromett' painting. Fabricated post-summon board: own
+  // face-up tile and the resident preview carry the art, an
+  // opponent face-up Baromett (public information) carries
+  // it too, and an opponent FACE-DOWN Baromett must NOT
+  // (asymmetry, as ever). ----
+  const res17 = await window.eval(`
+    (() => {
+      const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
+      const P = () => ({ mzone: [null,null,null,null,null,null,null], szone: [null,null,null,null,null,null], grave: [], removed: [], extra: [], hand: [], deckCount: 38, lp: 8000 });
+      const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
+      b.players[0].mzone[0] = mon(${BAROMETT}, 0x1);  // own face-up ATK Baromett (post-Xyz)
+      b.players[1].mzone[0] = mon(${BAROMETT}, 0x1);  // opp face-up Baromett (public: art shows)
+      b.players[1].mzone[1] = mon(${BAROMETT}, 0x8);  // opp face-down DEF Baromett (MUST stay hidden)
+      render(b);
+      const artOf = (zone) => {
+        const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
+        const a = slot && slot.querySelector('.tile .art');
+        return a ? (a.getAttribute('style') || '') : null;
+      };
+      setPreview(${BAROMETT}, null);
+      const pv = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      return { ownUp: artOf('0:4:0'), oppUp: artOf('1:4:0'), oppDown: artOf('1:4:1'), pv };
+    })()
+  `);
+  ok(res17.ownUp !== null && res17.oppUp !== null && res17.oppDown !== null, 'CA35: non-vacuity — Baromett board rendered');
+  ok(res17.ownUp.includes('card-art-baromett-s.jpg'), 'CA11an: own face-up Baromett tile shows the new art (22nd delivery)');
+  ok(res17.oppUp.includes('card-art-baromett-s.jpg'), 'CA11ao: opponent FACE-UP Baromett shows the art too (public information)');
+  ok(res17.oppDown === '' && !String(res17.oppDown).includes('baromett'), 'CA13t: opponent FACE-DOWN Baromett gets NO art (asymmetry / no leak)');
+  ok(res17.pv.includes('card-art-baromett-s.jpg'), 'CA16z7: resident preview shows the Baromett art (unique deck membership: Ishizu)');
 
   window.close();
   console.log(failures === 0 ? 'ALL CARDART CHECKS PASSED' : failures + ' CARDART CHECK(S) FAILED');
