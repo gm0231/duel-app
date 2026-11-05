@@ -38,7 +38,7 @@ function cardData(code) { return (DATA && DATA.cards[code]) || null; }
 // bottom — never crop the head. That is why artInline pins
 // background-position to top; the delivered files are themselves
 // top-anchored crops.
-const CARD_ART = { 99937011: 'mudora', 62320425: 'agido', 16135253: 'agido', 25926710: 'kelbek', 63542003: 'keldo', 31525442: 'zolga', 86605515: 'cardan', 46148485: 'sphinx', 38699854: 'taiyou', 14087893: 'tsuki', 79106360: 'chaospod', 9350312: 'oka', 62133026: 'hana', 36745317: 'mori', 14108995: 'kakan', 15079028: 'carbon', 55702233: 'silky', 36898537: 'horus', 98715423: 'hakamori', 45409943: 'luce', 30100551: 'minerva', 82633039: 'castel' }; // 剣神官ムドラ / 古衛兵アギド / 古尖兵ケルベク / 宿神像ケルドウ / 予見者ゾルガ / 賢瑞官カルダーン / 転輪のスフィンクス / 太陽の書 / 月の書 / カオスポッド / 丘と芽吹の春化精 / 花と野原の春化精 / 森と目覚の春化精 / 春化精の花冠 / 地久神－カルボン / 生きる偲びのシルキィ / メタファイズ・ホルス・ドラゴン (user art 2026-11-03) / 墓守の罠 (user art 2026-11-04, 18th delivery — the first TRAP with individual art, and a keycard-activation presentation target) / 宵闇のルーチェ (user art 2026-11-05, 19th delivery — an Ishizu keycard, so its summon cut-in and the Keycard BGM stage resolve this art too) / ライトロード・セイント ミネルバ (user art 2026-11-05, 20th delivery — a regular CARD_ART entry, not a keycard; see ART_FOCUS for her band exception) / 鳥銃士カステル (user art 2026-11-06, 21st delivery — a regular CARD_ART entry, not a keycard; no ART_FOCUS — his head sits high enough that both detail bands frame it under center top)
+const CARD_ART = { 99937011: 'mudora', 62320425: 'agido', 16135253: 'agido', 25926710: 'kelbek', 63542003: 'keldo', 31525442: 'zolga', 86605515: 'cardan', 46148485: 'sphinx', 38699854: 'taiyou', 14087893: 'tsuki', 79106360: 'chaospod', 9350312: 'oka', 62133026: 'hana', 36745317: 'mori', 14108995: 'kakan', 15079028: 'carbon', 55702233: 'silky', 36898537: 'horus', 98715423: 'hakamori', 45409943: 'luce', 30100551: 'minerva', 82633039: 'castel', 62967433: 'baromett' }; // 剣神官ムドラ / 古衛兵アギド / 古尖兵ケルベク / 宿神像ケルドウ / 予見者ゾルガ / 賢瑞官カルダーン / 転輪のスフィンクス / 太陽の書 / 月の書 / カオスポッド / 丘と芽吹の春化精 / 花と野原の春化精 / 森と目覚の春化精 / 春化精の花冠 / 地久神－カルボン / 生きる偲びのシルキィ / メタファイズ・ホルス・ドラゴン (user art 2026-11-03) / 墓守の罠 (user art 2026-11-04, 18th delivery — the first TRAP with individual art, and a keycard-activation presentation target) / 宵闇のルーチェ (user art 2026-11-05, 19th delivery — an Ishizu keycard, so its summon cut-in and the Keycard BGM stage resolve this art too) / ライトロード・セイント ミネルバ (user art 2026-11-05, 20th delivery — a regular CARD_ART entry, not a keycard; see ART_FOCUS for her band exception) / 鳥銃士カステル (user art 2026-11-06, 21st delivery — a regular CARD_ART entry, not a keycard; no ART_FOCUS — his head sits high enough that both detail bands frame it under center top) / 神羊樹バロメット (user art 2026-11-06, 22nd delivery — a regular CARD_ART entry, not a keycard; the first painting delivered at 3:4 (1086x1448) instead of 2:3, so the big file keeps the FULL height and takes its 640:882 window horizontally (x=35, width 1051 — the 35px comes off the left edge, background only); the small file is the standard top-anchored square; see ART_FOCUS for her band exception)
 // ---- deck-scoped art overrides (user decision 2026-11-03): a card
 // can carry a DIFFERENT illustration while it belongs to a specific
 // deck. DECK_ART maps deck id (the data.json decks key) -> passcode
@@ -160,7 +160,17 @@ function cardArtFile(code, big, deckKey) {
 // bottom edge with the beak outside it, while 'center 20%'
 // seats the whole head mid-band in both bands (reproductions
 // in the cropfix folder: castel-ishizu-band-{sheet,pop}-{top,20}.jpg).
-const ART_FOCUS = { chaospod: 'center 85%', luce: 'center 38%', 'luce-ishizu': 'center 38%', minerva: 'center 20%', 'minerva-ishizu': 'center 20%', 'castel-ishizu': 'center 20%' };
+// A 7th entry arrived with delivery #22 (2026-11-06):
+// 《神羊樹バロメット》 — her face sits mid-frame (eyes ~47% of
+// the delivered big file), so center top leaves the sheet
+// band showing wool, horn and vines with the face cut off at
+// its bottom edge, and the pop band shows rainbow light and
+// vine curls with the sheep essentially absent; 'center 40%'
+// seats the whole head — horns, face, muzzle — mid-band in
+// both bands (reproductions in the cropfix folder:
+// baromett-band-{sheet,pop}-{top,30,40,50}.jpg, with
+// -before / -after aliases for the top / 40% pair).
+const ART_FOCUS = { chaospod: 'center 85%', luce: 'center 38%', 'luce-ishizu': 'center 38%', minerva: 'center 20%', 'minerva-ishizu': 'center 20%', 'castel-ishizu': 'center 20%', baromett: 'center 40%' };
 function artPosition(code, big, deckKey) {
   if (!big) return 'center top';
   const s = artSlug(code, deckKey);

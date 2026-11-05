@@ -12,9 +12,9 @@
      luce-ishizu, plus minerva and minerva-ishizu from the
      20th delivery and its deck-override follow-up, plus
      castel-ishizu from the 21st delivery's deck-override
-     follow-up), whose
+     follow-up, plus baromett from the 22nd delivery), whose
      bands shift so the subject is inside the band
-     (CV15-CV21b). Unlisted cards get NO
+     (CV15-CV23b). Unlisted cards get NO
      inline image — the .infoart class background is the shared
      placeholder, the same fallback the FX big card uses.
    - Deck-scoped art resolves on the detail sheet exactly like
@@ -59,6 +59,7 @@ const PLUTO = 37706769;         // 冥府の執行者 プルート — Ishizu EX
 const CHAOSPOD = 79106360, LUCE = 45409943; // ART_FOCUS exemplars (focus-exception round, 2026-11-05)
 const MINERVA = 30100551;       // ライトロード・セイント ミネルバ — 20th delivery (2026-11-05), plain CARD_ART + the 4th ART_FOCUS entry ('center 20%' on the v2 painting); same-day follow-up adds the 8th DECK_ART entry ('minerva-ishizu', the Egyptian temple variant) with its own 5th ART_FOCUS entry ('center 20%', measured separately)
 const CASTEL = 82633039;        // 鳥銃士カステル — 21st delivery (2026-11-06), plain CARD_ART with NO focus exception (his head sits high); follow-up (#21b) adds the 9th DECK_ART entry ('castel-ishizu', the Egyptian variant) with its own 6th ART_FOCUS entry ('center 20%', measured separately — the tall nemes headdress pushes his face lower than on the plain painting)
+const BAROMETT = 62967433;      // 神羊樹バロメット — 22nd delivery (2026-11-06), plain CARD_ART (no deck override) + the 7th ART_FOCUS entry ('center 40%' — her face sits mid-frame, eyes ~47% of the big file, so center top leaves the sheep essentially out of the pop band)
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -268,6 +269,19 @@ async function boot() {
     const art = doc.querySelector('#infopop .popart');
     ok(!!art && art.style.backgroundImage.includes('card-art-castel-ishizu.jpg'), 'CV21: the Castel pop band shows the deck-scoped BIG art too');
     ok(!!art && art.style.backgroundPosition === 'center 20%', 'CV21b: the Castel pop band uses the variant\'s focus exception (center top leaves his face at the band bottom edge, beak outside)');
+  }
+  window.eval('closeInfoPop()');
+  window.eval('openCardInfo(' + BAROMETT + ')');
+  {
+    const art = doc.querySelector('#sheet .infoart');
+    ok(!!art && art.style.backgroundImage.includes('card-art-baromett.jpg') && !art.style.backgroundImage.includes('-s.jpg'), 'CV22: Baromett (unique to the Ishizu deck here) detail art is the plain BIG file (no deck override)');
+    ok(!!art && art.style.backgroundPosition === 'center 40%', 'CV22b: the Baromett detail band shifts to her focus exception (center 40%) — her face sits mid-frame, centered in the band');
+  }
+  window.eval('openInfoPop(' + BAROMETT + ')');
+  {
+    const art = doc.querySelector('#infopop .popart');
+    ok(!!art && art.style.backgroundImage.includes('card-art-baromett.jpg'), 'CV23: the Baromett pop band shows the plain BIG art too');
+    ok(!!art && art.style.backgroundPosition === 'center 40%', 'CV23b: the Baromett pop band uses her focus exception (center top shows rainbow light and vine curls, the sheep essentially absent)');
   }
   window.eval('closeInfoPop()');
 
