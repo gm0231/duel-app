@@ -30,6 +30,16 @@
      the pop band, and 'center 20%' centers face, torso and
      owl in both bands (reproductions: minerva-ishizu-band-
      {sheet,pop}-{top,20}.jpg in the cropfix folder).
+     A 6th arrived with the 21st delivery's deck-scoped
+     override, judged separately like the other pairs:
+     castel-ishizu — the plain painting needs no exception
+     (his head sits high), but the Egyptian painting's tall
+     nemes headdress pushes his face lower (face and beak
+     ~29-37% of the big file), so center top leaves the
+     beak outside the pop band, and 'center 20%' seats the
+     whole head mid-band in both bands (reproductions:
+     castel-ishizu-band-{sheet,pop}-{top,20}.jpg in the
+     cropfix folder).
      The small file keeps center top on every surface
      (CAF block).
    - Surfaces: board tile art (face-visible states only), hand,
@@ -71,8 +81,15 @@
      'minerva-ishizu' (the Egyptian temple variant —
      blue-and-gold feathered wings, hieroglyph pillars)
      in DECK_ART under ishizu — the second EXTRA-deck
-     monster with an override, not a keycard. The opponent
-     face-down rule binds the overrides exactly like the base art.
+     monster with an override, not a keycard. The 9th entry
+     is 《鳥銃士カステル》 (82633039, 21st delivery
+     follow-up): plain art 'castel' (the purple-winged
+     musketeer over the canyon) in CARD_ART, 'castel-ishizu'
+     (the Egyptian variant — nemes headdress, the Nile and
+     pyramids below) in DECK_ART under ishizu — the third
+     EXTRA-deck monster with an override, not a keycard.
+     The opponent face-down rule binds the overrides exactly
+     like the base art.
    - The 17th delivery (2026-11-04) is 《メタファイズ・
      ホルス・ドラゴン》 (36898537): plain art 'horus' (the
      silver mechanical dragon over the moonlit Nile) in
@@ -114,15 +131,25 @@
    - The 21st delivery (2026-11-06) is 《鳥銃士カステル》
      (82633039): plain art 'castel' (the purple-winged
      bird musketeer over the canyon) in CARD_ART, NOT a
-     keycard and NO deck-scoped override — the third
-     EXTRA-deck monster of the Ishizu deck with individual
-     art (x3 in the v11 EX). Band check, measured like the
-     others: his head (crest ~12%, eyes ~26%, beak ~29-33%
-     of the big file) sits high enough that center top
-     frames head and torso in the sheet band and crest,
-     helmet, eye and beak in the pop band, so NO ART_FOCUS
-     entry (reproductions: castel-band-{sheet,pop}-top.jpg
-     in the cropfix folder). CAF1 stays at five entries.
+     keycard — the third EXTRA-deck monster of the Ishizu
+     deck with individual art (x3 in the v11 EX). Band
+     check, measured like the others: his head (crest
+     ~12%, eyes ~26%, beak ~29-33% of the big file) sits
+     high enough that center top frames head and torso in
+     the sheet band and crest, helmet, eye and beak in the
+     pop band, so NO ART_FOCUS entry for the plain art
+     (reproductions: castel-band-{sheet,pop}-top.jpg in
+     the cropfix folder). A follow-up the same day (#21b)
+     adds his deck-scoped override (the 9th DECK_ART
+     entry): inside the Ishizu deck he resolves to
+     'castel-ishizu', the Egyptian variant (nemes
+     headdress, the Nile and pyramids below); any other
+     deck context keeps 'castel'. The variant is also
+     the 6th ART_FOCUS entry ('center 20%', measured
+     separately — see above): the tall headdress pushes
+     his face lower (face and beak ~29-37% of the big
+     file), so center top leaves the beak outside the
+     pop band. CAF1 grows to six entries.
    Method: boot the real client in jsdom (harness as test-setvis),
    paint a fabricated board through the client's own render() and
    assert the DOM contract in one synchronous eval. */
@@ -183,7 +210,8 @@ for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.
                          ['card-art-luce-ishizu-s.jpg', 320, 320], ['card-art-luce-ishizu.jpg', 640, 882],
                          ['card-art-minerva-s.jpg', 320, 320], ['card-art-minerva.jpg', 640, 882],
                          ['card-art-minerva-ishizu-s.jpg', 320, 320], ['card-art-minerva-ishizu.jpg', 640, 882],
-                         ['card-art-castel-s.jpg', 320, 320], ['card-art-castel.jpg', 640, 882]]) {
+                         ['card-art-castel-s.jpg', 320, 320], ['card-art-castel.jpg', 640, 882],
+                         ['card-art-castel-ishizu-s.jpg', 320, 320], ['card-art-castel-ishizu.jpg', 640, 882]]) {
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
@@ -362,6 +390,9 @@ async function boot() {
     castelBig: cardArtFile(${CASTEL}, true),
     castelDeckArt: DECK_ART.ishizu && DECK_ART.ishizu[${CASTEL}],
     castelIshizu: cardArtFile(${CASTEL}, false, 'ishizu'),
+    castelIshizuSmall: cardArtFile(${CASTEL}, false, 'ishizu'),
+    castelIshizuBig: cardArtFile(${CASTEL}, true, 'ishizu'),
+    castelIshizuInline: artInline(${CASTEL}, false, 'ishizu'),
     castelGg: cardArtFile(${CASTEL}, false, 'gg'),
     focusTable: ART_FOCUS,
     focusChaosBig: artCss(${CHAOSPOD}, true),
@@ -385,6 +416,10 @@ async function boot() {
     focusCastelBig: artCss(${CASTEL}, true),
     focusCastelSmall: artCss(${CASTEL}, false),
     focusApplyCastel: (() => { const d = document.createElement('div'); artApply(d, ${CASTEL}, true); return d.style.backgroundPosition; })(),
+    focusCastelBigIshizu: artCss(${CASTEL}, true, 'ishizu'),
+    focusCastelBigGg: artCss(${CASTEL}, true, 'gg'),
+    focusCastelSmallIshizu: artCss(${CASTEL}, false, 'ishizu'),
+    focusApplyCastelIshizu: (() => { const d = document.createElement('div'); artApply(d, ${CASTEL}, true, 'ishizu'); return d.style.backgroundPosition; })(),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.classicAgidoSlug === 'agido' && helpers.classicAgidoInline.includes('card-art-agido-s.jpg'), 'CA7b2: user ruling 2026-11-04 — the CLASSIC Agido (16135253) aliases the same agido art');
@@ -468,10 +503,13 @@ async function boot() {
   ok(helpers.castelSlug === 'castel' && helpers.castelInline.includes('card-art-castel-s.jpg') && helpers.castelInline.includes('background-position:center top'), 'CA7z54: Castel maps and stamps like the others (21st delivery)');
   ok(helpers.castelSmall === '../assets/card-art-castel-s.jpg' && helpers.castelBig === '../assets/card-art-castel.jpg', 'CA7z55: Castel art files resolve (small + big)');
   ok(helpers.preloaded.includes('../assets/card-art-castel-s.jpg') && helpers.preloaded.includes('../assets/card-art-castel.jpg'), 'CA7z56: boot preloads Castel too (EXTRA-deck membership warms the art from deck-select time)');
-  ok(helpers.castelDeckArt == null && helpers.castelIshizu === '../assets/card-art-castel-s.jpg' && helpers.castelGg === '../assets/card-art-castel-s.jpg', 'CA7z57: Castel has NO deck-scoped override — every deck context resolves the plain art');
+  ok(helpers.castelDeckArt === 'castel-ishizu', 'CA7z57: DECK_ART registers Castel -> castel-ishizu for the Ishizu deck (9th entry — the third EXTRA-deck monster with an override)');
+  ok(helpers.castelIshizuSmall === '../assets/card-art-castel-ishizu-s.jpg' && helpers.castelIshizuBig === '../assets/card-art-castel-ishizu.jpg' && helpers.castelIshizuInline.includes('card-art-castel-ishizu-s.jpg'), 'CA7z58: Ishizu context resolves Castel to the Egyptian art (small + big)');
+  ok(helpers.castelGg === '../assets/card-art-castel-s.jpg', 'CA7z59: GG context resolves Castel to the plain canyon art');
+  ok(helpers.preloaded.includes('../assets/card-art-castel-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-castel-ishizu.jpg'), 'CA7z60: boot preloads the deck-scoped Castel art too (EXTRA-deck membership warms it)');
   // ---- focus exceptions (user ruling 2026-11-05): ART_FOCUS shifts
   // the BIG-file band position for the three measured slugs only ----
-  ok(Object.keys(helpers.focusTable).length === 5 && helpers.focusTable.chaospod === 'center 85%' && helpers.focusTable.luce === 'center 38%' && helpers.focusTable['luce-ishizu'] === 'center 38%' && helpers.focusTable.minerva === 'center 20%' && helpers.focusTable['minerva-ishizu'] === 'center 20%', 'CAF1: ART_FOCUS holds exactly the five measured exceptions (chaospod 85%, luce / luce-ishizu 38%, minerva / minerva-ishizu 20%)');
+  ok(Object.keys(helpers.focusTable).length === 6 && helpers.focusTable.chaospod === 'center 85%' && helpers.focusTable.luce === 'center 38%' && helpers.focusTable['luce-ishizu'] === 'center 38%' && helpers.focusTable.minerva === 'center 20%' && helpers.focusTable['minerva-ishizu'] === 'center 20%' && helpers.focusTable['castel-ishizu'] === 'center 20%', 'CAF1: ART_FOCUS holds exactly the six measured exceptions (chaospod 85%, luce / luce-ishizu 38%, minerva / minerva-ishizu / castel-ishizu 20%)');
   ok(helpers.focusChaosBig.includes('card-art-chaospod.jpg') && helpers.focusChaosBig.includes('background-position:center 85%'), 'CAF2: Chaos Pod BIG art carries its focus position (center 85%)');
   ok(helpers.focusChaosSmall.includes('card-art-chaospod-s.jpg') && helpers.focusChaosSmall.includes('background-position:center top'), 'CAF3: Chaos Pod SMALL art keeps center top (the exception is big-file only)');
   ok(helpers.focusLuceBig.includes('card-art-luce.jpg') && helpers.focusLuceBig.includes('background-position:center 38%'), 'CAF4: Luce BIG art carries its focus position (center 38%)');
@@ -488,8 +526,12 @@ async function boot() {
   ok(helpers.focusMinervaBigGg.includes('card-art-minerva.jpg') && !helpers.focusMinervaBigGg.includes('ishizu') && helpers.focusMinervaBigGg.includes('background-position:center 20%'), 'CAF15: Minerva in any other deck keeps the plain art and the same focus position');
   ok(helpers.focusMinervaSmallIshizu.includes('card-art-minerva-ishizu-s.jpg') && helpers.focusMinervaSmallIshizu.includes('background-position:center top'), 'CAF16: the deck-variant SMALL art keeps center top too');
   ok(helpers.focusApplyMinervaIshizu === 'center 20%', 'CAF17: artApply agrees with artCss for the Ishizu-deck Minerva (big file, center 20%)');
-  ok(helpers.focusCastelBig.includes('card-art-castel.jpg') && helpers.focusCastelBig.includes('background-position:center top'), 'CAF18: Castel BIG art keeps center top — measured 2026-11-06: his head sits high (eyes ~26% of the big file), so both bands frame it and NO focus exception was added');
-  ok(helpers.focusCastelSmall.includes('card-art-castel-s.jpg') && helpers.focusCastelSmall.includes('background-position:center top') && helpers.focusApplyCastel === 'center top', 'CAF19: Castel SMALL art and the artApply path also keep center top');
+  ok(helpers.focusCastelBig.includes('card-art-castel.jpg') && helpers.focusCastelBig.includes('background-position:center top'), 'CAF18: the PLAIN Castel BIG art keeps center top — measured 2026-11-06: his head sits high (eyes ~26% of the big file), so both bands frame it and the plain painting has NO focus exception');
+  ok(helpers.focusCastelSmall.includes('card-art-castel-s.jpg') && helpers.focusCastelSmall.includes('background-position:center top') && helpers.focusApplyCastel === 'center top', 'CAF19: the PLAIN Castel SMALL art and the artApply path also keep center top');
+  ok(helpers.focusCastelBigIshizu.includes('card-art-castel-ishizu.jpg') && helpers.focusCastelBigIshizu.includes('background-position:center 20%'), 'CAF20: Castel in the Ishizu deck resolves the Egyptian art WITH its own focus entry (slug-keyed, center 20% — measured on the Egyptian painting: the tall nemes headdress pushes his face to ~29-37% of the big file)');
+  ok(helpers.focusCastelBigGg.includes('card-art-castel.jpg') && !helpers.focusCastelBigGg.includes('ishizu') && helpers.focusCastelBigGg.includes('background-position:center top'), 'CAF21: Castel in any other deck keeps the plain art at center top (the exception is keyed to the variant slug only)');
+  ok(helpers.focusCastelSmallIshizu.includes('card-art-castel-ishizu-s.jpg') && helpers.focusCastelSmallIshizu.includes('background-position:center top'), 'CAF22: the deck-variant SMALL art keeps center top too');
+  ok(helpers.focusApplyCastelIshizu === 'center 20%', 'CAF23: artApply agrees with artCss for the Ishizu-deck Castel (big file, center 20%)');
   ok(helpers.kakanSlug === 'kakan' && helpers.kakanInline.includes('card-art-kakan-s.jpg') && helpers.kakanInline.includes('background-position:center top'), 'CA7aa: Kakan maps and stamps like the others (plain art = the forest painting)');
   ok(helpers.preloaded.includes('../assets/card-art-kakan-s.jpg') && helpers.preloaded.includes('../assets/card-art-kakan.jpg'), 'CA7ab: boot preloads Kakan too (same deck)');
   ok(helpers.deckArtKakan === 'kakan-ishizu', 'CA7z17: DECK_ART registers Kakan -> kakan-ishizu for the Ishizu deck (4th entry, first SPELL with an override)');
@@ -1205,11 +1247,13 @@ async function boot() {
   ok(res15.oppDown === '' && !String(res15.oppDown).includes('minerva'), 'CA13r: opponent FACE-DOWN Minerva gets NO art (asymmetry / no leak)');
   ok(res15.pv.includes('card-art-minerva-ishizu-s.jpg'), 'CA16z5: resident preview shows the deck-scoped Minerva art (unique deck membership: Ishizu)');
 
-  // ---- Castel board (21st delivery): an EXTRA-deck
-  // monster with plain CARD_ART only (no override, no
-  // focus exception). Both seats' face-up tiles carry the
-  // same plain art; an opponent FACE-DOWN Castel must NOT
-  // carry any art. ----
+  // ---- Castel board (21st delivery + #21b override):
+  // an EXTRA-deck monster whose owner-deck resolution
+  // mirrors the Minerva board above: seat 0 (Ishizu)
+  // shows the DECK-SCOPED Egyptian art (castel-ishizu);
+  // the opponent's face-up Castel under the GG deck
+  // context keeps the plain art; an opponent FACE-DOWN
+  // Castel must NOT carry any art. ----
   const res16 = await window.eval(`
     (() => {
       const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
@@ -1230,10 +1274,10 @@ async function boot() {
     })()
   `);
   ok(res16.ownUp !== null && res16.oppUp !== null && res16.oppDown !== null, 'CA34: non-vacuity — Castel board rendered');
-  ok(res16.ownUp.includes('card-art-castel-s.jpg'), 'CA11al: own face-up Castel tile (seat 0) shows the new art');
-  ok(res16.oppUp.includes('card-art-castel-s.jpg'), 'CA11am: opponent FACE-UP Castel shows the art too (public information)');
+  ok(res16.ownUp.includes('card-art-castel-ishizu-s.jpg'), 'CA11al: own face-up Castel tile in the Ishizu deck (seat 0) shows the DECK-SCOPED Egyptian art');
+  ok(res16.oppUp.includes('card-art-castel-s.jpg') && !res16.oppUp.includes('castel-ishizu'), 'CA11am: opponent FACE-UP Castel under the GG deck context shows the plain art (public information, owner-deck resolution)');
   ok(res16.oppDown === '' && !String(res16.oppDown).includes('castel'), 'CA13s: opponent FACE-DOWN Castel gets NO art (asymmetry / no leak)');
-  ok(res16.pv.includes('card-art-castel-s.jpg'), 'CA16z6: resident preview shows the Castel art (unique deck membership: Ishizu)');
+  ok(res16.pv.includes('card-art-castel-ishizu-s.jpg'), 'CA16z6: resident preview shows the deck-scoped Castel art (unique deck membership: Ishizu)');
 
   window.close();
   console.log(failures === 0 ? 'ALL CARDART CHECKS PASSED' : failures + ' CARDART CHECK(S) FAILED');
