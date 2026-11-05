@@ -119,6 +119,15 @@
      crown and ankh collar, lotus and the Nile below)
      in DECK_ART under ishizu — the fourth EXTRA-deck
      monster with an override, not a keycard.
+     The 12th entry is 《マナドゥム・トリロスークタ》
+     (21368273, 24th delivery follow-up): plain art
+     'trilo' (the silver-armoured knight with the
+     golden light sword) in CARD_ART, 'trilo-ishizu'
+     (the Egyptian variant — goddess regalia with
+     the sun-disc headdress and ankh sword, temple
+     and the Nile below) in DECK_ART under ishizu
+     — the sixth EXTRA-deck monster with an override,
+     not a keycard.
      The opponent face-down rule binds the overrides exactly
      like the base art.
    - The 17th delivery (2026-11-04) is 《メタファイズ・
@@ -234,7 +243,8 @@
      lavender hair-veil and the golden light sword) in
      CARD_ART, NOT a keycard — the sixth EXTRA-deck
      monster of the Ishizu deck with individual art
-     (x1 in the v11 EX), with NO deck-scoped override.
+     (x1 in the v11 EX), initially with NO deck-scoped
+     override.
      Band check, measured like the others: his face
      sits high (eyes ~17-19% of the big file), so
      center top frames helmet, face, torso and sword
@@ -246,6 +256,24 @@
      unlisted-EX exemplar role on to 《マスターフレア・
      ヒュペリオン》 (63101468) — now the only EX card
      of the Ishizu deck still without individual art.
+     A follow-up the same day (#24b) adds his
+     deck-scoped override (the 12th DECK_ART entry):
+     inside the Ishizu deck he resolves to
+     'trilo-ishizu', the Egyptian variant (goddess
+     regalia — sun-disc headdress, the ankh sword,
+     the golden sphere, temple and the Nile below);
+     any other deck context keeps 'trilo'. The
+     variant was band-measured separately like the
+     other pairs: the face sits high in the Egyptian
+     painting too (eyes ~18%, chin ~22% of the big
+     file), so center top seats the sun disc,
+     headdress and whole face mid-band in both
+     bands, and a 20% shift only pushes the disc
+     and headdress out of the frame — NO ART_FOCUS
+     entry for the variant either (reproductions:
+     trilo-ishizu-band-{sheet,pop}-{top,20}.jpg in
+     the cropfix folder). CAF1 stays at eight
+     entries.
    Method: boot the real client in jsdom (harness as test-setvis),
    paint a fabricated board through the client's own render() and
    assert the DOM contract in one synchronous eval. */
@@ -311,7 +339,8 @@ for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.
                          ['card-art-baromett-s.jpg', 320, 320], ['card-art-baromett.jpg', 640, 882],
                          ['card-art-baromett-ishizu-s.jpg', 320, 320], ['card-art-baromett-ishizu.jpg', 640, 882],
                          ['card-art-pluto-s.jpg', 320, 320], ['card-art-pluto.jpg', 640, 882],
-                         ['card-art-trilo-s.jpg', 320, 320], ['card-art-trilo.jpg', 640, 882]]) {
+                         ['card-art-trilo-s.jpg', 320, 320], ['card-art-trilo.jpg', 640, 882],
+                         ['card-art-trilo-ishizu-s.jpg', 320, 320], ['card-art-trilo-ishizu.jpg', 640, 882]]) {
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
@@ -522,6 +551,10 @@ async function boot() {
     triloBig: cardArtFile(${TRILO}, true),
     triloDeckArt: DECK_ART.ishizu && DECK_ART.ishizu[${TRILO}],
     triloIshizu: cardArtFile(${TRILO}, false, 'ishizu'),
+    triloIshizuSmall: cardArtFile(${TRILO}, false, 'ishizu'),
+    triloIshizuBig: cardArtFile(${TRILO}, true, 'ishizu'),
+    triloIshizuInline: artInline(${TRILO}, false, 'ishizu'),
+    triloGg: cardArtFile(${TRILO}, false, 'gg'),
     focusTable: ART_FOCUS,
     focusChaosBig: artCss(${CHAOSPOD}, true),
     focusChaosSmall: artCss(${CHAOSPOD}, false),
@@ -561,6 +594,10 @@ async function boot() {
     focusTriloBig: artCss(${TRILO}, true),
     focusTriloSmall: artCss(${TRILO}, false),
     focusApplyTrilo: (() => { const d = document.createElement('div'); artApply(d, ${TRILO}, true); return d.style.backgroundPosition; })(),
+    focusTriloBigIshizu: artCss(${TRILO}, true, 'ishizu'),
+    focusTriloBigGg: artCss(${TRILO}, true, 'gg'),
+    focusTriloSmallIshizu: artCss(${TRILO}, false, 'ishizu'),
+    focusApplyTriloIshizu: (() => { const d = document.createElement('div'); artApply(d, ${TRILO}, true, 'ishizu'); return d.style.backgroundPosition; })(),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.classicAgidoSlug === 'agido' && helpers.classicAgidoInline.includes('card-art-agido-s.jpg'), 'CA7b2: user ruling 2026-11-04 — the CLASSIC Agido (16135253) aliases the same agido art');
@@ -662,7 +699,10 @@ async function boot() {
   ok(helpers.triloSlug === 'trilo' && helpers.triloInline.includes('card-art-trilo-s.jpg') && helpers.triloInline.includes('background-position:center top'), 'CA7z72: Trilosukuta maps and stamps like the others (24th delivery)');
   ok(helpers.triloSmall === '../assets/card-art-trilo-s.jpg' && helpers.triloBig === '../assets/card-art-trilo.jpg', 'CA7z73: Trilosukuta art files resolve (small + big)');
   ok(helpers.preloaded.includes('../assets/card-art-trilo-s.jpg') && helpers.preloaded.includes('../assets/card-art-trilo.jpg'), 'CA7z74: boot preloads Trilosukuta too (EXTRA-deck membership warms the art from deck-select time)');
-  ok(helpers.triloDeckArt === undefined && helpers.triloIshizu === '../assets/card-art-trilo-s.jpg', 'CA7z75: Trilosukuta has NO deck-scoped override — Ishizu context keeps the plain art');
+  ok(helpers.triloDeckArt === 'trilo-ishizu', 'CA7z75: DECK_ART registers Trilosukuta -> trilo-ishizu for the Ishizu deck (12th entry — the sixth EXTRA-deck monster with an override)');
+  ok(helpers.triloIshizuSmall === '../assets/card-art-trilo-ishizu-s.jpg' && helpers.triloIshizuBig === '../assets/card-art-trilo-ishizu.jpg' && helpers.triloIshizuInline.includes('card-art-trilo-ishizu-s.jpg'), 'CA7z76: Ishizu context resolves Trilosukuta to the Egyptian art (small + big)');
+  ok(helpers.triloGg === '../assets/card-art-trilo-s.jpg', 'CA7z77: GG context resolves Trilosukuta to the plain silver-knight art');
+  ok(helpers.preloaded.includes('../assets/card-art-trilo-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-trilo-ishizu.jpg'), 'CA7z78: boot preloads the deck-scoped Trilosukuta art too (EXTRA-deck membership warms it)');
   // ---- focus exceptions (user ruling 2026-11-05): ART_FOCUS shifts
   // the BIG-file band position for the three measured slugs only ----
   ok(Object.keys(helpers.focusTable).length === 8 && helpers.focusTable.chaospod === 'center 85%' && helpers.focusTable.luce === 'center 38%' && helpers.focusTable['luce-ishizu'] === 'center 38%' && helpers.focusTable.minerva === 'center 20%' && helpers.focusTable['minerva-ishizu'] === 'center 20%' && helpers.focusTable['castel-ishizu'] === 'center 20%' && helpers.focusTable.baromett === 'center 40%' && helpers.focusTable['baromett-ishizu'] === 'center 40%', 'CAF1: ART_FOCUS holds exactly the eight measured exceptions (chaospod 85%, luce / luce-ishizu 38%, minerva / minerva-ishizu / castel-ishizu 20%, baromett / baromett-ishizu 40%)');
@@ -699,6 +739,9 @@ async function boot() {
   ok(helpers.focusPlutoSmall.includes('card-art-pluto-s.jpg') && helpers.focusPlutoSmall.includes('background-position:center top') && helpers.focusApplyPluto === 'center top', 'CAF32: the Pluto SMALL art and the artApply path also keep center top');
   ok(helpers.focusTriloBig.includes('card-art-trilo.jpg') && helpers.focusTriloBig.includes('background-position:center top'), 'CAF33: the Trilosukuta BIG art keeps center top — measured 2026-11-06: his face sits high (eyes ~17-19% of the big file), so both bands frame helmet, face and torso and the plain painting has NO focus exception');
   ok(helpers.focusTriloSmall.includes('card-art-trilo-s.jpg') && helpers.focusTriloSmall.includes('background-position:center top') && helpers.focusApplyTrilo === 'center top', 'CAF34: the Trilosukuta SMALL art and the artApply path also keep center top');
+  ok(helpers.focusTriloBigIshizu.includes('card-art-trilo-ishizu.jpg') && helpers.focusTriloBigIshizu.includes('background-position:center top'), 'CAF35: Trilosukuta in the Ishizu deck resolves the Egyptian art at center top — measured separately on the Egyptian painting (2026-11-06): the face sits high there too (eyes ~18%, chin ~22% of the big file), so both bands frame sun disc, headdress and the whole face and the variant has NO focus exception either');
+  ok(helpers.focusTriloBigGg.includes('card-art-trilo.jpg') && !helpers.focusTriloBigGg.includes('ishizu') && helpers.focusTriloBigGg.includes('background-position:center top'), 'CAF36: Trilosukuta in any other deck keeps the plain art at center top');
+  ok(helpers.focusTriloSmallIshizu.includes('card-art-trilo-ishizu-s.jpg') && helpers.focusTriloSmallIshizu.includes('background-position:center top') && helpers.focusApplyTriloIshizu === 'center top', 'CAF37: the deck-variant SMALL art and the artApply path keep center top too');
   ok(helpers.kakanSlug === 'kakan' && helpers.kakanInline.includes('card-art-kakan-s.jpg') && helpers.kakanInline.includes('background-position:center top'), 'CA7aa: Kakan maps and stamps like the others (plain art = the forest painting)');
   ok(helpers.preloaded.includes('../assets/card-art-kakan-s.jpg') && helpers.preloaded.includes('../assets/card-art-kakan.jpg'), 'CA7ab: boot preloads Kakan too (same deck)');
   ok(helpers.deckArtKakan === 'kakan-ishizu', 'CA7z17: DECK_ART registers Kakan -> kakan-ishizu for the Ishizu deck (4th entry, first SPELL with an override)');
@@ -1509,12 +1552,13 @@ async function boot() {
   ok(res18.oppDown === '' && !String(res18.oppDown).includes('pluto'), 'CA13u: opponent FACE-DOWN Pluto gets NO art (asymmetry / no leak)');
   ok(res18.pv.includes('card-art-pluto-s.jpg'), 'CA16z8: resident preview shows the Pluto art (unique deck membership: Ishizu)');
 
-  // ---- 24th delivery board: Trilosukuta (21368273), the
-  // sixth EXTRA-deck monster with individual art — plain
-  // art only (NO deck-scoped override): both seats'
-  // face-up tiles show the plain 'trilo' art under their
-  // own deck context; an opponent FACE-DOWN Trilosukuta
-  // must NOT carry any art. ----
+  // ---- Trilosukuta board (24th delivery + #24b override):
+  // an EXTRA-deck monster whose owner-deck resolution
+  // mirrors the Baromett board above: seat 0 (Ishizu)
+  // shows the DECK-SCOPED Egyptian art (trilo-ishizu);
+  // the opponent's face-up Trilosukuta under the GG deck
+  // context keeps the plain art; an opponent FACE-DOWN
+  // Trilosukuta must NOT carry any art. ----
   const res19 = await window.eval(`
     (() => {
       const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
@@ -1535,10 +1579,10 @@ async function boot() {
     })()
   `);
   ok(res19.ownUp !== null && res19.oppUp !== null && res19.oppDown !== null, 'CA37: non-vacuity — Trilosukuta board rendered');
-  ok(res19.ownUp.includes('card-art-trilo-s.jpg'), 'CA11ar: own face-up Trilosukuta tile (seat 0) shows the plain art (no deck override)');
-  ok(res19.oppUp.includes('card-art-trilo-s.jpg'), 'CA11as: opponent FACE-UP Trilosukuta shows the plain art too (public information)');
+  ok(res19.ownUp.includes('card-art-trilo-ishizu-s.jpg'), 'CA11ar: own face-up Trilosukuta tile in the Ishizu deck (seat 0) shows the DECK-SCOPED Egyptian art');
+  ok(res19.oppUp.includes('card-art-trilo-s.jpg') && !res19.oppUp.includes('trilo-ishizu'), 'CA11as: opponent FACE-UP Trilosukuta under the GG deck context shows the plain art (public information, owner-deck resolution)');
   ok(res19.oppDown === '' && !String(res19.oppDown).includes('trilo'), 'CA13v: opponent FACE-DOWN Trilosukuta gets NO art (asymmetry / no leak)');
-  ok(res19.pv.includes('card-art-trilo-s.jpg'), 'CA16z9: resident preview shows the Trilosukuta art (unique deck membership: Ishizu)');
+  ok(res19.pv.includes('card-art-trilo-ishizu-s.jpg'), 'CA16z9: resident preview shows the deck-scoped Trilosukuta art (unique deck membership: Ishizu)');
 
   window.close();
   console.log(failures === 0 ? 'ALL CARDART CHECKS PASSED' : failures + ' CARDART CHECK(S) FAILED');
