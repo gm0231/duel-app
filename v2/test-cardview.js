@@ -57,7 +57,7 @@ const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (
 const MUDORA = 99937011, KELBEK = 25926710, MORI = 36745317, HORUS = 36898537;
 const UNLISTED = 17484499;      // Gensei to Meikai no Gyakuten — Ishizu main, no individual art (see test-cardart; classic Agido gained the agido alias by the 2026-11-04 user ruling)
 const HYPERION = 63101468;      // マスターフレア・ヒュペリオン — Ishizu EX, no individual art (the unlisted-EX exemplar role sat with Luce 45409943 until the 19th delivery, then with Pluto 37706769 until the 23rd, then with Trilosukuta 21368273 until the 24th delivery, 2026-11-06 — Hyperion is now the only Ishizu EX card still without individual art)
-const TRILO = 21368273;         // マナドゥム・トリロスークタ — 24th delivery (2026-11-06), plain CARD_ART with NO focus exception (his face sits high, ~17-19% of the big file, so center top frames helmet, face and torso in both bands)
+const TRILO = 21368273;         // マナドゥム・トリロスークタ — 24th delivery (2026-11-06), plain CARD_ART with NO focus exception (his face sits high, ~17-19% of the big file, so center top frames helmet, face and torso in both bands); follow-up (#24b) adds the 12th DECK_ART entry ('trilo-ishizu', the Egyptian variant) with NO focus exception of its own either (measured separately — the face sits high in the Egyptian painting too, eyes ~18% / chin ~22% of the big file, sun disc and headdress framed at center top)
 const PLUTO = 37706769;         // 冥府の執行者 プルート — 23rd delivery (2026-11-06), plain CARD_ART with NO focus exception (his face sits high, ~16-25% of the big file, so center top frames head, wings and the star orb in both bands); follow-up (#23b) adds the 11th DECK_ART entry ('pluto-ishizu', the Egyptian variant) with NO focus exception of its own either (measured separately — his face sits high in the Egyptian painting too, eyes ~19% / chin ~24% of the big file)
 const CHAOSPOD = 79106360, LUCE = 45409943; // ART_FOCUS exemplars (focus-exception round, 2026-11-05)
 const MINERVA = 30100551;       // ライトロード・セイント ミネルバ — 20th delivery (2026-11-05), plain CARD_ART + the 4th ART_FOCUS entry ('center 20%' on the v2 painting); same-day follow-up adds the 8th DECK_ART entry ('minerva-ishizu', the Egyptian temple variant) with its own 5th ART_FOCUS entry ('center 20%', measured separately)
@@ -302,13 +302,13 @@ async function boot() {
   window.eval('openCardInfo(' + TRILO + ')');
   {
     const art = doc.querySelector('#sheet .infoart');
-    ok(!!art && art.style.backgroundImage.includes('card-art-trilo.jpg') && !art.style.backgroundImage.includes('-s.jpg'), 'CV25: Trilosukuta detail art is the plain BIG file (24th delivery, no deck override)');
-    ok(!!art && art.style.backgroundPosition === 'center top', 'CV25b: the Trilosukuta detail band keeps center top (no focus exception — his face sits high, ~17-19% of the big file, framed with helmet and torso)');
+    ok(!!art && art.style.backgroundImage.includes('card-art-trilo-ishizu.jpg') && !art.style.backgroundImage.includes('-s.jpg'), 'CV25: Trilosukuta (unique to the Ishizu deck here) detail art is the deck-scoped BIG file (12th DECK_ART entry)');
+    ok(!!art && art.style.backgroundPosition === 'center top', 'CV25b: the Trilosukuta detail band keeps center top (no focus exception for the variant either — measured separately: the face sits high in the Egyptian painting too, eyes ~18% / chin ~22% of the big file, framed mid-band with sun disc and headdress)');
   }
   window.eval('openInfoPop(' + TRILO + ')');
   {
     const art = doc.querySelector('#infopop .popart');
-    ok(!!art && art.style.backgroundImage.includes('card-art-trilo.jpg') && art.style.backgroundPosition === 'center top', 'CV25c: the Trilosukuta pop band shows the plain BIG art at center top too');
+    ok(!!art && art.style.backgroundImage.includes('card-art-trilo-ishizu.jpg') && art.style.backgroundPosition === 'center top', 'CV25c: the Trilosukuta pop band shows the deck-scoped BIG art at center top too');
   }
   window.eval('closeInfoPop()');
 
