@@ -38,7 +38,7 @@ function cardData(code) { return (DATA && DATA.cards[code]) || null; }
 // bottom — never crop the head. That is why artInline pins
 // background-position to top; the delivered files are themselves
 // top-anchored crops.
-const CARD_ART = { 99937011: 'mudora', 62320425: 'agido', 16135253: 'agido', 25926710: 'kelbek', 63542003: 'keldo', 31525442: 'zolga', 86605515: 'cardan', 46148485: 'sphinx', 38699854: 'taiyou', 14087893: 'tsuki', 79106360: 'chaospod', 9350312: 'oka', 62133026: 'hana', 36745317: 'mori', 14108995: 'kakan', 15079028: 'carbon', 55702233: 'silky', 36898537: 'horus', 98715423: 'hakamori', 45409943: 'luce' }; // 剣神官ムドラ / 古衛兵アギド / 古尖兵ケルベク / 宿神像ケルドウ / 予見者ゾルガ / 賢瑞官カルダーン / 転輪のスフィンクス / 太陽の書 / 月の書 / カオスポッド / 丘と芽吹の春化精 / 花と野原の春化精 / 森と目覚の春化精 / 春化精の花冠 / 地久神－カルボン / 生きる偲びのシルキィ / メタファイズ・ホルス・ドラゴン (user art 2026-11-03) / 墓守の罠 (user art 2026-11-04, 18th delivery — the first TRAP with individual art, and a keycard-activation presentation target) / 宵闇のルーチェ (user art 2026-11-05, 19th delivery — an Ishizu keycard, so its summon cut-in and the Keycard BGM stage resolve this art too)
+const CARD_ART = { 99937011: 'mudora', 62320425: 'agido', 16135253: 'agido', 25926710: 'kelbek', 63542003: 'keldo', 31525442: 'zolga', 86605515: 'cardan', 46148485: 'sphinx', 38699854: 'taiyou', 14087893: 'tsuki', 79106360: 'chaospod', 9350312: 'oka', 62133026: 'hana', 36745317: 'mori', 14108995: 'kakan', 15079028: 'carbon', 55702233: 'silky', 36898537: 'horus', 98715423: 'hakamori', 45409943: 'luce', 30100551: 'minerva' }; // 剣神官ムドラ / 古衛兵アギド / 古尖兵ケルベク / 宿神像ケルドウ / 予見者ゾルガ / 賢瑞官カルダーン / 転輪のスフィンクス / 太陽の書 / 月の書 / カオスポッド / 丘と芽吹の春化精 / 花と野原の春化精 / 森と目覚の春化精 / 春化精の花冠 / 地久神－カルボン / 生きる偲びのシルキィ / メタファイズ・ホルス・ドラゴン (user art 2026-11-03) / 墓守の罠 (user art 2026-11-04, 18th delivery — the first TRAP with individual art, and a keycard-activation presentation target) / 宵闇のルーチェ (user art 2026-11-05, 19th delivery — an Ishizu keycard, so its summon cut-in and the Keycard BGM stage resolve this art too) / ライトロード・セイント ミネルバ (user art 2026-11-05, 20th delivery — a regular CARD_ART entry, not a keycard; see ART_FOCUS for her band exception)
 // ---- deck-scoped art overrides (user decision 2026-11-03): a card
 // can carry a DIFFERENT illustration while it belongs to a specific
 // deck. DECK_ART maps deck id (the data.json decks key) -> passcode
@@ -123,7 +123,15 @@ function cardArtFile(code, big, deckKey) {
 // keeps 'center top' everywhere: it is itself a top-anchored
 // crop in which every subject already reads fine on tiles, hand
 // and grid (measured in the same pass).
-const ART_FOCUS = { chaospod: 'center 85%', luce: 'center 38%', 'luce-ishizu': 'center 38%' };
+// A 4th entry arrived with delivery #20 (measured the same way,
+// 2026-11-05): 《ライトロード・セイント ミネルバ》 — her face
+// sits at ~43% of the frame, so the sheet band caught it only at
+// its bottom edge and the pop band (top 33.5%) missed her
+// entirely, showing dome, light rays and banner alone. 40%
+// centers her face in the pop band and seats face and torso
+// mid-band in the sheet band (before/after reproductions in the
+// cropfix folder: minerva-band-{sheet,pop}-{before,after}.jpg).
+const ART_FOCUS = { chaospod: 'center 85%', luce: 'center 38%', 'luce-ishizu': 'center 38%', minerva: 'center 40%' };
 function artPosition(code, big, deckKey) {
   if (!big) return 'center top';
   const s = artSlug(code, deckKey);

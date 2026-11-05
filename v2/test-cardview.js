@@ -9,8 +9,9 @@
      .infoart, background-position pinned to center top (the
      standing keep-the-top crop rule) — except the ART_FOCUS
      slugs (user ruling 2026-11-05: chaospod / luce /
-     luce-ishizu), whose bands shift so the subject is inside
-     the band (CV15-CV17). Unlisted cards get NO
+     luce-ishizu, plus minerva from the 20th delivery), whose
+     bands shift so the subject is inside the band
+     (CV15-CV19). Unlisted cards get NO
      inline image — the .infoart class background is the shared
      placeholder, the same fallback the FX big card uses.
    - Deck-scoped art resolves on the detail sheet exactly like
@@ -53,6 +54,7 @@ const MUDORA = 99937011, KELBEK = 25926710, MORI = 36745317, HORUS = 36898537;
 const UNLISTED = 17484499;      // Gensei to Meikai no Gyakuten — Ishizu main, no individual art (see test-cardart; classic Agido gained the agido alias by the 2026-11-04 user ruling)
 const PLUTO = 37706769;         // 冥府の執行者 プルート — Ishizu EX, no individual art (the unlisted-EX exemplar role sat with Luce 45409943 until she gained art in the 19th delivery, 2026-11-05)
 const CHAOSPOD = 79106360, LUCE = 45409943; // ART_FOCUS exemplars (focus-exception round, 2026-11-05)
+const MINERVA = 30100551;       // ライトロード・セイント ミネルバ — 20th delivery (2026-11-05), plain CARD_ART + the 4th ART_FOCUS entry ('center 40%')
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -238,6 +240,18 @@ async function boot() {
     const art = doc.querySelector('#sheet .infoart');
     ok(!!art && art.style.backgroundImage.includes('card-art-luce-ishizu.jpg') && art.style.backgroundPosition === 'center 38%', 'CV17: Luce (unique to the Ishizu deck here) detail band shows the gold art at its focus position (center 38%)');
   }
+  window.eval('openCardInfo(' + MINERVA + ')');
+  {
+    const art = doc.querySelector('#sheet .infoart');
+    ok(!!art && art.style.backgroundImage.includes('card-art-minerva.jpg') && !art.style.backgroundImage.includes('-s.jpg'), 'CV18: the Minerva detail art is the BIG file (20th delivery)');
+    ok(!!art && art.style.backgroundPosition === 'center 40%', 'CV18b: the Minerva detail band shifts to its focus exception (center 40%) — her face sits inside the band, not at its bottom edge');
+  }
+  window.eval('openInfoPop(' + MINERVA + ')');
+  {
+    const art = doc.querySelector('#infopop .popart');
+    ok(!!art && art.style.backgroundPosition === 'center 40%', 'CV19: the Minerva pop band uses the same focus exception (center top would show dome, light rays and banner only)');
+  }
+  window.eval('closeInfoPop()');
 
   console.log(failures ? ('FAILURES: ' + failures) : 'ALL PASS');
   process.exit(failures ? 1 : 0);

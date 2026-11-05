@@ -13,9 +13,13 @@
      subject sits so low that the wide BIG-art bands would crop it
      away may shift its band position, that card only — ART_FOCUS,
      keyed by slug, consulted for the BIG file only (bands + cut-in
-     cards). Exactly three slugs qualify (measured over all 26):
-     chaospod 'center 85%', luce / luce-ishizu 'center 38%'. The
-     small file keeps center top on every surface (CAF block).
+     cards). Three slugs qualified in the full pass (measured over
+     all 26): chaospod 'center 85%', luce / luce-ishizu
+     'center 38%'. A 4th arrived with the 20th delivery, measured
+     the same way on its own: minerva 'center 40%' (her face sits
+     at ~43% of the frame — the pop band showed dome and banner
+     alone). The small file keeps center top on every surface
+     (CAF block).
    - Surfaces: board tile art (face-visible states only), hand,
      resident preview, selection-grid cards, FX ghosts, cut-in big
      cards. An opponent's face-down card must NEVER receive the art
@@ -75,6 +79,13 @@
      resolves to 'luce-ishizu', the all-gold Egyptian form
      (golden wings, Eye-of-Horus shields, pyramids and the
      Nile below); any other deck context keeps 'luce'.
+   - The 20th delivery (2026-11-05) is 《ライトロード・
+     セイント ミネルバ》 (30100551): plain art 'minerva'
+     (the winged saint enthroned with her owl) in CARD_ART,
+     NO deck-scoped override and NOT a keycard — the second
+     EXTRA-deck monster of the Ishizu deck with individual
+     art (x2 in the v11 EX). She is also the 4th ART_FOCUS
+     entry ('center 40%', see above).
    Method: boot the real client in jsdom (harness as test-setvis),
    paint a fabricated board through the client's own render() and
    assert the DOM contract in one synchronous eval. */
@@ -91,7 +102,7 @@ const wasmBinary = fs.readFileSync(path.join(V2, 'build', 'ocgcore.wasm'));
 let failures = 0;
 const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (!cond) failures++; };
 
-const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317, KAKAN = 14108995, CARBON = 15079028, SILKY = 55702233, HORUS = 36898537, HAKAMORI = 98715423, LUCE = 45409943;
+const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317, KAKAN = 14108995, CARBON = 15079028, SILKY = 55702233, HORUS = 36898537, HAKAMORI = 98715423, LUCE = 45409943, MINERVA = 30100551;
 // The unlisted exemplar moved Zolga -> Sphinx (5th delivery) ->
 // Mori (after the 7th) -> Carbon (after the 13th) -> Shilkey
 // (after the 15th), and Shilkey gained art in the 16th
@@ -132,7 +143,8 @@ for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.
                          ['card-art-horus-s.jpg', 320, 320], ['card-art-horus.jpg', 640, 882],
                          ['card-art-hakamori-s.jpg', 320, 320], ['card-art-hakamori.jpg', 640, 882],
                          ['card-art-luce-s.jpg', 320, 320], ['card-art-luce.jpg', 640, 882],
-                         ['card-art-luce-ishizu-s.jpg', 320, 320], ['card-art-luce-ishizu.jpg', 640, 882]]) {
+                         ['card-art-luce-ishizu-s.jpg', 320, 320], ['card-art-luce-ishizu.jpg', 640, 882],
+                         ['card-art-minerva-s.jpg', 320, 320], ['card-art-minerva.jpg', 640, 882]]) {
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
@@ -163,6 +175,8 @@ ok(data.decks.ishizu.main.filter(c => c === HAKAMORI).length === 3, 'CA0w: the I
 ok(!data.decks.gg.main.includes(HAKAMORI) && !data.decks.gg.extra.includes(HAKAMORI), 'CA0x: the GG deck does NOT run Hakamori (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
 ok(data.decks.ishizu.extra.filter(c => c === LUCE).length === 3, 'CA0y: the Ishizu EXTRA deck runs 3 copies of Luce (19th delivery — an Ishizu keycard)');
 ok(!data.decks.gg.main.includes(LUCE) && !data.decks.gg.extra.includes(LUCE), 'CA0z: the GG deck does NOT run Luce (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
+ok(data.decks.ishizu.extra.filter(c => c === MINERVA).length === 2, 'CA0z2: the Ishizu EXTRA deck runs 2 copies of Minerva (20th delivery — recipe v11)');
+ok(!data.decks.gg.main.includes(MINERVA) && !data.decks.gg.extra.includes(MINERVA), 'CA0z3: the GG deck does NOT run Minerva (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -291,6 +305,12 @@ async function boot() {
     luceIshizuBig: cardArtFile(${LUCE}, true, 'ishizu'),
     luceIshizuInline: artInline(${LUCE}, false, 'ishizu'),
     luceGg: cardArtFile(${LUCE}, false, 'gg'),
+    minervaSlug: CARD_ART[${MINERVA}],
+    minervaInline: artInline(${MINERVA}),
+    minervaSmall: cardArtFile(${MINERVA}, false),
+    minervaBig: cardArtFile(${MINERVA}, true),
+    minervaDeckArt: DECK_ART.ishizu && DECK_ART.ishizu[${MINERVA}],
+    minervaIshizu: cardArtFile(${MINERVA}, false, 'ishizu'),
     focusTable: ART_FOCUS,
     focusChaosBig: artCss(${CHAOSPOD}, true),
     focusChaosSmall: artCss(${CHAOSPOD}, false),
@@ -303,6 +323,9 @@ async function boot() {
     focusApplyChaos: (() => { const d = document.createElement('div'); artApply(d, ${CHAOSPOD}, true); return d.style.backgroundPosition; })(),
     focusApplyMudora: (() => { const d = document.createElement('div'); artApply(d, ${MUDORA}, true); return d.style.backgroundPosition; })(),
     focusApplyChaosSmall: (() => { const d = document.createElement('div'); artApply(d, ${CHAOSPOD}, false); return d.style.backgroundPosition; })(),
+    focusMinervaBig: artCss(${MINERVA}, true),
+    focusMinervaSmall: artCss(${MINERVA}, false),
+    focusApplyMinerva: (() => { const d = document.createElement('div'); artApply(d, ${MINERVA}, true); return d.style.backgroundPosition; })(),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.classicAgidoSlug === 'agido' && helpers.classicAgidoInline.includes('card-art-agido-s.jpg'), 'CA7b2: user ruling 2026-11-04 — the CLASSIC Agido (16135253) aliases the same agido art');
@@ -376,9 +399,13 @@ async function boot() {
   ok(helpers.luceIshizuSmall === '../assets/card-art-luce-ishizu-s.jpg' && helpers.luceIshizuBig === '../assets/card-art-luce-ishizu.jpg' && helpers.luceIshizuInline.includes('card-art-luce-ishizu-s.jpg'), 'CA7z43: Ishizu context resolves Luce to the all-gold Egyptian art (small + big)');
   ok(helpers.luceGg === '../assets/card-art-luce-s.jpg', 'CA7z44: GG context resolves Luce to the plain white-winged art');
   ok(helpers.preloaded.includes('../assets/card-art-luce-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-luce-ishizu.jpg'), 'CA7z45: boot preloads the deck-scoped Luce art too (EXTRA-deck membership warms it)');
+  ok(helpers.minervaSlug === 'minerva' && helpers.minervaInline.includes('card-art-minerva-s.jpg') && helpers.minervaInline.includes('background-position:center top'), 'CA7z46: Minerva maps and stamps like the others (20th delivery)');
+  ok(helpers.minervaSmall === '../assets/card-art-minerva-s.jpg' && helpers.minervaBig === '../assets/card-art-minerva.jpg', 'CA7z47: Minerva art files resolve (small + big)');
+  ok(helpers.preloaded.includes('../assets/card-art-minerva-s.jpg') && helpers.preloaded.includes('../assets/card-art-minerva.jpg'), 'CA7z48: boot preloads Minerva too (EXTRA-deck membership warms the art from deck-select time)');
+  ok(!helpers.minervaDeckArt && helpers.minervaIshizu === '../assets/card-art-minerva-s.jpg', 'CA7z49: Minerva has NO deck-scoped override — the Ishizu context resolves the plain art');
   // ---- focus exceptions (user ruling 2026-11-05): ART_FOCUS shifts
   // the BIG-file band position for the three measured slugs only ----
-  ok(Object.keys(helpers.focusTable).length === 3 && helpers.focusTable.chaospod === 'center 85%' && helpers.focusTable.luce === 'center 38%' && helpers.focusTable['luce-ishizu'] === 'center 38%', 'CAF1: ART_FOCUS holds exactly the three measured exceptions (chaospod 85%, luce / luce-ishizu 38%)');
+  ok(Object.keys(helpers.focusTable).length === 4 && helpers.focusTable.chaospod === 'center 85%' && helpers.focusTable.luce === 'center 38%' && helpers.focusTable['luce-ishizu'] === 'center 38%' && helpers.focusTable.minerva === 'center 40%', 'CAF1: ART_FOCUS holds exactly the four measured exceptions (chaospod 85%, luce / luce-ishizu 38%, minerva 40%)');
   ok(helpers.focusChaosBig.includes('card-art-chaospod.jpg') && helpers.focusChaosBig.includes('background-position:center 85%'), 'CAF2: Chaos Pod BIG art carries its focus position (center 85%)');
   ok(helpers.focusChaosSmall.includes('card-art-chaospod-s.jpg') && helpers.focusChaosSmall.includes('background-position:center top'), 'CAF3: Chaos Pod SMALL art keeps center top (the exception is big-file only)');
   ok(helpers.focusLuceBig.includes('card-art-luce.jpg') && helpers.focusLuceBig.includes('background-position:center 38%'), 'CAF4: Luce BIG art carries its focus position (center 38%)');
@@ -388,6 +415,9 @@ async function boot() {
   ok(helpers.focusMudoraBig.includes('card-art-mudora.jpg') && helpers.focusMudoraBig.includes('background-position:center top'), 'CAF8: a non-exception BIG art (Mudora) keeps center top — the rule did not move');
   ok(helpers.focusPosUnlisted === 'center top', 'CAF9: an unlisted code resolves the default position (no crash, no leak of the table)');
   ok(helpers.focusApplyChaos === 'center 85%' && helpers.focusApplyMudora === 'center top' && helpers.focusApplyChaosSmall === 'center top', 'CAF10: artApply (cut-in / ghost path) agrees with artCss: exception for the big file, center top otherwise');
+  ok(helpers.focusMinervaBig.includes('card-art-minerva.jpg') && helpers.focusMinervaBig.includes('background-position:center 40%'), 'CAF11: Minerva BIG art carries her focus position (center 40% — measured on delivery, 2026-11-05)');
+  ok(helpers.focusMinervaSmall.includes('card-art-minerva-s.jpg') && helpers.focusMinervaSmall.includes('background-position:center top'), 'CAF12: Minerva SMALL art keeps center top (the exception is big-file only)');
+  ok(helpers.focusApplyMinerva === 'center 40%', 'CAF13: artApply agrees with artCss for Minerva (big file, center 40%)');
   ok(helpers.kakanSlug === 'kakan' && helpers.kakanInline.includes('card-art-kakan-s.jpg') && helpers.kakanInline.includes('background-position:center top'), 'CA7aa: Kakan maps and stamps like the others (plain art = the forest painting)');
   ok(helpers.preloaded.includes('../assets/card-art-kakan-s.jpg') && helpers.preloaded.includes('../assets/card-art-kakan.jpg'), 'CA7ab: boot preloads Kakan too (same deck)');
   ok(helpers.deckArtKakan === 'kakan-ishizu', 'CA7z17: DECK_ART registers Kakan -> kakan-ishizu for the Ishizu deck (4th entry, first SPELL with an override)');
@@ -1068,6 +1098,36 @@ async function boot() {
   ok(res14.hand !== null && res14.hand.includes('card-art-luce-s.jpg') && !res14.hand.includes('luce-ishizu'), 'CA14u: hand Luce under a non-Ishizu deck context falls back to the plain art');
   ok(res14.pvSeat0.includes('card-art-luce-s.jpg') && !res14.pvSeat0.includes('luce-ishizu'), 'CA16z3: preview of a GG-context Luce (instance ref) shows the plain art');
   ok(res14.pvSeat1.includes('card-art-luce-ishizu-s.jpg'), 'CA16z4: preview of an Ishizu-context Luce (instance ref) shows the all-gold art');
+
+  // ---- Minerva board (20th delivery): an EXTRA-deck
+  // monster with a PLAIN registration — no deck override,
+  // so every deck context resolves the same 'minerva'
+  // painting. The opponent face-down rule binds her
+  // exactly like the base arts. ----
+  const res15 = await window.eval(`
+    (() => {
+      const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
+      const P = () => ({ mzone: [null,null,null,null,null,null,null], szone: [null,null,null,null,null,null], grave: [], removed: [], extra: [], hand: [], deckCount: 38, lp: 8000 });
+      const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
+      b.players[0].mzone[0] = mon(${MINERVA}, 0x1);  // own face-up ATK Minerva (post-Synchro)
+      b.players[1].mzone[0] = mon(${MINERVA}, 0x1);  // opp face-up Minerva (public: art shows)
+      b.players[1].mzone[1] = mon(${MINERVA}, 0x8);  // opp face-down DEF Minerva (MUST stay hidden)
+      render(b);
+      const artOf = (zone) => {
+        const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
+        const a = slot && slot.querySelector('.tile .art');
+        return a ? (a.getAttribute('style') || '') : null;
+      };
+      setPreview(${MINERVA}, null);
+      const pv = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      return { ownUp: artOf('0:4:0'), oppUp: artOf('1:4:0'), oppDown: artOf('1:4:1'), pv };
+    })()
+  `);
+  ok(res15.ownUp !== null && res15.oppUp !== null && res15.oppDown !== null, 'CA33: non-vacuity — Minerva board rendered');
+  ok(res15.ownUp.includes('card-art-minerva-s.jpg'), 'CA11aj: own face-up Minerva tile shows the new art (20th delivery)');
+  ok(res15.oppUp.includes('card-art-minerva-s.jpg'), 'CA11ak: opponent FACE-UP Minerva shows the art too (public information)');
+  ok(res15.oppDown === '' && !String(res15.oppDown).includes('minerva'), 'CA13r: opponent FACE-DOWN Minerva gets NO art (asymmetry / no leak)');
+  ok(res15.pv.includes('card-art-minerva-s.jpg'), 'CA16z5: resident preview shows the Minerva art (unique deck membership: Ishizu)');
 
   window.close();
   console.log(failures === 0 ? 'ALL CARDART CHECKS PASSED' : failures + ' CARDART CHECK(S) FAILED');
