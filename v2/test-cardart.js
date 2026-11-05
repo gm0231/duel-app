@@ -293,6 +293,30 @@
      to the GG deck: 《迷宮の魔戦車》 (99551425), the
      GG EXTRA deck's only card that is neither a
      keycard nor art-registered.
+     A follow-up the same day (#25b) adds his
+     deck-scoped override (the 13th DECK_ART entry):
+     inside the Ishizu deck he resolves to
+     'hyperion-ishizu', the Egyptian variant (the
+     same flame-wreathed titan in full pharaonic
+     regalia — a sun-disc crown on its cobra
+     standard, hieroglyph pauldron and chest
+     panels, a winged sun-disc collar, a hieroglyph
+     sash bearing the ankh, the temple roofline
+     with its Anubis statues and the Nile below);
+     any other deck context keeps 'hyperion'. He
+     stays NOT a keycard in either painting — no
+     keycard list or test is touched. The variant
+     was band-measured separately like the other
+     pairs: his crowned head sits high there too
+     (sun-disc crown ~2-8%, masked face ~10-14% of
+     the big file), so center top seats crown,
+     helmeted head, collar and torso mid-band in
+     both bands, while the 20% candidate pushes
+     the sun disc out of both bands' tops — NO
+     ART_FOCUS entry for the variant either
+     (reproductions: hyperion-ishizu-band-
+     {sheet,pop}-{top,20}.jpg in the cropfix
+     folder). CAF1 stays at eight entries.
    Method: boot the real client in jsdom (harness as test-setvis),
    paint a fabricated board through the client's own render() and
    assert the DOM contract in one synchronous eval. */
@@ -360,7 +384,8 @@ for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.
                          ['card-art-pluto-s.jpg', 320, 320], ['card-art-pluto.jpg', 640, 882],
                          ['card-art-pluto-ishizu-s.jpg', 320, 320], ['card-art-pluto-ishizu.jpg', 640, 882],
                          ['card-art-trilo-s.jpg', 320, 320], ['card-art-trilo.jpg', 640, 882],
-                         ['card-art-hyperion-s.jpg', 320, 320], ['card-art-hyperion.jpg', 640, 882]]) {
+                         ['card-art-hyperion-s.jpg', 320, 320], ['card-art-hyperion.jpg', 640, 882],
+                         ['card-art-hyperion-ishizu-s.jpg', 320, 320], ['card-art-hyperion-ishizu.jpg', 640, 882]]) {
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
@@ -583,6 +608,10 @@ async function boot() {
     hyperionBig: cardArtFile(${HYPERION}, true),
     hyperionDeckArt: DECK_ART.ishizu && DECK_ART.ishizu[${HYPERION}],
     hyperionIshizu: cardArtFile(${HYPERION}, false, 'ishizu'),
+    hyperionIshizuSmall: cardArtFile(${HYPERION}, false, 'ishizu'),
+    hyperionIshizuBig: cardArtFile(${HYPERION}, true, 'ishizu'),
+    hyperionIshizuInline: artInline(${HYPERION}, false, 'ishizu'),
+    hyperionGg: cardArtFile(${HYPERION}, false, 'gg'),
     focusTable: ART_FOCUS,
     focusChaosBig: artCss(${CHAOSPOD}, true),
     focusChaosSmall: artCss(${CHAOSPOD}, false),
@@ -629,6 +658,10 @@ async function boot() {
     focusHyperionBig: artCss(${HYPERION}, true),
     focusHyperionSmall: artCss(${HYPERION}, false),
     focusApplyHyperion: (() => { const d = document.createElement('div'); artApply(d, ${HYPERION}, true); return d.style.backgroundPosition; })(),
+    focusHyperionBigIshizu: artCss(${HYPERION}, true, 'ishizu'),
+    focusHyperionBigGg: artCss(${HYPERION}, true, 'gg'),
+    focusHyperionSmallIshizu: artCss(${HYPERION}, false, 'ishizu'),
+    focusApplyHyperionIshizu: (() => { const d = document.createElement('div'); artApply(d, ${HYPERION}, true, 'ishizu'); return d.style.backgroundPosition; })(),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.classicAgidoSlug === 'agido' && helpers.classicAgidoInline.includes('card-art-agido-s.jpg'), 'CA7b2: user ruling 2026-11-04 — the CLASSIC Agido (16135253) aliases the same agido art');
@@ -737,7 +770,10 @@ async function boot() {
   ok(helpers.hyperionSlug === 'hyperion' && helpers.hyperionInline.includes('card-art-hyperion-s.jpg') && helpers.hyperionInline.includes('background-position:center top'), 'CA7z79: Hyperion maps and stamps like the others (25th delivery)');
   ok(helpers.hyperionSmall === '../assets/card-art-hyperion-s.jpg' && helpers.hyperionBig === '../assets/card-art-hyperion.jpg', 'CA7z80: Hyperion art files resolve (small + big)');
   ok(helpers.preloaded.includes('../assets/card-art-hyperion-s.jpg') && helpers.preloaded.includes('../assets/card-art-hyperion.jpg'), 'CA7z81: boot preloads Hyperion too (EXTRA-deck membership warms the art from deck-select time)');
-  ok(helpers.hyperionDeckArt === undefined && helpers.hyperionIshizu === '../assets/card-art-hyperion-s.jpg', 'CA7z82: Hyperion has NO deck-scoped override — Ishizu context keeps the plain art');
+  ok(helpers.hyperionDeckArt === 'hyperion-ishizu', 'CA7z82: DECK_ART registers Hyperion -> hyperion-ishizu for the Ishizu deck (13th entry — the seventh EXTRA-deck monster with an override)');
+  ok(helpers.hyperionIshizuSmall === '../assets/card-art-hyperion-ishizu-s.jpg' && helpers.hyperionIshizuBig === '../assets/card-art-hyperion-ishizu.jpg' && helpers.hyperionIshizuInline.includes('card-art-hyperion-ishizu-s.jpg'), 'CA7z83: Ishizu context resolves Hyperion to the Egyptian art (small + big)');
+  ok(helpers.hyperionGg === '../assets/card-art-hyperion-s.jpg', 'CA7z84: GG context resolves Hyperion to the plain flame art');
+  ok(helpers.preloaded.includes('../assets/card-art-hyperion-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-hyperion-ishizu.jpg'), 'CA7z85: boot preloads the deck-scoped Hyperion art too (EXTRA-deck membership warms it)');
   // ---- focus exceptions (user ruling 2026-11-05): ART_FOCUS shifts
   // the BIG-file band position for the three measured slugs only ----
   ok(Object.keys(helpers.focusTable).length === 8 && helpers.focusTable.chaospod === 'center 85%' && helpers.focusTable.luce === 'center 38%' && helpers.focusTable['luce-ishizu'] === 'center 38%' && helpers.focusTable.minerva === 'center 20%' && helpers.focusTable['minerva-ishizu'] === 'center 20%' && helpers.focusTable['castel-ishizu'] === 'center 20%' && helpers.focusTable.baromett === 'center 40%' && helpers.focusTable['baromett-ishizu'] === 'center 40%', 'CAF1: ART_FOCUS holds exactly the eight measured exceptions (chaospod 85%, luce / luce-ishizu 38%, minerva / minerva-ishizu / castel-ishizu 20%, baromett / baromett-ishizu 40%)');
@@ -779,6 +815,9 @@ async function boot() {
   ok(helpers.focusTriloSmall.includes('card-art-trilo-s.jpg') && helpers.focusTriloSmall.includes('background-position:center top') && helpers.focusApplyTrilo === 'center top', 'CAF37: the Trilosukuta SMALL art and the artApply path also keep center top');
   ok(helpers.focusHyperionBig.includes('card-art-hyperion.jpg') && helpers.focusHyperionBig.includes('background-position:center top'), 'CAF38: the Hyperion BIG art keeps center top — measured 2026-11-06: his helmeted head sits high (crest ~4%, masked face ~10-13% of the big file), so both bands frame helmet, face and torso and the plain painting has NO focus exception');
   ok(helpers.focusHyperionSmall.includes('card-art-hyperion-s.jpg') && helpers.focusHyperionSmall.includes('background-position:center top') && helpers.focusApplyHyperion === 'center top', 'CAF39: the Hyperion SMALL art and the artApply path also keep center top');
+  ok(helpers.focusHyperionBigIshizu.includes('card-art-hyperion-ishizu.jpg') && helpers.focusHyperionBigIshizu.includes('background-position:center top'), 'CAF40: Hyperion in the Ishizu deck resolves the Egyptian art at center top — measured separately on the Egyptian painting (2026-11-06): his crowned head sits high there too (sun-disc crown ~2-8%, masked face ~10-14% of the big file), so both bands frame crown, head and torso and the variant has NO focus exception either');
+  ok(helpers.focusHyperionBigGg.includes('card-art-hyperion.jpg') && !helpers.focusHyperionBigGg.includes('ishizu') && helpers.focusHyperionBigGg.includes('background-position:center top'), 'CAF41: Hyperion in any other deck keeps the plain art at center top');
+  ok(helpers.focusHyperionSmallIshizu.includes('card-art-hyperion-ishizu-s.jpg') && helpers.focusHyperionSmallIshizu.includes('background-position:center top') && helpers.focusApplyHyperionIshizu === 'center top', 'CAF42: the deck-variant SMALL art and the artApply path keep center top too');
   ok(helpers.kakanSlug === 'kakan' && helpers.kakanInline.includes('card-art-kakan-s.jpg') && helpers.kakanInline.includes('background-position:center top'), 'CA7aa: Kakan maps and stamps like the others (plain art = the forest painting)');
   ok(helpers.preloaded.includes('../assets/card-art-kakan-s.jpg') && helpers.preloaded.includes('../assets/card-art-kakan.jpg'), 'CA7ab: boot preloads Kakan too (same deck)');
   ok(helpers.deckArtKakan === 'kakan-ishizu', 'CA7z17: DECK_ART registers Kakan -> kakan-ishizu for the Ishizu deck (4th entry, first SPELL with an override)');
@@ -1623,10 +1662,12 @@ async function boot() {
 
   // ---- 25th delivery board: Hyperion (63101468), the
   // seventh EXTRA-deck monster with individual art —
-  // plain art only (NO deck-scoped override): both
-  // seats' face-up tiles show the plain 'hyperion' art
-  // under their own deck context; an opponent FACE-DOWN
-  // Hyperion must NOT carry any art. ----
+  // follow-up #25b gives him a deck-scoped override:
+  // the own tile (seat 0, Ishizu deck) shows the
+  // DECK-SCOPED Egyptian art (hyperion-ishizu); the
+  // opponent's face-up tile under the GG deck context
+  // shows the plain 'hyperion' art; an opponent
+  // FACE-DOWN Hyperion must NOT carry any art. ----
   const res20 = await window.eval(`
     (() => {
       const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
@@ -1647,10 +1688,10 @@ async function boot() {
     })()
   `);
   ok(res20.ownUp !== null && res20.oppUp !== null && res20.oppDown !== null, 'CA38: non-vacuity — Hyperion board rendered');
-  ok(res20.ownUp.includes('card-art-hyperion-s.jpg'), 'CA11at: own face-up Hyperion tile (seat 0) shows the plain art (no deck override)');
-  ok(res20.oppUp.includes('card-art-hyperion-s.jpg'), 'CA11au: opponent FACE-UP Hyperion shows the plain art too (public information)');
+  ok(res20.ownUp.includes('card-art-hyperion-ishizu-s.jpg'), 'CA11at: own face-up Hyperion tile in the Ishizu deck (seat 0) shows the DECK-SCOPED Egyptian art');
+  ok(res20.oppUp.includes('card-art-hyperion-s.jpg') && !res20.oppUp.includes('hyperion-ishizu'), 'CA11au: opponent FACE-UP Hyperion under the GG deck context shows the plain art (public information, owner-deck resolution)');
   ok(res20.oppDown === '' && !String(res20.oppDown).includes('hyperion'), 'CA13w: opponent FACE-DOWN Hyperion gets NO art (asymmetry / no leak)');
-  ok(res20.pv.includes('card-art-hyperion-s.jpg'), 'CA16z10: resident preview shows the Hyperion art (unique deck membership: Ishizu)');
+  ok(res20.pv.includes('card-art-hyperion-ishizu-s.jpg'), 'CA16z10: resident preview shows the deck-scoped Hyperion art (unique deck membership: Ishizu)');
 
   window.close();
   console.log(failures === 0 ? 'ALL CARDART CHECKS PASSED' : failures + ' CARDART CHECK(S) FAILED');
