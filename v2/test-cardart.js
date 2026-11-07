@@ -541,6 +541,30 @@
      (71593652, Mutiny in the Sky), another real
      Ishizu main-deck card (x2) with no individual
      art.
+   - The 34th delivery (2026-11-07) is 《死者蘇生》
+     (83764718): plain art 'sosei' (a green ankh
+     floating in a burst of blue light) in CARD_ART
+     — a SPELL (x1 in the v11 main deck), not a
+     keycard, with NO deck-scoped override. The
+     registered passcode is the NORMAL printing the
+     Ishizu deck runs; the Mai deck's Magic Card
+     printing is a different passcode and stays
+     untouched. Band check, measured like the
+     others: the ankh is one tall subject spanning
+     ~16-84% of the big file (loop ~16-52%,
+     crossbar ~45-58%) with the star core at its
+     junction at ~49-54%, mid-frame, not high — so
+     center top leaves the pop band on the light
+     rays and the loop's top arc alone, the ankh
+     itself essentially absent, and cuts the
+     ankh's bottom tip out of the sheet band. It
+     takes the 19th ART_FOCUS entry ('center 40%':
+     the loop's lower half, the whole crossbar and
+     the star core seated in the pop band, the
+     whole ankh framed in the sheet band; 'center
+     50%' was measured and rejected — its pop
+     window loses almost all of the loop). CAF1
+     grows to nineteen entries.
    Method: boot the real client in jsdom (harness as test-setvis),
    paint a fabricated board through the client's own render() and
    assert the DOM contract in one synchronous eval. */
@@ -557,7 +581,7 @@ const wasmBinary = fs.readFileSync(path.join(V2, 'build', 'ocgcore.wasm'));
 let failures = 0;
 const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (!cond) failures++; };
 
-const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317, KAKAN = 14108995, CARBON = 15079028, SILKY = 55702233, HORUS = 36898537, HAKAMORI = 98715423, LUCE = 45409943, MINERVA = 30100551, CASTEL = 82633039, BAROMETT = 62967433, PLUTO = 37706769, TRILO = 21368273, HYPERION = 63101468, GENSEI = 17484499, FUKUSO = 35726888, MICHIZURE = 16435215, KYOSHIN = 67037924, GOFUU = 78625592, SOUDO = 51612489, YOGEN = 46652477;
+const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317, KAKAN = 14108995, CARBON = 15079028, SILKY = 55702233, HORUS = 36898537, HAKAMORI = 98715423, LUCE = 45409943, MINERVA = 30100551, CASTEL = 82633039, BAROMETT = 62967433, PLUTO = 37706769, TRILO = 21368273, HYPERION = 63101468, GENSEI = 17484499, FUKUSO = 35726888, MICHIZURE = 16435215, KYOSHIN = 67037924, GOFUU = 78625592, SOUDO = 51612489, YOGEN = 46652477, SOSEI = 83764718;
 // The unlisted exemplar moved Zolga -> Sphinx (5th delivery) ->
 // Mori (after the 7th) -> Carbon (after the 13th) -> Shilkey
 // (after the 15th) -> the deck's CLASSIC 《アギド》 16135253
@@ -617,7 +641,8 @@ for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.
                          ['card-art-gofuu-s.jpg', 320, 320], ['card-art-gofuu.jpg', 640, 882],
                          ['card-art-soudo-s.jpg', 320, 320], ['card-art-soudo.jpg', 640, 882],
                          ['card-art-yogen-s.jpg', 320, 320], ['card-art-yogen.jpg', 640, 882],
-                         ['card-art-yogen-ishizu-s.jpg', 320, 320], ['card-art-yogen-ishizu.jpg', 640, 882]]) {
+                         ['card-art-yogen-ishizu-s.jpg', 320, 320], ['card-art-yogen-ishizu.jpg', 640, 882],
+                         ['card-art-sosei-s.jpg', 320, 320], ['card-art-sosei.jpg', 640, 882]]) {
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
@@ -670,6 +695,8 @@ ok(data.decks.ishizu.main.filter(c => c === KYOSHIN).length === 1, 'CA0z20: the 
 ok(!data.decks.gg.main.includes(KYOSHIN) && !data.decks.gg.extra.includes(KYOSHIN), 'CA0z21: the GG deck does NOT run Kyoshin (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
 ok(data.decks.ishizu.main.filter(c => c === YOGEN).length === 1, 'CA0z22: the Ishizu deck runs 1 copy of Tensei no Yogen (33rd delivery — recipe v11)');
 ok(!data.decks.gg.main.includes(YOGEN) && !data.decks.gg.extra.includes(YOGEN), 'CA0z23: the GG deck does NOT run Yogen (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
+ok(data.decks.ishizu.main.filter(c => c === SOSEI).length === 1, 'CA0z24: the Ishizu deck runs 1 copy of Shisha Sosei (34th delivery — recipe v11, the normal printing 83764718)');
+ok(!data.decks.gg.main.includes(SOSEI) && !data.decks.gg.extra.includes(SOSEI), 'CA0z25: the GG deck does NOT run Shisha Sosei (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -913,6 +940,13 @@ async function boot() {
     yogenIshizuBig: cardArtFile(${YOGEN}, true, 'ishizu'),
     yogenIshizuInline: artInline(${YOGEN}, false, 'ishizu'),
     yogenGg: cardArtFile(${YOGEN}, false, 'gg'),
+    soseiSlug: CARD_ART[${SOSEI}],
+    soseiInline: artInline(${SOSEI}),
+    soseiSmall: cardArtFile(${SOSEI}, false),
+    soseiBig: cardArtFile(${SOSEI}, true),
+    soseiDeckArt: DECK_ART.ishizu && DECK_ART.ishizu[${SOSEI}],
+    soseiIshizu: cardArtFile(${SOSEI}, false, 'ishizu'),
+    soseiGg: cardArtFile(${SOSEI}, false, 'gg'),
     focusTable: ART_FOCUS,
     focusChaosBig: artCss(${CHAOSPOD}, true),
     focusChaosSmall: artCss(${CHAOSPOD}, false),
@@ -994,6 +1028,9 @@ async function boot() {
     focusApplyYogen: (() => { const d = document.createElement('div'); artApply(d, ${YOGEN}, true); return d.style.backgroundPosition; })(),
     focusYogenBigIshizu: artCss(${YOGEN}, true, 'ishizu'),
     focusYogenSmallIshizu: artCss(${YOGEN}, false, 'ishizu'),
+    focusSoseiBig: artCss(${SOSEI}, true),
+    focusSoseiSmall: artCss(${SOSEI}, false),
+    focusApplySosei: (() => { const d = document.createElement('div'); artApply(d, ${SOSEI}, true); return d.style.backgroundPosition; })(),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.classicAgidoSlug === 'agido' && helpers.classicAgidoInline.includes('card-art-agido-s.jpg'), 'CA7b2: user ruling 2026-11-04 — the CLASSIC Agido (16135253) aliases the same agido art');
@@ -1146,9 +1183,13 @@ async function boot() {
   ok(helpers.yogenIshizuSmall === '../assets/card-art-yogen-ishizu-s.jpg' && helpers.yogenIshizuBig === '../assets/card-art-yogen-ishizu.jpg' && helpers.yogenIshizuInline.includes('card-art-yogen-ishizu-s.jpg'), 'CA7z124: Ishizu context resolves Yogen to the pentagram art (small + big)');
   ok(helpers.yogenGg === '../assets/card-art-yogen-s.jpg', 'CA7z125: GG context resolves Yogen to the plain fortune teller art');
   ok(helpers.preloaded.includes('../assets/card-art-yogen-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-yogen-ishizu.jpg'), 'CA7z126: boot preloads the deck-scoped Yogen art too');
+  ok(helpers.soseiSlug === 'sosei' && helpers.soseiInline.includes('card-art-sosei-s.jpg') && helpers.soseiInline.includes('background-position:center top'), 'CA7z127: Sosei maps and stamps like the others (34th delivery)');
+  ok(helpers.soseiSmall === '../assets/card-art-sosei-s.jpg' && helpers.soseiBig === '../assets/card-art-sosei.jpg', 'CA7z128: Sosei art files resolve (small + big)');
+  ok(helpers.preloaded.includes('../assets/card-art-sosei-s.jpg') && helpers.preloaded.includes('../assets/card-art-sosei.jpg'), 'CA7z129: boot preloads Sosei too (main-deck membership warms the art from deck-select time)');
+  ok(helpers.soseiDeckArt === undefined && helpers.soseiIshizu === '../assets/card-art-sosei-s.jpg' && helpers.soseiGg === '../assets/card-art-sosei-s.jpg', 'CA7z130: Sosei has NO deck-scoped override — plain registration, every deck context keeps the base art');
   // ---- focus exceptions (user ruling 2026-11-05): ART_FOCUS shifts
   // the BIG-file band position for the three measured slugs only ----
-  ok(Object.keys(helpers.focusTable).length === 18 && helpers.focusTable.chaospod === 'center 85%' && helpers.focusTable.luce === 'center 38%' && helpers.focusTable['luce-ishizu'] === 'center 38%' && helpers.focusTable.minerva === 'center 20%' && helpers.focusTable['minerva-ishizu'] === 'center 20%' && helpers.focusTable['castel-ishizu'] === 'center 20%' && helpers.focusTable.baromett === 'center 40%' && helpers.focusTable['baromett-ishizu'] === 'center 40%' && helpers.focusTable.gensei === 'center 30%' && helpers.focusTable.fukuso === 'center 80%' && helpers.focusTable['fukuso-ishizu'] === 'center 65%' && helpers.focusTable.michizure === 'center 50%' && helpers.focusTable.kyoshin === 'center 40%' && helpers.focusTable['kyoshin-ishizu'] === 'center 40%' && helpers.focusTable.gofuu === 'center 40%' && helpers.focusTable.soudo === 'center 40%' && helpers.focusTable.yogen === 'center 40%' && helpers.focusTable['yogen-ishizu'] === 'center 30%', 'CAF1: ART_FOCUS holds exactly the eighteen measured exceptions (chaospod 85%, luce / luce-ishizu 38%, minerva / minerva-ishizu / castel-ishizu 20%, baromett / baromett-ishizu 40%, gensei 30%, fukuso 80%, fukuso-ishizu 65%, michizure 50%, kyoshin / kyoshin-ishizu 40%, gofuu 40%, soudo 40%, yogen 40%, yogen-ishizu 30%)');
+  ok(Object.keys(helpers.focusTable).length === 19 && helpers.focusTable.chaospod === 'center 85%' && helpers.focusTable.luce === 'center 38%' && helpers.focusTable['luce-ishizu'] === 'center 38%' && helpers.focusTable.minerva === 'center 20%' && helpers.focusTable['minerva-ishizu'] === 'center 20%' && helpers.focusTable['castel-ishizu'] === 'center 20%' && helpers.focusTable.baromett === 'center 40%' && helpers.focusTable['baromett-ishizu'] === 'center 40%' && helpers.focusTable.gensei === 'center 30%' && helpers.focusTable.fukuso === 'center 80%' && helpers.focusTable['fukuso-ishizu'] === 'center 65%' && helpers.focusTable.michizure === 'center 50%' && helpers.focusTable.kyoshin === 'center 40%' && helpers.focusTable['kyoshin-ishizu'] === 'center 40%' && helpers.focusTable.gofuu === 'center 40%' && helpers.focusTable.soudo === 'center 40%' && helpers.focusTable.yogen === 'center 40%' && helpers.focusTable['yogen-ishizu'] === 'center 30%' && helpers.focusTable.sosei === 'center 40%', 'CAF1: ART_FOCUS holds exactly the nineteen measured exceptions (chaospod 85%, luce / luce-ishizu 38%, minerva / minerva-ishizu / castel-ishizu 20%, baromett / baromett-ishizu 40%, gensei 30%, fukuso 80%, fukuso-ishizu 65%, michizure 50%, kyoshin / kyoshin-ishizu 40%, gofuu 40%, soudo 40%, yogen 40%, yogen-ishizu 30%, sosei 40%)');
   ok(helpers.focusChaosBig.includes('card-art-chaospod.jpg') && helpers.focusChaosBig.includes('background-position:center 85%'), 'CAF2: Chaos Pod BIG art carries its focus position (center 85%)');
   ok(helpers.focusChaosSmall.includes('card-art-chaospod-s.jpg') && helpers.focusChaosSmall.includes('background-position:center top'), 'CAF3: Chaos Pod SMALL art keeps center top (the exception is big-file only)');
   ok(helpers.focusLuceBig.includes('card-art-luce.jpg') && helpers.focusLuceBig.includes('background-position:center 38%'), 'CAF4: Luce BIG art carries its focus position (center 38%)');
@@ -1211,6 +1252,8 @@ async function boot() {
   ok(helpers.focusYogenBig.includes('card-art-yogen.jpg') && helpers.focusYogenBig.includes('background-position:center 40%'), 'CAF61: Yogen BIG art carries its focus position (center 40% — measured 2026-11-07: the fortune teller\'s visible face sits at ~34-39% of the big file (hooded head ~15-42%) with the glowing card she holds at ~46-56%, so center top leaves the pop band on the curtains and skulls with her face just below its bottom edge and the glowing card entirely out)');
   ok(helpers.focusYogenSmall.includes('card-art-yogen-s.jpg') && helpers.focusYogenSmall.includes('background-position:center top') && helpers.focusApplyYogen === 'center 40%', 'CAF62: Yogen SMALL art keeps center top (the exception is big-file only) and artApply agrees with artCss');
   ok(helpers.focusYogenBigIshizu.includes('card-art-yogen-ishizu.jpg') && helpers.focusYogenBigIshizu.includes('background-position:center 30%') && helpers.focusYogenSmallIshizu.includes('card-art-yogen-ishizu-s.jpg') && helpers.focusYogenSmallIshizu.includes('background-position:center top'), 'CAF63: Yogen in the Ishizu deck resolves the pentagram art WITH its own focus entry (center 30% — measured separately on the pentagram painting: the golden star spans ~22-65% of the big file with the card at its center at ~40-50%, so center top leaves the pop band on the hood and clawed hands with only the star\'s top point showing, its center and card cropped away; center 40% was rejected — it clips the star\'s top point and the figure\'s eyes); the deck-variant SMALL art keeps center top');
+  ok(helpers.focusSoseiBig.includes('card-art-sosei.jpg') && helpers.focusSoseiBig.includes('background-position:center 40%'), 'CAF64: Sosei BIG art carries its focus position (center 40% — measured 2026-11-07: the green ankh spans ~16-84% of the big file with the star core at its junction at ~49-54%, mid-frame, so center top leaves the pop band on the light rays and the loop\'s top arc alone — the ankh itself essentially absent — and cuts the ankh\'s bottom tip out of the sheet band)');
+  ok(helpers.focusSoseiSmall.includes('card-art-sosei-s.jpg') && helpers.focusSoseiSmall.includes('background-position:center top') && helpers.focusApplySosei === 'center 40%', 'CAF65: Sosei SMALL art keeps center top (the exception is big-file only) and artApply agrees with artCss');
   ok(helpers.kakanSlug === 'kakan' && helpers.kakanInline.includes('card-art-kakan-s.jpg') && helpers.kakanInline.includes('background-position:center top'), 'CA7aa: Kakan maps and stamps like the others (plain art = the forest painting)');
   ok(helpers.preloaded.includes('../assets/card-art-kakan-s.jpg') && helpers.preloaded.includes('../assets/card-art-kakan.jpg'), 'CA7ab: boot preloads Kakan too (same deck)');
   ok(helpers.deckArtKakan === 'kakan-ishizu', 'CA7z17: DECK_ART registers Kakan -> kakan-ishizu for the Ishizu deck (4th entry, first SPELL with an override)');
