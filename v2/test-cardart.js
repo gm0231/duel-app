@@ -381,6 +381,31 @@
      passes to 《転生の予言》 (46652477), another
      real Ishizu main-deck card (x1) with no
      individual art.
+   - The 28th delivery (2026-11-07) is 《おろかな副葬》
+     (35726888): plain art 'fukuso' (a hand risen from
+     the grave gripping a bouquet of white flowers
+     before a tombstone in a purple graveyard, dropped
+     rings beside it) in CARD_ART — a SPELL (x2 in the
+     v11 main deck), not a keycard. It also adds her
+     deck-scoped override (the 15th DECK_ART entry):
+     'fukuso-ishizu' (an Egyptian tomb — a mummified
+     hand gripping white lilies over a gold winged
+     collar with an ankh pendant, under a
+     hieroglyph-carved stele) in DECK_ART under
+     ishizu. Band check, measured like the others:
+     BOTH paintings' subjects sit LOW — the plain
+     painting's hand and bouquet at ~53-87% of the big
+     file, the Egyptian painting's hand and lilies
+     spanning ~32-90% — so center top leaves the pop
+     band on the tombstone / stele alone with the
+     subject absent and clips the hand at the sheet
+     band's bottom edge. The plain painting takes the
+     10th ART_FOCUS entry ('center 80%': hand and
+     bouquet seated in the pop band, whole in the
+     sheet band) and the variant the 11th ('center
+     65%': the gripping hand and gold collar in the
+     pop band, the whole subject in the sheet band).
+     CAF1 grows to eleven entries.
    Method: boot the real client in jsdom (harness as test-setvis),
    paint a fabricated board through the client's own render() and
    assert the DOM contract in one synchronous eval. */
@@ -397,7 +422,7 @@ const wasmBinary = fs.readFileSync(path.join(V2, 'build', 'ocgcore.wasm'));
 let failures = 0;
 const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (!cond) failures++; };
 
-const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317, KAKAN = 14108995, CARBON = 15079028, SILKY = 55702233, HORUS = 36898537, HAKAMORI = 98715423, LUCE = 45409943, MINERVA = 30100551, CASTEL = 82633039, BAROMETT = 62967433, PLUTO = 37706769, TRILO = 21368273, HYPERION = 63101468, GENSEI = 17484499;
+const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317, KAKAN = 14108995, CARBON = 15079028, SILKY = 55702233, HORUS = 36898537, HAKAMORI = 98715423, LUCE = 45409943, MINERVA = 30100551, CASTEL = 82633039, BAROMETT = 62967433, PLUTO = 37706769, TRILO = 21368273, HYPERION = 63101468, GENSEI = 17484499, FUKUSO = 35726888;
 // The unlisted exemplar moved Zolga -> Sphinx (5th delivery) ->
 // Mori (after the 7th) -> Carbon (after the 13th) -> Shilkey
 // (after the 15th) -> the deck's CLASSIC 《アギド》 16135253
@@ -447,7 +472,9 @@ for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.
                          ['card-art-trilo-ishizu-s.jpg', 320, 320], ['card-art-trilo-ishizu.jpg', 640, 882],
                          ['card-art-hyperion-s.jpg', 320, 320], ['card-art-hyperion.jpg', 640, 882],
                          ['card-art-hyperion-ishizu-s.jpg', 320, 320], ['card-art-hyperion-ishizu.jpg', 640, 882],
-                         ['card-art-gensei-s.jpg', 320, 320], ['card-art-gensei.jpg', 640, 882]]) {
+                         ['card-art-gensei-s.jpg', 320, 320], ['card-art-gensei.jpg', 640, 882],
+                         ['card-art-fukuso-s.jpg', 320, 320], ['card-art-fukuso.jpg', 640, 882],
+                         ['card-art-fukuso-ishizu-s.jpg', 320, 320], ['card-art-fukuso-ishizu.jpg', 640, 882]]) {
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
@@ -492,6 +519,8 @@ ok(data.decks.ishizu.extra.filter(c => c === HYPERION).length === 1, 'CA0z12: th
 ok(!data.decks.gg.main.includes(HYPERION) && !data.decks.gg.extra.includes(HYPERION), 'CA0z13: the GG deck does NOT run Hyperion (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
 ok(data.decks.ishizu.main.filter(c => c === GENSEI).length === 1, 'CA0z14: the Ishizu deck runs 1 copy of Gensei to Meikai no Gyakuten (26th delivery — recipe v11)');
 ok(!data.decks.gg.main.includes(GENSEI) && !data.decks.gg.extra.includes(GENSEI), 'CA0z15: the GG deck does NOT run Gensei (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
+ok(data.decks.ishizu.main.filter(c => c === FUKUSO).length === 2, 'CA0z16: the Ishizu deck runs 2 copies of Oroka na Fukuso (28th delivery — recipe v11)');
+ok(!data.decks.gg.main.includes(FUKUSO) && !data.decks.gg.extra.includes(FUKUSO), 'CA0z17: the GG deck does NOT run Fukuso (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -687,6 +716,15 @@ async function boot() {
     genseiDeckArt: DECK_ART.ishizu && DECK_ART.ishizu[${GENSEI}],
     genseiIshizu: cardArtFile(${GENSEI}, false, 'ishizu'),
     genseiGg: cardArtFile(${GENSEI}, false, 'gg'),
+    fukusoSlug: CARD_ART[${FUKUSO}],
+    fukusoInline: artInline(${FUKUSO}),
+    fukusoSmall: cardArtFile(${FUKUSO}, false),
+    fukusoBig: cardArtFile(${FUKUSO}, true),
+    fukusoDeckArt: DECK_ART.ishizu && DECK_ART.ishizu[${FUKUSO}],
+    fukusoIshizuSmall: cardArtFile(${FUKUSO}, false, 'ishizu'),
+    fukusoIshizuBig: cardArtFile(${FUKUSO}, true, 'ishizu'),
+    fukusoIshizuInline: artInline(${FUKUSO}, false, 'ishizu'),
+    fukusoGg: cardArtFile(${FUKUSO}, false, 'gg'),
     focusTable: ART_FOCUS,
     focusChaosBig: artCss(${CHAOSPOD}, true),
     focusChaosSmall: artCss(${CHAOSPOD}, false),
@@ -744,6 +782,11 @@ async function boot() {
     focusGenseiBig: artCss(${GENSEI}, true),
     focusGenseiSmall: artCss(${GENSEI}, false),
     focusApplyGensei: (() => { const d = document.createElement('div'); artApply(d, ${GENSEI}, true); return d.style.backgroundPosition; })(),
+    focusFukusoBig: artCss(${FUKUSO}, true),
+    focusFukusoSmall: artCss(${FUKUSO}, false),
+    focusApplyFukuso: (() => { const d = document.createElement('div'); artApply(d, ${FUKUSO}, true); return d.style.backgroundPosition; })(),
+    focusFukusoBigIshizu: artCss(${FUKUSO}, true, 'ishizu'),
+    focusFukusoSmallIshizu: artCss(${FUKUSO}, false, 'ishizu'),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.classicAgidoSlug === 'agido' && helpers.classicAgidoInline.includes('card-art-agido-s.jpg'), 'CA7b2: user ruling 2026-11-04 — the CLASSIC Agido (16135253) aliases the same agido art');
@@ -863,9 +906,16 @@ async function boot() {
   ok(helpers.genseiSmall === '../assets/card-art-gensei-s.jpg' && helpers.genseiBig === '../assets/card-art-gensei.jpg', 'CA7z91: Gensei art files resolve (small + big)');
   ok(helpers.preloaded.includes('../assets/card-art-gensei-s.jpg') && helpers.preloaded.includes('../assets/card-art-gensei.jpg'), 'CA7z92: boot preloads Gensei too (main-deck membership warms the art from deck-select time)');
   ok(helpers.genseiDeckArt === undefined && helpers.genseiIshizu === '../assets/card-art-gensei-s.jpg' && helpers.genseiGg === '../assets/card-art-gensei-s.jpg', 'CA7z93: Gensei has NO deck-scoped override — plain registration, every deck context keeps the base art');
+  ok(helpers.fukusoSlug === 'fukuso' && helpers.fukusoInline.includes('card-art-fukuso-s.jpg') && helpers.fukusoInline.includes('background-position:center top'), 'CA7z94: Fukuso maps and stamps like the others (28th delivery)');
+  ok(helpers.fukusoSmall === '../assets/card-art-fukuso-s.jpg' && helpers.fukusoBig === '../assets/card-art-fukuso.jpg', 'CA7z95: Fukuso art files resolve (small + big)');
+  ok(helpers.preloaded.includes('../assets/card-art-fukuso-s.jpg') && helpers.preloaded.includes('../assets/card-art-fukuso.jpg'), 'CA7z96: boot preloads Fukuso too (main-deck membership warms the art from deck-select time)');
+  ok(helpers.fukusoDeckArt === 'fukuso-ishizu', 'CA7z97: DECK_ART registers Fukuso -> fukuso-ishizu for the Ishizu deck (15th entry — the second SPELL with an override)');
+  ok(helpers.fukusoIshizuSmall === '../assets/card-art-fukuso-ishizu-s.jpg' && helpers.fukusoIshizuBig === '../assets/card-art-fukuso-ishizu.jpg' && helpers.fukusoIshizuInline.includes('card-art-fukuso-ishizu-s.jpg'), 'CA7z98: Ishizu context resolves Fukuso to the Egyptian art (small + big)');
+  ok(helpers.fukusoGg === '../assets/card-art-fukuso-s.jpg', 'CA7z99: GG context resolves Fukuso to the plain graveyard art');
+  ok(helpers.preloaded.includes('../assets/card-art-fukuso-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-fukuso-ishizu.jpg'), 'CA7z100: boot preloads the deck-scoped Fukuso art too');
   // ---- focus exceptions (user ruling 2026-11-05): ART_FOCUS shifts
   // the BIG-file band position for the three measured slugs only ----
-  ok(Object.keys(helpers.focusTable).length === 9 && helpers.focusTable.chaospod === 'center 85%' && helpers.focusTable.luce === 'center 38%' && helpers.focusTable['luce-ishizu'] === 'center 38%' && helpers.focusTable.minerva === 'center 20%' && helpers.focusTable['minerva-ishizu'] === 'center 20%' && helpers.focusTable['castel-ishizu'] === 'center 20%' && helpers.focusTable.baromett === 'center 40%' && helpers.focusTable['baromett-ishizu'] === 'center 40%' && helpers.focusTable.gensei === 'center 30%', 'CAF1: ART_FOCUS holds exactly the nine measured exceptions (chaospod 85%, luce / luce-ishizu 38%, minerva / minerva-ishizu / castel-ishizu 20%, baromett / baromett-ishizu 40%, gensei 30%)');
+  ok(Object.keys(helpers.focusTable).length === 11 && helpers.focusTable.chaospod === 'center 85%' && helpers.focusTable.luce === 'center 38%' && helpers.focusTable['luce-ishizu'] === 'center 38%' && helpers.focusTable.minerva === 'center 20%' && helpers.focusTable['minerva-ishizu'] === 'center 20%' && helpers.focusTable['castel-ishizu'] === 'center 20%' && helpers.focusTable.baromett === 'center 40%' && helpers.focusTable['baromett-ishizu'] === 'center 40%' && helpers.focusTable.gensei === 'center 30%' && helpers.focusTable.fukuso === 'center 80%' && helpers.focusTable['fukuso-ishizu'] === 'center 65%', 'CAF1: ART_FOCUS holds exactly the eleven measured exceptions (chaospod 85%, luce / luce-ishizu 38%, minerva / minerva-ishizu / castel-ishizu 20%, baromett / baromett-ishizu 40%, gensei 30%, fukuso 80%, fukuso-ishizu 65%)');
   ok(helpers.focusChaosBig.includes('card-art-chaospod.jpg') && helpers.focusChaosBig.includes('background-position:center 85%'), 'CAF2: Chaos Pod BIG art carries its focus position (center 85%)');
   ok(helpers.focusChaosSmall.includes('card-art-chaospod-s.jpg') && helpers.focusChaosSmall.includes('background-position:center top'), 'CAF3: Chaos Pod SMALL art keeps center top (the exception is big-file only)');
   ok(helpers.focusLuceBig.includes('card-art-luce.jpg') && helpers.focusLuceBig.includes('background-position:center 38%'), 'CAF4: Luce BIG art carries its focus position (center 38%)');
@@ -913,6 +963,9 @@ async function boot() {
   ok(helpers.focusGenseiBig.includes('card-art-gensei.jpg') && helpers.focusGenseiBig.includes('background-position:center 30%'), 'CAF46: Gensei BIG art carries its focus position (center 30% — measured 2026-11-06: the two warriors sit mid-frame, the skeleton skull at ~26-33% of the big file, so center top leaves the pop band showing the paradise window and vortex with the subject essentially absent)');
   ok(helpers.focusGenseiSmall.includes('card-art-gensei-s.jpg') && helpers.focusGenseiSmall.includes('background-position:center top'), 'CAF47: Gensei SMALL art keeps center top (the exception is big-file only)');
   ok(helpers.focusApplyGensei === 'center 30%', 'CAF48: artApply agrees with artCss for Gensei (big file, center 30%)');
+  ok(helpers.focusFukusoBig.includes('card-art-fukuso.jpg') && helpers.focusFukusoBig.includes('background-position:center 80%'), 'CAF49: Fukuso BIG art carries its focus position (center 80% — measured 2026-11-07: the subject sits LOW, the grave hand and its bouquet at ~53-87% of the big file, so center top leaves the pop band on the tombstone and night sky with the subject entirely absent)');
+  ok(helpers.focusFukusoSmall.includes('card-art-fukuso-s.jpg') && helpers.focusFukusoSmall.includes('background-position:center top') && helpers.focusApplyFukuso === 'center 80%', 'CAF50: Fukuso SMALL art keeps center top (the exception is big-file only) and artApply agrees with artCss');
+  ok(helpers.focusFukusoBigIshizu.includes('card-art-fukuso-ishizu.jpg') && helpers.focusFukusoBigIshizu.includes('background-position:center 65%') && helpers.focusFukusoSmallIshizu.includes('card-art-fukuso-ishizu-s.jpg') && helpers.focusFukusoSmallIshizu.includes('background-position:center top'), 'CAF51: Fukuso in the Ishizu deck resolves the Egyptian art WITH its own focus entry (center 65% — measured separately on the Egyptian painting: the mummified hand and lilies span ~32-90% of the big file); the deck-variant SMALL art keeps center top');
   ok(helpers.kakanSlug === 'kakan' && helpers.kakanInline.includes('card-art-kakan-s.jpg') && helpers.kakanInline.includes('background-position:center top'), 'CA7aa: Kakan maps and stamps like the others (plain art = the forest painting)');
   ok(helpers.preloaded.includes('../assets/card-art-kakan-s.jpg') && helpers.preloaded.includes('../assets/card-art-kakan.jpg'), 'CA7ab: boot preloads Kakan too (same deck)');
   ok(helpers.deckArtKakan === 'kakan-ishizu', 'CA7z17: DECK_ART registers Kakan -> kakan-ishizu for the Ishizu deck (4th entry, first SPELL with an override)');
