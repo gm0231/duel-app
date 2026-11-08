@@ -1183,11 +1183,10 @@ function fxKinds(code, data) {
   FXK_CACHE.set(code, k);
   return k;
 }
-// Which built-in deck list the opponent is running (exact list match).
-// Deck lists are public knowledge in this app (fixed five decks); the
-// imported-deck case simply yields null and no threat adjustments.
-function oppDeckId(view, data) {
-  const list = view.oppDeck;
+// Which built-in deck list a deck belongs to (exact list match). Deck
+// lists are public knowledge in this app (fixed five decks); the
+// imported-deck case simply yields null and no adjustments.
+function deckIdOfList(list, data) {
   if (!list || !data.decks) return null;
   for (const id of Object.keys(data.decks)) {
     const d = data.decks[id];
@@ -1195,6 +1194,7 @@ function oppDeckId(view, data) {
   }
   return null;
 }
+function oppDeckId(view, data) { return deckIdOfList(view.oppDeck, data); }
 
 function makeBotMemory() {
   return {
@@ -2196,42 +2196,98 @@ function pickSpsummon(prompt, view, data, mem) {
     if (s) return { cost: 400, power: 0 };
     return null;
   };
-  let best = -1, bestGain = 249;
+  // Outcome model (stage 2): an Extra Deck summon is worth its battle
+  // body + Extra-Deck presence + the materials it keeps underneath +
+  // a per-card utility bonus, against the board value of what it
+  // consumes. Material board value is charged at 0.78: the old model
+  // charged full price, which priced every Xyz/synchro out of reach
+  // (Minerva was offered 140 times in the diagnosis and never taken).
+  let best = -1, bestGain = 220;
   prompt.spsummon.forEach((e, i) => {
     const cd = cdOf(data, e.code);
     if (!cd || !isMonsterCd(cd)) return;
-    const bonus = { [CC.CASTEL]: 650, [CC.MINERVA]: 500, [CC.BAROMETT]: 450, [CC.LUCE]: 500,
+    let bonus = { [CC.CASTEL]: 650, [CC.MINERVA]: 500, [CC.BAROMETT]: 450, [CC.LUCE]: 500,
       [CC.HYPERION]: 250, [CC.PLUTO]: 450, [CC.TRILOSUKTA]: 400, [CC.HORUS]: 150,
-      [CC.GG_COMBINED]: 350 }[e.code] || 200;
-    let cost = null;
+      [CC.GG_COMBINED]: 350,
+      [NC.MAGNUS]: 600, [NC.AZAMINA]: 450, [NC.SINFUL_GODDESS]: 400, [NC.CRYSTALWING]: 550,
+      [NC.CLEARWING]: 450, [NC.STARDUST]: 400, [NC.WF_RUCIELA]: 400, [NC.WF_SILWIA]: 350,
+      [NC.LANCER]: 350, [NC.FORTRESS]: 300, [NC.PACKBIT]: 300, [NC.STRITIA]: 300,
+      [NC.ARCANITE]: 300, [NC.PEGASUS]: 300, [NC.NTSS]: 250, [NC.RELEVEL]: 250,
+      [NC.HASTOR]: 200, [NC.BEAST_PULSE]: 150, [NC.BEAST_AERO]: 150,
+      [NC.BEAST_LIGER]: 150, [NC.BEAST_REX]: 150 }[e.code] || 200;
+    let cost = null, matsOut = 0;
+    // Minerva is the Ishizu deck's engine (mill 3 + draw), not a generic
+    // Rank 4: in that deck she outbids Castel, whose removal the old
+    // bonus table always preferred (28 offers, 0 summons measured).
+    if (e.code === CC.MINERVA && deckIdOfList(view.myDeck, data) === 'ishizu') bonus = 900;
     if (e.loc === LOC.EXTRA && (cd.type & CT.XYZ)) {
       const rank = cd.level & 0xff;
-      const mats = faceUpMons(view, me).concat(monList(view, me).filter(c => !c.faceUp))
-        .filter(c => levelOf(c, data) === rank).sort((a, b) => boardValue(a, data) - boardValue(b, data));
-      if (mats.length >= 2) cost = boardValue(mats[0], data) + boardValue(mats[1], data);
+      // Rank-up procedures (Armored Xyz line): the base Xyz and ALL its
+      // materials carry over, so the true cost is only the base's own
+      // presence above its materials.
+      const rankUpBase = (lo, hi) => faceUpMons(view, me)
+        .filter(c => { const d = cdOf(data, c.code); return d && (d.type & CT.XYZ) && (d.level & 0xff) >= lo && (d.level & 0xff) <= hi; })
+        .sort((a, b) => boardValue(a, data) - boardValue(b, data))[0];
+      if (e.code === NC.FORTRESS || e.code === NC.LANCER) {
+        const base = e.code === NC.FORTRESS ? rankUpBase(3, 4) : rankUpBase(5, 6);
+        if (base) { cost = boardValue(base, data) - (base.materials || 0) * 120; matsOut = (base.materials || 0) + 1; }
+      } else {
+        // Material count comes from the printed text (full-width digits
+        // normalized). Materials must be FACE-UP: the old code also
+        // counted face-down monsters, which can never be materials.
+        const line = ((data.texts && data.texts[e.code] && data.texts[e.code].text) || '')
+          .replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xfee0));
+        const mm = line.match(/[×x]\s*(\d+)/);
+        const need = mm ? parseInt(mm[1], 10) : 2;
+        const mats = faceUpMons(view, me)
+          .filter(c => levelOf(c, data) === rank).sort((a, b) => boardValue(a, data) - boardValue(b, data));
+        if (mats.length >= need) {
+          cost = mats.slice(0, need).reduce((s, c) => s + boardValue(c, data), 0) * 0.78;
+          matsOut = need;
+        }
+      }
     } else if (e.loc === LOC.EXTRA && (cd.type & CT.SYNCHRO)) {
       const lvl = cd.level & 0xff;
-      const field = monList(view, me);
-      let bestCombo = Infinity;
+      const field = faceUpMons(view, me); // materials must be face-up
+      let bestCombo = Infinity, bestSize = 0;
       const n = field.length;
       for (let mask = 1; mask < (1 << n); mask++) {
-        let sum = 0, hasTuner = false, c = 0;
+        let sum = 0, hasTuner = false, c = 0, sz = 0;
         for (let j = 0; j < n; j++) if (mask & (1 << j)) {
           sum += levelOf(field[j], data);
           const d = cdOf(data, field[j].code);
           if (d && (d.type & CT.TUNER)) hasTuner = true;
-          c += boardValue(field[j], data);
+          c += boardValue(field[j], data); sz++;
         }
-        if (hasTuner && sum === lvl && c < bestCombo) bestCombo = c;
+        if (hasTuner && sum === lvl && c < bestCombo) { bestCombo = c; bestSize = sz; }
       }
-      if (bestCombo < Infinity) cost = bestCombo;
+      if (bestCombo < Infinity) {
+        cost = bestCombo * 0.78; matsOut = bestSize;
+        if (cd.type & CT.TUNER) bonus += 200; // a tuner synchro is a stepping stone
+      }
     } else if (e.loc === LOC.EXTRA && (cd.type & CT.FUSION)) {
+      if (e.code === NC.SINFUL_GODDESS) {
+        // Procedure: send OUR "Saint Azamina" monster (usually a cheap
+        // Elfnote monster treated by Fusion Identification) and the
+        // opponent's best face-up monster to the grave. The removal is
+        // most of the value, so the "cost" nets it out.
+        const oppBest = faceUpMons(view, view.opp).sort((a, b) => boardValue(b, data) - boardValue(a, data))[0];
+        const mine = faceUpMons(view, me).sort((a, b) => boardValue(a, data) - boardValue(b, data))[0];
+        if (oppBest && mine) cost = boardValue(mine, data) - boardValue(oppBest, data);
+      } else if (e.code === NC.AZAMINA) {
+        // Fusion: a Lv6+ fusion + a Lv6+ synchro from our field.
+        const fus = faceUpMons(view, me).filter(c => { const d = cdOf(data, c.code); return d && (d.type & CT.FUSION) && (d.level & 0xff) >= 6; })
+          .sort((a, b) => boardValue(a, data) - boardValue(b, data))[0];
+        const syn = faceUpMons(view, me).filter(c => { const d = cdOf(data, c.code); return d && (d.type & CT.SYNCHRO) && (d.level & 0xff) >= 6 && (!fus || c.seq !== fus.seq); })
+          .sort((a, b) => boardValue(a, data) - boardValue(b, data))[0];
+        if (fus && syn) { cost = (boardValue(fus, data) + boardValue(syn, data)) * 0.78; matsOut = 0; }
+      }
       // Gate Guardian contact fusions: named pieces, locations decide the cost.
       const needs = e.code === CC.GG_COMBINED ? GUARDIAN_PIECES
         : e.code === CC.GG_THUNDERWIND ? [CC.SANGA, CC.HUGA]
         : e.code === CC.GG_WINDWATER ? [CC.HUGA, CC.SUIGA]
         : e.code === CC.GG_WATERTHUNDER ? [CC.SUIGA, CC.SANGA] : null;
-      if (!needs) { cost = 600; } // unknown fusion (e.g. via substitution): modest flat cost
+      if (!needs) { if (cost == null) cost = 600; } // unknown fusion (e.g. via substitution): modest flat cost
       else {
         cost = 0;
         for (const piece of needs) {
@@ -2268,10 +2324,23 @@ function pickSpsummon(prompt, view, data, mem) {
       }
       if (cost != null && cost > 2600) cost = null;
     } else if (e.loc === LOC.HAND || e.loc === LOC.GRAVE) {
-      cost = cd.atk >= 1500 ? 200 : null;
+      if (e.code === NC.KUMOGUS) {
+        // Kaiju procedure: tribute the opponent's monster, but the
+        // 2400 body lands on THEIR field — only worth it against a
+        // monster clearly bigger than the Kaiju we gift them.
+        const oppBest = Math.max(0, ...monList(view, view.opp).map(c => c.faceUp ? boardValue(c, data) : 1000));
+        cost = oppBest ? 2700 - oppBest : null;
+      } else {
+        // Procedure summons from hand/grave: the old rule (ATK >= 1500
+        // or never) buried every low-ATK starter (Rucia, Zeetan).
+        // Price them by role instead of raw ATK.
+        const role = { [NC.WF_RUCIA]: 500, [NC.SQ_ZEETAN]: 450, [NC.DIABELLZE]: 250, [NC.SQ_RED]: 150 }[e.code] || 0;
+        bonus += role;
+        cost = 200;
+      }
     }
     if (cost == null) return;
-    const gain = cd.atk + bonus - cost;
+    const gain = cd.atk + (e.loc === LOC.EXTRA ? 150 : 0) + matsOut * 120 + bonus - cost;
     if (gain > bestGain) { bestGain = gain; best = i; }
   });
   if (best >= 0) mem.pendingSummon = { code: prompt.spsummon[best].code, turn: view.turnCount };
