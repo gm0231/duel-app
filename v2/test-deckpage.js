@@ -168,7 +168,7 @@ async function boot() {
   doc.getElementById('deckcatback').click();
   ok(disp('deckpage') !== 'none' && disp('deckcat') === 'none', 'DP16: category back button returns to the deck page');
 
-  // ---- opponent side: no imported category; genesys is empty ----
+  // ---- opponent side: no imported category; genesys holds 超量 ----
   doc.getElementById('opdeckcur').click();
   ok(doc.getElementById('deckcattitle').textContent === '相手のデッキ' &&
      doc.getElementById('deckcatimp') === null &&
@@ -178,11 +178,23 @@ async function boot() {
   ok(doc.getElementById('deckmodal').style.display === 'flex' &&
      doc.getElementById('deckmodaltitle').textContent.includes('2026年10月時点') &&
      doc.getElementById('seg-opdeck').style.display !== 'none' &&
-     visRows('seg-opdeck').length === 0 &&
-     doc.getElementById('deckmodalempty').style.display !== 'none' &&
-     doc.getElementById('deckmodalempty').textContent === '準備中',
-    'DP18: the (still empty) Genesys category shows the 準備中 empty state');
-  doc.getElementById('deckmodalx').click();
+     visRows('seg-opdeck').length === 1 && visRows('seg-opdeck').every(el => el.dataset.cat === 'genesys') &&
+     doc.getElementById('deckmodalempty').style.display === 'none',
+    'DP18: the Genesys category lists the 超量 deck (the 準備中 empty state is gone)');
+  const sqRow = doc.querySelector('#seg-opdeck .deckrow[data-key="superquant"]');
+  sqRow.querySelector('.decklist-btn').click();
+  const sqViewTxt = doc.getElementById('deckviewlist').textContent;
+  ok(doc.getElementById('deckview').style.display === 'flex' &&
+     doc.getElementById('deckviewtitle').textContent === '超量' &&
+     sqViewTxt.includes('メイン（40枚）') && sqViewTxt.includes('エクストラ（11枚）') && sqViewTxt.includes('超量機神王グレート・マグナス'),
+    'DP18b: 一覧 shows the 超量 contents (40 main / 11 extra, Great Magnus named)');
+  doc.getElementById('deckviewback').click();
+  segBtn('seg-opdeck', 'superquant').click();
+  ok(disp('deckpage') !== 'none' && segSel('seg-opdeck') === 'superquant' &&
+     doc.querySelector('#opdeckcur .dn').textContent === '超量' &&
+     doc.getElementById('decksum').textContent.includes('相手：超量'),
+    'DP18c: picking 超量 applies it as the opponent deck and returns to the deck page');
+  doc.getElementById('opdeckcur').click();
   catBtn('character').click();
   segBtn('seg-opdeck', 'ishizu').click();
   ok(disp('deckpage') !== 'none' && segSel('seg-opdeck') === 'ishizu' &&

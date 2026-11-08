@@ -5,7 +5,8 @@
    patches; anything uncovered is enumerated here, with counts).
    Loads the REAL client.js (vm + stub DOM, same technique as
    test-fxidentify) against the REAL data.json / fxmap.json and
-   asserts, for all 63 cards:
+   asserts, for all 89 cards (63 -> 89 with the Super Quant deck,
+   2026-11-08):
      A. every fxmap target (map / pmap / yn / bare) names an
         existing printed segment of that card;
      B. every described activatable desc idx resolves (via
@@ -152,11 +153,16 @@ const NON_PROMPT = {
   '86605515': '②の適用効果（罠の破壊耐性フィールド）。発動ではない',
   '98715423': '①のロック機構（ドローイベント処理）。発動ではない',
   '34771947': 'フィールド魔法の持続処理。発動ではない',
+  // Super Quant round (2026-11-08): FIELD continuous effects that
+  // carry a SetTarget function but are never activations
+  '1825445': '②持続（「超量」カードへの対象耐性）。発動エントリにならない',
+  '75493362': '②持続（妖精族の攻撃力アップ）。発動エントリにならない',
+  '84025439': '②の段階適用（素材6種類時のサーチ／ドローロック持続）。発動エントリにならない。①と②の発動側はOVERRIDESで番号特定済み',
 };
 
 // ---------- A + B + classification table ----------
 const clsCount = { '番号特定': 0, '番号特定（スコープ/yn/bare）': 0, '単一効果/発動慣例': 0, '番号対象なし': 0, '未カバー': 0 };
-console.log('---- pool classification (63) ----');
+console.log('---- pool classification (89) ----');
 for (const code of Object.keys(data.cards)) {
   const fx = fxmap[code];
   const segs = T.effectSegments(+code);
@@ -205,7 +211,7 @@ for (const code of Object.keys(data.cards)) {
   console.log(code + ' | ' + data.names[code] + ' | segs=' + segs.length + ' | desc=' + [...desc].join(',') + ' | ' + cls);
 }
 console.log('classification counts:', JSON.stringify(clsCount));
-ok(Object.keys(data.cards).length === 63, 'pool is 63 cards');
+ok(Object.keys(data.cards).length === 89, 'pool is 89 cards');
 ok(clsCount['未カバー'] === 0, 'no card is left unclassified/uncovered without an enumerated reason');
 
 // ---------- D: lingering-restriction scan ----------

@@ -141,6 +141,45 @@ const OVERRIDES = {
   9350312: { 0: 1 },
   97940434: { 0: 1 },
   45223540: { 0: 1 },
+  // Super Quant deck additions (2026-11-08), each hand-audited
+  // against the bundled script's registration order:
+  // 超量機獣グランパルス／エアロボロス／マグナライガー／ラスターレックス:
+  //   printed ① is the continuous no-material attack lock (no desc);
+  //   idx0=detach effect=②, idx1=attach ignition=③ (the idx0 effect's
+  //   quick clone shares the same description — same printed effect).
+  85252081: { 0: 2, 1: 3 },
+  11646785: { 0: 2, 1: 3 },
+  57031794: { 0: 2, 1: 3 },
+  57450198: { 0: 2, 1: 3 },
+  // エクシーズ・アーマー・フォートレス: idx1=detach-search IGNITION=①
+  //   (② is the undescribed equip continuous; the alternative Xyz
+  //   procedure owns no description).
+  20145685: { 1: 1 },
+  // FA－ダーク・ナイト・ランサー: ① is the continuous ATK gain;
+  //   idx1=GY recovery=②, idx2=equip trigger=③.
+  67630394: { 1: 2, 2: 3 },
+  // 超量機神剣－マグナスレイヤー: idx0=attack-declaration effect=②
+  //   (①③ are undescribed equip continuous effects).
+  47819246: { 0: 2 },
+  // 超量合神－マグナフォーメーション: idx0=battle-destruction
+  //   trigger=② (① is the undescribed continuous ATK boost).
+  1825445: { 0: 2 },
+  // ヴィンゴルヴの祝福: idx0=the activation itself=① (its optional
+  //   send is part of the activation), idx1=GY trigger=③ (② is the
+  //   undescribed continuous ATK boost).
+  75493362: { 0: 1, 1: 3 },
+  // アーマード・エクシーズ: idx0=the spell activation=①; idx1=the
+  //   second-attack trigger the activation GRANTS to the equipped
+  //   Xyz monster — a clause of the same printed ①.
+  73046708: { 0: 1, 1: 1 },
+  // 超量士レッドレイヤー: idx0 is the self-summon procedure (see
+  //   KNOWN_NON_ACTIVATABLE); idx1=summon trigger=②, idx2=to-GY
+  //   trigger=③.
+  59975920: { 1: 2, 2: 3 },
+  // 超量機神王グレート・マグナス: registration order is SWAPPED vs
+  //   print — idx0=EVENT_TO_GRAVE revival=②, idx1=QUICK_O detach
+  //   bounce, which lives inside printed ① (the 2+-materials bullet).
+  84025439: { 0: 2, 1: 1 },
 };
 // Prompt-scoped maps (see header): desc idx -> {idle, chain}.
 // マスターフレア・ヒュペリオン: idx0 is registered by BOTH its IGNITION
@@ -181,7 +220,22 @@ const BARE = {
 // カルダーン idx2 = the description of the EFFECT_TRAP_ACT_IN_SET_TURN
 // grant its ① operation registers on the trap it sets — a client
 // hint for the SET card, never a prompt desc of Kaldan itself.
-const KNOWN_NON_ACTIVATABLE = { 35026117: [0], 86605515: [2] };
+const KNOWN_NON_ACTIVATABLE = {
+  35026117: [0], 86605515: [2],
+  // Super Quant deck additions (2026-11-08):
+  // タイフーン idx0 = the description of its EFFECT_TRAP_ACT_IN_HAND
+  //   grant (the hand-activation permission); the activation itself
+  //   follows the no-description convention and stays unnumbered.
+  14883228: [0],
+  // 超量士レッドレイヤー idx0 = its self-summon procedure's
+  //   description (a procedure, never an activation prompt).
+  59975920: [0],
+  // 第１９層 idx4 = the description of the EFFECT_TRAP_ACT_IN_SET_TURN
+  //   grant its ① resolution registers on the trap it sets (same
+  //   shape as カルダーン idx2) — a hint for the SET card, never a
+  //   prompt desc of this card itself.
+  98349765: [4],
+};
 
 const out = {};
 const report = [];

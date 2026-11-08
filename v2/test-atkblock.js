@@ -101,8 +101,13 @@ const reason = (code, con, seq, state) => AB.reason(code, con, MZONE, seq, state
 {
   const barring = Object.keys(data.texts).filter(code =>
     /攻撃できない|攻撃を行えない|攻撃を行なえない/.test(data.texts[code].text)).map(Number).sort((a, b) => a - b);
-  ok(JSON.stringify(barring) === JSON.stringify([TANK, SHADOW, 36898537, 78625592].sort((a, b) => a - b)),
-    'B1: pool-wide attack-barring clauses == exactly the 4 enumerated cards');
+  // the four Super Quantal Mech Beasts joined with the Super Quant
+  // deck (2026-11-08): their bar is a material-condition continuous
+  // (「X素材が無いこのカードは攻撃できない」) enforced by the core
+  // itself — NOT a summon-turn block, so the A1/A2 derivations above
+  // correctly stay at their enumerated sets.
+  ok(JSON.stringify(barring) === JSON.stringify([TANK, SHADOW, 36898537, 78625592, 85252081, 11646785, 57031794, 57450198].sort((a, b) => a - b)),
+    'B1: pool-wide attack-barring clauses == exactly the 8 enumerated cards');
   const pend = Object.values(data.cards).filter(c => (c.type & 0x1000000) !== 0).length;
   ok(pend === 0, 'B2: pool holds zero Pendulum monsters (Horus rider branch unreachable)');
   const ggAll = [...data.decks.gg.main, ...data.decks.gg.extra];

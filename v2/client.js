@@ -511,7 +511,7 @@ function preloadCardArt(deckKeys) {
 // current — the page's seg handlers refresh it on every change).
 function deckDisplayName(k) {
   if (SAVED_DECKS[k]) return SAVED_DECKS[k].name;
-  return k === 'gg' ? 'ゲート・ガーディアン' : 'MILLENNIUM PROPHECY';
+  return { gg: 'ゲート・ガーディアン', superquant: '超量' }[k] || 'MILLENNIUM PROPHECY';
 }
 // deck choice flow (2026-11-08, user design): the deck page shows
 // only the current choice per side; changing it walks deck page ->
@@ -521,6 +521,7 @@ function deckDisplayName(k) {
 const DECK_BLURB = {
   ishizu: 'イシズ・墓地を入れ替える逆転のデッキ',
   gg: '三魔神の合体と壁のデッキ',
+  superquant: '超量を重ねてグレート・マグナスを呼ぶデッキ',
 };
 const DECK_CATEGORIES = [
   { id: 'character', label: 'キャラクターデッキ' },

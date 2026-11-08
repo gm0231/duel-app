@@ -43,7 +43,7 @@
      compound name from the type bitmask — 通常魔法/通常罠 spelled
      out, never omitted — and cardMetaLine carries it on the
      detail sheet, the pop, the zone sheet and the resident
-     preview. Pool-wide, all 63 cards resolve a non-empty meta
+     preview. Pool-wide, all 89 cards resolve a non-empty meta
      line (CV-DI1..14).
    Method: boot the real client in jsdom (harness as
    test-cardart), fabricate a duel state, open the real sheets
@@ -267,8 +267,8 @@ async function boot() {
     ok(labels.hakamori === '永続罠', 'CV-DI6: Gravekeeper\'s Trap labels 永続罠');
     ok(labels.tsukoku === 'カウンター罠', 'CV-DI7: Solemn Strike (神の通告) labels カウンター罠');
     ok(labels.monster === '', 'CV-DI8: a monster gets no spell/trap label (its meta line is attribute / race / level)');
-    ok(labels.coverage.empty === 0 && labels.coverage.total === 63, 'CV-DI9: pool-wide, every one of the 63 cards resolves a non-empty meta line');
-    ok(labels.coverage.st === 28 && labels.coverage.mon === 35, 'CV-DI10: coverage split is 28 spells/traps labelled + 35 monsters on the attribute line');
+    ok(labels.coverage.empty === 0 && labels.coverage.total === 89, 'CV-DI9: pool-wide, every one of the 89 cards resolves a non-empty meta line');
+    ok(labels.coverage.st === 37 && labels.coverage.mon === 52, 'CV-DI10: coverage split is 37 spells/traps labelled + 52 monsters on the attribute line');
   }
   window.eval('openCardInfo(' + GENSEI + ')');
   {
