@@ -1599,6 +1599,14 @@ function genericActivation(e, view, data) {
   const oppFU = faceUpMons(view, view.opp);
   const oppBest = oppFU.length ? Math.max(...oppFU.map(c => boardValue(c, data))) : 0;
   const text = (data.texts && data.texts[e.code] && data.texts[e.code].text) || '';
+  // A face-down trap's IDLECMD entry is its card activation (desc 0):
+  // never flip generic traps proactively — they fire on the chain,
+  // where their timing is worth something. (Audited traps like
+  // Punishment and Dogmatika Tiding have explicit cases.)
+  if ((cd.type & CT.TRAP) && e.loc === LOC.SZONE) {
+    const cell = view.zones[view.me].szone[e.seq];
+    if (cell && !cell.faceUp) return 0;
+  }
   if (k.search) return 950;
   if (k.draw) return 900;
   if (k.destroy || k.banish || k.bounce) {
@@ -1609,7 +1617,7 @@ function genericActivation(e, view, data) {
     return 0;
   }
   if (k.ss) return e.loc === LOC.GRAVE ? 800 : 700;
-  if ((cd.type & CT.SPELL) || (cd.type & CT.TRAP)) return 550; // place a continuous/field card
+  if (cd.type & CT.SPELL) return 550; // place a continuous/field card
   return 0;
 }
 // Hand-audited activation values for the 2026 themes (plan 1 of the CPU
@@ -1639,6 +1647,7 @@ function newThemeActivation(e, view, data, prompt, H) {
   switch (e.code) {
     case NC.WF_WITCH: {
       if (e.loc === LOC.HAND) return fieldUp ? 0 : 1250; // do not replace our own field spell
+      if (e.loc === LOC.SZONE && myCell && !myCell.faceUp) return fieldUp ? 0 : 1250; // flip the set copy: same activation
       if (e.loc === LOC.SZONE && printed === 3) {
         // make a White Forest monster a tuner: only with a synchro line open
         const hasWF = myFU.some(c => hasSetC(cdOf(data, c.code), SETC.WF));
@@ -1648,7 +1657,7 @@ function newThemeActivation(e, view, data, prompt, H) {
       return 0;
     }
     case NC.CARRIER: {
-      if (e.loc === LOC.HAND) {
+      if (e.loc === LOC.HAND || (e.loc === LOC.SZONE && myCell && !myCell.faceUp)) {
         if (fieldUp) return 0;
         return hasSQM(myFU) || handCodes.some(c => hasSetC(cdOf(data, c), SETC.SQM)) ? 1100 : 700;
       }
@@ -1665,19 +1674,22 @@ function newThemeActivation(e, view, data, prompt, H) {
     }
     case NC.DOG_TIDING: {
       if (e.loc === LOC.HAND) return 1250; // the deck's main searcher
+      // A set copy's IDLECMD entry is the card activation itself
+      // (desc 0, no printed number): flipping it IS the search.
+      if (e.loc === LOC.SZONE && myCell && !myCell.faceUp) return 1250;
       if (e.loc === LOC.SZONE && printed === 2) return 1000; // dump an Extra Deck monster
       return 0;
     }
     case NC.DOG_GOSPEL:
-      if (e.loc !== LOC.HAND) return 0;
+      if (!(e.loc === LOC.HAND || (e.loc === LOC.SZONE && myCell && !myCell.faceUp))) return 0;
       if (handCodes.includes(NC.ALBA_SYSTEM)) return 1350;
       return view.grave[me].includes(NC.ALBA_SYSTEM) ? 1250 : 0;
     case NC.DOG_FUNERAL:
-      if (e.loc !== LOC.HAND) return 0;
+      if (!(e.loc === LOC.HAND || (e.loc === LOC.SZONE && myCell && !myCell.faceUp))) return 0;
       if (handCodes.includes(NC.ALBA_SYSTEM)) return 1300;
       return view.grave[me].includes(NC.ALBA_SYSTEM) ? 1200 : 0;
     case NC.ELF_PARALLEL: {
-      if (e.loc === LOC.HAND) {
+      if (e.loc === LOC.HAND || (e.loc === LOC.SZONE && myCell && !myCell.faceUp)) {
         if (view.zones[me].szone.some(c => c && c.faceUp && c.code === NC.ELF_PARALLEL)) return 0;
         const elfAround = handCodes.some(c => hasSetC(cdOf(data, c), SETC.ELF)) ||
           view.grave[me].some(c => hasSetC(cdOf(data, c), SETC.ELF)) || myFU.some(c => hasSetC(cdOf(data, c.code), SETC.ELF));
@@ -1721,20 +1733,21 @@ function newThemeActivation(e, view, data, prompt, H) {
       return myFU.length ? 1200 : 0;
     }
     case NC.WF_SIN: {
-      if (e.loc !== LOC.HAND) return 0;
+      // (a set copy flipped face-up resolves the same activation)
+      if (!(e.loc === LOC.HAND || (e.loc === LOC.SZONE && myCell && !myCell.faceUp))) return 0;
       const body = view.hand[me].some(x => { const d = cdOf(data, x.code);
         return isMonsterCd(d) && x.code !== NC.WF_SIN && (d.atk >= 1500 || x.code === NC.DIABELLZE || x.code === NC.WF_RUCIELA || x.code === NC.WF_GENYOU); });
       return body ? 1150 : 0;
     }
     case NC.WF_TALE:
-      return e.loc === LOC.HAND ? 1200 : 0;
+      return (e.loc === LOC.HAND || (e.loc === LOC.SZONE && myCell && !myCell.faceUp)) ? 1200 : 0;
     case NC.WF_NOENTER: {
-      if (e.loc !== LOC.HAND) return 0;
+      if (!(e.loc === LOC.HAND || (e.loc === LOC.SZONE && myCell && !myCell.faceUp))) return 0;
       if (oppBest >= 1600) return 1300;
       return view.zones[opp].szone.some(c => c && c.faceUp) ? 900 : 0;
     }
     case NC.WF_WOE:
-      return e.loc === LOC.HAND && wfMonsterInDeck() ? 1250 : 0;
+      return (e.loc === LOC.HAND || (e.loc === LOC.SZONE && myCell && !myCell.faceUp)) && wfMonsterInDeck() ? 1250 : 0;
     case NC.SQ_ALPHAN: {
       if (e.loc !== LOC.MZONE) return 0;
       if (printed === 1) {
@@ -1768,7 +1781,9 @@ function newThemeActivation(e, view, data, prompt, H) {
     case NC.FORMATION: {
       // ① is continuous protection for our Super Quant cards; ② feeds
       // another face-up monster under one of our Xyz as material.
-      if (e.loc === LOC.HAND) {
+      // A set copy's IDLECMD entry is the card activation (desc 0):
+      // flipping it face-up is what unlocks ② at all.
+      if (e.loc === LOC.HAND || (e.loc === LOC.SZONE && myCell && !myCell.faceUp)) {
         if (myFU.some(c => hasSetC(cdOf(data, c.code), SETC.BEAST))) return 850;
         return myFU.some(c => hasSetC(cdOf(data, c.code), SETC.SQM)) ? 700 : 550;
       }
@@ -2348,6 +2363,26 @@ function pickSpsummon(prompt, view, data, mem) {
 }
 // Normal summon / set decision. Returns {kind, idx} into prompt.summon /
 // prompt.mset, or null.
+// Low-ATK monsters whose value is an effect, not a body (stage 3).
+// The old model priced summons by ATK alone and buried these face-down:
+// Rucia (ATK 800 / DEF 1500) always lost to her own set line, so the
+// White Forest tuner never reached the field face-up.
+const STARTER_BONUS = { [NC.SQ_ALPHAN]: 500, [NC.SQ_MINIMALIAN]: 500, [NC.SQ_ZEETAN]: 450,
+  [NC.ECCLESIA]: 350, [NC.SQ_BLUE]: 350, [NC.SQ_GREEN]: 250, [NC.WF_SILVI]: 250 };
+// Does summoning cd face-up complete a synchro with what's on the field
+// (cd as tuner with a partner, or cd as the partner of a field tuner)?
+function synchroPartnerBonus(cd, view, data) {
+  const me = view.me;
+  const lvl = cd.level & 0xff;
+  const field = faceUpMons(view, me);
+  if (!field.length) return 0;
+  const synLv = new Set(view.extra[me].filter(x => { const d = cdOf(data, x.code); return d && (d.type & CT.SYNCHRO); })
+    .map(x => (cdOf(data, x.code).level & 0xff)));
+  if (!synLv.size) return 0;
+  if (cd.type & CT.TUNER) return field.some(c => synLv.has(levelOf(c, data) + lvl)) ? 300 : 0;
+  return field.some(c => { const d = cdOf(data, c.code); return d && (d.type & CT.TUNER) && synLv.has(levelOf(c, data) + lvl); }) ? 300 : 0;
+}
+
 function pickSummon(prompt, view, data) {
   const me = view.me;
   const oppPow = oppMaxPower(view, data);
@@ -2367,11 +2402,16 @@ function pickSummon(prompt, view, data) {
       let cost = 0;
       for (let k = 0; k < tributes; k++) cost += boardValue(weakestField[k], data);
       // setting instead when the wall clearly survives and the attacker wouldn't
-      if (oppPow > cd.atk && cd.def >= oppPow && prompt.mset.some(m => m.code === e.code)) return;
+      // (tuners and starters are exempt: their effect outranks the wall line)
+      if (oppPow > cd.atk && cd.def >= oppPow && prompt.mset.some(m => m.code === e.code) &&
+          !STARTER_BONUS[e.code] && !(cd.type & CT.TUNER)) return;
       let gain = cd.atk - cost * 0.85;
       if (e.code === CC.KALDAN && view.hand[me].concat(view.grave[me]).some(c =>
           { const d = cdOf(data, c.code !== undefined ? c.code : c); return d && (d.type & CT.TRAP) && (d.type & CT.CONTINUOUS); })) gain += 250;
       if (e.code === CC.HEAVY_TANK) gain += 150;
+      if (STARTER_BONUS[e.code]) gain += STARTER_BONUS[e.code];
+      if (cd.type & CT.TUNER) gain += 250;
+      gain += synchroPartnerBonus(cd, view, data);
       if (gain > 150 && (!best || gain > best.gain)) best = { kind, idx: i, gain };
     } else { // mset — a Tribute Set of a level 5+ monster costs the same
       // tributes as a Tribute Summon (the core asks SELECT_TRIBUTE for it);
@@ -2383,6 +2423,9 @@ function pickSummon(prompt, view, data) {
       if (weakestField.length < tributes) return;
       let cost = 0;
       for (let k = 0; k < tributes; k++) cost += boardValue(weakestField[k], data);
+      // Never bury a tuner or starter face-down when it could be
+      // summoned face-up instead: its effect IS its value.
+      if ((STARTER_BONUS[e.code] || (cd.type & CT.TUNER)) && prompt.summon.some((s) => s.code === e.code)) return;
       let gain = cd.def * 0.8 - cost * 0.85;
       if (isFlip) gain += e.code === CC.CHAOS_POD ? 500 : 750;
       if (oppPow > cd.atk && cd.def >= oppPow) gain += 250; // safe wall
