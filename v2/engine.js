@@ -2795,7 +2795,17 @@ function yesNoAnswer(prompt, view, data, mem) {
 function attemptOk(mem, view, kind, e) {
   if (!mem.attempts) mem.attempts = {};
   if (Object.keys(mem.attempts).length > 400) mem.attempts = {};
-  const key = view.turnCount + '|' + kind + '|' + e.code + '|' + e.loc + '|' + e.seq;
+  // The budget is per EFFECT, not per card: the desc distinguishes a
+  // card's printed effects, and a multi-effect card whose setup effect
+  // is used repeatedly in one turn (Magna Carrier ① stacking Mech
+  // Beasts) must not burn the budget of its finisher (Carrier ②, the
+  // Great Magnus conversion) — measured in the round-2 traces: in every
+  // stalled game the conversion scored 1600 yet was locked out by two
+  // earlier ① uses in the same turn, and the fallback play then ranked
+  // a Beast up into Fortress/Lancer, consuming a conversion piece.
+  // Summon entries carry no desc; their key is unchanged.
+  const key = view.turnCount + '|' + kind + '|' + e.code + '|' + e.loc + '|' + e.seq +
+    '|' + (e.desc != null ? String(e.desc) : '');
   mem.attempts[key] = (mem.attempts[key] || 0) + 1;
   return mem.attempts[key] <= 2;
 }
