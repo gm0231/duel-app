@@ -1919,8 +1919,44 @@ function newThemeActivation(e, view, data, prompt, H) {
     }
     case NC.STRITIA:
       return e.loc === LOC.MZONE && printed === 2 && elfGraveTarget() ? 1050 : 0;
-    case NC.GOUKON:
-      return e.loc === LOC.MZONE && printed === 2 && elfGraveTarget() ? 1100 : 0;
+    case NC.GOUKON: {
+      if (e.loc !== LOC.MZONE || printed !== 2) return 0;
+      // Goukons ②: raise the CENTER monster's level by 3, then
+      // optionally Synchro Summon an Elfnote Synchro or Junora. The
+      // old gate (any Elfnote revival target in grave/hand — that is
+      // Stritia ②'s condition, not this card's) fired it with no
+      // follow-up at all, and the stray +3 breaks the natural level
+      // totals the deck's ordinary synchro math relies on. Fire only
+      // when the raised center monster actually completes a legal
+      // summon (general feasibility check, so imported decks with
+      // different level distributions are judged correctly too).
+      const center = view.zones[me].mzone[2];
+      if (!center || !center.faceUp) return 0;
+      const mats = faceUpMons(view, me);
+      const targets = view.extra[me].filter(x => { const d = cdOf(data, x.code);
+        return d && (d.type & CT.SYNCHRO) && (hasSetC(d, SETC.ELF) || x.code === NC.ELF_JUNORA); });
+      if (!targets.length) return 0;
+      const lvlOf = (c) => { const d = cdOf(data, c.code); return d ? (d.level & 0xff) : 0; };
+      const tunerOf = (c) => { const d = cdOf(data, c.code); return !!(d && (d.type & CT.TUNER)); };
+      for (const t of targets) {
+        const L = (cdOf(data, t.code).level & 0xff);
+        const n = mats.length;
+        for (let mask = 1; mask < (1 << n); mask++) {
+          let sum = 0, tuners = 0, hasCenter = false;
+          for (let j = 0; j < n; j++) if (mask & (1 << j)) {
+            const isC = mats[j].seq === 2;
+            if (isC) hasCenter = true;
+            sum += lvlOf(mats[j]) + (isC ? 3 : 0);
+            if (tunerOf(mats[j])) tuners++;
+          }
+          if (!hasCenter || sum !== L) continue;
+          if (tuners === 1) return 1100;
+          // Junora's own clause: the center monster may be treated as a tuner
+          if (t.code === NC.ELF_JUNORA && tuners === 0) return 1100;
+        }
+      }
+      return 0;
+    }
     case NC.ELF_JUNORA:
       return e.loc === LOC.HAND && printed === 1 ? 1100 : 0;
     case NC.WF_GENYOU: {
@@ -3749,6 +3785,25 @@ function placeAnswer(prompt, view, data, mem) {
     if (placing === CC.LUCE || (strong && !(lucePending && endsTaken >= 1))) mOrder = [0, 4, 2, 1, 3, 5, 6];
     else if (strong) mOrder = [2, 1, 3, 0, 4, 5, 6]; // hold the second end for Luce
     else mOrder = [1, 2, 3, 0, 4, 5, 6]; // weaker monsters: middle three first
+  }
+  // Elfennotes center discipline (round 2, item 4): the level-6
+  // Elfnote monsters' ① effects belong in the center zone, Junora's
+  // clause reads the center monster, and Goukons ② targets it — a
+  // filler monster parked in the center blocks all three (measured:
+  // Goukons normal-summoned to the center in g15, sealing both the
+  // ② target slot and the level-6 monsters' own slot). While a
+  // center piece is in hand or being placed, everything else goes
+  // anywhere else first; the center pieces themselves (and Stritia,
+  // whose ① makes her original ATK 3000 in the center) take it.
+  if (deckIdOfList(view.myDeck, data) === 'elfennotes') {
+    const placing = (mem && mem.pendingSummon && mem.pendingSummon.turn === view.turnCount) ? mem.pendingSummon.code
+      : (mem && mem.pendingPlace && mem.pendingPlace.turn === view.turnCount) ? mem.pendingPlace.code
+      : (ctx ? ctx.code : null);
+    const isCenterPiece = (code) => code === NC.ELF_RUKINA || code === NC.ELF_DIINA || code === NC.ELF_FORTUNA || code === NC.STRITIA;
+    const centerReserved = placing === NC.GOUKON ||
+      view.hand[me].some(x => isCenterPiece(x.code) || x.code === NC.GOUKON);
+    if (isCenterPiece(placing)) mOrder = [2, 1, 3, 0, 4, 5, 6];
+    else if (centerReserved) mOrder = [1, 3, 0, 4, 2, 5, 6];
   }
   if (ctx && ctx.code === CC.JIRAI_TRAP) {
     const big = faceUpMons(view, opp).sort((a, b) => atkOf(b, data) - atkOf(a, data))[0];
