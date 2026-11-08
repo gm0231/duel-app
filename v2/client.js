@@ -39,6 +39,22 @@ function cardData(code) { return (DATA && DATA.cards[code]) || null; }
 // background-position to top; the delivered files are themselves
 // top-anchored crops.
 const CARD_ART = { 99937011: 'mudora', 62320425: 'agido', 16135253: 'agido', 25926710: 'kelbek', 63542003: 'keldo', 31525442: 'zolga', 86605515: 'cardan', 46148485: 'sphinx', 38699854: 'taiyou', 14087893: 'tsuki', 79106360: 'chaospod', 9350312: 'oka', 62133026: 'hana', 36745317: 'mori', 14108995: 'kakan', 15079028: 'carbon', 55702233: 'silky', 36898537: 'horus', 98715423: 'hakamori', 45409943: 'luce', 30100551: 'minerva', 82633039: 'castel', 62967433: 'baromett', 37706769: 'pluto', 21368273: 'trilo', 63101468: 'hyperion', 17484499: 'gensei', 51208877: 'bakudan', 89041555: 'bakudan-ishizu', 35726888: 'fukuso', 16435215: 'michizure', 67037924: 'kyoshin', 78625592: 'gofuu', 51612489: 'soudo', 46652477: 'yogen', 29228529: 'yogen-ishizu', 83764718: 'sosei', 71593652: 'hangyaku' }; // 剣神官ムドラ / 古衛兵アギド / 古尖兵ケルベク / 宿神像ケルドウ / 予見者ゾルガ / 賢瑞官カルダーン / 転輪のスフィンクス / 太陽の書 / 月の書 / カオスポッド / 丘と芽吹の春化精 / 花と野原の春化精 / 森と目覚の春化精 / 春化精の花冠 / 地久神－カルボン / 生きる偲びのシルキィ / メタファイズ・ホルス・ドラゴン (user art 2026-11-03) / 墓守の罠 (user art 2026-11-04, 18th delivery — the first TRAP with individual art, and a keycard-activation presentation target) / 宵闇のルーチェ (user art 2026-11-05, 19th delivery — an Ishizu keycard, so its summon cut-in and the Keycard BGM stage resolve this art too) / ライトロード・セイント ミネルバ (user art 2026-11-05, 20th delivery — a regular CARD_ART entry, not a keycard; see ART_FOCUS for her band exception) / 鳥銃士カステル (user art 2026-11-06, 21st delivery — a regular CARD_ART entry, not a keycard; no ART_FOCUS — his head sits high enough that both detail bands frame it under center top) / 神羊樹バロメット (user art 2026-11-06, 22nd delivery — a regular CARD_ART entry, not a keycard; the first painting delivered at 3:4 (1086x1448) instead of 2:3, so the big file keeps the FULL height and takes its 640:882 window horizontally (x=35, width 1051 — the 35px comes off the left edge, background only); the small file is the standard top-anchored square; see ART_FOCUS for her band exception) / 冥府の執行者 プルート (user art 2026-11-06, 23rd delivery — a regular CARD_ART entry, not a keycard; no ART_FOCUS — his face sits high (~16-25% of the big file) so both detail bands frame head, wings and the star orb under center top) / マナドゥム・トリロスークタ (user art 2026-11-06, 24th delivery — a regular CARD_ART entry, not a keycard; no ART_FOCUS — his helmeted head sits high (face ~17-19% of the big file) so both detail bands frame helmet, face and torso under center top) / マスターフレア・ヒュペリオン (user art 2026-11-06, 25th delivery — a regular CARD_ART entry, NOT a keycard (removed from the keycard list by the user's decision, so no keycard list or test is touched); no ART_FOCUS — his winged helmet sits high (crest ~4%, masked face ~10-13% of the big file) so both detail bands frame helmet, face and torso under center top; this registration completes the Ishizu EXTRA deck — every one of its cards now has individual art) / 現世と冥界の逆転 (user art 2026-11-06, 26th delivery — a TRAP and an Ishizu keycard that fires on ACTIVATION: the keycardact stage art resolves this BIG file through CARD_ART exactly like 《墓守の罠》, and 17484499 was already in KEYCARD_ACTIVATE_CODES, so the keycard lists themselves are untouched; no deck-scoped override; see ART_FOCUS for its band exception) / 運命の抱く爆弾 (user art 2026-11-07, 27th delivery — a regular CARD_ART entry, a TRAP, not a keycard; no ART_FOCUS — the demon's face sits high (~10-20% of the big file, the horned head spanning ~4-27%) and the chest flash core sits at ~26-54%, so both detail bands frame head and flash under center top; the Ishizu deck runs its own painting of the same card — see DECK_ART) / 生贄の抱く爆弾 (user art 2026-11-07 — by the user's instruction this card REUSES the bakudan-ishizu painting (the boy with the glowing bomb in his chest) as its common art: it is registered on the 'bakudan-ishizu' slug and shares that slug's delivered big/small files, so no separate files exist; 89041555 is not in the current pool, so no surface resolves it until the pool grows) / おろかな副葬 (user art 2026-11-07, 28th delivery — a regular CARD_ART entry, a SPELL, not a keycard; see ART_FOCUS for its band exception — the subject sits LOW in this painting; the Ishizu deck runs its own painting of the same card — see DECK_ART) / 墓穴の道連れ (user art 2026-11-07, 29th delivery — a regular CARD_ART entry, a SPELL, not a keycard; the painting was delivered at 1025x1535 (1px over the standard 1024x1536 in both dimensions), so the big file applies the standard crop by ratio (full width x the top 1411/1536 of the height -> 640x882) and the small file is the standard top-anchored square; see ART_FOCUS for its band exception — the man's screaming face sits mid-frame (~33-45% of the big file), not high; no deck-scoped override) / 巨神封じの矢 (user art 2026-11-07, 30th delivery — a regular CARD_ART entry, a SPELL, not a keycard; see ART_FOCUS for its band exception — the blue-haired archer's head sits mid-frame (~30-42% of the big file), not high; the Ishizu deck runs its own painting of the same card — see DECK_ART) / 光の護封霊剣 (user art 2026-11-07, 31st delivery — a regular CARD_ART entry, a SPELL, not a keycard; see ART_FOCUS for its band exception — the great central sword's star guard sits mid-frame (~35-52% of the big file, gem ~44%), not high; no deck-scoped override) / 騒動 (user art 2026-11-07, 32nd delivery — a regular CARD_ART entry, a TRAP, not a keycard; see ART_FOCUS for its band exception — the foreground goblin's face sits mid-frame (~37-56% of the big file), not high; no deck-scoped override) / 転生の予言 (user art 2026-11-07, 33rd delivery — a regular CARD_ART entry, a SPELL, not a keycard; see ART_FOCUS for its band exception — the hooded fortune teller's visible face sits mid-frame (~34-39% of the big file, her hooded head spanning ~15-42%) with the glowing card she holds at ~46-56%, not high; the Ishizu deck runs its own painting of the same card — see DECK_ART) / 魔法再生 (user art 2026-11-07 — by the user's instruction this card REUSES the yogen-ishizu painting (the glowing pentagram with a card floating at its center) as its common art: it is registered on the 'yogen-ishizu' slug and shares that slug's delivered big/small files, so no separate files exist; 29228529 is not in the current pool, so no surface resolves it until the pool grows) / 死者蘇生 (user art 2026-11-07, 34th delivery — a regular CARD_ART entry, a SPELL, not a keycard; the registered painting is the NORMAL printing's art (83764718), the one the Ishizu deck runs — the Mai deck's Magic Card printing is a different passcode and is not touched; see ART_FOCUS for its band exception — the green ankh spans ~16-84% of the big file with the star core at its junction at ~49-54%, mid-frame, not high; no deck-scoped override) / 天至る叛逆 (user art 2026-11-08, 35th delivery — a regular CARD_ART entry, a TRAP, not a keycard; see ART_FOCUS for its band exceptions — BOTH paintings needed one, each measured separately; the Ishizu deck runs its own painting of the same card — see DECK_ART; this registration completes the Ishizu deck: every card in its main and extra decks now has individual art)
+// ---- standard art for cards with no user-supplied painting
+// (user ruling 2026-11-04: decks other than the original-work
+// character decks use YGOPRODeck — ゆごぷろ — images; low quality
+// is fine). STD_ART maps passcode -> 'std-<passcode>'; the files
+// are that passcode's cropped illustration from YGOPRODeck,
+// delivered locally in the same geometry as the user art (big
+// 640x882 / small 320x320, JPEG q88) so every surface and the
+// deck-select preload treat them identically, with no runtime
+// fetch and no blank flash. Resolution order in artSlug:
+// DECK_ART override > CARD_ART > STD_ART > placeholder. Registered
+// for exactly the 26 cards the Super Quant built-in added
+// (2026-11-08 field report: those cards showed the shared
+// placeholder on every surface); the pre-existing 63 cards are
+// deliberately NOT listed here, so their display — individual
+// art or placeholder — stays byte-identical to before.
+const STD_ART = { 1825445: 'std-1825445', 10424147: 'std-10424147', 11646785: 'std-11646785', 12369277: 'std-12369277', 14883228: 'std-14883228', 17063599: 'std-17063599', 20145685: 'std-20145685', 21147203: 'std-21147203', 27480536: 'std-27480536', 29401950: 'std-29401950', 47819246: 'std-47819246', 57031794: 'std-57031794', 57450198: 'std-57450198', 58753372: 'std-58753372', 59975920: 'std-59975920', 66646087: 'std-66646087', 67630394: 'std-67630394', 72332074: 'std-72332074', 73046708: 'std-73046708', 73422829: 'std-73422829', 75493362: 'std-75493362', 84025439: 'std-84025439', 85252081: 'std-85252081', 85374678: 'std-85374678', 92034192: 'std-92034192', 98349765: 'std-98349765' }; // 超量合神－マグナフォーメーション / 超量機艦マグナキャリア / 超量機獣エアロボロス / 超量士ブルーレイヤー / タイフーン / 風の天翼ミラドーラ / エクシーズ・アーマー・フォートレス / ミニマリアン / アーマード・シャーク / 奈落の落とし穴 / 超量機神剣－マグナスレイヤー / 超量機獣マグナライガー / 超量機獣ラスターレックス / 超量妖精アルファン / 超量士レッドレイヤー / 超量妖精ゼータン / FA－ダーク・ナイト・ランサー / 超量必殺アルファンボール / アーマード・エクシーズ / 超量士ホワイトレイヤー / ヴィンゴルヴの祝福 / 超量機神王グレート・マグナス / 超量機獣グランパルス / 超量士グリーンレイヤー / 超量士ブラックレイヤー / 第１９層『襲来干渉！漆黒の超量士！！』
 // ---- deck-scoped art overrides (user decision 2026-11-03): a card
 // can carry a DIFFERENT illustration while it belongs to a specific
 // deck. DECK_ART maps deck id (the data.json decks key) -> passcode
@@ -163,7 +179,7 @@ function deckKeyOfCode(code) {
 function artSlug(code, deckKey) {
   if (code == null) return null;
   const over = deckKey ? (DECK_ART[deckKey] || {})[code] : null;
-  return over || CARD_ART[code] || null;
+  return over || CARD_ART[code] || STD_ART[code] || null;
 }
 function cardArtFile(code, big, deckKey) {
   const s = artSlug(code, deckKey);
@@ -491,7 +507,7 @@ function preloadCardArt(deckKeys) {
   for (const k of deckKeys) {
     const d = deckListOf(k); if (!d) continue;
     for (const c of (d.main || []).concat(d.extra || [])) {
-      if (!CARD_ART[c] && !(DECK_ART[k] || {})[c]) continue;
+      if (!CARD_ART[c] && !STD_ART[c] && !(DECK_ART[k] || {})[c]) continue;
       for (const big of [false, true]) {
         const f1 = cardArtFile(c, big); if (f1) files.add(f1);
         // the deck-scoped variant too (DECK_ART): a Mori in the
@@ -731,6 +747,18 @@ function openDeckCat(side) {
 function closeDeckCat() {
   $('deckcat').style.display = 'none';
   $('deckpage').style.display = 'flex';
+}
+// mid-duel exit to the deck-selection page (field report
+// 2026-11-08): the duel had NO exit of its own — the only buttons
+// that left a duel were the result screen's, and the その他
+// menu's 選択に戻る merely closed the sheet, so the user could
+// get back to deck selection only by reloading the page by hand.
+// Follow the result screen's own exit pattern (A-06): stash the
+// current selections, reload, and let the boot block below land
+// on the deck page with those selections kept.
+function quitToDeckSelection() {
+  try { sessionStorage.setItem('v3todeck', JSON.stringify({ my: myDeckKey, op: opDeckKey, first: firstChoice })); } catch (e) {}
+  location.reload();
 }
 // the modal lists never carry a scroll offset over from a
 // previous view: a leftover horizontal offset once left the deck
@@ -7113,10 +7141,14 @@ $('menubtn').addEventListener('click', () => {
   if (!menuActions.length) return;
   sheetOpenView('<div class="ttl">その他のアクション</div>' +
     menuActions.map((a, i) => '<button class="optbtn" data-menu="' + i + '">' + a.label + '</button>').join('') +
-    // W-28: menu actions belong to the pending idle choice.
+    // W-28 put 選択に戻る here as this sheet's cancel; the
+    // 2026-11-08 field report showed that reading is wrong in
+    // THIS menu — pressed mid-duel it must do what it says and
+    // leave for the deck-selection page (quitToDeckSelection).
+    // Merely closing the sheet stays available on the sheet's ×.
     '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">選択に戻る</button></div>');
   $('sheet').querySelectorAll('[data-menu]').forEach(b => b.addEventListener('click', () => { playClick(); finishPrompt(menuActions[+b.dataset.menu].bytes); }));
-  $('sheet-cancel').addEventListener('click', () => { playClick(); sheetClose(); });
+  $('sheet-cancel').addEventListener('click', () => { playClick(); quitToDeckSelection(); });
 });
 // ---------------------------------------------------------------- layout
 // User decision (2026-11-02): "fit the board to the screen; if space
@@ -7867,11 +7899,32 @@ function wireSeg(id, apply) {
     location.reload();
   });
   $('titlebtn').addEventListener('click', () => location.reload());
+  // mid-duel exit restore: 選択に戻る in the その他 menu reloads
+  // with 'v3todeck' stashed — land on the deck-selection page
+  // with the selections kept and NO duel started (the counterpart
+  // of the rematch restore below; if this fired, rematch is
+  // skipped — the two exits never legitimately coexist).
+  let todeckLanded = false;
+  try {
+    const td = sessionStorage.getItem('v3todeck');
+    if (td) {
+      sessionStorage.removeItem('v3todeck');
+      const cfg = JSON.parse(td);
+      const setSeg = (id, v) => { const el = $(id); if (!el || v == null) return; el.querySelectorAll('button').forEach(x => x.classList.toggle('sel', x.dataset.v === v)); };
+      if (cfg.my) { myDeckKey = cfg.my; setSeg('seg-mydeck', cfg.my); if (SAVED_DECKS[cfg.my]) syncDeckSelection(); }
+      if (cfg.op) { opDeckKey = cfg.op; setSeg('seg-opdeck', cfg.op); }
+      if (cfg.first) { firstChoice = cfg.first; setSeg('seg-first', cfg.first); }
+      updateDeckSum();
+      $('start').style.display = 'none';
+      $('deckpage').style.display = 'flex';
+      todeckLanded = true;
+    }
+  } catch (e) {}
   // A-06 rematch restore: same settings, straight back in (the VS
   // transition still plays — it is part of starting a duel).
   try {
     const rm = sessionStorage.getItem('v3rematch');
-    if (rm) {
+    if (rm && !todeckLanded) {
       sessionStorage.removeItem('v3rematch');
       const cfg = JSON.parse(rm);
       const setSeg = (id, v) => { const el = $(id); if (!el || v == null) return; el.querySelectorAll('button').forEach(x => x.classList.toggle('sel', x.dataset.v === v)); };

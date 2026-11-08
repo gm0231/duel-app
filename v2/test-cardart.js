@@ -2239,6 +2239,70 @@ async function boot() {
   ok(!!hGensei && hGensei.style.includes('card-art-gensei-s.jpg'), 'CA14v: hand Gensei shows the art');
   ok(res21.pv.includes('card-art-gensei-s.jpg'), 'CA16z11: resident preview shows the art for Gensei');
 
+  // ---- standard art (STD_ART): the Super Quant built-in's 26
+  // cards carry no user-supplied painting; per the 2026-11-04
+  // ruling they resolve to the passcode's YGOPRODeck cropped
+  // illustration, delivered locally as card-art-std-<code>
+  // (big 640x882 / small 320x320). Field report 2026-11-08:
+  // before this they showed the shared placeholder on every
+  // surface. The registration is scoped to exactly these 26
+  // codes — the pre-existing pool's display must not move
+  // (the UNLISTED exemplar above stays unlisted). ----
+  const SQ = [...new Set([...data.decks.superquant.main, ...data.decks.superquant.extra])];
+  ok(SQ.length === 26, 'CASQ0: the Super Quant deck has 26 unique cards');
+  for (const c of SQ) {
+    for (const suf of ['.jpg', '-s.jpg']) {
+      const p = path.join(V2, '..', 'assets', 'card-art-std-' + c + suf);
+      ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CASQ0f: card-art-std-' + c + suf + ' delivered (>10KB)');
+    }
+  }
+  const MAGNUS = 84025439;
+  const sqHelp = window.eval(`(() => {
+    const codes = ${JSON.stringify(SQ)};
+    const res = codes.map(c => ({
+      code: c,
+      inCardArt: Object.prototype.hasOwnProperty.call(CARD_ART, c),
+      std: STD_ART[c] || null,
+      small: cardArtFile(c, false),
+      big: cardArtFile(c, true),
+      inline: artInline(c),
+    }));
+    preloadCardArt(['superquant']);
+    return { res, preloaded: [...artPreloaded], unlistedStd: STD_ART[${UNLISTED}] || null, unlistedFile: cardArtFile(${UNLISTED}, false) };
+  })()`);
+  ok(sqHelp.res.every(r => !r.inCardArt && r.std === 'std-' + r.code), 'CASQ1: every Super Quant card resolves through STD_ART (none is in CARD_ART)');
+  ok(sqHelp.res.every(r => r.small === '../assets/card-art-std-' + r.code + '-s.jpg' && r.big === '../assets/card-art-std-' + r.code + '.jpg'), 'CASQ2: cardArtFile returns the std files (small + big) for all 26');
+  ok(sqHelp.res.every(r => r.inline.includes('card-art-std-' + r.code + '-s.jpg')), 'CASQ3: artInline carries the std art for all 26 (no surface falls back to the placeholder)');
+  ok(SQ.every(c => sqHelp.preloaded.includes('../assets/card-art-std-' + c + '-s.jpg') && sqHelp.preloaded.includes('../assets/card-art-std-' + c + '.jpg')), 'CASQ4: selecting the Super Quant deck preloads both std sizes (deck-select preload, no blank flash)');
+  ok(sqHelp.unlistedStd === null && sqHelp.unlistedFile === null, 'CASQ5: scoping — the GG unlisted exemplar stays unlisted in STD_ART too (existing 63 cards\u2019 display unchanged)');
+  const resSQ = window.eval(`
+    (() => {
+      const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
+      const P = () => ({ mzone: [null,null,null,null,null,null,null], szone: [null,null,null,null,null,null], grave: [], removed: [], extra: [], hand: [], deckCount: 38, lp: 8000 });
+      const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
+      b.players[0].mzone[0] = mon(${MAGNUS}, 0x1);  // own face-up Magnus
+      b.players[1].mzone[0] = mon(${MAGNUS}, 0x1);  // opp face-up Magnus (public)
+      b.players[1].mzone[1] = mon(${MAGNUS}, 0x8);  // opp face-down Magnus (MUST stay hidden)
+      b.players[0].hand = [{ code: ${MAGNUS} }];
+      render(b);
+      const artOf = (zone) => {
+        const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
+        const a = slot && slot.querySelector('.tile .art');
+        return a ? (a.getAttribute('style') || '') : null;
+      };
+      const h = document.querySelector('#hand .hcard[data-code="${MAGNUS}"] .himg');
+      setPreview(${MAGNUS}, null);
+      const pv = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      return { ownUp: artOf('0:4:0'), oppUp: artOf('1:4:0'), oppDown: artOf('1:4:1'), hand: h ? (h.getAttribute('style') || '') : null, pv };
+    })()
+  `);
+  ok(resSQ.ownUp !== null && resSQ.oppUp !== null && resSQ.oppDown !== null, 'CASQ6: non-vacuity — Magnus board rendered');
+  ok(resSQ.ownUp.includes('card-art-std-84025439-s.jpg'), 'CASQ7: own face-up Magnus tile shows the std art');
+  ok(resSQ.oppUp.includes('card-art-std-84025439-s.jpg'), 'CASQ8: opponent FACE-UP Magnus shows the std art (public information)');
+  ok(resSQ.oppDown === '' && !String(resSQ.oppDown).includes('std-84025439'), 'CASQ9: opponent FACE-DOWN Magnus gets NO art (asymmetry / no leak)');
+  ok(resSQ.hand !== null && resSQ.hand.includes('card-art-std-84025439-s.jpg'), 'CASQ10: hand Magnus shows the std art');
+  ok(resSQ.pv.includes('card-art-std-84025439-s.jpg'), 'CASQ11: resident preview shows the std art for Magnus');
+
   window.close();
   console.log(failures === 0 ? 'ALL CARDART CHECKS PASSED' : failures + ' CARDART CHECK(S) FAILED');
   process.exit(failures === 0 ? 0 : 1);
