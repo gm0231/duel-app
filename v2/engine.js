@@ -1208,6 +1208,10 @@ function makeBotMemory() {
     attempts: {},         // per-turn attempt counts for IDLECMD activations/summons (anti-cancel-loop)
     pendingRemoval: null, // {code} — removal target we fired at, watched for observed immunity
     learnedImmune: {},    // code -> true: a removal resolved and this card stayed (observed)
+    revealedOpp: {},      // seq -> {code, def}: opponent monster last seen FACE-UP at that zone (public)
+    knownSet: {},         // seq -> {code, def}: face-down opponent monster whose identity was revealed earlier this duel
+    bouncedAtk: {},       // seq -> DEF lower bound learned when our attack into that set monster bounced
+    attackWatch: null,    // {attSeq, attCode, attAtk, tgtSeq, turn}: in-flight attack into a face-down target, resolved from later public views
   };
 }
 
@@ -1486,9 +1490,23 @@ function deckHas(counts, code) { return !!counts && (counts.get(code) || 0) > 0;
 // Evaluate one attacker (ATK a) against one opposing monster cell.
 // Returns a score (>0 worth doing) or -Infinity. Face-down targets are a
 // gamble on the pool's DEF distribution (most set monsters are weak or
-// flip monsters; the big DEF walls are 2200-3000).
-function attackScore(view, data, a, t, myValue) {
+// flip monsters; the big DEF walls are 2200-3000) — UNLESS this duel has
+// publicly revealed what the set card is: a monster that was face-up at
+// that zone earlier (mem.knownSet, learned from snapshot transitions),
+// or one that already bounced one of our attackers (mem.bouncedAtk, a
+// learned DEF lower bound). Only information shown during the duel is
+// used; unknown set cards keep the gamble pricing.
+function attackScore(view, data, a, t, myValue, mem) {
   if (!t.faceUp) {
+    if (mem) {
+      const ks = mem.knownSet && mem.knownSet[t.seq];
+      if (ks && ks.code) {
+        const proxy = { code: ks.code, faceUp: true, atkPos: false, pos: 0x8, materials: 0, seq: t.seq };
+        return attackScore(view, data, a, proxy, myValue, null);
+      }
+      const bn = mem.bouncedAtk && mem.bouncedAtk[t.seq];
+      if (bn && a < bn) return -Infinity; // it already bounced an attacker this strong
+    }
     if (a >= 2400) return 1000;
     if (a >= 2100) return 650;
     if (a >= 1800 && faceUpMons(view, view.opp).length === 0) return 250;
@@ -1508,7 +1526,7 @@ function attackScore(view, data, a, t, myValue) {
 }
 // All (attacker, target) pairs worth considering. attackers: [{seq, atk}].
 // Direct attacks (targetSeq -1) are included when the entry allows them.
-function attackPlans(view, data, attackers, directSeqs) {
+function attackPlans(view, data, attackers, directSeqs, mem) {
   const targets = monList(view, view.opp);
   const azaminaOut = targets.some(c => c.faceUp && c.code === NC.AZAMINA);
   const plans = [];
@@ -1518,7 +1536,7 @@ function attackPlans(view, data, attackers, directSeqs) {
     // A direct attack under Saint Azamina deals its damage to US.
     if (directSeqs.has(at.seq) && !azaminaOut) plans.push({ seq: at.seq, atk: at.atk, targetSeq: -1, score: at.atk });
     for (const t of targets) {
-      const s = attackScore(view, data, at.atk, t, myValue);
+      const s = attackScore(view, data, at.atk, t, myValue, mem);
       if (s > -Infinity) plans.push({ seq: at.seq, atk: at.atk, targetSeq: t.seq, score: s });
     }
   }
@@ -1527,12 +1545,24 @@ function attackPlans(view, data, attackers, directSeqs) {
 // Lethal check: can the field be cleared and the remaining attackers deal
 // >= the opponent's LP directly? Returns the first clearing attack to make
 // (weakest sufficient attacker against the weakest clearable defender).
-function lethalPlan(view, data, attackers) {
+function lethalPlan(view, data, attackers, mem) {
   const targets = monList(view, view.opp);
   if (!targets.length) return null;
   // Saint Azamina turns our battle damage back on us: no lethal exists.
   if (targets.some(c => c.faceUp && c.code === NC.AZAMINA)) return null;
-  const defs = targets.map(t => ({ seq: t.seq, power: t.faceUp ? battlePower(t, data) : 1400, atkPos: t.atkPos, faceUp: t.faceUp }))
+  // Face-down defenders price at a flat 1400, except where this duel has
+  // publicly revealed more: a known identity prices at its real DEF, and
+  // a target that already bounced an attack prices at the learned bound.
+  const fdPower = (t) => {
+    if (mem) {
+      const ks = mem.knownSet && mem.knownSet[t.seq];
+      if (ks && ks.code) { const d = cdOf(data, ks.code); return d ? (d.def || 0) : 1400; }
+      const bn = mem.bouncedAtk && mem.bouncedAtk[t.seq];
+      if (bn) return bn;
+    }
+    return 1400;
+  };
+  const defs = targets.map(t => ({ seq: t.seq, power: t.faceUp ? battlePower(t, data) : fdPower(t), atkPos: t.atkPos, faceUp: t.faceUp }))
     .sort((x, y) => x.power - y.power);
   const atks = attackers.slice().sort((x, y) => x.atk - y.atk);
   const used = new Set();
@@ -1552,7 +1582,7 @@ function lethalPlan(view, data, attackers) {
   if (directDmg >= view.lp[view.opp]) return first;
   return null;
 }
-function hasProfitableAttack(view, data) {
+function hasProfitableAttack(view, data, mem) {
   const attackers = faceUpMons(view, view.me).filter(c => c.atkPos && atkOf(c, data) > 0)
     .map(c => ({ seq: c.seq, atk: atkOf(c, data) }));
   if (!attackers.length) return false;
@@ -1563,8 +1593,8 @@ function hasProfitableAttack(view, data) {
   // kept the bot out of the battle phase entirely in exactly this spot.)
   if (monList(view, view.opp).length === 0) return true;
   const direct = new Set();
-  if (lethalPlan(view, data, attackers)) return true;
-  return attackPlans(view, data, attackers, direct).some(p => p.score >= 240);
+  if (lethalPlan(view, data, attackers, mem)) return true;
+  return attackPlans(view, data, attackers, direct, mem).some(p => p.score >= 240);
 }
 // Would flipping / standing THIS monster up (it is currently face-down or
 // in face-up defense position) create an attack worth making, judged by
@@ -1572,17 +1602,17 @@ function hasProfitableAttack(view, data) {
 // empty opposing field any ATK > 0 qualifies (free direct damage, see
 // hasProfitableAttack); otherwise the plan involving this monster must
 // clear the usual 240 bar, or complete a lethal line.
-function profitableAttackIfStood(view, data, cell) {
+function profitableAttackIfStood(view, data, cell, mem) {
   const atk = atkOf(cell, data);
   if (atk <= 0) return false;
   const attackers = faceUpMons(view, view.me).filter(c => c.atkPos && atkOf(c, data) > 0)
     .map(c => ({ seq: c.seq, atk: atkOf(c, data) }));
   if (!attackers.some(a => a.seq === cell.seq)) attackers.push({ seq: cell.seq, atk });
   const oppEmpty = monList(view, view.opp).length === 0;
-  if (lethalPlan(view, data, attackers)) return true;
+  if (lethalPlan(view, data, attackers, mem)) return true;
   const direct = new Set(oppEmpty ? attackers.map(a => a.seq) : []);
   const bar = oppEmpty ? 1 : 240;
-  return attackPlans(view, data, attackers, direct).some(p => p.seq === cell.seq && p.score >= bar);
+  return attackPlans(view, data, attackers, direct, mem).some(p => p.seq === cell.seq && p.score >= bar);
 }
 
 // ---------------------------------------------------------------- main phase
@@ -2869,7 +2899,7 @@ function idleAnswer(prompt, view, data, mem) {
       const summonTurnLocked = wallShadowUp && cdCell && (cdCell.level & 0xff) <= 4;
       if (isMain1 && cell.code !== CC.CHAOS_POD && !summonTurnLocked &&
           !(defOf(cell, data) >= oppPow && oppPow > atkOf(cell, data)) &&
-          profitableAttackIfStood(view, data, cell)) return cmdResp(2, i);
+          profitableAttackIfStood(view, data, cell, mem)) return cmdResp(2, i);
       continue;
     }
     if (cell.atkPos) {
@@ -2886,7 +2916,7 @@ function idleAnswer(prompt, view, data, mem) {
       // defender whose DEF is currently holding the opponent's best
       // attacker stays down.
       if (!(defOf(cell, data) >= oppPow && oppPow > atkOf(cell, data)) &&
-          profitableAttackIfStood(view, data, cell)) return cmdResp(2, i);
+          profitableAttackIfStood(view, data, cell, mem)) return cmdResp(2, i);
     }
   }
   // set backrow: traps and quick-plays (never plain spells, never the field spell)
@@ -2898,7 +2928,7 @@ function idleAnswer(prompt, view, data, mem) {
     const v = handValue(e.code, view, data);
     if (v > bestSetV) { bestSetV = v; bestSet = i; }
   });
-  const wantBattle = isMain1 && prompt.toBP && hasProfitableAttack(view, data);
+  const wantBattle = isMain1 && prompt.toBP && hasProfitableAttack(view, data, mem);
   if (isMain1) {
     if (wantBattle) return cmdResp(6, 0);
     if (bestSet >= 0) return cmdResp(4, bestSet);
@@ -2910,8 +2940,8 @@ function idleAnswer(prompt, view, data, mem) {
   if (prompt.toEP) return cmdResp(7, 0);
   return cmdResp(7, 0);
 }
-function bestAttackPlan(view, data, attackers, directSeqs) {
-  const plans = attackPlans(view, data, attackers, directSeqs);
+function bestAttackPlan(view, data, attackers, directSeqs, mem) {
+  const plans = attackPlans(view, data, attackers, directSeqs, mem);
   let best = null;
   for (const p of plans) {
     if (p.score < 240) continue;
@@ -2941,10 +2971,18 @@ function battleAnswer(prompt, view, data, mem) {
   }
   if (prompt.attack.length) {
     const directSeqs = new Set(prompt.attack.filter(e => e.direct).map(e => e.seq));
-    const plan = lethalPlan(view, data, attackers) || bestAttackPlan(view, data, attackers, directSeqs);
+    const plan = lethalPlan(view, data, attackers, mem) || bestAttackPlan(view, data, attackers, directSeqs, mem);
     if (plan) {
       mem.lastAttacker = { seq: plan.seq, turn: view.turnCount };
       mem.plannedTargetSeq = plan.targetSeq;
+      // Attacking a face-down target: watch the outcome so a bounce
+      // teaches us that target's DEF lower bound (public information:
+      // the attacker publicly dies / the target publicly stays).
+      const tgtCell = plan.targetSeq >= 0 ? view.zones[view.opp].mzone[plan.targetSeq] : null;
+      if (tgtCell && !tgtCell.faceUp) {
+        const myCell = view.zones[me].mzone[plan.seq];
+        mem.attackWatch = { attSeq: plan.seq, attCode: myCell ? myCell.code : 0, attAtk: plan.atk, tgtSeq: plan.targetSeq, turn: view.turnCount };
+      } else mem.attackWatch = null;
       const idx = prompt.attack.findIndex(e => e.seq === plan.seq);
       if (idx >= 0) return cmdResp(1, idx);
     }
@@ -2958,6 +2996,7 @@ function battleAnswer(prompt, view, data, mem) {
       if (cands.length) {
         mem.lastAttacker = { seq: cands[0].seq, turn: view.turnCount };
         mem.plannedTargetSeq = -1;
+        mem.attackWatch = null;
         const idx = prompt.attack.findIndex(e => e.seq === cands[0].seq);
         if (idx >= 0) return cmdResp(1, idx);
       }
@@ -3081,7 +3120,7 @@ function selectCardAnswer(prompt, view, data, mem) {
     for (const x of entries) {
       const t = view.zones[opp].mzone[x.e.seq];
       if (!t) continue;
-      let s = attackScore(view, data, A, t, boardValue(atkCell, data));
+      let s = attackScore(view, data, A, t, boardValue(atkCell, data), mem);
       if (x.e.seq === mem.plannedTargetSeq) s += 100000;
       if (s > bestS) { bestS = s; pick = x.i; }
     }
@@ -3691,6 +3730,52 @@ function botAnswerInternal(prompt, state, data, mem) {
     for (const s of freshSeqs) if (!mem.pendingNewOpp.includes(s)) mem.pendingNewOpp.push(s);
   }
   mem.newOppSeqs = mem.newOppTurn === view.turnCount ? (mem.pendingNewOpp || []) : [];
+  // --- public-information memory about the opponent's face-down
+  // monsters (round 2, item 1). Everything recorded here is visible on
+  // the public board at some prompt: a monster's identity is remembered
+  // only while it occupies the zone where it was publicly face-up, and
+  // an attack outcome is remembered only as the DEF lower bound the
+  // bounce publicly proved. No deck-list or masked information is read.
+  if (!mem.revealedOpp) { mem.revealedOpp = {}; mem.knownSet = {}; mem.bouncedAtk = {}; mem.attackWatch = null; }
+  {
+    const oppZone = view.zones[view.opp].mzone;
+    // Resolve the in-flight attack watch first (it reads the zones the
+    // upkeep below then re-labels).
+    if (mem.attackWatch) {
+      const w = mem.attackWatch;
+      const mine = view.zones[view.me].mzone[w.attSeq];
+      const tgt = oppZone[w.tgtSeq];
+      if (!tgt) {
+        // target left: its lessons leave with it
+        delete mem.bouncedAtk[w.tgtSeq]; delete mem.knownSet[w.tgtSeq];
+        mem.attackWatch = null;
+      } else if (!mine || mine.code !== w.attCode) {
+        // Our attacker is gone and the target is still there: the
+        // attack bounced (or the attacker was removed mid-battle —
+        // either way, charging this target again blind is wrong).
+        mem.bouncedAtk[w.tgtSeq] = Math.max(mem.bouncedAtk[w.tgtSeq] || 0, w.attAtk + 1);
+        mem.attackWatch = null;
+      } else if (view.turnCount > w.turn) {
+        // Both survived the turn: against a defense-position target
+        // that means its DEF exactly matched our ATK.
+        if (!tgt.faceUp) mem.bouncedAtk[w.tgtSeq] = Math.max(mem.bouncedAtk[w.tgtSeq] || 0, w.attAtk);
+        mem.attackWatch = null;
+      }
+    }
+    for (let s = 0; s < 7; s++) {
+      const cellNow = oppZone[s];
+      if (!cellNow) { delete mem.revealedOpp[s]; delete mem.knownSet[s]; delete mem.bouncedAtk[s]; continue; }
+      if (cellNow.faceUp && cellNow.code) {
+        const d = cdOf(data, cellNow.code);
+        mem.revealedOpp[s] = { code: cellNow.code, def: d ? (d.def || 0) : 0 };
+        delete mem.knownSet[s];
+      } else if (mem.revealedOpp[s]) {
+        // The monster we saw face-up at this zone is now face-down:
+        // it was flipped down, and we know what it is.
+        mem.knownSet[s] = mem.revealedOpp[s];
+      }
+    }
+  }
   if (view.turnPlayer === view.me) mem.summonedYet = false; // legacy field upkeep
   switch (prompt.name) {
     case 'SELECT_IDLECMD': {
