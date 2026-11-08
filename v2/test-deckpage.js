@@ -27,6 +27,16 @@
    and on return from the contents view), and the imported
    category button is absent from the DOM itself — not merely
    hidden — on the opponent category page.
+   Regression contract (2026-11-08, second report): removing the
+   button from the DOM did NOT by itself cure the faint remnant on
+   the real device — the artifact lived in the composited paint of
+   the page's translucent .overlay background (#0d0b08f5), with the
+   previous screen already display:none underneath. So #deckcat
+   must declare a fully opaque background (the page covers
+   everything beneath it completely), and while the category page
+   is up the deck page must be display:none on both sides. jsdom
+   does no compositing, so the painted half is pinned as a
+   stylesheet contract; the real-device recheck is separate.
    Method: boot the real client in jsdom (harness as test-ui) and
    click through the pages with DOM clicks only. */
 const fs = require('fs');
@@ -221,6 +231,18 @@ async function boot() {
     'DP28: reopening the modal resets the list scroll offsets');
   doc.getElementById('deckmodalx').click();
   doc.getElementById('deckcatback').click();
+
+  // ---- regression: the category page fully covers what is beneath ----
+  const catBgRule = /#deckcat\{[^}]*background:#0d0b08[;}]/.test(html) &&
+    !/#deckcat\{[^}]*background:#[0-9a-fA-F]{8}[;}]/.test(html);
+  ok(catBgRule, 'DP29: category page declares a fully opaque background (stylesheet contract; .overlay translucency overridden)');
+  doc.getElementById('opdeckcur').click();
+  const catBgComputed = window.getComputedStyle(doc.getElementById('deckcat')).backgroundColor;
+  ok(disp('deckcat') !== 'none' && disp('deckpage') === 'none' &&
+     (catBgComputed === 'rgb(13, 11, 8)' || catBgComputed === 'rgba(13, 11, 8, 1)'),
+    'DP30: opponent category page up => deck page fully hidden, page surface computes opaque (' + catBgComputed + ')');
+  doc.getElementById('deckcatback').click();
+  ok(disp('deckpage') !== 'none' && disp('deckcat') === 'none', 'DP30b: and back to the deck page afterwards');
 
   // ---- reset to defaults, then the start flow ----
   segBtn('seg-mydeck', 'ishizu').click(); segBtn('seg-opdeck', 'gg').click(); segBtn('seg-first', 'first').click();

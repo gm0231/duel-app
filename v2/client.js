@@ -709,10 +709,11 @@ function openDeckCat(side) {
   $('deckcattitle').textContent = side === 'my' ? '自分のデッキ' : '相手のデッキ';
   // the imported category exists on the own side only. On the
   // opponent side the button is REMOVED from the DOM, not merely
-  // display:none'd: a display flip in the same frame as the page
-  // switch could leave a faint non-tappable remnant of it painted
-  // on the category page (seen on the real device). A detached
-  // node cannot be painted at all.
+  // display:none'd. Removal alone did not cure the faint remnant
+  // seen on the real device, though: the artifact lived in the
+  // composited paint of the page's translucent .overlay surface
+  // (#0d0b08f5), not in the live DOM — #deckcat's background is
+  // fully opaque for exactly that reason (see index.html).
   const imp = $('deckcatimp') || deckCatImpBtn;
   if (imp) {
     deckCatImpBtn = imp;

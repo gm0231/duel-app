@@ -706,7 +706,17 @@
      lists scroll inside the modal panel — no page ever scrolls. */
   #start .rulesline{font-size:11px;color:var(--txt-dim);margin:0;}
   #deckpage .deck .chg{flex:none;margin-left:auto;font-size:11px;color:var(--gold);border:1px solid var(--gold-dim);border-radius:7px;padding:4px 9px;background:var(--panel2);}
-  #deckcat{display:none;justify-content:flex-start;overflow:hidden;padding:10px 14px 12px;align-items:stretch;text-align:left;}
+  /* #deckcat overrides .overlay's translucent background (#0d0b08f5,
+     ~96% opaque) with a fully opaque one. The category page is the
+     one full-screen page whose children change between visits (the
+     imported button is removed on the opponent side); with a
+     translucent surface the real device's compositor could keep a
+     faint remnant of that button painted at the same spot even
+     after the node itself was removed from the DOM (field report
+     2026-11-08: remove() alone did not cure it). An opaque page
+     covers everything beneath it completely, so no remnant —
+     composited or live — can show through. */
+  #deckcat{display:none;justify-content:flex-start;overflow:hidden;padding:10px 14px 12px;align-items:stretch;text-align:left;background:#0d0b08;}
   #deckcatback,#deckviewback{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:12.5px;padding:9px 12px;cursor:pointer;flex:0 0 auto;}
   .catlist{display:flex;flex-direction:column;gap:10px;width:100%;margin-top:14px;}
   .catbtn{background:#1d1508;color:var(--txt);border:1px solid #4a3a1c;border-radius:12px;font-size:15px;font-weight:700;padding:16px 14px;text-align:left;cursor:pointer;letter-spacing:.03em;}
