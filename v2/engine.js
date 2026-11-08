@@ -1699,8 +1699,14 @@ function newThemeActivation(e, view, data, prompt, H) {
   };
   switch (e.code) {
     case NC.WF_WITCH: {
-      if (e.loc === LOC.HAND) return fieldUp ? 0 : 1250; // do not replace our own field spell
-      if (e.loc === LOC.SZONE && myCell && !myCell.faceUp) return fieldUp ? 0 : 1250; // flip the set copy: same activation
+      // Replacing Aristia is correct in this deck: its negate needs
+      // three Elfnote monsters the White Forest build rarely controls,
+      // while the Witch searches on activation and battle-protects the
+      // White Forest monsters. Other field spells keep the old rule
+      // (never replace our own field spell with the Witch).
+      const replaceable = (() => { const f = view.zones[me].szone[5]; return !!(f && f.faceUp && f.code === NC.ELF_ARISTIA); })();
+      if (e.loc === LOC.HAND) return fieldUp ? (replaceable ? 1000 : 0) : 1250; // do not replace our own field spell
+      if (e.loc === LOC.SZONE && myCell && !myCell.faceUp) return fieldUp ? (replaceable ? 1000 : 0) : 1250; // flip the set copy: same activation
       if (e.loc === LOC.SZONE && printed === 3) {
         // make a White Forest monster a tuner: only with a synchro line open
         const hasWF = myFU.some(c => hasSetC(cdOf(data, c.code), SETC.WF));
@@ -3292,6 +3298,19 @@ function selectCardAnswer(prompt, view, data, mem) {
   }
   // --- search / send from our own deck
   if (entries.every(x => x.e.loc === LOC.DECK)) {
+    // Is the White Forest Witch line live? Silvi is the only fetcher of
+    // the Witch (a spell), so while the Witch is still in the deck, the
+    // field slot can take her, and we do not already hold Silvi, a
+    // monster search that CAN take Silvi should: Diabellze is the
+    // stronger single card, but the Silvi line converts the search
+    // into the Witch plus her own search (round 2, item 3 — the
+    // Diabellze-side drift left the Witch unplayed in four bench games).
+    const witchLine = (() => {
+      if (view.hand[me].some(x => x.code === NC.WF_SILVI)) return false;
+      const f = view.zones[me].szone[5];
+      if (f && f.faceUp && f.code !== NC.ELF_ARISTIA) return false;
+      return deckHas(remainingDeck(view, me, data), NC.WF_WITCH);
+    })();
     const pieceCount = (code) => (view.hand[me].some(y => y.code === code) ? 1 : 0) +
       (view.grave[me].includes(code) ? 1 : 0) + (view.removed[me].includes(code) ? 1 : 0) +
       (monList(view, me).some(c => c.code === code) ? 1 : 0);
@@ -3340,7 +3359,12 @@ function selectCardAnswer(prompt, view, data, mem) {
         return (d && (d.type & CT.TUNER) ? 900 : 0) + (isMonsterCd(d) ? d.atk + handValue(e.code, view, data) * 0.2 : 0);
       }
       if (ctxCode === NC.WF_TALE) { // search a White Forest monster: starters first
+        if (e.code === NC.WF_SILVI && witchLine) return 2600; // Silvi fetches the Witch next
         return hasSetC(d, SETC.WF) && isMonsterCd(d) ? 1200 + handValue(e.code, view, data) * 0.3 : 0;
+      }
+      if (ctxCode === NC.WF_RISETT) { // she special summons herself, then searches a White Forest monster
+        if (e.code === NC.WF_SILVI && witchLine) return 3200; // Silvi fetches the Witch next
+        return isMonsterCd(d) ? d.atk + handValue(e.code, view, data) * 0.2 : handValue(e.code, view, data);
       }
       if (ctxCode === NC.SQ_ALPHAN) { // our reveal-3: three DIFFERENT layers (handled below)
         return hasSetC(d, SETC.SQM) ? 1000 + handValue(e.code, view, data) * 0.2 : 0;
