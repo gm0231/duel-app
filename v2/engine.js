@@ -1350,6 +1350,9 @@ function boardValue(cell, data) {
   v += (cell.materials || 0) * 120;
   if (cd && cd.code === CC.DARK_GUARDIAN) v += 500;   // battle-indestructible wall
   if (cd && cd.code === CC.GG_COMBINED) v += 300;
+  if (cd && cd.code === NC.AZAMINA) v += 400;         // untargetable; reflects battle damage
+  if (cd && cd.code === NC.SINFUL_GODDESS) v += 150;  // cannot be destroyed by effects
+  if (cd && cd.code === NC.MAGNUS && (cell.materials || 0) >= 4) v += 250; // unaffected by non-Super Quant effects
   return v;
 }
 function monList(view, p) {
@@ -1493,7 +1496,13 @@ function attackScore(view, data, a, t, myValue) {
   }
   const power = battlePower(t, data);
   const threat = boardValue(t, data);
-  if (a > power) return threat + (t.atkPos ? (a - atkOf(t, data)) * 0.25 : 0);
+  if (a > power) {
+    // Saint Azamina: battle damage her controller would take is dealt
+    // to the attacker instead — the overkill comes back at our LP.
+    if (t.atkPos && faceUpMons(view, view.opp).some(c => c.code === NC.AZAMINA))
+      return threat - (a - atkOf(t, data));
+    return threat + (t.atkPos ? (a - atkOf(t, data)) * 0.25 : 0);
+  }
   if (a === power && t.atkPos) return threat - myValue * 0.65; // trade: only if clearly ahead
   return -Infinity;
 }
@@ -1501,11 +1510,13 @@ function attackScore(view, data, a, t, myValue) {
 // Direct attacks (targetSeq -1) are included when the entry allows them.
 function attackPlans(view, data, attackers, directSeqs) {
   const targets = monList(view, view.opp);
+  const azaminaOut = targets.some(c => c.faceUp && c.code === NC.AZAMINA);
   const plans = [];
   for (const at of attackers) {
     const myCell = view.zones[view.me].mzone[at.seq];
     const myValue = boardValue(myCell, data);
-    if (directSeqs.has(at.seq)) plans.push({ seq: at.seq, atk: at.atk, targetSeq: -1, score: at.atk });
+    // A direct attack under Saint Azamina deals its damage to US.
+    if (directSeqs.has(at.seq) && !azaminaOut) plans.push({ seq: at.seq, atk: at.atk, targetSeq: -1, score: at.atk });
     for (const t of targets) {
       const s = attackScore(view, data, at.atk, t, myValue);
       if (s > -Infinity) plans.push({ seq: at.seq, atk: at.atk, targetSeq: t.seq, score: s });
@@ -1519,6 +1530,8 @@ function attackPlans(view, data, attackers, directSeqs) {
 function lethalPlan(view, data, attackers) {
   const targets = monList(view, view.opp);
   if (!targets.length) return null;
+  // Saint Azamina turns our battle damage back on us: no lethal exists.
+  if (targets.some(c => c.faceUp && c.code === NC.AZAMINA)) return null;
   const defs = targets.map(t => ({ seq: t.seq, power: t.faceUp ? battlePower(t, data) : 1400, atkPos: t.atkPos, faceUp: t.faceUp }))
     .sort((x, y) => x.power - y.power);
   const atks = attackers.slice().sort((x, y) => x.atk - y.atk);
@@ -2452,39 +2465,64 @@ function newChainValue(e, view, data, mem, C) {
   const printed = fxPrinted(e.code, e.desc);
   const oppFU = faceUpMons(view, opp);
   const oppBest = oppFU.length ? Math.max(...oppFU.map(c => boardValue(c, data))) : 0;
+  // Stage 5: the opponent's deck is one of five known lists — price
+  // disruption against what that deck is actually building toward.
+  const od = oppDeckId(view, data);
+  const isBoss = (c) => c && (c.code === CC.GG_COMBINED || c.code === CC.DARK_GUARDIAN);
+  // Against Ishizu, a loaded grave IS the threat: hand traps that cut
+  // grave effects gain value once their engine is stocked.
+  const ishizuGraveHot = od === 'ishizu' && (view.grave[opp].length >= 10 ||
+    view.grave[opp].some(c => [CC.KELBEK, CC.AGIDO, CC.MUDORA, CC.KELDO].includes(c)));
   switch (e.code) {
     case NC.BOTTOMLESS: { // summon window: banish the new monster (ATK 1500+)
       if (!newBigOpp) return 0;
       if (atkOf(newBigOpp, data) < 1500 || boardValue(newBigOpp, data) < 1600) return 0;
+      // vs Gate Guardian: hold the trap for the combined form / Dark
+      // Guardian instead of spending it on a lone piece.
+      if (od === 'gg' && !isBoss(newBigOpp) && boardValue(newBigOpp, data) < 2000) return 0;
+      // vs Super Quant: a Mech Beast carrying 3+ materials is a Magnus
+      // in progress — worth more than its printed body.
+      if (od === 'superquant' && (newBigOpp.materials || 0) >= 3) return 1400;
       return (isExtraCd(cdOf(data, newBigOpp.code)) || atkOf(newBigOpp, data) >= 2200) ? 1400 : 1250;
     }
     case NC.COMPULSE: {
       if (atkCell && ((myMonDies && myMonValue >= 1400) || atkDmg >= 1300)) return 1350;
-      if (newBigOpp && boardValue(newBigOpp, data) >= 2000) return 1250;
+      if (newBigOpp && boardValue(newBigOpp, data) >= 2000) {
+        if (od === 'gg' && !isBoss(newBigOpp) && boardValue(newBigOpp, data) < 2400) return 0;
+        return 1250;
+      }
       return oppBest >= 2400 ? 1150 : 0;
     }
     case NC.DOG_PUNISH: {
       const target = (newBigOpp && boardValue(newBigOpp, data) >= 2000) ? newBigOpp
         : oppFU.slice().sort((a, b) => boardValue(b, data) - boardValue(a, data))[0];
-      if (!target || boardValue(target, data) < 2000) return 0;
+      if (!target) return 0;
+      // vs Elfnote, the two Azamina bosses are the whole payoff: shoot
+      // smaller than usual. vs GG, hold for the bosses.
+      const need = (od === 'elfennotes' && (target.code === NC.SINFUL_GODDESS || target.code === NC.AZAMINA)) ? 1500
+        : od === 'gg' && !isBoss(target) ? 2400 : 2000;
+      if (boardValue(target, data) < need) return 0;
       const sendable = view.extra[me].some(x => { const d = cdOf(data, x.code); return d && (x.code === NC.NTSS || d.atk >= atkOf(target, data)); });
       return sendable ? 1300 : 0;
     }
     case NC.TYPHOON: { // destroy the spell/trap the opponent just activated
       if (!topOpp || !topCd) return 0;
       if (!((topCd.type & CT.SPELL) || (topCd.type & CT.TRAP))) return 0;
-      const keyST = [CC.WALL_SHADOW, NC.CARRIER, NC.WF_WITCH, NC.ELF_PARALLEL, NC.ELF_RAPSODIA, NC.ELF_ARISTIA];
+      // The engine pieces of the known decks: killing these on sight is
+      // worth more than generic backrow removal.
+      if (topOpp.code === NC.CARRIER || topOpp.code === NC.WF_WITCH || topOpp.code === CC.WALL_SHADOW) return 1400;
+      const keyST = [NC.ELF_PARALLEL, NC.ELF_RAPSODIA, NC.ELF_ARISTIA];
       if (keyST.includes(topOpp.code) || (topCd.type & CT.FIELD) || (topCd.type & CT.CONTINUOUS)) return 1300;
       return 900;
     }
     case NC.DD_CROW: {
       if (topOpp && topOpp.tloc === LOC.GRAVE)
-        return graveValue(topOpp.code, data) >= 700 ? 1400 : 1200;
+        return graveValue(topOpp.code, data) >= 700 ? (ishizuGraveHot ? 1550 : 1400) : 1200;
       if (topOpp && topOpp.code === CC.REBORN) return 1350;
       return 0;
     }
     case NC.SKULL_MEISTER: {
-      if (topOpp && topOpp.tloc === LOC.GRAVE) return 1400;
+      if (topOpp && topOpp.tloc === LOC.GRAVE) return ishizuGraveHot ? 1550 : 1400;
       if (topOpp && topOpp.tloc === LOC.REMOVED) return 1250;
       return 0;
     }
@@ -2923,6 +2961,46 @@ function battleAnswer(prompt, view, data, mem) {
 // ---------------------------------------------------------------- SELECT_CARD
 // Mode is inferred from the candidate composition first (robust even when
 // the prompt carries no chain context), refined by the asking card.
+// ------------------------------------------------------------ resistances
+// Static interaction table for the fixed pool (stage 6 of the CPU
+// diagnosis), plus what the bot learns by observation: a removal that
+// resolved while its target stayed on the field face-up marks that card
+// as untouchable for the rest of the duel (mem.learnedImmune).
+const REMOVAL_PROFILE = {
+  [NC.BOTTOMLESS]: { targets: false, destroys: true },
+  [CC.RAIGEKI]: { targets: false, destroys: true },
+  [NC.COMPULSE]: { targets: true, destroys: false },
+  [NC.DOG_PUNISH]: { targets: true, destroys: true },
+  [NC.TYPHOON]: { targets: true, destroys: true },
+  [NC.WF_NOENTER]: { targets: true, destroys: true },
+  [CC.CASTEL]: { targets: true, destroys: false },
+  [CC.MOON]: { targets: true, destroys: false },
+};
+function removalBlocked(cell, ctxCode, view, data, mem) {
+  if (!cell || !cell.faceUp || !cell.code) return false;
+  const prof = REMOVAL_PROFILE[ctxCode];
+  if (!prof) return false;
+  if (mem && mem.learnedImmune && mem.learnedImmune[cell.code]) return true;
+  const myCd = cdOf(data, ctxCode);
+  // Great Magnus with 4+ material types ignores non-Super Quant effects.
+  if (cell.code === NC.MAGNUS && (cell.materials || 0) >= 4 &&
+      !(myCd && hasSetC(myCd, SETC.SQ))) return true;
+  // Saint Azamina herself cannot be targeted (her lock on the opponent's
+  // own targeting does not protect the rest of her field from us).
+  if (prof.targets && cell.code === NC.AZAMINA) return true;
+  // The Saint-mark-devouring dragon ignores other effects while an
+  // "Ecclesia" monster exists on either field or in either grave.
+  if (cell.code === NC.SEIKON_DRAGON) {
+    const ecc = (c) => { const d = cdOf(data, c && c.code !== undefined ? c.code : c); return d && hasSetC(d, 463); };
+    const present = [view.me, view.opp].some(p => faceUpMons(view, p).some(ecc) ||
+      view.grave[p].some(ecc) || monList(view, p).some(ecc));
+    if (present) return true;
+  }
+  // The Sinful Goddess cannot be destroyed by effects.
+  if (prof.destroys && cell.code === NC.SINFUL_GODDESS) return true;
+  return false;
+}
+
 function selectCardAnswer(prompt, view, data, mem) {
   const me = view.me, opp = view.opp;
   const ctx = prompt.context || null;
@@ -2944,8 +3022,20 @@ function selectCardAnswer(prompt, view, data, mem) {
   const threat = (x) => {
     const e = x.e;
     if (e.con === opp) {
-      if (e.loc === LOC.MZONE) { const c = view.zones[opp].mzone[e.seq]; return c ? (c.faceUp ? boardValue(c, data) : 1000) : 700; }
-      if (e.loc === LOC.SZONE) { const c = view.zones[opp].szone[e.seq]; return c && c.faceUp ? 850 : 950; }
+      if (e.loc === LOC.MZONE) {
+        const c = view.zones[opp].mzone[e.seq];
+        if (c && removalBlocked(c, ctxCode, view, data, mem)) return -5000; // the removal would not touch it
+        let v = c ? (c.faceUp ? boardValue(c, data) : 1000) : 700;
+        // Combined Gate Guardian can negate one targeted effect: shade
+        // the expected value of shooting removal at it.
+        if (c && c.code === CC.GG_COMBINED && REMOVAL_PROFILE[ctxCode] && REMOVAL_PROFILE[ctxCode].targets) v -= 600;
+        return v;
+      }
+      if (e.loc === LOC.SZONE) {
+        const c = view.zones[opp].szone[e.seq];
+        if (c && removalBlocked(c, ctxCode, view, data, mem)) return -5000;
+        return c && c.faceUp ? 850 : 950;
+      }
       if (e.loc === LOC.GRAVE) return graveValue(e.code, data);
       return handValue(e.code, view, data);
     }
@@ -2957,10 +3047,17 @@ function selectCardAnswer(prompt, view, data, mem) {
   // duel). On a re-ask, walk down the preference order instead of
   // repeating the rejected pick.
   const take = (sorted, n) => {
-    if (n === 1 && sorted.length > 1 && prompt.retryCount) {
-      return cardsResp([sorted[prompt.retryCount % sorted.length].i]);
+    let chosen;
+    if (n === 1 && sorted.length > 1 && prompt.retryCount) chosen = [sorted[prompt.retryCount % sorted.length]];
+    else chosen = sorted.slice(0, n);
+    // Stage 6: remember removal targets. If the target is still on the
+    // field face-up at our next main phase, the removal did not move it
+    // and its code is recorded as (observed) untouchable.
+    if (mem && REMOVAL_PROFILE[ctxCode]) {
+      const t = chosen.find(x => x.e.con === opp && (x.e.loc === LOC.MZONE || x.e.loc === LOC.SZONE));
+      if (t) mem.pendingRemoval = { code: t.e.code, seq: t.e.seq, loc: t.e.loc };
     }
-    return cardsResp(sorted.slice(0, n).map(x => x.i));
+    return cardsResp(chosen.map(x => x.i));
   };
   // --- battle target selection: no chain in progress, we just declared an
   // attacker at BATTLECMD. Candidates are the opponent's monsters; hidden
@@ -3333,7 +3430,7 @@ function unselectAnswer(prompt, view, data, mem) {
     return 500;
   };
   const threatOf = (x) => x.e.con === opp
-    ? (x.e.loc === LOC.MZONE ? (() => { const c = view.zones[opp].mzone[x.e.seq]; return c ? (c.faceUp ? boardValue(c, data) : 1000) : 700; })() : 800)
+    ? (x.e.loc === LOC.MZONE ? (() => { const c = view.zones[opp].mzone[x.e.seq]; if (c && removalBlocked(c, ctxCode, view, data, mem)) return -5000; return c ? (c.faceUp ? boardValue(c, data) : 1000) : 700; })() : 800)
     : -giveUp(x);
   const targetMode = all.every(x => x.e.con === opp) ||
     [CC.CASTEL, CC.LUCE, CC.DEMON_WIND, CC.RAIGEKI].includes(ctxCode);
@@ -3571,11 +3668,33 @@ function botAnswerInternal(prompt, state, data, mem) {
   // since our last prompt marks a summon-response window (used for summon
   // negation and on-summon reactions). Public information only.
   const snap = new Set(faceUpMons(view, view.opp).map(c => c.seq + ':' + c.code));
-  mem.newOppSeqs = mem.oppFieldSnap ? [...snap].filter(k => !mem.oppFieldSnap.has(k)).map(k => parseInt(k, 10)) : [];
+  const freshSeqs = mem.oppFieldSnap ? [...snap].filter(k => !mem.oppFieldSnap.has(k)).map(k => parseInt(k, 10)) : [];
   mem.oppFieldSnap = snap;
+  // Newly-appeared opponent monsters stay "new" for the whole turn.
+  // The old per-prompt diff was consumed by whichever prompt came first
+  // (often a material/effect prompt inside the summon procedure), so by
+  // the actual summon-response chain window the diff was empty and
+  // Bottomless-class responses priced the boss at 0 and passed — the
+  // diagnosis's F5 case (SQ vs GG seed2953, traced).
+  if (freshSeqs.length) {
+    if (mem.newOppTurn !== view.turnCount) { mem.pendingNewOpp = []; mem.newOppTurn = view.turnCount; }
+    for (const s of freshSeqs) if (!mem.pendingNewOpp.includes(s)) mem.pendingNewOpp.push(s);
+  }
+  mem.newOppSeqs = mem.newOppTurn === view.turnCount ? (mem.pendingNewOpp || []) : [];
   if (view.turnPlayer === view.me) mem.summonedYet = false; // legacy field upkeep
   switch (prompt.name) {
-    case 'SELECT_IDLECMD': return idleAnswer(prompt, view, data, mem);
+    case 'SELECT_IDLECMD': {
+      // Observed-immunity learning: a removal target from an earlier
+      // prompt that is STILL here face-up did not get moved by it.
+      if (mem.pendingRemoval) {
+        const pr = mem.pendingRemoval;
+        const zone = pr.loc === LOC.SZONE ? view.zones[view.opp].szone : view.zones[view.opp].mzone;
+        const cellNow = zone[pr.seq];
+        if (cellNow && cellNow.code === pr.code && cellNow.faceUp) mem.learnedImmune[pr.code] = true;
+        mem.pendingRemoval = null;
+      }
+      return idleAnswer(prompt, view, data, mem);
+    }
     case 'SELECT_BATTLECMD': return battleAnswer(prompt, view, data, mem);
     case 'SELECT_CHAIN': return chainAnswer(prompt, view, data, mem);
     case 'SELECT_EFFECTYN': return effectYnAnswer(prompt, view, data, mem);
