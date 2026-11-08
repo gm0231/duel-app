@@ -1211,6 +1211,7 @@ function makeBotMemory() {
     summonedYet: false,   // legacy field of the old policy (kept for shape compatibility)
     oppFieldSnap: null,   // "seq:code" set of the opponent's face-up monsters at the previous bot prompt
     pendingSummon: null,  // {code, turn} — Extra/contact summon chosen at IDLECMD, for material picks
+    pendingPlace: null,   // {code, turn} — normal summon/set chosen at IDLECMD, for placement decisions
     pendingFusionSpell: 0,// turn on which 天至る叛逆 was activated (fusion flow in progress)
     lastAttacker: null,   // {seq, turn} — attacker chosen at BATTLECMD, for the target SELECT_CARD
     plannedTargetSeq: -1, // monster-zone seq the current attack was planned against
@@ -1218,6 +1219,7 @@ function makeBotMemory() {
     attempts: {},         // per-turn attempt counts for IDLECMD activations/summons (anti-cancel-loop)
     pendingRemoval: null, // {code} — removal target we fired at, watched for observed immunity
     learnedImmune: {},    // code -> true: a removal resolved and this card stayed (observed)
+    hanaPicks: null,      // {turn, n}: Hana's alternating grave picks this turn (salvage, then special summon)
     revealedOpp: {},      // seq -> {code, def}: opponent monster last seen FACE-UP at that zone (public)
     knownSet: {},         // seq -> {code, def}: face-down opponent monster whose identity was revealed earlier this duel
     bouncedAtk: {},       // seq -> DEF lower bound learned when our attack into that set monster bounced
@@ -2189,7 +2191,15 @@ function activationScore(e, view, data, prompt) {
       if (e.loc === LOC.HAND) {
         const mats = view.grave[me].filter(c => { const d = cdOf(data, c); return d && (d.race === 0x8 || d.race === 0x4); }).length;
         const luceReady = view.extra[me].some(x => x.code === CC.LUCE);
-        return mats >= 3 && luceReady ? 1350 : 0;
+        if (!(mats >= 3 && luceReady)) return 0;
+        // Scene bonus (round 2, item 5): Luce is ATK 3500 with a
+        // targeting destruction. When the opposing board is face-up,
+        // has no static resistance to her (round-1 table), and nothing
+        // on it can stand up to her in battle, the fusion lands as a
+        // board clear this turn — price it above the flat line.
+        const clearable = oppFU.length > 0 && oppFU.every(c =>
+          battlePower(c, data) < 3500 && !removalBlocked(c, CC.LUCE, view, data, null));
+        return clearable ? 1600 : 1350;
       }
       if (e.loc === LOC.GRAVE) {
         const mats = view.grave[me].filter(c => { const d = cdOf(data, c); return d && (d.race === 0x8 || d.race === 0x4); }).length;
@@ -2889,7 +2899,10 @@ function idleAnswer(prompt, view, data, mem) {
   const sm = pickSummon(prompt, view, data);
   if (sm) {
     const e = sm.kind === 'summon' ? prompt.summon[sm.idx] : prompt.mset[sm.idx];
-    if (attemptOk(mem, view, sm.kind, e)) return cmdResp(sm.kind === 'summon' ? 0 : 3, sm.idx);
+    if (attemptOk(mem, view, sm.kind, e)) {
+      mem.pendingPlace = { code: e.code, turn: view.turnCount };
+      return cmdResp(sm.kind === 'summon' ? 0 : 3, sm.idx);
+    }
   }
   // repositioning: shelter outclassed attackers, ready defenders and
   // set monsters for a profitable attack
@@ -3040,6 +3053,7 @@ const REMOVAL_PROFILE = {
   [NC.WF_NOENTER]: { targets: true, destroys: true },
   [CC.CASTEL]: { targets: true, destroys: false },
   [CC.MOON]: { targets: true, destroys: false },
+  [CC.LUCE]: { targets: true, destroys: true }, // Twilight Luce ②: send a Fairy/Fiend from deck, destroy the target
 };
 function removalBlocked(cell, ctxCode, view, data, mem) {
   if (!cell || !cell.faceUp || !cell.code) return false;
@@ -3195,6 +3209,9 @@ function selectCardAnswer(prompt, view, data, mem) {
       [NC.WF_SILWIA]: 300, [NC.ARCANITE]: 250, [NC.PEGASUS]: 300, [NC.HASTOR]: 150, [NC.RELEVEL]: 200 };
     const s = entries.slice().sort((a, b) => ((cdOf(data, b.e.code) ? cdOf(data, b.e.code).atk : 0) + (bonus[b.e.code] || 150)) -
                                              ((cdOf(data, a.e.code) ? cdOf(data, a.e.code).atk : 0) + (bonus[a.e.code] || 150)));
+    // Rebellion's fusion is placed right after this pick: record it so
+    // the placement logic can give it an end zone (item 5, Luce line).
+    if (ctxCode === CC.REBELLION && s.length) mem.pendingSummon = { code: s[0].e.code, turn: view.turnCount };
     return take(s, Math.max(1, min));
   }
   // --- fusion materials for 天至る叛逆 (returned to the deck): cards
@@ -3334,6 +3351,29 @@ function selectCardAnswer(prompt, view, data, mem) {
         if (e.code === CC.ZOLGA) v += 100;
         return v;
       }
+      if (ctxCode === CC.KELDO) { // search Exchange of the Present World and
+        // the Underworld, or a card that mentions it (round 2, item 5e):
+        // the Gravekeeper's Trap lock needs the Trap face-up AND Exchange
+        // in the graveyard, so fetch whichever piece completes that
+        // picture; with the lock already armed, feed the mill war instead
+        // of fetching a second copy of a piece that is already working.
+        const trapLive = view.zones[me].szone.some(c => c && c.faceUp && c.code === CC.GK_TRAP);
+        const trapNear = trapLive || view.hand[me].some(x => x.code === CC.GK_TRAP);
+        const exchInGrave = view.grave[me].includes(CC.EXCHANGE);
+        if (e.code === CC.EXCHANGE) {
+          if (exchInGrave) return 300;          // already stocked as lock fuel
+          return trapNear ? 3000 : 1400;        // completes the lock / the win card itself
+        }
+        if (e.code === CC.GK_TRAP) {
+          if (trapLive) return 400;             // already face-up
+          return exchInGrave ? 2600 : 2200;     // completes the lock, or starts it (its own ② searches onward)
+        }
+        if (e.code === CC.KELBEK) return 1800;  // the mill engine; strongest under a live lock
+        if (e.code === CC.MUDORA) return 1500;  // re-places the Trap from the deck; shuffles graves
+        if (e.code === CC.AGIDO) return 1200;
+        if (e.code === CC.KELDO) return 1000;    // chains into another search later
+        return handValue(e.code, view, data);
+      }
       if (ctxCode === CC.CARBON) return isMonsterCd(d) ? d.atk : 0;
       if (ctxCode === CC.GG_THUNDERWIND) {
         const pref = [CC.DARK_ELEMENT, CC.DEMON_WIND, CC.FORCE_GUARDIAN, CC.JIRAI_TRAP].indexOf(e.code);
@@ -3401,6 +3441,26 @@ function selectCardAnswer(prompt, view, data, mem) {
       return s.length && discardCost(s[0].e.code, view, data) < -300 ? take(s, 1) : cardsResp([]);
     }
     return take(s, Math.max(1, min));
+  }
+  // --- Vernusylph of the Flowering Fields (Hana): her graveyard picks
+  // alternate salvage-to-hand, then special summon (tracked per turn in
+  // mem). The generic grave order below prices Chaos Pod (ATK 200)
+  // last, so the board-reset line never assembled even though the set
+  // Pod's flip and Book of Taiyou already prioritize it when losing.
+  // On the special-summon pick, when we are behind by the same 1800
+  // battle-power gap those Pod lines use, revive the Pod instead of
+  // the biggest body (round 2, item 5).
+  if (ctxCode === CC.VERN_HANA && entries.every(x => x.e.con === me && x.e.loc === LOC.GRAVE)) {
+    if (!mem.hanaPicks || mem.hanaPicks.turn !== view.turnCount) mem.hanaPicks = { turn: view.turnCount, n: 0 };
+    const pickNo = mem.hanaPicks.n++;
+    if (pickNo % 2 === 1) {
+      const pod = entries.find(x => x.e.code === CC.CHAOS_POD);
+      if (pod) {
+        const myTot = faceUpMons(view, me).reduce((s, c) => s + battlePower(c, data), 0);
+        const oppTot = faceUpMons(view, opp).reduce((s, c) => s + battlePower(c, data), 0);
+        if (oppTot - myTot >= 1800) return take([pod], 1);
+      }
+    }
   }
   // --- picks from graveyards / banished (revive, salvage, recycle):
   // biggest body for revival, otherwise the most valuable resource
@@ -3601,7 +3661,7 @@ function counterAnswer(prompt) {
 // the column opposite the opponent's biggest monster (its effect destroys
 // the monster in its column). SELECT_DISFIELD disables the least useful
 // zones (opponent's empty zones first).
-function placeAnswer(prompt, view, data) {
+function placeAnswer(prompt, view, data, mem) {
   const avail = (~prompt.flag) >>> 0;
   const me = view.me, opp = view.opp;
   const zones = [];
@@ -3621,7 +3681,33 @@ function placeAnswer(prompt, view, data) {
     return placeResp(zones.slice(0, prompt.count));
   }
   const ctx = prompt.context;
-  const mOrder = [2, 1, 3, 0, 4, 5, 6], sOrder = [2, 1, 3, 0, 4];
+  let mOrder = [2, 1, 3, 0, 4, 5, 6];
+  const sOrder = [2, 1, 3, 0, 4];
+  // Ishizu placement for the Twilight Luce line (round 2, item 5):
+  // while Luce is on the field, the monsters in my leftmost and
+  // rightmost main monster zones cannot be destroyed by effects, so
+  // strong monsters belong at the ends (seq 0 / 4) and weaker ones in
+  // the middle three (seq 1-3). Until Luce has been summoned, one end
+  // stays open for her — a strong monster takes an end only if both
+  // are still free or Luce is already out. The card being placed is
+  // identified by the pending markers (Extra/procedure summons and
+  // normal summons/sets record it), falling back to the prompt's
+  // context card (the effect source: for Rebellion that is the spell,
+  // and the fusion it summons is recorded by the Extra-pick branch).
+  if (deckIdOfList(view.myDeck, data) === 'ishizu') {
+    const placing = (mem && mem.pendingSummon && mem.pendingSummon.turn === view.turnCount) ? mem.pendingSummon.code
+      : (mem && mem.pendingPlace && mem.pendingPlace.turn === view.turnCount) ? mem.pendingPlace.code
+      : (ctx ? ctx.code : null);
+    const pcd = placing ? cdOf(data, placing) : null;
+    const luceOut = monList(view, me).some(c => c.code === CC.LUCE);
+    const lucePending = !luceOut && view.extra[me].some(x => x.code === CC.LUCE);
+    const endsTaken = [0, 4].filter(s => view.zones[me].mzone[s]).length;
+    const strong = placing === CC.LUCE || (pcd && isMonsterCd(pcd) &&
+      ((pcd.level & 0xff) >= 5 || pcd.atk >= 2000 || (pcd.type & (CT.FUSION | CT.SYNCHRO | CT.XYZ)) !== 0));
+    if (placing === CC.LUCE || (strong && !(lucePending && endsTaken >= 1))) mOrder = [0, 4, 2, 1, 3, 5, 6];
+    else if (strong) mOrder = [2, 1, 3, 0, 4, 5, 6]; // hold the second end for Luce
+    else mOrder = [1, 2, 3, 0, 4, 5, 6]; // weaker monsters: middle three first
+  }
   if (ctx && ctx.code === CC.JIRAI_TRAP) {
     const big = faceUpMons(view, opp).sort((a, b) => atkOf(b, data) - atkOf(a, data))[0];
     if (big && (avail & (1 << big.seq))) push(me, LOC.MZONE, big.seq);
@@ -3843,7 +3929,7 @@ function botAnswerInternal(prompt, state, data, mem) {
     case 'SELECT_UNSELECT_CARD': return unselectAnswer(prompt, view, data, mem);
     case 'SELECT_SUM': return sumAnswer(prompt, view, data);
     case 'SELECT_COUNTER': return counterAnswer(prompt);
-    case 'SELECT_PLACE': case 'SELECT_DISFIELD': return placeAnswer(prompt, view, data);
+    case 'SELECT_PLACE': case 'SELECT_DISFIELD': return placeAnswer(prompt, view, data, mem);
     case 'SELECT_POSITION': return positionAnswer(prompt, view, data);
     case 'SELECT_OPTION': return optionAnswer(prompt, view, data, mem);
     case 'SORT_CARD': {
