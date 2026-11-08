@@ -2345,6 +2345,17 @@ function pickSpsummon(prompt, view, data, mem) {
     // Rank 4: in that deck she outbids Castel, whose removal the old
     // bonus table always preferred (28 offers, 0 summons measured).
     if (e.code === CC.MINERVA && deckIdOfList(view.myDeck, data) === 'ishizu') bonus = 900;
+    // Castel is the Ishizu deck's only direct answer to a boss it cannot
+    // outfight (flip face-down / shuffle into the deck), but the flat
+    // outcome model lets Minerva outbid him even then (measured: 176
+    // offers, 2 summons in 80 games). When such a boss is actually on
+    // the field and Castel's effect can touch it, price the answer.
+    if (e.code === CC.CASTEL && deckIdOfList(view.myDeck, data) === 'ishizu') {
+      const myBest = Math.max(0, ...faceUpMons(view, me).map(c => battlePower(c, data)));
+      const boss = faceUpMons(view, view.opp).some(c => battlePower(c, data) >= 2600 &&
+        battlePower(c, data) > myBest && !removalBlocked(c, CC.CASTEL, view, data, mem));
+      if (boss) bonus += 1100;
+    }
     if (e.loc === LOC.EXTRA && (cd.type & CT.XYZ)) {
       const rank = cd.level & 0xff;
       // Rank-up procedures (Armored Xyz line): the base Xyz and ALL its
