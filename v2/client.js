@@ -513,6 +513,75 @@ function deckDisplayName(k) {
   if (SAVED_DECKS[k]) return SAVED_DECKS[k].name;
   return k === 'gg' ? 'ゲート・ガーディアン' : 'MILLENNIUM PROPHECY';
 }
+// deck choice flow (2026-11-08, user design): the deck page shows
+// only the current choice per side; changing it walks deck page ->
+// category page -> deck modal. The category split is data-driven:
+// DATA.decks entries carry a category ('character' / 'genesys');
+// saved (imported) decks form the third category, own side only.
+const DECK_BLURB = {
+  ishizu: 'イシズ・墓地を入れ替える逆転のデッキ',
+  gg: '三魔神の合体と壁のデッキ',
+};
+const DECK_CATEGORIES = [
+  { id: 'character', label: 'キャラクターデッキ' },
+  { id: 'genesys', label: 'Genesys環境テーマ（2026年10月時点）' },
+  { id: 'imported', label: '取り込んだデッキ' },
+];
+function deckCategoryOf(k) {
+  const d = DATA && DATA.decks ? DATA.decks[k] : null;
+  return (d && d.category) || 'character';
+}
+function deckCategoryLabel(id) {
+  const c = DECK_CATEGORIES.find(x => x.id === id);
+  return c ? c.label : id;
+}
+let deckCatSide = 'my', deckModalSide = null, deckModalCat = null;
+// points are computed mechanically from genesys-data via the same
+// NeuronLib validation the import flow uses — never hardcoded; a
+// deck whose points are not computed yet simply shows no pt figure.
+const deckPtCache = new Map();
+function computeDeckPoints() {
+  if (!window.NeuronLib || !NeuronLib.dataReady() || !DATA || !DATA.decks) return false;
+  let any = false;
+  for (const k of Object.keys(DATA.decks)) {
+    try {
+      const d = DATA.decks[k];
+      const val = NeuronLib.validateGenesis({ main: d.main, extra: d.extra, side: [], names: DATA.names });
+      deckPtCache.set(k, val.totalPt); any = true;
+    } catch (e) {}
+  }
+  return any;
+}
+function savedMetaLine(r) {
+  return 'メイン' + r.main.length + '枚／EX' + r.extra.length + '枚・' + r.pt + 'pt' + (r.poolOk ? '' : '・未対応カードあり（対戦不可）');
+}
+function deckMetaLine(k) {
+  const rec = SAVED_DECKS[k];
+  if (rec) return savedMetaLine(rec);
+  const d = DATA && DATA.decks ? DATA.decks[k] : null;
+  if (!d) return '';
+  let s = 'メイン' + d.main.length + '枚／EX' + d.extra.length + '枚';
+  if (DECK_BLURB[k]) s += '／' + DECK_BLURB[k];
+  if (deckPtCache.has(k)) s += '・' + deckPtCache.get(k) + 'pt';
+  return s;
+}
+function renderDeckCurrents() {
+  const fill = (el, key) => {
+    if (!el) return;
+    const dn = el.querySelector('.dn'), dd = el.querySelector('.dd');
+    if (dn) dn.textContent = deckDisplayName(key);
+    if (dd) dd.textContent = deckMetaLine(key);
+  };
+  fill($('mydeckcur'), myDeckKey);
+  fill($('opdeckcur'), opDeckKey);
+}
+function refreshDeckMeta() {
+  document.querySelectorAll('.deckrow').forEach(w => {
+    const dd = w.querySelector('.dd');
+    if (dd && w.dataset.key) dd.textContent = deckMetaLine(w.dataset.key);
+  });
+  renderDeckCurrents();
+}
 // ----------------------------------------------------------------
 // Neuron import (Phase 1): decks the user imported and saved live
 // under keys 'saved:<id>' in SAVED_DECKS, persisted in localStorage
@@ -556,6 +625,7 @@ function updateDeckSum() {
     txt += ' ／ 未対応：' + rec.unsupported.join('、');
   el.textContent = txt;
   refreshStartGate();
+  renderDeckCurrents();
 }
 function syncDeckSelection() {
   document.querySelectorAll('#seg-mydeck button.deck').forEach(b => b.classList.toggle('sel', b.dataset.v === myDeckKey));
@@ -573,6 +643,14 @@ function selectMyDeck(key) {
   syncDeckSelection();
   preloadCardArt([myDeckKey, opDeckKey]);
   updateDeckSum();
+  finishDeckPick();
+}
+function selectOpDeck(key) {
+  opDeckKey = key;
+  document.querySelectorAll('#seg-opdeck button.deck').forEach(b => b.classList.toggle('sel', b.dataset.v === opDeckKey));
+  preloadCardArt([myDeckKey, opDeckKey]);
+  updateDeckSum();
+  finishDeckPick();
 }
 let delArm = null; // {key, until} — two-step delete confirm on the button itself
 function renderSavedDecks() {
@@ -589,10 +667,15 @@ function renderSavedDecks() {
     const d = document.createElement('div');
     d.className = 'deck saved saveditem' + (myDeckKey === key ? ' sel' : '');
     d.dataset.k = key;
-    d.innerHTML = '<img src="../assets/card-art-placeholder-s.jpg" alt=""><span><span class="dn"></span><span class="dd"></span></span><span class="check"></span><button class="deckdel">削除</button>';
+    d.innerHTML = '<img src="../assets/card-art-placeholder-s.jpg" alt=""><span class="txt"><span class="dn"></span><span class="dd"></span></span><span class="check"></span><button class="decklist-btn">一覧</button><button class="deckdel">削除</button>';
     d.querySelector('.dn').textContent = r.name;
-    d.querySelector('.dd').textContent = 'メイン' + r.main.length + '枚／EX' + r.extra.length + '枚・' + r.pt + 'pt' + (r.poolOk ? '' : '・未対応カードあり（対戦不可）');
+    d.querySelector('.dd').textContent = savedMetaLine(r);
     d.addEventListener('click', () => { playClick(); selectMyDeck(key); });
+    d.querySelector('.decklist-btn').addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      playClick();
+      openDeckView(key);
+    });
     const del = d.querySelector('.deckdel');
     del.addEventListener('click', (ev) => {
       ev.stopPropagation();
@@ -612,6 +695,155 @@ function renderSavedDecks() {
     });
     el.appendChild(d);
   }
+  if (deckModalSide) applyDeckModalFilter();
+}
+// ----------------------------------------------------------------
+// category page + deck modal: the deck page's current-choice rows
+// open the category page for that side; a category opens the modal
+// with that category's decks (rows carry a 一覧 button into the
+// in-modal contents view); picking a deck closes both and lands
+// back on the deck page with the choice applied.
+function openDeckCat(side) {
+  deckCatSide = side;
+  $('deckcattitle').textContent = side === 'my' ? '自分のデッキ' : '相手のデッキ';
+  $('deckcatimp').style.display = side === 'my' ? '' : 'none';
+  $('deckpage').style.display = 'none';
+  $('deckcat').style.display = 'flex';
+}
+function closeDeckCat() {
+  $('deckcat').style.display = 'none';
+  $('deckpage').style.display = 'flex';
+}
+function openDeckModal(cat) {
+  deckModalSide = deckCatSide;
+  deckModalCat = cat;
+  $('deckmodaltitle').textContent = deckCategoryLabel(cat);
+  $('deckview').style.display = 'none';
+  $('deckmodal').style.display = 'flex';
+  applyDeckModalFilter();
+  // points appear once genesys-data is in (same lazy load the
+  // import panel uses); until then the rows simply carry no pt.
+  ensureGenesysData().then(() => { if (computeDeckPoints()) refreshDeckMeta(); });
+}
+function closeDeckModal() {
+  $('deckmodal').style.display = 'none';
+  $('deckview').style.display = 'none';
+  deckModalSide = null;
+  deckModalCat = null;
+}
+function finishDeckPick() {
+  const m = $('deckmodal');
+  if (!m || m.style.display === 'none') return;
+  closeDeckModal();
+  $('deckcat').style.display = 'none';
+  $('deckpage').style.display = 'flex';
+}
+function applyDeckModalFilter() {
+  if (!deckModalSide) return;
+  const cont = $(deckModalSide === 'my' ? 'seg-mydeck' : 'seg-opdeck');
+  $('seg-mydeck').style.display = deckModalSide === 'my' ? '' : 'none';
+  $('seg-opdeck').style.display = deckModalSide === 'op' ? '' : 'none';
+  let visible = 0;
+  Array.prototype.forEach.call(cont.children, (ch) => {
+    const c = ch.dataset.cat || (ch.classList.contains('saveditem') ? 'imported' : 'character');
+    const show = c === deckModalCat;
+    ch.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  const emp = $('deckmodalempty');
+  emp.style.display = visible ? 'none' : 'block';
+  emp.textContent = deckModalCat === 'imported' ? '取り込んだデッキはまだありません' : '準備中';
+}
+function deckCardName(code, rec) {
+  if (DATA && DATA.names && DATA.names[code]) return DATA.names[code];
+  if (rec && rec.names && rec.names[code]) return rec.names[code];
+  if (window.NeuronLib && NeuronLib.dataReady()) {
+    const nm = NeuronLib._sets().names.get(code);
+    if (nm) return nm;
+  }
+  return 'カード ' + code;
+}
+function openDeckView(key) {
+  const list = deckListOf(key); if (!list) return;
+  const rec = SAVED_DECKS[key] || null;
+  $('deckviewtitle').textContent = deckDisplayName(key);
+  const el = $('deckviewlist');
+  el.innerHTML = '';
+  const addSec = (label, codes) => {
+    const h = document.createElement('div');
+    h.className = 'dv-sec';
+    h.textContent = label + '（' + codes.length + '枚）';
+    el.appendChild(h);
+    const seen = new Map();
+    for (const c of codes) seen.set(c, (seen.get(c) || 0) + 1);
+    for (const [c, n] of seen) {
+      const row = document.createElement('div');
+      row.className = 'dv-card';
+      const nm = document.createElement('span');
+      nm.textContent = deckCardName(c, rec);
+      row.appendChild(nm);
+      if (n > 1) {
+        const cnt = document.createElement('span');
+        cnt.className = 'cnt';
+        cnt.textContent = ' ×' + n;
+        row.appendChild(cnt);
+      }
+      el.appendChild(row);
+    }
+  };
+  addSec('メイン', list.main);
+  addSec('エクストラ', list.extra);
+  $('seg-mydeck').style.display = 'none';
+  $('seg-opdeck').style.display = 'none';
+  $('deckmodalempty').style.display = 'none';
+  el.scrollTop = 0;
+  $('deckview').style.display = 'flex';
+}
+function hideDeckView() {
+  $('deckview').style.display = 'none';
+  if (deckModalSide) applyDeckModalFilter();
+}
+// built-in deck rows are generated from DATA.decks (category and
+// counts included), ahead of any saved rows already in the list.
+function buildDeckRows() {
+  if (!DATA || !DATA.decks) return;
+  for (const contId of ['seg-mydeck', 'seg-opdeck']) {
+    const el = $(contId);
+    if (!el || el.dataset.built) continue;
+    el.dataset.built = '1';
+    const rows = [];
+    for (const k of Object.keys(DATA.decks)) {
+      const wrap = document.createElement('div');
+      wrap.className = 'deckrow';
+      wrap.dataset.cat = deckCategoryOf(k);
+      wrap.dataset.key = k;
+      const b = document.createElement('button');
+      b.className = 'deck' + ((contId === 'seg-mydeck' ? myDeckKey : opDeckKey) === k ? ' sel' : '');
+      b.dataset.v = k;
+      b.innerHTML = '<img src="../assets/card-art-placeholder-s.jpg" alt=""><span class="txt"><span class="dn"></span><span class="dd"></span></span><span class="check"></span>';
+      b.querySelector('.dn').textContent = deckDisplayName(k);
+      b.querySelector('.dd').textContent = deckMetaLine(k);
+      const vb = document.createElement('button');
+      vb.className = 'decklist-btn';
+      vb.textContent = '一覧';
+      vb.addEventListener('click', (ev) => { ev.stopPropagation(); playClick(); openDeckView(k); });
+      wrap.appendChild(b);
+      wrap.appendChild(vb);
+      rows.push(wrap);
+    }
+    for (let i = rows.length - 1; i >= 0; i--) el.insertBefore(rows[i], el.firstChild);
+  }
+}
+// deck rows only: the seg containers also hold 一覧 buttons, which
+// must never act as selection options (generic wireSeg wires every
+// button in the container, so the deck lists get their own wiring).
+function wireDeckSeg(id, apply) {
+  const el = $(id);
+  el.querySelectorAll('button.deck[data-v]').forEach(b => b.addEventListener('click', () => {
+    playClick();
+    el.querySelectorAll('button.deck[data-v]').forEach(x => x.classList.toggle('sel', x === b));
+    apply(b.dataset.v);
+  }));
 }
 // genesys-data.json loads lazily — only the import panel needs it,
 // so the boot path and every other test never pay for it. Shape is
@@ -7372,6 +7604,14 @@ function wireSeg(id, apply) {
   renderSavedDecks();
   $('todeck').addEventListener('click', () => { playClick(); $('start').style.display = 'none'; $('deckpage').style.display = 'flex'; });
   $('deckback').addEventListener('click', () => { playClick(); $('deckpage').style.display = 'none'; $('start').style.display = 'flex'; });
+  // deck choice flow: current-choice row -> category page -> modal
+  $('deckcat').style.display = 'none';
+  $('mydeckcur').addEventListener('click', () => { playClick(); openDeckCat('my'); });
+  $('opdeckcur').addEventListener('click', () => { playClick(); openDeckCat('op'); });
+  $('deckcatback').addEventListener('click', () => { playClick(); closeDeckCat(); });
+  document.querySelectorAll('#deckcatlist .catbtn').forEach(b => b.addEventListener('click', () => { playClick(); openDeckModal(b.dataset.cat); }));
+  $('deckmodalx').addEventListener('click', () => { playClick(); closeDeckModal(); });
+  $('deckviewback').addEventListener('click', () => { playClick(); hideDeckView(); });
   // neuron import panel (Phase 1): pure DOM wiring here; the data
   // it needs (data.json + genesys-data.json) is fetched lazily by
   // the parse action itself.
@@ -7424,8 +7664,10 @@ function wireSeg(id, apply) {
     sb.addEventListener('click', () => location.reload());
     return;
   }
-  wireSeg('seg-mydeck', (v) => { selectMyDeck(v); });
-  wireSeg('seg-opdeck', (v) => { opDeckKey = v; preloadCardArt([myDeckKey, opDeckKey]); updateDeckSum(); });
+  buildDeckRows();
+  wireDeckSeg('seg-mydeck', (v) => { selectMyDeck(v); });
+  wireDeckSeg('seg-opdeck', (v) => { selectOpDeck(v); });
+  renderDeckCurrents();
   wireSeg('seg-first', (v) => { firstChoice = v; updateDeckSum(); });
   syncFxSegs(); // reflect any persisted round-B settings before wiring
   wireSeg('seg-cutin', (v) => { fxSettings.cutin = v === 'on'; fxSaveSettings(); });

@@ -653,7 +653,7 @@
   .dp-head .dp-title{font-size:17px;font-weight:700;color:var(--gold);letter-spacing:.08em;}
   #deckback{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:12.5px;padding:9px 12px;cursor:pointer;flex:0 0 auto;}
   .dp-main{flex:1 1 auto;min-height:0;width:100%;display:flex;flex-direction:column;margin-top:2px;}
-  .dp-sec{display:flex;flex-direction:column;flex:1 1 0;min-height:0;}
+  .dp-sec{display:flex;flex-direction:column;flex:0 0 auto;min-height:0;}
   .dp-sec .segrow{flex:0 0 auto;}
   #deckpage .decklist{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;flex-wrap:nowrap;gap:8px;overflow-y:auto;padding:2px;}
   .dp-foot{width:100%;flex:0 0 auto;}
@@ -698,6 +698,45 @@
   #seg-mydeck .saveddiv{flex:0 0 auto;font-size:11px;color:#c9b586;letter-spacing:.06em;margin-top:2px;}
   #seg-mydeck .deck.saved .deckdel{flex:none;background:#2a1414;color:#e8a0a0;border:1px solid #6d3030;border-radius:7px;font-size:10.5px;padding:6px 8px;cursor:pointer;margin-left:2px;}
   #seg-mydeck .deck.saved .deckdel.armed{background:#6d1f1f;color:#ffd9d9;border-color:#a04a4a;font-weight:700;}
+  /* deck choice flow (2026-11-08, user design): the deck page shows
+     only the CURRENT choice per side; changing it walks deck page ->
+     category page -> deck modal (list + per-deck contents view).
+     The category split is data-driven (data.json decks carry a
+     category); the seg containers live inside the modal, and the
+     lists scroll inside the modal panel — no page ever scrolls. */
+  #start .rulesline{font-size:11px;color:var(--txt-dim);margin:0;}
+  #deckpage .deck .chg{flex:none;margin-left:auto;font-size:11px;color:var(--gold);border:1px solid var(--gold-dim);border-radius:7px;padding:4px 9px;background:var(--panel2);}
+  #deckcat{display:none;justify-content:flex-start;overflow:hidden;padding:10px 14px 12px;align-items:stretch;text-align:left;}
+  #deckcatback,#deckviewback{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:12.5px;padding:9px 12px;cursor:pointer;flex:0 0 auto;}
+  .catlist{display:flex;flex-direction:column;gap:10px;width:100%;margin-top:14px;}
+  .catbtn{background:#1d1508;color:var(--txt);border:1px solid #4a3a1c;border-radius:12px;font-size:15px;font-weight:700;padding:16px 14px;text-align:left;cursor:pointer;letter-spacing:.03em;}
+  #deckmodal{display:none;position:absolute;inset:0;z-index:70;background:#000a;align-items:center;justify-content:center;padding:18px;}
+  .dm-panel{background:#14100a;border:1px solid var(--gold-dim);border-radius:14px;width:100%;max-width:430px;max-height:86dvh;display:flex;flex-direction:column;padding:12px;}
+  .dm-head{display:flex;align-items:center;gap:10px;flex:0 0 auto;}
+  .dm-title{font-size:15px;font-weight:700;color:var(--gold);letter-spacing:.05em;flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  #deckmodalx{flex:none;width:36px;height:36px;background:var(--panel2);color:var(--gold);border:1px solid var(--gold-dim);border-radius:8px;font-size:16px;cursor:pointer;}
+  .dm-body{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;margin-top:10px;}
+  #deckmodal .decklist{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;flex-wrap:nowrap;gap:8px;overflow-y:auto;padding:2px;}
+  #deckmodal .deck{position:relative;display:flex;gap:7px;align-items:center;text-align:left;background:#1d1508;border:1px solid #4a3a1c;border-radius:10px;padding:6px;min-height:52px;color:var(--txt);cursor:pointer;width:100%;flex:0 0 auto;}
+  #deckmodal .deck img{width:26px;height:36px;object-fit:cover;border-radius:4px;flex:none;}
+  #deckmodal .deck .txt{min-width:0;flex:1 1 auto;}
+  #deckmodal .deck .dn{display:block;font-size:12px;font-weight:700;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  #deckmodal .deck .dd{display:block;font-size:10.5px;color:var(--txt-dim);line-height:1.45;margin-top:2px;}
+  #deckmodal .deck.sel{background:#3a2a10;border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold);}
+  #deckmodal .deck.sel .dn{color:#ffe9a8;}
+  #deckmodal .deck .check{position:absolute;top:7px;right:7px;width:9px;height:9px;border-radius:50%;background:var(--gold);box-shadow:0 0 7px var(--gold);display:none;}
+  #deckmodal .deck.sel .check{display:block;}
+  .deckrow{display:flex;gap:6px;align-items:stretch;flex:0 0 auto;}
+  .deckrow .deck{flex:1 1 auto;width:auto;min-width:0;}
+  .decklist-btn{flex:none;background:var(--panel2);color:var(--gold);border:1px solid var(--gold-dim);border-radius:9px;font-size:11.5px;padding:0 10px;cursor:pointer;}
+  #deckmodalempty{display:none;text-align:center;color:var(--txt-dim);font-size:13px;padding:26px 0;}
+  #deckview{display:none;flex:1 1 auto;min-height:0;flex-direction:column;}
+  .dv-head{display:flex;align-items:center;gap:10px;flex:0 0 auto;}
+  .dv-title{font-size:14px;font-weight:700;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  #deckviewlist{flex:1 1 auto;min-height:0;overflow-y:auto;margin-top:8px;text-align:left;padding:2px;}
+  .dv-sec{font-size:11px;color:#c9b586;letter-spacing:.06em;margin:8px 0 4px;}
+  .dv-card{font-size:12.5px;line-height:1.55;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .dv-card .cnt{color:var(--gold);font-weight:700;}
   #seg-mydeck .deck.saved .check{right:66px;}
   #neuronpanel{display:none;justify-content:flex-start;overflow:hidden;padding:10px 14px 12px;align-items:stretch;text-align:left;z-index:66;}
   #neuronpanel .np-head{display:flex;align-items:center;gap:10px;width:100%;flex:0 0 auto;}
@@ -815,6 +854,7 @@
     <h1><span>MILLENNIUM</span><span>DUELISTS</span></h1>
     <p class="subtitle">for GENESYS</p>
     <p class="tagline">CPUとの1対1。デッキと先攻を選んで開始。</p>
+    <p class="rulesline">GENESYSルール（2026年10月時点リスト）で対戦できます</p>
     <button class="startbtn" id="todeck">デッキを選ぶ</button>
     <p id="loadmsg">読み込み中…</p>
   </div>
@@ -823,17 +863,11 @@
     <div class="dp-main">
       <div class="dp-sec">
         <div class="segrow savedrow"><span>自分のデッキ</span><button id="deckimport">＋ デッキを取り込む</button></div>
-        <div class="decklist" id="seg-mydeck">
-          <button class="deck sel" data-v="ishizu"><img src="../assets/card-art-placeholder-s.jpg" alt=""><span><span class="dn">MILLENNIUM PROPHECY</span><span class="dd">45枚／イシズ・墓地を入れ替える逆転のデッキ</span></span><span class="check"></span></button>
-          <button class="deck" data-v="gg"><img src="../assets/card-art-placeholder-s.jpg" alt=""><span><span class="dn">ゲート・ガーディアン</span><span class="dd">40枚／三魔神の合体と壁のデッキ</span></span><span class="check"></span></button>
-        </div>
+        <button class="deck cur sel" id="mydeckcur"><img src="../assets/card-art-placeholder-s.jpg" alt=""><span><span class="dn"></span><span class="dd"></span></span><span class="chg">変更</span></button>
       </div>
       <div class="dp-sec">
         <div class="segrow">相手のデッキ</div>
-        <div class="decklist" id="seg-opdeck">
-          <button class="deck" data-v="ishizu"><img src="../assets/card-art-placeholder-s.jpg" alt=""><span><span class="dn">MILLENNIUM PROPHECY</span><span class="dd">45枚／イシズ・墓地を入れ替える逆転のデッキ</span></span><span class="check"></span></button>
-          <button class="deck sel" data-v="gg"><img src="../assets/card-art-placeholder-s.jpg" alt=""><span><span class="dn">ゲート・ガーディアン</span><span class="dd">40枚／三魔神の合体と壁のデッキ</span></span><span class="check"></span></button>
-        </div>
+        <button class="deck cur sel" id="opdeckcur"><img src="../assets/card-art-placeholder-s.jpg" alt=""><span><span class="dn"></span><span class="dd"></span></span><span class="chg">変更</span></button>
       </div>
       <div class="segrow">先攻・後攻</div>
       <div class="seg seg3" id="seg-first">
@@ -864,6 +898,28 @@
     <div class="dp-foot">
       <div id="decksum"></div>
       <button class="startbtn" id="startbtn" disabled>読み込み中…</button>
+    </div>
+  </div>
+  <div class="overlay" id="deckcat">
+    <div class="dp-head"><button id="deckcatback">← デッキ選択へ</button><div class="dp-title" id="deckcattitle">自分のデッキ</div></div>
+    <div class="catlist" id="deckcatlist">
+      <button class="catbtn" data-cat="character">キャラクターデッキ</button>
+      <button class="catbtn" data-cat="genesys">Genesys環境テーマ（2026年10月時点）</button>
+      <button class="catbtn" data-cat="imported" id="deckcatimp">取り込んだデッキ</button>
+    </div>
+  </div>
+  <div id="deckmodal">
+    <div class="dm-panel">
+      <div class="dm-head"><div class="dm-title" id="deckmodaltitle">キャラクターデッキ</div><button id="deckmodalx" title="閉じる">×</button></div>
+      <div class="dm-body">
+        <div class="decklist" id="seg-mydeck"></div>
+        <div class="decklist" id="seg-opdeck"></div>
+        <div id="deckmodalempty">準備中</div>
+        <div id="deckview">
+          <div class="dv-head"><button id="deckviewback">← デッキ一覧</button><div class="dv-title" id="deckviewtitle"></div></div>
+          <div id="deckviewlist"></div>
+        </div>
+      </div>
     </div>
   </div>
   <div class="overlay" id="neuronpanel">

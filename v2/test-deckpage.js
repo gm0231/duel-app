@@ -1,14 +1,21 @@
 'use strict';
-/* test-deckpage.js — deck selection as its own page (user request
-   2026-11-04: 「デッキ選択は前みたいに別ページで選択できる形に」).
+/* test-deckpage.js — deck selection as its own page, with the
+   choice flow the user designed 2026-11-08: the deck page shows
+   only the CURRENT choice per side; changing it walks deck page ->
+   category page (#deckcat) -> deck modal (#deckmodal). Categories
+   are data-driven (data.json decks carry category): キャラクター
+   デッキ / Genesys環境テーマ（2026年10月時点） / 取り込んだデッキ
+   (own side only). The modal lists the category's decks with a
+   一覧 (contents) view per deck; picking a deck closes both layers
+   and lands back on the deck page with the choice applied.
    Contract under test:
-   - The title page (#start) carries NO deck/first/settings/start
-     controls any more — only the title, the tagline, the load
-     message and the 「デッキを選ぶ」 navigation button.
-   - The deck page (#deckpage) holds both deck lists (own /
-     opponent, clearly separated), 先攻・後攻, the settings rows and
-     the start button; it is hidden until navigated to, and the
-     back button returns to the title page.
+   - The title page (#start) carries NO deck controls — only the
+     title, the tagline, the GENESYS rules line (2026年10月時点
+     リスト), the load message and the 「デッキを選ぶ」 button.
+   - The deck page (#deckpage) holds the two current-choice rows,
+     先攻・後攻, the settings rows and the start button; it is
+     hidden until navigated to, and the back button returns.
+   - The seg lists live inside the modal, not on the deck page.
    - The selection summary above the start button always names the
      current own deck / opponent deck / first-second choice.
    - Starting from the deck page runs the existing flow unchanged:
@@ -50,6 +57,7 @@ async function boot() {
   window.OcgCoreModule = (opts) => origFactory(Object.assign({}, opts, { wasmBinary }));
   inject('engine.js');
   inject('duel-worker.js');
+  inject('neuron.js');
   inject('client.js');
   for (let i = 0; i < 100 && !window.document.getElementById('loadmsg').textContent.includes('準備完了'); i++)
     await sleep(50);
@@ -62,17 +70,26 @@ async function boot() {
   const disp = (id) => window.getComputedStyle(doc.getElementById(id)).display;
   const segBtn = (id, v) => doc.querySelector('#' + id + ' button[data-v="' + v + '"]');
   const segSel = (id) => { const b = doc.querySelector('#' + id + ' button.sel'); return b ? b.dataset.v : null; };
+  const catBtn = (c) => doc.querySelector('#deckcatlist .catbtn[data-cat="' + c + '"]');
+  const visRows = (id) => Array.from(doc.querySelectorAll('#' + id + ' > *')).filter(el => el.style.display !== 'none');
 
   ok(doc.getElementById('loadmsg').textContent.includes('準備完了'), 'DP1: client boots, load message ready');
 
   // ---- page structure: the split itself ----
   ok(doc.querySelectorAll('#start .deck').length === 0 && !doc.getElementById('start').contains(doc.getElementById('seg-mydeck')),
     'DP2: title page holds no deck selection');
-  ok(doc.getElementById('deckpage').contains(doc.getElementById('seg-mydeck')) &&
-     doc.getElementById('deckpage').contains(doc.getElementById('seg-opdeck')) &&
+  ok(doc.querySelector('#start .rulesline') && doc.querySelector('#start .rulesline').textContent.includes('2026年10月時点リスト'),
+    'DP2b: title page states the GENESYS rules basis (2026年10月時点リスト)');
+  ok(doc.getElementById('deckpage').contains(doc.getElementById('mydeckcur')) &&
+     doc.getElementById('deckpage').contains(doc.getElementById('opdeckcur')) &&
      doc.getElementById('deckpage').contains(doc.getElementById('seg-first')) &&
-     doc.getElementById('deckpage').contains(doc.getElementById('startbtn')),
-    'DP3: deck page holds both deck lists, first/second and the start button');
+     doc.getElementById('deckpage').contains(doc.getElementById('startbtn')) &&
+     doc.getElementById('deckpage').contains(doc.getElementById('deckimport')),
+    'DP3: deck page holds both current-choice rows, first/second, the import entry and the start button');
+  ok(doc.getElementById('deckmodal').contains(doc.getElementById('seg-mydeck')) &&
+     doc.getElementById('deckmodal').contains(doc.getElementById('seg-opdeck')) &&
+     !doc.getElementById('deckpage').contains(doc.getElementById('seg-mydeck')),
+    'DP3b: the deck lists live inside the modal, not on the deck page');
   ok(doc.getElementById('todeck') && doc.getElementById('start').contains(doc.getElementById('todeck')),
     'DP4: title page has the deck-page navigation button');
 
@@ -87,19 +104,91 @@ async function boot() {
   // ---- defaults + summary ----
   ok(segSel('seg-mydeck') === 'ishizu' && segSel('seg-opdeck') === 'gg' && segSel('seg-first') === 'first',
     'DP8: defaults are own=Ishizu / opponent=GG / 先攻');
+  ok(doc.querySelector('#mydeckcur .dn').textContent === 'MILLENNIUM PROPHECY' &&
+     doc.querySelector('#mydeckcur .dd').textContent.includes('メイン45枚') &&
+     doc.querySelector('#opdeckcur .dn').textContent === 'ゲート・ガーディアン' &&
+     doc.querySelector('#opdeckcur .dd').textContent.includes('メイン40枚'),
+    'DP8b: the current-choice rows name the defaults with their counts');
   const sum0 = doc.getElementById('decksum').textContent;
   ok(sum0.includes('自分：MILLENNIUM PROPHECY') && sum0.includes('相手：ゲート・ガーディアン') && sum0.includes('先攻'),
     'DP9: summary names the default selection (' + sum0 + ')');
-  segBtn('seg-mydeck', 'gg').click(); segBtn('seg-opdeck', 'ishizu').click(); segBtn('seg-first', 'second').click();
-  const sum1 = doc.getElementById('decksum').textContent;
-  ok(segSel('seg-mydeck') === 'gg' && segSel('seg-opdeck') === 'ishizu' && segSel('seg-first') === 'second' &&
-     sum1.includes('自分：ゲート・ガーディアン') && sum1.includes('相手：MILLENNIUM PROPHECY') && sum1.includes('後攻'),
-    'DP10: changing the segs updates the selection and the summary (' + sum1 + ')');
-  segBtn('seg-mydeck', 'ishizu').click(); segBtn('seg-opdeck', 'gg').click(); segBtn('seg-first', 'first').click();
 
-  // ---- list region: each deck list is its own scroll region ----
-  const listRule = /\.decklist\{[^}]*overflow-y:auto/.test(html) && /#deckpage\{[^}]*overflow:hidden/.test(html);
-  ok(listRule, 'DP11: deck lists scroll inside their region; the page itself never scrolls (stylesheet contract)');
+  // ---- own side: deck page -> category page -> modal -> pick ----
+  doc.getElementById('mydeckcur').click();
+  ok(disp('deckcat') !== 'none' && disp('deckpage') === 'none' &&
+     doc.getElementById('deckcattitle').textContent === '自分のデッキ' &&
+     doc.getElementById('deckcatimp').style.display !== 'none',
+    'DP10: own current row opens the category page (imported category offered)');
+  catBtn('character').click();
+  ok(doc.getElementById('deckmodal').style.display === 'flex' &&
+     doc.getElementById('deckmodaltitle').textContent === 'キャラクターデッキ' &&
+     doc.getElementById('seg-mydeck').style.display !== 'none' &&
+     doc.getElementById('seg-opdeck').style.display === 'none' &&
+     visRows('seg-mydeck').length === 2 && visRows('seg-mydeck').every(el => el.dataset.cat === 'character'),
+    'DP11: character category opens the modal with both built-in decks on the own list');
+  segBtn('seg-mydeck', 'gg').click();
+  ok(doc.getElementById('deckmodal').style.display === 'none' && disp('deckcat') === 'none' && disp('deckpage') !== 'none' &&
+     segSel('seg-mydeck') === 'gg' && doc.querySelector('#mydeckcur .dn').textContent === 'ゲート・ガーディアン' &&
+     doc.getElementById('decksum').textContent.includes('自分：ゲート・ガーディアン'),
+    'DP12: picking a deck closes modal + category page and applies the choice on the deck page');
+
+  // ---- contents view (一覧) inside the modal ----
+  doc.getElementById('mydeckcur').click();
+  catBtn('character').click();
+  const ishizuRow = doc.querySelector('#seg-mydeck .deckrow[data-key="ishizu"]');
+  ishizuRow.querySelector('.decklist-btn').click();
+  const viewTxt = doc.getElementById('deckviewlist').textContent;
+  ok(doc.getElementById('deckview').style.display === 'flex' &&
+     doc.getElementById('deckviewtitle').textContent === 'MILLENNIUM PROPHECY' &&
+     viewTxt.includes('メイン（45枚）') && viewTxt.includes('エクストラ（15枚）') && viewTxt.includes('剣神官ムドラ'),
+    'DP13: 一覧 shows the deck contents (main/extra counts and card names)');
+  doc.getElementById('deckviewback').click();
+  ok(doc.getElementById('deckview').style.display === 'none' && visRows('seg-mydeck').length === 2,
+    'DP14: back from the contents view returns to the deck list');
+  doc.getElementById('deckmodalx').click();
+  ok(doc.getElementById('deckmodal').style.display === 'none' && disp('deckcat') !== 'none',
+    'DP15: closing the modal returns to the category page');
+  doc.getElementById('deckcatback').click();
+  ok(disp('deckpage') !== 'none' && disp('deckcat') === 'none', 'DP16: category back button returns to the deck page');
+
+  // ---- opponent side: no imported category; genesys is empty ----
+  doc.getElementById('opdeckcur').click();
+  ok(doc.getElementById('deckcattitle').textContent === '相手のデッキ' &&
+     doc.getElementById('deckcatimp').style.display === 'none',
+    'DP17: opponent category page offers no imported category');
+  catBtn('genesys').click();
+  ok(doc.getElementById('deckmodal').style.display === 'flex' &&
+     doc.getElementById('deckmodaltitle').textContent.includes('2026年10月時点') &&
+     doc.getElementById('seg-opdeck').style.display !== 'none' &&
+     visRows('seg-opdeck').length === 0 &&
+     doc.getElementById('deckmodalempty').style.display !== 'none' &&
+     doc.getElementById('deckmodalempty').textContent === '準備中',
+    'DP18: the (still empty) Genesys category shows the 準備中 empty state');
+  doc.getElementById('deckmodalx').click();
+  catBtn('character').click();
+  segBtn('seg-opdeck', 'ishizu').click();
+  ok(disp('deckpage') !== 'none' && segSel('seg-opdeck') === 'ishizu' &&
+     doc.querySelector('#opdeckcur .dn').textContent === 'MILLENNIUM PROPHECY' &&
+     doc.getElementById('decksum').textContent.includes('相手：MILLENNIUM PROPHECY'),
+    'DP19: opponent pick applies and returns to the deck page');
+
+  // ---- imported category: empty before any import ----
+  doc.getElementById('mydeckcur').click();
+  catBtn('imported').click();
+  ok(visRows('seg-mydeck').filter(el => el.classList.contains('saveditem')).length === 0 &&
+     doc.getElementById('deckmodalempty').textContent === '取り込んだデッキはまだありません',
+    'DP20: imported category is reachable on the own side and says so when empty');
+  doc.getElementById('deckmodalx').click();
+  doc.getElementById('deckcatback').click();
+
+  // ---- reset to defaults, then the start flow ----
+  segBtn('seg-mydeck', 'ishizu').click(); segBtn('seg-opdeck', 'gg').click(); segBtn('seg-first', 'first').click();
+  ok(segSel('seg-mydeck') === 'ishizu' && segSel('seg-opdeck') === 'gg' && segSel('seg-first') === 'first',
+    'DP21: selection reset to defaults for the start check');
+
+  // ---- scroll contract: lists scroll inside the modal; pages never scroll ----
+  const listRule = /#deckmodal \.decklist\{[^}]*overflow-y:auto/.test(html) && /#deckpage\{[^}]*overflow:hidden/.test(html);
+  ok(listRule, 'DP22: modal deck lists scroll inside their region; the deck page itself never scrolls (stylesheet contract)');
 
   // ---- start from the deck page: VS curtain, pages hidden, board up ----
   let vsSeen = false, boardUp = false;
@@ -109,8 +198,8 @@ async function boot() {
     if (doc.querySelectorAll('.slot').length >= 10 && disp('deckpage') === 'none' && disp('start') === 'none') boardUp = true;
     if (!boardUp) await sleep(50);
   }
-  ok(vsSeen, 'DP12: starting from the deck page plays the VS curtain');
-  ok(boardUp, 'DP13: after the VS beat both pre-duel pages are hidden and the duel board is up');
+  ok(vsSeen, 'DP23: starting from the deck page plays the VS curtain');
+  ok(boardUp, 'DP24: after the VS beat both pre-duel pages are hidden and the duel board is up');
 
   console.log(failures === 0 ? 'ALL DECKPAGE CHECKS PASSED' : failures + ' DECKPAGE CHECK(S) FAILED');
   window.close();
