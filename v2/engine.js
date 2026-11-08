@@ -2233,6 +2233,20 @@ function activationScore(e, view, data, prompt) {
     }
     case CC.MISCHIEF:
       return monList(view, opp).some(c => !c.faceUp) && myStrongestAtk(view, data) >= 1800 ? 500 : 0;
+    case CC.SILKY: {
+      // (1) flips one face-up monster on EACH field face-down, then
+      // Special Summons itself. It sat dead through 211 offers in 80
+      // games — no case here, so the generic fallback priced it ~0 —
+      // yet flipping the opponent's boss face-down is one of this
+      // deck's few tempo answers. My own flip-down target should not
+      // be Luce (her protection aura switches off face-down).
+      if (!oppFU.length) return 0;
+      const oppBest = Math.max(...oppFU.map(c => battlePower(c, data)));
+      const myFlippable = faceUpMons(view, me).filter(c => c.code !== CC.LUCE);
+      if (oppBest >= 3200) return 1250; // desperate: even Luce is an acceptable cost
+      if (oppBest >= 2600 && myFlippable.length) return 1200;
+      return 0;
+    }
     case CC.REBELLION: {
       if (e.loc === LOC.HAND) {
         const mats = view.grave[me].filter(c => { const d = cdOf(data, c); return d && (d.race === 0x8 || d.race === 0x4); }).length;
