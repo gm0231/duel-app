@@ -2728,14 +2728,20 @@ function chainEntryValue(e, view, data, mem) {
       return ((atkDmg >= 1200 || (myMonDies && myMonValue >= 1300)) && view.lp[me] > 1400) ? 1400 : 0;
     }
     case CC.BLAST_HELD: {
+      // Round 2, item 5: the Bomb is a resource first — its job is to
+      // be discarded for the Gravekeeper's Trap ② so its own ②
+      // salvages a level-4 EARTH Fairy. Firing the destruction is the
+      // LAST resort only: a burn that wins the game outright, or
+      // stopping an attack that would kill us this turn (and only
+      // when the burn back on us does not kill us anyway).
       if (!atkCell) return 0;
       const big = faceUpMons(view, opp).sort((x, y) => (cdOf(data, y.code) ? cdOf(data, y.code).atk : 0) - (cdOf(data, x.code) ? cdOf(data, x.code).atk : 0))[0];
       if (!big) return 0;
       const bigOrig = cdOf(data, big.code) ? cdOf(data, big.code).atk : 0; // burn is the ORIGINAL atk
       const selfBurn = !view.grave[me].includes(CC.EXCHANGE);
-      if (bigOrig >= view.lp[opp] && (!selfBurn || bigOrig < view.lp[me])) return 2000; // lethal burn
-      if (bigOrig >= 2300) return 1400;
-      if (bigOrig >= 1900 && (!selfBurn || (myMonDies && myMonValue >= 1500))) return 1250;
+      const burnSafe = !selfBurn || bigOrig < view.lp[me];
+      if (bigOrig >= view.lp[opp] && burnSafe) return 2000; // lethal burn wins the game
+      if (atkCell.code === big.code && atkDmg >= view.lp[me] && burnSafe) return 1900; // stops our lethal
       return 0;
     }
     case CC.MOON: {
@@ -2954,6 +2960,15 @@ function idleAnswer(prompt, view, data, mem) {
     const d = cdOf(data, e.code);
     if (!d || e.code === CC.WALL_SHADOW) return;
     if (!((d.type & CT.TRAP) || (d.type & CT.QUICKPLAY))) return;
+    if (e.code === CC.BLAST_HELD) {
+      // Round 2, item 5: the Bomb stays in hand as Gravekeeper's Trap
+      // ② fodder. Setting it is the last resort only: no board of our
+      // own, life low, and a big attacker across that threatens to
+      // end the game next turn.
+      const desperate = !monList(view, me).length && view.lp[me] <= 4000 &&
+        faceUpMons(view, view.opp).some(c => atkOf(c, data) >= 1900);
+      if (!desperate) return;
+    }
     const v = handValue(e.code, view, data);
     if (v > bestSetV) { bestSetV = v; bestSet = i; }
   });
@@ -3278,7 +3293,10 @@ function selectCardAnswer(prompt, view, data, mem) {
   // Among OUR filler picks, cards that re-arm in the deck (RE_DECK_TIER)
   // outrank plain low-value cards; the opponent's disruption order is
   // untouched, and own cards still never join beyond the required count.
-  if (ctxCode === CC.TRANSMIGRATION || ctxCode === CC.MUDORA || ctxCode === CC.KELDO) {
+  if ((ctxCode === CC.TRANSMIGRATION || ctxCode === CC.MUDORA || ctxCode === CC.KELDO) &&
+      entries.every(x => x.e.loc === LOC.GRAVE || x.e.loc === LOC.REMOVED)) {
+    // (the location gate matters: without it this branch also captured
+    // Keldo ①'s deck search, shadowing the dedicated search ranking)
     const scored = entries.map(x => ({ x, v: x.e.con === opp ? graveValue(x.e.code, data)
       : -graveValue(x.e.code, data) + (RE_DECK_TIER[x.e.code] || 0) * 300 }))
       .sort((a, b) => b.v - a.v);
@@ -3360,6 +3378,20 @@ function selectCardAnswer(prompt, view, data, mem) {
         const trapLive = view.zones[me].szone.some(c => c && c.faceUp && c.code === CC.GK_TRAP);
         const trapNear = trapLive || view.hand[me].some(x => x.code === CC.GK_TRAP);
         const exchInGrave = view.grave[me].includes(CC.EXCHANGE);
+        // Blast Held by Fate comes first when the Trap is live, or is
+        // about to be: Mudora in hand with another EARTH Fairy to
+        // discard (she places the Trap face-up), or Kaldan in hand
+        // with the Trap in the grave (he sets it, live the same turn).
+        // Discarding the fetched Bomb for the Trap ② then salvages a
+        // level-4 EARTH Fairy — the Trap's cost becomes card advantage.
+        const trapObtainable = view.hand[me].some(x => x.code === CC.GK_TRAP) ||
+          view.grave[me].includes(CC.GK_TRAP) || deckHas(remainingDeck(view, me, data), CC.GK_TRAP);
+        const bombLine = !view.hand[me].some(x => x.code === CC.BLAST_HELD) && (
+          trapLive ||
+          (trapObtainable && view.hand[me].some(x => x.code === CC.MUDORA) &&
+            view.hand[me].some(x => { if (x.code === CC.MUDORA) return false; const d = cdOf(data, x.code); return d && isMonsterCd(d) && d.attribute === 0x01 && d.race === 0x4; })) ||
+          (view.hand[me].some(x => x.code === CC.KALDAN) && view.grave[me].includes(CC.GK_TRAP)));
+        if (e.code === CC.BLAST_HELD) return bombLine ? 3400 : 600;
         if (e.code === CC.EXCHANGE) {
           if (exchInGrave) return 300;          // already stocked as lock fuel
           return trapNear ? 3000 : 1400;        // completes the lock / the win card itself
@@ -3436,6 +3468,16 @@ function selectCardAnswer(prompt, view, data, mem) {
   }
   // --- discard / cost from our hand: cheapest first
   if (entries.every(x => x.e.con === me && x.e.loc === LOC.HAND)) {
+    // Gravekeeper's Trap ② (round 2, item 5): feed it the Bomb, as an
+    // explicit policy rather than a side effect of GRAVE_PROFIT —
+    // discarding Blast Held by Fate triggers its ②, which salvages a
+    // level-4 EARTH Fairy from the grave, so the cost is resource
+    // generation; and per the same policy the Bomb is held in hand
+    // precisely to be spent this way.
+    if (ctxCode === CC.GK_TRAP) {
+      const bomb = entries.find(x => x.e.code === CC.BLAST_HELD);
+      if (bomb) return take([bomb], Math.max(1, min));
+    }
     const s = entries.slice().sort((a, b) => discardCost(a.e.code, view, data) - discardCost(b.e.code, view, data));
     if (min === 0 && prompt.cancelable) {
       return s.length && discardCost(s[0].e.code, view, data) < -300 ? take(s, 1) : cardsResp([]);
