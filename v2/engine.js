@@ -1088,6 +1088,114 @@ const MILL_WHEN_SENT = new Set([CC.KELBEK]); // sent hand/deck -> GY: mill 5
 // mill/grave-profit effects; only its battle-destruction trigger.)
 const NEGATION_CODES = new Set([CC.SOLEMN_STRIKE, CC.GRAVE_HOLE]);
 
+// ------------------------------------------------------------ 2026 themes
+// The three themes added after the original policy was written (Super
+// Quant / Elfnote-Dogmatika / White Forest, plus the generic disruption
+// that came with them). The old tables knew none of these codes, so
+// every activation and chain decision for 81 of the 144 pool cards fell
+// through to a default of 0 — the measured root cause of the new decks'
+// passivity (see cpu-diag-20261109/REPORT.md).
+const NC = {
+  SQ_RED: 59975920, SQ_GREEN: 85374678, SQ_BLUE: 12369277, SQ_WHITE: 73422829, SQ_BLACK: 92034192,
+  SQ_ALPHAN: 58753372, SQ_ZEETAN: 66646087, SQ_MINIMALIAN: 21147203,
+  BEAST_PULSE: 85252081, BEAST_AERO: 11646785, BEAST_LIGER: 57031794, BEAST_REX: 57450198,
+  MAGNUS: 84025439, CARRIER: 10424147, FORMATION: 1825445, SLAYER: 47819246,
+  ALPHAN_BALL: 72332074, LAYER19: 98349765, VINGOLV: 75493362,
+  ARMORED_XYZ: 73046708, FORTRESS: 20145685, LANCER: 67630394, SHARK: 27480536,
+  TYPHOON: 14883228, BOTTOMLESS: 29401950, COMPULSE: 94192409,
+  ECCLESIA: 60303688, ECCLESIA_BLACK: 78397661, FLEUR_KNIGHT: 69680031, FLEUR_THUNDER: 73355772,
+  DOG_PUNISH: 82956214, DOG_TIDING: 35569555, DOG_GOSPEL: 31002402, DOG_FUNERAL: 60921537,
+  NTSS: 80532587, BASTARD: 41373230, ALBA_SYSTEM: 51522296,
+  ELF_RUKINA: 13597785, ELF_DIINA: 59581480, ELF_FORTUNA: 85976588, ELF_JUNORA: 5914858,
+  ELF_PARALLEL: 64491754, ELF_RAPSODIA: 24092792, ELF_ARISTIA: 50590801,
+  FUSION_ID: 59432181, AZAMINA: 85065943, SINFUL_GODDESS: 17749468,
+  SEIKON_DRAGON: 76666602, GOUKON: 12375297, STRITIA: 42302563,
+  WF_WITCH: 4398189, WF_SILVI: 98385955, WF_RUCIA: 24779554, WF_RISETT: 61980241,
+  WF_ASTELR: 25592142, WF_RUCIELA: 77313225, WF_GENYOU: 5800323, WF_SILWIA: 41924516,
+  DIABELLSTAR: 23151193, DIABELLZE: 60145298,
+  WF_SIN: 3496543, WF_TALE: 99289828, WF_NOENTER: 35778533, WF_WOE: 62995268,
+  DD_CROW: 24508238, SKULL_MEISTER: 67750322, GOSEI_JOUSHIN: 18158393,
+  CRYSTALWING: 50954680, CLEARWING: 82044279, STARDUST: 44508094,
+  KUMOGUS: 29726552, MIRADORA: 17063599, PACKBIT: 72444406, ARCANITE: 31924889,
+  HASTOR: 70913714, PEGASUS: 98506199, RELEVEL: 21281085, SOUKEN_MASTER: 62849088,
+  VISAS: 821049,
+};
+// The 81 codes the three 2026 decks added to the pool (union of the new
+// decks minus the original 63). Generic fallbacks apply ONLY to these,
+// so the old decks' tuned behaviour cannot drift.
+const NEW_CODES = new Set([821049, 1825445, 3496543, 4398189, 5800323, 5914858, 10424147, 11646785, 12369277, 12375297, 13597785, 14883228, 17063599, 17749468, 18158393, 20145685, 21147203, 21281085, 23151193, 24092792, 24508238, 24779554, 25592142, 27480536, 29401950, 29726552, 31002402, 31924889, 35569555, 35778533, 41373230, 41924516, 42302563, 44508094, 47819246, 50590801, 50954680, 51522296, 53971455, 57031794, 57450198, 58753372, 59432181, 59581480, 59975920, 60145298, 60303688, 60921537, 61980241, 62849088, 62995268, 64491754, 64880894, 66646087, 67630394, 67750322, 69680031, 70913714, 72332074, 72444406, 73046708, 73355772, 73422829, 75493362, 76666602, 77313225, 78397661, 80532587, 82044279, 82956214, 84025439, 85065943, 85252081, 85374678, 85976588, 92034192, 94192409, 98349765, 98385955, 98506199, 99289828]);
+// Setcodes (data.json `setcodes` values) for the new themes.
+const SETC = { SQ: 220, SQM: 4316, BEAST: 8412, DOGMA: 326, ELF: 464, WF: 426, SIN: 516, AZAMINA: 436 };
+function hasSetC(cd, s) { return !!cd && Array.isArray(cd.setcodes) && cd.setcodes.includes(s); }
+// White Forest spells/traps whose graveyard effect re-sets themselves:
+// sending one to the graveyard as a cost is close to free.
+const WF_RESET = new Set([NC.WF_SIN, NC.WF_TALE, NC.WF_NOENTER, NC.WF_WOE]);
+// Super Quantum layers all carry a graveyard effect (revive / salvage /
+// recruit / mill): cheap to discard, valuable in the grave.
+const SQ_GY_PROFIT = new Set([NC.SQ_RED, NC.SQ_GREEN, NC.SQ_BLUE, NC.SQ_WHITE, NC.SQ_BLACK]);
+// White Forest monsters with a graveyard use (self-return / self-summon).
+const WF_GY = new Set([NC.WF_SILVI, NC.WF_RISETT, NC.WF_ASTELR, NC.WF_GENYOU]);
+// desc-index -> printed effect number for the new cards where the bot
+// must tell a card's effects apart. Mirrors the hand-audited fxmap.json
+// (client-side data); 'id' means printed = descIdx + 1.
+const FXN = {
+  4398189: { 0: 1, 1: 3 }, 85252081: { 0: 2, 1: 3 }, 11646785: { 0: 2, 1: 3 },
+  57031794: { 0: 2, 1: 3 }, 57450198: { 0: 2, 1: 3 }, 84025439: { 0: 2, 1: 1 },
+  20145685: { 1: 1 }, 67630394: { 1: 2, 2: 3 }, 13597785: { 1: 2, 2: 3 },
+  59581480: { 1: 2, 2: 3 }, 85976588: { 1: 2, 2: 3 }, 59975920: { 1: 2, 2: 3 },
+  60303688: { 0: 1, 1: 2 }, 51522296: { 0: 2 }, 24092792: { 0: 2 },
+  31924889: { 0: 1, 1: 3 }, 75493362: { 0: 1, 1: 3 }, 76666602: { 0: 1, 1: 3 },
+  41373230: { 0: 3 }, 42302563: { 0: 2 }, 41924516: { 0: 1 }, 47819246: { 0: 2 },
+  1825445: { 0: 2 }, 85065943: { 0: 2 }, 82044279: { 0: 1, 1: 2 },
+  82956214: { 0: 1 }, 62849088: { 0: 1, 1: 2, 2: 2, 3: 2 }, 821049: { 0: 2, 1: 3 },
+  12375297: { 0: 2, 1: 3 }, 73046708: { 0: 1, 1: 1 },
+};
+const FXN_ID = new Set([10424147, 58753372, 66646087, 21147203, 3496543, 5800323, 5914858,
+  23151193, 25592142, 35778533, 60145298, 60921537, 61980241, 62995268, 64491754, 69680031,
+  70913714, 72332074, 72444406, 73355772, 77313225, 78397661, 80532587, 85374678, 92034192,
+  73422829, 12369277, 24779554, 27480536, 21281085, 44508094, 24508238, 67750322, 18158393,
+  31002402, 35569555, 59432181, 99289828, 98349765, 98385955, 98506199, 50590801]);
+// Printed effect number (1-based) for an activation/chain entry, or null
+// when the pool's audit data cannot identify it.
+function fxPrinted(code, desc) {
+  if (desc == null) return null;
+  const n = Number(desc);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const c = Math.floor(n / 1048576), idx = n % 1048576;
+  if (c !== code) return null;
+  if (FXN_ID.has(code)) return idx + 1;
+  const m = FXN[code];
+  return m && m[idx] != null ? m[idx] : null;
+}
+// Coarse effect classification derived from the official card text
+// (data.texts). The pool has no machine-readable purpose table, so the
+// generic fallback for new cards reads the printed text's verbs.
+const FXK_CACHE = new Map();
+function fxKinds(code, data) {
+  if (FXK_CACHE.has(code)) return FXK_CACHE.get(code);
+  const t = (data.texts && data.texts[code] && data.texts[code].text) || '';
+  const k = {
+    search: t.includes('手札に加える'), draw: t.includes('ドロー'),
+    ss: t.includes('特殊召喚'), destroy: t.includes('破壊'),
+    banish: t.includes('除外'), bounce: t.includes('手札に戻') || t.includes('デッキに戻'),
+    negate: t.includes('無効'), sendGY: t.includes('墓地へ送'),
+  };
+  FXK_CACHE.set(code, k);
+  return k;
+}
+// Which built-in deck list the opponent is running (exact list match).
+// Deck lists are public knowledge in this app (fixed five decks); the
+// imported-deck case simply yields null and no threat adjustments.
+function oppDeckId(view, data) {
+  const list = view.oppDeck;
+  if (!list || !data.decks) return null;
+  for (const id of Object.keys(data.decks)) {
+    const d = data.decks[id];
+    if (d.main.length === list.main.length && d.main.every((c, i) => c === list.main[i])) return id;
+  }
+  return null;
+}
+
 function makeBotMemory() {
   return {
     summonedYet: false,   // legacy field of the old policy (kept for shape compatibility)
@@ -1098,6 +1206,8 @@ function makeBotMemory() {
     plannedTargetSeq: -1, // monster-zone seq the current attack was planned against
     unselectStreak: {},   // termination guard for SELECT_UNSELECT_CARD
     attempts: {},         // per-turn attempt counts for IDLECMD activations/summons (anti-cancel-loop)
+    pendingRemoval: null, // {code} — removal target we fired at, watched for observed immunity
+    learnedImmune: {},    // code -> true: a removal resolved and this card stayed (observed)
   };
 }
 
@@ -1151,6 +1261,7 @@ function maskEntry(e, view, ctxCode) {
   const me = view.me;
   if (e.con === me || e.con == null) return e;
   if (ctxCode === CC.HAND_DESTRUCTION) return e; // the effect itself reveals the hand
+  if (ctxCode === NC.SQ_ALPHAN) return e; // Alphan ② reveals the 3 cards to the chooser
   if (e.loc === LOC.HAND || e.loc === LOC.DECK) return Object.assign({}, e, { code: null });
   if ((e.loc === LOC.MZONE || e.loc === LOC.SZONE) && e.pos != null && !(e.pos & POS_FACEUP))
     return Object.assign({}, e, { code: null });
@@ -1271,6 +1382,24 @@ function handValue(code, view, data) {
     if (code === CC.MUDORA || code === CC.KELDO) v += 200;
     if (code === CC.HEAVY_TANK) v += 250;
     if (code === CC.CHAOS_HUNTER) v += 150;
+    // 2026 themes: starters and hand disruption are worth more than
+    // their printed ATK suggests (the generic formula alone buried them).
+    if (code === NC.DD_CROW) v += 1050;
+    if (code === NC.SKULL_MEISTER) v += 950;
+    if (code === NC.MIRADORA) v += 800;
+    if (code === NC.SQ_ALPHAN) v += 450;
+    if (code === NC.SQ_ZEETAN) v += 400;
+    if (code === NC.SQ_MINIMALIAN) v += 450;
+    if (code === NC.SQ_BLACK) v += 150;
+    if (code === NC.ECCLESIA) v += 300;
+    if (code === NC.FLEUR_KNIGHT || code === NC.FLEUR_THUNDER) v += 150;
+    if (code === NC.WF_SILVI) v += 250;
+    if (code === NC.WF_RISETT) v += 300;
+    if (code === NC.WF_ASTELR) v += 250;
+    if (code === NC.DIABELLSTAR) v += 200;
+    if (code === NC.ELF_JUNORA) v += 200;
+    if (code === NC.ELF_RUKINA || code === NC.ELF_DIINA || code === NC.ELF_FORTUNA) v += 150;
+    if (code === NC.KUMOGUS) v += 150;
     return v;
   }
   const fixed = {
@@ -1282,6 +1411,12 @@ function handValue(code, view, data) {
     [CC.SEVENTH_SWORD]: 750, [CC.FORCE_GUARDIAN]: 800, [CC.DEMON_WIND]: 800,
     [CC.EXCHANGE]: 650, [CC.TAIYOU]: 550, [CC.COROLLA]: 600, [CC.REBELLION]: 700,
     [CC.HAND_DESTRUCTION]: 500, [CC.MISCHIEF]: 350, [CC.WALL_SHADOW]: 900, [CC.JIRAI_TRAP]: 700,
+    [NC.BOTTOMLESS]: 1500, [NC.COMPULSE]: 1350, [NC.DOG_PUNISH]: 1400, [NC.GOSEI_JOUSHIN]: 1450,
+    [NC.TYPHOON]: 950, [NC.WF_WITCH]: 1500, [NC.CARRIER]: 1350, [NC.DOG_TIDING]: 1450,
+    [NC.DOG_GOSPEL]: 1300, [NC.DOG_FUNERAL]: 1200, [NC.ELF_PARALLEL]: 1250, [NC.FUSION_ID]: 1250,
+    [NC.LAYER19]: 1250, [NC.WF_TALE]: 1250, [NC.WF_SIN]: 1200, [NC.WF_NOENTER]: 1100, [NC.WF_WOE]: 1200,
+    [NC.ELF_RAPSODIA]: 1000, [NC.ELF_ARISTIA]: 900, [NC.FORMATION]: 800, [NC.SLAYER]: 750,
+    [NC.ARMORED_XYZ]: 800, [NC.VINGOLV]: 900, [NC.ALPHAN_BALL]: 1100,
   };
   return fixed[code] != null ? fixed[code] : 500;
 }
@@ -1291,6 +1426,8 @@ function handValue(code, view, data) {
 function discardCost(code, view, data) {
   let v = handValue(code, view, data);
   if (GRAVE_PROFIT.has(code)) v -= 1400;
+  if (WF_RESET.has(code)) v -= 450;      // it re-sets itself from the grave
+  if (SQ_GY_PROFIT.has(code)) v -= 600;  // layers work from the grave
   if (MILL_WHEN_SENT.has(code)) v -= 250; // discarding Kelbek/Agido also mills: extra profit
   const handCodes = view.hand[view.me].map(e => e.code);
   if (handCodes.filter(c => c === code).length > 1) v -= 450; // duplicate
@@ -1311,6 +1448,9 @@ function graveValue(code, data) {
   if (!cd) return 100;
   let v = isMonsterCd(cd) ? Math.max(cd.atk, cd.def * 0.6) * 0.55 : 260;
   if (GRAVE_PROFIT.has(code)) v += 650;         // it still works from the grave
+  if (SQ_GY_PROFIT.has(code)) v += 400;         // layers: revive / salvage / recruit
+  if (WF_GY.has(code)) v += 300;                // White Forest self-return / self-summon
+  if (code === NC.GOUKON) v += 250;             // searched when used as synchro material
   if (MILL_WHEN_SENT.has(code)) v += 150;
   if (code === CC.EXCHANGE) v += 500;           // unlocks the Ishizu grave effects
   if (isExtraCd(cd)) v += 200;                  // revival target quality
@@ -1447,6 +1587,384 @@ function guardianPlaceScore(view, data, rem, fieldUp, oppMons) {
   if (!pieceSomewhere) return 0;
   return (fieldUp && oppMons.length) ? 1200 : 900;
 }
+// Generic fallback for new-pool cards without a hand-tuned case: read
+// the printed text's verbs (fxKinds) instead of the old flat 0. Removal
+// is only worth firing at a real target; searches and draws are the
+// engines these decks were missing.
+function genericActivation(e, view, data) {
+  if (!NEW_CODES.has(e.code)) return 0;
+  const cd = cdOf(data, e.code);
+  if (!cd) return 0;
+  const k = fxKinds(e.code, data);
+  const oppFU = faceUpMons(view, view.opp);
+  const oppBest = oppFU.length ? Math.max(...oppFU.map(c => boardValue(c, data))) : 0;
+  const text = (data.texts && data.texts[e.code] && data.texts[e.code].text) || '';
+  if (k.search) return 950;
+  if (k.draw) return 900;
+  if (k.destroy || k.banish || k.bounce) {
+    // an effect whose text destroys OUR OWN field is not removal
+    if (text.includes('自分フィールド') && !text.includes('相手')) return 0;
+    if (oppBest >= 1800) return 1000;
+    if (oppBest >= 1400) return 750;
+    return 0;
+  }
+  if (k.ss) return e.loc === LOC.GRAVE ? 800 : 700;
+  if ((cd.type & CT.SPELL) || (cd.type & CT.TRAP)) return 550; // place a continuous/field card
+  return 0;
+}
+// Hand-audited activation values for the 2026 themes (plan 1 of the CPU
+// diagnosis). Returns null when this function has no opinion, letting
+// the generic fallback judge. H carries activationScore's locals.
+function newThemeActivation(e, view, data, prompt, H) {
+  const me = view.me, opp = view.opp;
+  const { myMons, oppFU, handCodes, rem, fieldUp } = H;
+  const cd = cdOf(data, e.code);
+  const printed = fxPrinted(e.code, e.desc);
+  const myFU = faceUpMons(view, me);
+  const oppBest = oppFU.length ? Math.max(...oppFU.map(c => boardValue(c, data))) : 0;
+  const myCell = e.loc === LOC.SZONE ? view.zones[me].szone[e.seq]
+               : e.loc === LOC.MZONE ? view.zones[me].mzone[e.seq] : null;
+  const hasSQM = (cells) => cells.some(c => hasSetC(cdOf(data, c.code), SETC.SQM));
+  const beastReady = // any Mech Beast available to stack (Extra Deck or hand)
+    [NC.BEAST_PULSE, NC.BEAST_AERO, NC.BEAST_LIGER, NC.BEAST_REX]
+      .some(b => view.extra[me].some(x => x.code === b) || handCodes.includes(b));
+  const sendableST = () => handCodes.some(c => { const d = cdOf(data, c); return d && ((d.type & CT.SPELL) || (d.type & CT.TRAP)) && (WF_RESET.has(c) || discardCost(c, view, data) <= 700); }) ||
+    view.zones[me].szone.some(c => c && (!c.faceUp || WF_RESET.has(c.code)));
+  const wfMonsterInDeck = () => [NC.WF_SILVI, NC.WF_RUCIA, NC.WF_RISETT, NC.WF_ASTELR, NC.WF_GENYOU].some(c => deckHas(rem, c));
+  const elfGraveTarget = () => {
+    const pool = view.grave[me].concat(view.removed[me]).map(c => cdOf(data, c))
+      .concat(view.hand[me].map(x => cdOf(data, x.code)));
+    return pool.some(d => isMonsterCd(d) && (hasSetC(d, SETC.ELF) || ((d.race === 0x400) && (d.level & 0xff) >= 6)));
+  };
+  switch (e.code) {
+    case NC.WF_WITCH: {
+      if (e.loc === LOC.HAND) return fieldUp ? 0 : 1250; // do not replace our own field spell
+      if (e.loc === LOC.SZONE && printed === 3) {
+        // make a White Forest monster a tuner: only with a synchro line open
+        const hasWF = myFU.some(c => hasSetC(cdOf(data, c.code), SETC.WF));
+        const hasSynchro = view.extra[me].some(x => { const d = cdOf(data, x.code); return d && (d.type & CT.SYNCHRO); });
+        return hasWF && hasSynchro ? 800 : 0;
+      }
+      return 0;
+    }
+    case NC.CARRIER: {
+      if (e.loc === LOC.HAND) {
+        if (fieldUp) return 0;
+        return hasSQM(myFU) || handCodes.some(c => hasSetC(cdOf(data, c), SETC.SQM)) ? 1100 : 700;
+      }
+      if (e.loc === LOC.SZONE && printed === 1) {
+        if (!hasSQM(myFU) || !beastReady || !handCodes.length) return 0;
+        return myFU.some(c => hasSetC(cdOf(data, c.code), SETC.BEAST)) ? 900 : 1050;
+      }
+      if (e.loc === LOC.SZONE && printed === 2) {
+        const kinds = new Set(myFU.filter(c => hasSetC(cdOf(data, c.code), SETC.BEAST)).map(c => c.code));
+        for (const c of view.grave[me]) if (hasSetC(cdOf(data, c), SETC.BEAST)) kinds.add(c);
+        return kinds.size >= 3 ? 1600 : 0; // Great Magnus overlay
+      }
+      return 0;
+    }
+    case NC.DOG_TIDING: {
+      if (e.loc === LOC.HAND) return 1250; // the deck's main searcher
+      if (e.loc === LOC.SZONE && printed === 2) return 1000; // dump an Extra Deck monster
+      return 0;
+    }
+    case NC.DOG_GOSPEL:
+      if (e.loc !== LOC.HAND) return 0;
+      if (handCodes.includes(NC.ALBA_SYSTEM)) return 1350;
+      return view.grave[me].includes(NC.ALBA_SYSTEM) ? 1250 : 0;
+    case NC.DOG_FUNERAL:
+      if (e.loc !== LOC.HAND) return 0;
+      if (handCodes.includes(NC.ALBA_SYSTEM)) return 1300;
+      return view.grave[me].includes(NC.ALBA_SYSTEM) ? 1200 : 0;
+    case NC.ELF_PARALLEL: {
+      if (e.loc === LOC.HAND) {
+        if (view.zones[me].szone.some(c => c && c.faceUp && c.code === NC.ELF_PARALLEL)) return 0;
+        const elfAround = handCodes.some(c => hasSetC(cdOf(data, c), SETC.ELF)) ||
+          view.grave[me].some(c => hasSetC(cdOf(data, c), SETC.ELF)) || myFU.some(c => hasSetC(cdOf(data, c.code), SETC.ELF));
+        return elfAround ? 800 : 600;
+      }
+      if (e.loc === LOC.SZONE && printed === 2) {
+        const pool = view.hand[me].map(x => cdOf(data, x.code))
+          .concat(view.grave[me].map(c => cdOf(data, c)));
+        const targets = pool.filter(d => isMonsterCd(d) && (hasSetC(d, SETC.ELF) || ((d.race === 0x400) && (d.level & 0xff) >= 6)));
+        if (!targets.length) return 0;
+        return Math.max(...targets.map(d => d.atk)) >= 1500 ? 1100 : 900;
+      }
+      return 0;
+    }
+    case NC.ELF_RAPSODIA: {
+      if (e.loc !== LOC.SZONE) return 0;
+      const cell = view.zones[me].szone[e.seq];
+      if (cell && !cell.faceUp) // flip it face-up to unlock ②
+        return elfGraveTarget() ? 700 : 0;
+      if (printed === 2) {
+        if (!elfGraveTarget()) return 0;
+        const best = Math.max(0, ...view.grave[me].concat(view.removed[me])
+          .map(c => { const d = cdOf(data, c); return isMonsterCd(d) ? d.atk : 0; }));
+        return best >= 1200 ? 1050 : 850;
+      }
+      return 0;
+    }
+    case NC.ELF_ARISTIA: {
+      if (e.loc !== LOC.SZONE) return 0;
+      const cell = view.zones[me].szone[e.seq];
+      const oppST = view.zones[opp].szone.some(c => c && c.faceUp);
+      if (cell && !cell.faceUp) return oppST ? 600 : 0;
+      if (printed === 2) return oppST ? 950 : 0;
+      return 0;
+    }
+    case NC.FUSION_ID: {
+      if (e.loc !== LOC.HAND) return 0;
+      const ex = view.extra[me].map(x => x.code);
+      if (!ex.includes(NC.SINFUL_GODDESS) || !ex.includes(NC.AZAMINA) || !oppFU.length) return 0;
+      if (myFU.some(c => hasSetC(cdOf(data, c.code), SETC.ELF))) return 1350;
+      return myFU.length ? 1200 : 0;
+    }
+    case NC.WF_SIN: {
+      if (e.loc !== LOC.HAND) return 0;
+      const body = view.hand[me].some(x => { const d = cdOf(data, x.code);
+        return isMonsterCd(d) && x.code !== NC.WF_SIN && (d.atk >= 1500 || x.code === NC.DIABELLZE || x.code === NC.WF_RUCIELA || x.code === NC.WF_GENYOU); });
+      return body ? 1150 : 0;
+    }
+    case NC.WF_TALE:
+      return e.loc === LOC.HAND ? 1200 : 0;
+    case NC.WF_NOENTER: {
+      if (e.loc !== LOC.HAND) return 0;
+      if (oppBest >= 1600) return 1300;
+      return view.zones[opp].szone.some(c => c && c.faceUp) ? 900 : 0;
+    }
+    case NC.WF_WOE:
+      return e.loc === LOC.HAND && wfMonsterInDeck() ? 1250 : 0;
+    case NC.SQ_ALPHAN: {
+      if (e.loc !== LOC.MZONE) return 0;
+      if (printed === 1) {
+        const sqmCount = myFU.filter(c => hasSetC(cdOf(data, c.code), SETC.SQM)).length;
+        const beastInEx = view.extra[me].some(x => hasSetC(cdOf(data, x.code), SETC.BEAST));
+        return sqmCount >= 2 && beastInEx ? 1000 : 0;
+      }
+      if (printed === 2) return myMons.length <= 3 ? 1100 : 950; // reveal 3, one is summoned
+      return 0;
+    }
+    case NC.SQ_ZEETAN: {
+      if (e.loc !== LOC.MZONE) return 0;
+      if (printed === 2) return view.grave[me].some(c => hasSetC(cdOf(data, c), SETC.SQM)) ? 1200 : 0;
+      return 0;
+    }
+    case NC.SQ_MINIMALIAN: {
+      if (e.loc === LOC.HAND && printed === 1) {
+        const fodder = view.hand[me].some(x => x.code !== NC.SQ_MINIMALIAN &&
+          hasSetC(cdOf(data, x.code), SETC.SQ) && discardCost(x.code, view, data) <= 900);
+        return fodder ? 1000 : 0;
+      }
+      if (e.loc === LOC.MZONE && printed === 2) {
+        const fodder = view.hand[me].some(x => hasSetC(cdOf(data, x.code), SETC.SQ)) ||
+          view.zones[me].szone.some(c => c && hasSetC(cdOf(data, c.code), SETC.SQ));
+        if (!fodder) return 0;
+        if (deckHas(rem, NC.SQ_BLUE)) return 1150; // Blue Layer searches the Carrier line
+        return rem && [...rem.keys()].some(c => hasSetC(cdOf(data, c), SETC.SQM)) ? 850 : 0;
+      }
+      return 0;
+    }
+    case NC.FORMATION: {
+      // ① is continuous protection for our Super Quant cards; ② feeds
+      // another face-up monster under one of our Xyz as material.
+      if (e.loc === LOC.HAND) {
+        if (myFU.some(c => hasSetC(cdOf(data, c.code), SETC.BEAST))) return 850;
+        return myFU.some(c => hasSetC(cdOf(data, c.code), SETC.SQM)) ? 700 : 550;
+      }
+      if (e.loc === LOC.SZONE && printed === 2) {
+        const beast = myFU.find(c => hasSetC(cdOf(data, c.code), SETC.BEAST));
+        return beast && myFU.some(c => c.seq !== beast.seq) ? 950 : 0;
+      }
+      return 0;
+    }
+    case NC.SLAYER:
+      return e.loc === LOC.HAND && myFU.some(c => c.code === NC.MAGNUS) ? 900 : 0;
+    case NC.ALPHAN_BALL: {
+      if (e.loc !== LOC.HAND) return 0;
+      const tot = oppFU.reduce((s, c) => s + boardValue(c, data), 0);
+      if (tot >= 3000) return 1500;
+      if (oppBest >= 2400) return 1350;
+      return H.oppMons.length >= 2 ? 1150 : 0;
+    }
+    case NC.VINGOLV: {
+      if (e.loc === LOC.HAND && printed === 1) {
+        if (!rem) return 0;
+        const lightFairy = [...rem.keys()].some(c => { const d = cdOf(data, c); return d && d.attribute === 0x10 && d.race === 0x4; });
+        if (!lightFairy) return 0;
+        return deckHas(rem, NC.SQ_WHITE) ? 900 : 700;
+      }
+      if (e.loc === LOC.GRAVE && printed === 3) return 900;
+      return 0;
+    }
+    case NC.ARMORED_XYZ: {
+      if (e.loc !== LOC.HAND) return 0;
+      const myX = myFU.some(c => { const d = cdOf(data, c.code); return d && (d.type & CT.XYZ); });
+      const fodderX = view.grave[me].some(c => { const d = cdOf(data, c); return d && (d.type & CT.XYZ); }) ||
+        handCodes.some(c => { const d = cdOf(data, c); return d && (d.type & CT.XYZ); });
+      return myX && fodderX ? 800 : 0;
+    }
+    case NC.BEAST_PULSE: case NC.BEAST_AERO: case NC.BEAST_LIGER: case NC.BEAST_REX: {
+      if (e.loc !== LOC.MZONE) return 0;
+      if (printed === 3) // attach a Super Quantum monster as material
+        return myFU.some(c => hasSetC(cdOf(data, c.code), SETC.SQM)) ? 550 : 0;
+      if (printed === 2) {
+        if (e.code === NC.BEAST_PULSE) {
+          if (!view.zones[opp].szone.some(c => c)) return 0;
+          return view.zones[opp].szone.some(c => c && c.faceUp) ? 1050 : 900;
+        }
+        if (e.code === NC.BEAST_AERO) return oppBest >= 2000 ? 1100 : oppBest >= 1600 ? 900 : 0;
+        if (e.code === NC.BEAST_LIGER) return oppBest >= 1800 ? 1300 : oppFU.length ? 1000 : 0;
+        return oppFU.some(c => isExtraCd(cdOf(data, c.code)) && atkOf(c, data) >= 2000) ? 1000
+             : oppFU.some(c => atkOf(c, data) >= 2200) ? 900 : 0;
+      }
+      return 0;
+    }
+    case NC.MAGNUS: {
+      if (e.loc === LOC.MZONE && printed === 1) { // quick: return a card to the deck
+        if (oppBest >= 1500) return 1250;
+        return view.zones[opp].szone.some(c => c && c.faceUp) ? 1000 : 0;
+      }
+      return 0;
+    }
+    case NC.FORTRESS:
+      return e.loc === LOC.MZONE && printed === 1 &&
+        (deckHas(rem, NC.ARMORED_XYZ) || deckHas(rem, NC.SHARK)) ? 950 : 0;
+    case NC.LANCER:
+      return e.loc === LOC.MZONE && printed === 2 &&
+        view.grave[me].some(c => { const d = cdOf(data, c); return d && (d.type & CT.XYZ); }) ? 800 : 0;
+    case NC.SEIKON_DRAGON: {
+      if (e.loc === LOC.MZONE && printed === 1) {
+        if (!view.grave[me].length && !view.grave[opp].length) return 0;
+        return view.grave[opp].some(c => graveValue(c, data) >= 800) ? 800 : 600;
+      }
+      if (e.loc === LOC.GRAVE && printed === 3) return 1200; // summon itself back
+      return 0;
+    }
+    case NC.STRITIA:
+      return e.loc === LOC.MZONE && printed === 2 && elfGraveTarget() ? 1050 : 0;
+    case NC.GOUKON:
+      return e.loc === LOC.MZONE && printed === 2 && elfGraveTarget() ? 1100 : 0;
+    case NC.ELF_JUNORA:
+      return e.loc === LOC.HAND && printed === 1 ? 1100 : 0;
+    case NC.WF_GENYOU: {
+      if (e.loc !== LOC.GRAVE) return 0;
+      if (printed === 1) {
+        const anyST = handCodes.some(c => { const d = cdOf(data, c); return d && ((d.type & CT.SPELL) || (d.type & CT.TRAP)); }) ||
+          view.zones[me].szone.some(c => c);
+        return anyST ? 950 : 0;
+      }
+      if (printed === 2)
+        return myFU.some(c => { const d = cdOf(data, c.code); return d && (d.type & CT.SYNCHRO) && hasSetC(d, SETC.WF); }) ? 950 : 0;
+      return 0;
+    }
+    case NC.WF_RUCIELA: {
+      if (e.loc !== LOC.MZONE || printed !== 1) return 0;
+      const target = [NC.WF_SIN, NC.WF_TALE, NC.WF_NOENTER, NC.WF_WOE].some(c => deckHas(rem, c));
+      if (!target) return 0;
+      return sendableST() ? 1150 : 900;
+    }
+    case NC.WF_SILWIA: {
+      if (e.loc !== LOC.MZONE || printed !== 1) return 0;
+      const targets = oppFU.map(c => boardValue(c, data))
+        .concat(view.zones[opp].szone.filter(c => c && c.faceUp).map(c => 1000));
+      if (!targets.length) return 0;
+      return Math.max(...targets) >= 1800 ? 1150 : 800;
+    }
+    case NC.ARCANITE: {
+      if (e.loc !== LOC.MZONE) return 0;
+      if (printed === 1) return oppFU.length ? 800 : 0;
+      if (printed === 3) return 750;
+      return 0;
+    }
+    case NC.PACKBIT: {
+      if (e.loc !== LOC.MZONE) return 0;
+      if (printed === 1) return view.zones[opp].szone.some(c => c && c.faceUp) ? 950 : 0;
+      if (printed === 2) return myCell && (myCell.materials || 0) >= 1 && oppBest >= 2000 ? 950 : 0;
+      return 0;
+    }
+    case NC.PEGASUS:
+      return e.loc === LOC.GRAVE && printed === 2 ? (oppBest >= 1800 ? 1050 : 0) : 0;
+    case NC.ECCLESIA: {
+      if (e.loc !== LOC.HAND) return 0;
+      if (printed === 1) {
+        // ② locks us out of the Extra Deck for the turn: never let it
+        // pre-empt a special summon that is already on the table.
+        if (prompt.spsummon && prompt.spsummon.length) return 0;
+        return 1050;
+      }
+      if (printed === 2) return 1200;
+      return 0;
+    }
+    case NC.FLEUR_KNIGHT: case NC.FLEUR_THUNDER:
+      return e.loc === LOC.HAND ? 1000 : 0;
+    case NC.DIABELLSTAR: {
+      if (e.loc === LOC.MZONE && printed === 2) { // halved LP to destroy a card
+        if (oppBest >= 2400 && view.lp[me] >= 4000) return 1250;
+        if (oppBest >= 3000 && view.lp[me] >= 2500) return 1150;
+        return 0;
+      }
+      if (e.loc === LOC.HAND && printed === 1) return handCodes.length >= 2 ? 1050 : 0;
+      return 0;
+    }
+    case NC.DIABELLZE: {
+      // ① is an ignition from the hand: send a spell/trap to the grave
+      // to summon herself (the cost pick prefers self-resetting cards).
+      if (e.loc === LOC.HAND && printed === 1) return sendableST() ? 1150 : 0;
+      return 0;
+    }
+    case NC.WF_RISETT:
+      return e.loc === LOC.HAND && printed === 1 && sendableST() ? 1200 : 0;
+    case NC.WF_ASTELR:
+      return e.loc === LOC.HAND && printed === 1 && sendableST() && wfMonsterInDeck() ? 1150 : 0;
+    case NC.WF_RUCIA:
+      return e.loc === LOC.MZONE && printed === 2 && sendableST() && wfMonsterInDeck() ? 1100 : 0;
+    case NC.WF_SILVI: {
+      if (e.loc === LOC.HAND && printed === 1) return 1200;
+      if (e.loc === LOC.GRAVE && printed === 2)
+        return view.grave[me].some(c => hasSetC(cdOf(data, c), SETC.WF) && !isMonsterCd(cdOf(data, c))) ? 900 : 0;
+      return 0;
+    }
+    case NC.SQ_WHITE:
+      return e.loc === LOC.HAND && printed === 1
+        ? (myFU.some(c => hasSetC(cdOf(data, c.code), SETC.SQM)) ? 900 : 750) : 0;
+    case NC.SQ_BLACK:
+      return e.loc === LOC.MZONE && printed === 2
+        ? (rem && [...rem.keys()].some(c => hasSetC(cdOf(data, c), SETC.SQM)) ? 900 : 0) : 0;
+    case NC.VISAS: {
+      if (e.loc === LOC.MZONE && printed === 3)
+        return oppBest >= 1800 && (handCodes.length >= 1 || myMons.length >= 2) ? 900 : 0;
+      return 0;
+    }
+    case NC.MIRADORA:
+      return e.loc === LOC.MZONE && printed === 2 ? (view.extra[opp].length >= 3 ? 950 : view.extra[opp].length ? 800 : 0) : 0;
+    case NC.LAYER19:
+      // from hand in the main phase: the deck special summon is the point
+      return e.loc === LOC.HAND && myFU.some(c => hasSetC(cdOf(data, c.code), SETC.SQM)) ? 1000 : 0;
+    case NC.COMPULSE: {
+      if (oppBest >= 2200) return 1150;
+      return oppBest >= 1800 ? 900 : 0;
+    }
+    case NC.TYPHOON: {
+      const keyST = [CC.WALL_SHADOW, NC.CARRIER, NC.WF_WITCH, NC.ELF_PARALLEL, NC.ELF_RAPSODIA, NC.ELF_ARISTIA];
+      const fu = view.zones[opp].szone.filter(c => c && c.faceUp);
+      if (!fu.length) return 0;
+      return fu.some(c => keyST.includes(c.code) || (cdOf(data, c.code) && ((cdOf(data, c.code).type & CT.CONTINUOUS) || (cdOf(data, c.code).type & CT.FIELD)))) ? 1250 : 950;
+    }
+    case NC.DOG_PUNISH: {
+      if (oppBest >= 2600) return 1250;
+      const sendable = view.extra[me].some(x => { const d = cdOf(data, x.code); return d && (x.code === NC.NTSS || d.atk >= oppBest); });
+      return oppBest >= 2000 && sendable && !(prompt.spsummon && prompt.spsummon.length) ? 1200 : 0;
+    }
+    case NC.DD_CROW: {
+      const top = Math.max(0, ...view.grave[opp].map(c => graveValue(c, data)));
+      return top >= 1000 ? 950 : 0;
+    }
+    default:
+      return null;
+  }
+}
+
 function activationScore(e, view, data, prompt) {
   const me = view.me, opp = view.opp;
   const cd = cdOf(data, e.code);
@@ -1650,8 +2168,11 @@ function activationScore(e, view, data, prompt) {
       return oppFU.some(c => atkOf(c, data) >= 2000) ? 1000 : 0;
     case CC.MEDUSA_WORM: // flip itself face-down to re-arm the flip destruction
       return (e.loc === LOC.MZONE && oppMaxPower(view, data) > 700) ? 650 : 0;
-    default:
-      return 0;
+    default: {
+      const nv = newThemeActivation(e, view, data, prompt,
+        { myMons, oppMons, oppFU, handCodes, rem, fieldUp });
+      return nv != null ? nv : genericActivation(e, view, data);
+    }
   }
 }
 // Extra-Deck / procedure special summon evaluation. Returns the entry index
@@ -1808,6 +2329,126 @@ function pickSummon(prompt, view, data) {
 // Value of firing one SELECT_CHAIN entry now (0 = pass). The core only
 // offers currently-legal activations, so an offered reactive card means its
 // timing condition is live; the judgment here is purely "is it worth it".
+// Chain values for the 2026 themes (plan 1 + plan 4 of the diagnosis):
+// the generic disruption that shipped with the new decks (Bottomless,
+// Compulse, Punishment, hand traps) plus the new bosses' own quick
+// effects. Firing is priced against the value of what the opponent is
+// doing (the chain top, the just-summoned monster, the live attack).
+function newChainValue(e, view, data, mem, C) {
+  const me = view.me, opp = view.opp;
+  const { topOpp, topCd, topThreat, chainWar, atkCell, atkDmg, myMonDies, myMonValue, newBigOpp } = C;
+  const printed = fxPrinted(e.code, e.desc);
+  const oppFU = faceUpMons(view, opp);
+  const oppBest = oppFU.length ? Math.max(...oppFU.map(c => boardValue(c, data))) : 0;
+  switch (e.code) {
+    case NC.BOTTOMLESS: { // summon window: banish the new monster (ATK 1500+)
+      if (!newBigOpp) return 0;
+      if (atkOf(newBigOpp, data) < 1500 || boardValue(newBigOpp, data) < 1600) return 0;
+      return (isExtraCd(cdOf(data, newBigOpp.code)) || atkOf(newBigOpp, data) >= 2200) ? 1400 : 1250;
+    }
+    case NC.COMPULSE: {
+      if (atkCell && ((myMonDies && myMonValue >= 1400) || atkDmg >= 1300)) return 1350;
+      if (newBigOpp && boardValue(newBigOpp, data) >= 2000) return 1250;
+      return oppBest >= 2400 ? 1150 : 0;
+    }
+    case NC.DOG_PUNISH: {
+      const target = (newBigOpp && boardValue(newBigOpp, data) >= 2000) ? newBigOpp
+        : oppFU.slice().sort((a, b) => boardValue(b, data) - boardValue(a, data))[0];
+      if (!target || boardValue(target, data) < 2000) return 0;
+      const sendable = view.extra[me].some(x => { const d = cdOf(data, x.code); return d && (x.code === NC.NTSS || d.atk >= atkOf(target, data)); });
+      return sendable ? 1300 : 0;
+    }
+    case NC.TYPHOON: { // destroy the spell/trap the opponent just activated
+      if (!topOpp || !topCd) return 0;
+      if (!((topCd.type & CT.SPELL) || (topCd.type & CT.TRAP))) return 0;
+      const keyST = [CC.WALL_SHADOW, NC.CARRIER, NC.WF_WITCH, NC.ELF_PARALLEL, NC.ELF_RAPSODIA, NC.ELF_ARISTIA];
+      if (keyST.includes(topOpp.code) || (topCd.type & CT.FIELD) || (topCd.type & CT.CONTINUOUS)) return 1300;
+      return 900;
+    }
+    case NC.DD_CROW: {
+      if (topOpp && topOpp.tloc === LOC.GRAVE)
+        return graveValue(topOpp.code, data) >= 700 ? 1400 : 1200;
+      if (topOpp && topOpp.code === CC.REBORN) return 1350;
+      return 0;
+    }
+    case NC.SKULL_MEISTER: {
+      if (topOpp && topOpp.tloc === LOC.GRAVE) return 1400;
+      if (topOpp && topOpp.tloc === LOC.REMOVED) return 1250;
+      return 0;
+    }
+    case NC.GOSEI_JOUSHIN: { // negate a monster effect while we hold a synchro
+      if (!topOpp || !isMonsterCd(topCd)) return 0;
+      if (!faceUpMons(view, me).some(c => { const d = cdOf(data, c.code); return d && (d.type & CT.SYNCHRO); })) return 0;
+      if (topThreat >= 1500) return 1500;
+      return topThreat >= 1200 ? 1350 : 0;
+    }
+    case NC.CRYSTALWING: {
+      if (!topOpp || !isMonsterCd(topCd)) return 0;
+      if (chainWar) return 1500;
+      return topThreat >= 1800 ? 1500 : 0;
+    }
+    case NC.CLEARWING: { // negates Lv5+ monster effects (and effects targeting them)
+      if (!topOpp || !isMonsterCd(topCd)) return 0;
+      return ((topCd.level & 0xff) >= 5 || (topOpp.tloc === LOC.MZONE && isExtraCd(topCd))) ? 1450 : 0;
+    }
+    case NC.STARDUST: { // negate an effect that destroys
+      if (!topOpp) return 0;
+      if (topOpp.code === CC.RAIGEKI || topOpp.code === CC.CONCEALING) return 1500;
+      return fxKinds(topOpp.code, data).destroy ? 1400 : 0;
+    }
+    case NC.SQ_BLACK: { // hand trap: negate an opposing monster effect
+      if (printed !== 1 || !topOpp || !isMonsterCd(topCd)) return 0;
+      if (!view.hand[me].some(x => x.code !== NC.SQ_BLACK && discardCost(x.code, view, data) <= 800)) return 0;
+      return topThreat >= 1600 ? 1250 : 1050;
+    }
+    case NC.MIRADORA: { // negate the effects of a 2000+ monster summoned from the Extra Deck
+      if (printed !== 1) return 0;
+      return newBigOpp && isExtraCd(cdOf(data, newBigOpp.code)) && atkOf(newBigOpp, data) >= 2000 ? 1150 : 0;
+    }
+    case NC.LAYER19: { // option 1 flips the attacker face-down: the attack dies
+      return atkCell && atkOf(atkCell, data) >= 1800 && (myMonDies || atkDmg >= 1000) ? 1250 : 0;
+    }
+    case NC.ELF_ARISTIA: { // negate + destroy an opposing face-up spell/trap effect
+      if (printed !== 2 || !topOpp || !topCd) return 0;
+      if (!((topCd.type & CT.SPELL) || (topCd.type & CT.TRAP))) return 0;
+      return topThreat >= 800 ? 1350 : 0;
+    }
+    case NC.DIABELLSTAR: { // destroy the attacker at half our LP
+      if (printed !== 2) return 0;
+      if (atkCell && atkOf(atkCell, data) >= 2400 && view.lp[me] >= 3000) return 1300;
+      return newBigOpp && boardValue(newBigOpp, data) >= 2600 && view.lp[me] >= 3500 ? 1250 : 0;
+    }
+    case NC.ELF_JUNORA: { // flip an opposing monster face-down as an Elfnote S/T fires
+      return printed === 2 && oppBest >= 2000 ? 1100 : 0;
+    }
+    case NC.MAGNUS: {
+      if (e.loc === LOC.GRAVE && printed === 2) return 1350; // float: summon up to 3 Mech Beasts
+      if (e.loc === LOC.MZONE && printed === 1) { // bounce a card to the deck
+        if (atkCell && atkDmg >= 1500) return 1300;
+        return oppBest >= 1800 ? 1300 : 0;
+      }
+      return 0;
+    }
+    case NC.LANCER:
+      return printed === 3 && newBigOpp ? 900 : 0; // steal their grave card as material
+    default:
+      break;
+  }
+  // Our own new-theme triggers offered as chain entries (graveyard
+  // resets, layer graveyard effects, post-summon searches): beneficial
+  // in this pool — the old default 0 silently passed all of them.
+  if (NEW_CODES.has(e.code)) {
+    const k = fxKinds(e.code, data);
+    if (e.loc === LOC.GRAVE) {
+      if (k.search || k.draw) return 1250;
+      if (k.ss) return 1200;
+      return 1150;
+    }
+    if (k.search || k.draw) return 1250;
+    if (k.ss) return 1150;
+  }
+  return 0;
+}
 function chainEntryValue(e, view, data, mem) {
   const me = view.me, opp = view.opp;
   const chain = view.chain;
@@ -1921,7 +2562,8 @@ function chainEntryValue(e, view, data, mem) {
     case CC.LUCE:
       return newBigOpp && atkOf(newBigOpp, data) >= 2200 ? 1100 : 0;
     default:
-      return 0;
+      return newChainValue(e, view, data, mem,
+        { topOpp, topCd, topThreat, chainWar, atkCell, atkDmg, myMonDies, myMonValue, newBigOpp });
   }
 }
 function bestGraveAtk(view, data) {
@@ -2197,7 +2839,17 @@ function selectCardAnswer(prompt, view, data, mem) {
     }
     return -locCost(x);
   };
-  const take = (sorted, n) => cardsResp(sorted.slice(0, n).map(x => x.i));
+  // Retry rotation: the core occasionally rejects a legal single-card
+  // pick at a given position (observed on deck searches: the same
+  // deterministic answer was re-sent until the driver aborted the
+  // duel). On a re-ask, walk down the preference order instead of
+  // repeating the rejected pick.
+  const take = (sorted, n) => {
+    if (n === 1 && sorted.length > 1 && prompt.retryCount) {
+      return cardsResp([sorted[prompt.retryCount % sorted.length].i]);
+    }
+    return cardsResp(sorted.slice(0, n).map(x => x.i));
+  };
   // --- battle target selection: no chain in progress, we just declared an
   // attacker at BATTLECMD. Candidates are the opponent's monsters; hidden
   // ones were masked, so face-down targets are judged by position only.
@@ -2241,9 +2893,32 @@ function selectCardAnswer(prompt, view, data, mem) {
     const s = entries.slice().sort((a, b) => handValue(b.e.code, view, data) - handValue(a.e.code, view, data));
     return take(s, Math.max(1, min));
   }
+  // --- Dogmatika Punishment: send the CHEAPEST Extra monster whose ATK
+  // covers the target (Elder Entity N'tss preferred: it pops a card when
+  // it hits the grave). The generic Extra pick below takes the biggest,
+  // which throws away the deck's bosses as fodder.
+  if (ctxCode === NC.DOG_PUNISH && entries.every(x => x.e.con === me && x.e.loc === LOC.EXTRA)) {
+    const bar = Math.max(0, ...faceUpMons(view, opp).map(c => atkOf(c, data)));
+    const scored = entries.map(x => {
+      const d = cdOf(data, x.e.code); const atk = d ? d.atk : 0;
+      return { x, ok: atk >= bar ? 1 : 0, ntss: x.e.code === NC.NTSS ? 1 : 0, atk };
+    }).sort((a, b) => (b.ok - a.ok) || (b.ntss - a.ntss) || (a.atk - b.atk));
+    return take(scored.map(s => s.x), Math.max(1, min));
+  }
+  // --- Fusion Identification: the fusion shown from the Extra Deck must
+  // be Saint Azamina (the treated monster borrows her name/type, which
+  // is what the Sinful Spoils Goddess procedure then consumes).
+  if (ctxCode === NC.FUSION_ID && entries.every(x => x.e.con === me && x.e.loc === LOC.EXTRA)) {
+    const az = entries.find(x => x.e.code === NC.AZAMINA);
+    return take(az ? [az] : entries, Math.max(1, min));
+  }
   // --- pick a monster from our own Extra Deck (fusion target etc.)
   if (entries.every(x => x.e.con === me && x.e.loc === LOC.EXTRA)) {
-    const bonus = { [CC.LUCE]: 500, [CC.GG_COMBINED]: 400, [CC.HYPERION]: 250, [CC.CASTEL]: 300 };
+    const bonus = { [CC.LUCE]: 500, [CC.GG_COMBINED]: 400, [CC.HYPERION]: 250, [CC.CASTEL]: 300,
+      [NC.MAGNUS]: 600, [NC.AZAMINA]: 500, [NC.SINFUL_GODDESS]: 450, [NC.CRYSTALWING]: 550,
+      [NC.CLEARWING]: 450, [NC.STARDUST]: 400, [NC.WF_RUCIELA]: 400, [NC.NTSS]: 350,
+      [NC.LANCER]: 300, [NC.FORTRESS]: 250, [NC.PACKBIT]: 300, [NC.STRITIA]: 300,
+      [NC.WF_SILWIA]: 300, [NC.ARCANITE]: 250, [NC.PEGASUS]: 300, [NC.HASTOR]: 150, [NC.RELEVEL]: 200 };
     const s = entries.slice().sort((a, b) => ((cdOf(data, b.e.code) ? cdOf(data, b.e.code).atk : 0) + (bonus[b.e.code] || 150)) -
                                              ((cdOf(data, a.e.code) ? cdOf(data, a.e.code).atk : 0) + (bonus[a.e.code] || 150)));
     return take(s, Math.max(1, min));
@@ -2254,7 +2929,9 @@ function selectCardAnswer(prompt, view, data, mem) {
     return take(entries.slice().sort((a, b) => locCost(a) - locCost(b)), Math.max(1, min));
   }
   // --- materials for the Extra/contact summon chosen at IDLECMD
-  if (mem.pendingSummon && mem.pendingSummon.turn === view.turnCount && entries.every(x => x.e.con === me)) {
+  // (never for a deck search: those are answered by the deck branch)
+  if (mem.pendingSummon && mem.pendingSummon.turn === view.turnCount && entries.every(x => x.e.con === me) &&
+      !entries.every(x => x.e.loc === LOC.DECK)) {
     const target = cdOf(data, mem.pendingSummon.code);
     if (target && (target.type & CT.XYZ)) {
       // Material attachment for the summon itself takes >= 2 FIELD
@@ -2272,7 +2949,12 @@ function selectCardAnswer(prompt, view, data, mem) {
         if (matching.length >= want) return take(matching, want);
       }
     }
-    if (target && (target.type & CT.SYNCHRO)) {
+    if (target && (target.type & CT.SYNCHRO) && entries.every(x => x.e.loc === LOC.MZONE)) {
+      // Field monsters only: an earlier version let this branch capture
+      // ANY same-turn selection of our own cards (e.g. a deck search
+      // right after a synchro summon) and answered a min=1 prompt with
+      // a multi-card material combo, which the core rejects until the
+      // driver aborts the duel (measured: whiteforest vs gg, seed 5079).
       const lvl = target.level & 0xff;
       const combos = [];
       const n = Math.min(entries.length, 8);
@@ -2323,6 +3005,13 @@ function selectCardAnswer(prompt, view, data, mem) {
     const s = entries.slice().sort((a, b) => score(b) - score(a));
     return take(s, Math.max(1, min));
   }
+  // --- Alphan ②: the OPPONENT picks one of the 3 revealed layers to be
+  // summoned to the activator's field — hand them the weakest one.
+  // (maskEntry unmasked these entries: the effect reveals them to us.)
+  if (ctxCode === NC.SQ_ALPHAN && entries.length && entries.every(x => x.e.con === opp)) {
+    const s = entries.slice().sort((a, b) => handValue(a.e.code, view, data) - handValue(b.e.code, view, data));
+    return take(s, Math.max(1, min));
+  }
   // --- search / send from our own deck
   if (entries.every(x => x.e.loc === LOC.DECK)) {
     const pieceCount = (code) => (view.hand[me].some(y => y.code === code) ? 1 : 0) +
@@ -2354,10 +3043,53 @@ function selectCardAnswer(prompt, view, data, mem) {
         return pref >= 0 ? 2000 - pref * 100 : 100;
       }
       if (ctxCode === CC.SPHINX) return e.code === CC.MOON ? 1000 : e.code === CC.TAIYOU ? 900 : 0;
+      // --- 2026 theme deck picks
+      if (ctxCode === NC.SQ_MINIMALIAN) { // SS from the deck: Blue Layer searches next
+        if (e.code === NC.SQ_BLUE) return 3000;
+        return hasSetC(d, SETC.SQM) ? 1500 + handValue(e.code, view, data) * 0.2 : 100;
+      }
+      if (ctxCode === NC.SQ_BLUE) { // search a Super Quant card: the Carrier is the engine
+        if (e.code === NC.CARRIER) return 2600;
+        if (e.code === NC.FORMATION) return 1800;
+        return handValue(e.code, view, data);
+      }
+      if (ctxCode === NC.DOG_TIDING) { // search a Dogmatika monster: Ecclesia digs further
+        if (e.code === NC.ECCLESIA) return 2600;
+        if (e.code === NC.FLEUR_KNIGHT || e.code === NC.FLEUR_THUNDER) return 1800 + (d ? d.atk * 0.1 : 0);
+        return isMonsterCd(d) ? d.atk : 0;
+      }
+      if (ctxCode === NC.WF_WOE) { // SS from the deck: a tuner unlocks the synchro follow-up
+        return (d && (d.type & CT.TUNER) ? 900 : 0) + (isMonsterCd(d) ? d.atk + handValue(e.code, view, data) * 0.2 : 0);
+      }
+      if (ctxCode === NC.WF_TALE) { // search a White Forest monster: starters first
+        return hasSetC(d, SETC.WF) && isMonsterCd(d) ? 1200 + handValue(e.code, view, data) * 0.3 : 0;
+      }
+      if (ctxCode === NC.SQ_ALPHAN) { // our reveal-3: three DIFFERENT layers (handled below)
+        return hasSetC(d, SETC.SQM) ? 1000 + handValue(e.code, view, data) * 0.2 : 0;
+      }
       return isMonsterCd(d) ? d.atk + handValue(e.code, view, data) * 0.2 : handValue(e.code, view, data);
     };
     const s = entries.slice().sort((a, b) => score(b) - score(a));
+    if (ctxCode === NC.SQ_ALPHAN && min >= 2) {
+      // reveal three DIFFERENT layers: whichever the opponent picks
+      // lands on our field, so diversity is worth more than a duplicate
+      const picks = []; const seen = new Set();
+      for (const x of s) { if (picks.length >= min) break; if (!seen.has(x.e.code)) { seen.add(x.e.code); picks.push(x); } }
+      for (const x of s) { if (picks.length >= min) break; if (!picks.includes(x)) picks.push(x); }
+      return cardsResp(picks.map(x => x.i));
+    }
     if (min === 0 && prompt.cancelable) return score(s[0]) >= 400 ? take(s, 1) : cardsResp([]);
+    return take(s, Math.max(1, min));
+  }
+  // --- Sinful Spoils of White Forest: special summon the BEST eligible
+  // monster from hand (the generic hand branch below would discard the
+  // cheapest instead — this is a summon, not a cost).
+  if (ctxCode === NC.WF_SIN && entries.every(x => x.e.con === me && x.e.loc === LOC.HAND)) {
+    const s = entries.slice().sort((a, b) => {
+      const da = cdOf(data, a.e.code), db = cdOf(data, b.e.code);
+      return ((db ? db.atk : 0) + handValue(b.e.code, view, data) * 0.3) -
+             ((da ? da.atk : 0) + handValue(a.e.code, view, data) * 0.3);
+    });
     return take(s, Math.max(1, min));
   }
   // --- discard / cost from our hand: cheapest first
@@ -2376,6 +3108,49 @@ function selectCardAnswer(prompt, view, data, mem) {
       const va = isMonsterCd(da) ? da.atk + graveValue(a.e.code, data) * 0.3 : graveValue(a.e.code, data);
       const vb = isMonsterCd(db) ? db.atk + graveValue(b.e.code, data) * 0.3 : graveValue(b.e.code, data);
       return vb - va;
+    });
+    return take(s, Math.max(1, min));
+  }
+  // --- "send a spell/trap from hand/field to the graveyard" costs of
+  // the White Forest / Diabell effects: a White Forest spell/trap goes
+  // first (it re-sets itself from the grave), then a set card, then the
+  // cheapest hand card; field monsters are the last resort.
+  const SEND_COST_CTX = new Set([NC.WF_RISETT, NC.WF_ASTELR, NC.DIABELLZE, NC.WF_RUCIELA,
+    NC.WF_RUCIA, NC.DIABELLSTAR, NC.WF_GENYOU]);
+  if (SEND_COST_CTX.has(ctxCode) && entries.every(x => x.e.con === me &&
+      (x.e.loc === LOC.HAND || x.e.loc === LOC.SZONE || x.e.loc === LOC.MZONE))) {
+    const score = (x) => {
+      const e = x.e;
+      if (WF_RESET.has(e.code) && (e.loc === LOC.HAND || e.loc === LOC.SZONE)) return -1000;
+      if (e.loc === LOC.SZONE) return -200 + handValue(e.code, view, data) * 0.1;
+      if (e.loc === LOC.HAND) return discardCost(e.code, view, data);
+      if (e.loc === LOC.MZONE) { const c = view.zones[me].mzone[e.seq]; return 2000 + (c ? boardValue(c, data) : 600); }
+      return 500;
+    };
+    return take(entries.slice().sort((a, b) => score(a) - score(b)), Math.max(1, min));
+  }
+  // --- Magna Carrier ②: choose up to three DIFFERENT Mech Beasts (from
+  // field and/or grave) to become Great Magnus with all their materials.
+  if (ctxCode === NC.CARRIER && entries.length &&
+      entries.every(x => x.e.con === me && (x.e.loc === LOC.MZONE || x.e.loc === LOC.GRAVE) &&
+        hasSetC(cdOf(data, x.e.code), SETC.BEAST))) {
+    const mats = (x) => x.e.loc === LOC.MZONE ? ((view.zones[me].mzone[x.e.seq] || {}).materials || 0) : 0;
+    const s = entries.slice().sort((a, b) => mats(b) - mats(a));
+    const picks = []; const seen = new Set();
+    for (const x of s) { if (picks.length >= Math.min(max, 3)) break; if (!seen.has(x.e.code)) { seen.add(x.e.code); picks.push(x.i); } }
+    for (const x of s) { if (picks.length >= Math.max(1, min)) break; if (!picks.includes(x.i)) picks.push(x.i); }
+    return cardsResp(picks);
+  }
+  // --- Fusion Identification target: one of OUR face-up monsters gains
+  // the fusion's name/type — prefer an Elfnote monster, then the
+  // cheapest body (it stays on the field either way).
+  if (ctxCode === NC.FUSION_ID && entries.every(x => x.e.con === me && x.e.loc === LOC.MZONE)) {
+    const s = entries.slice().sort((a, b) => {
+      const ea = hasSetC(cdOf(data, a.e.code), SETC.ELF) ? 0 : 1;
+      const eb = hasSetC(cdOf(data, b.e.code), SETC.ELF) ? 0 : 1;
+      if (ea !== eb) return ea - eb;
+      const ca = view.zones[me].mzone[a.e.seq], cb = view.zones[me].mzone[b.e.seq];
+      return (ca ? boardValue(ca, data) : 600) - (cb ? boardValue(cb, data) : 600);
     });
     return take(s, Math.max(1, min));
   }
@@ -2626,6 +3401,57 @@ function announceAttribAnswer(prompt, view, data) {
 }
 // CPU policy entry point (internal). Signature unchanged from the old
 // policy: botAnswer(prompt, state, data, mem) -> Uint8Array response.
+// SELECT_OPTION: five pool cards ask (see the fxmap audit). Options are
+// Stringid descs; decode (code, idx) and choose per card instead of the
+// old blanket index 0.
+function optionAnswer(prompt, view, data, mem) {
+  const me = view.me, opp = view.opp;
+  const opts = prompt.options || [];
+  if (!opts.length) return i32resp(0);
+  const dec = (v) => { const n = Number(v); return { code: Math.floor(n / 1048576), idx: n % 1048576 }; };
+  const byIdx = (idx) => opts.findIndex(v => dec(v).idx === idx);
+  const code = dec(opts[0]).code;
+  if (code === NC.LAYER19) {
+    // idxes: 1 = flip an attack-position monster face-down, 2 = special
+    // summon a Super Quant from the deck, 3 = set a Super Quant trap.
+    // In the opponent's battle the flip is the save; otherwise develop.
+    const la = view.lastAttack;
+    if (view.turnPlayer !== me && la && la.attacker && la.attacker.con === opp) {
+      const i1 = byIdx(1); if (i1 >= 0) return i32resp(i1);
+    }
+    const i2 = byIdx(2); if (i2 >= 0) return i32resp(i2);
+    const i3 = byIdx(3); if (i3 >= 0) return i32resp(i3);
+    return i32resp(0);
+  }
+  if (code === NC.WF_SIN) {
+    const i2 = byIdx(2); // special summon a monster from hand
+    return i32resp(i2 >= 0 ? i2 : 0); // (the fusion route has no target in this deck)
+  }
+  if (code === NC.DOG_TIDING) {
+    // idx 3 = our Extra Deck, idx 4 = the opponent's. Dumping N'tss
+    // from ours arms a free destruction; otherwise strip their boss.
+    const i3 = byIdx(3), i4 = byIdx(4);
+    const ntssInExtra = view.extra[me].some(x => x.code === NC.NTSS);
+    const oppHasCard = faceUpMons(view, opp).length > 0 || view.zones[opp].szone.some(c => c && c.faceUp);
+    if (ntssInExtra && oppHasCard && i3 >= 0) return i32resp(i3);
+    return i32resp(i4 >= 0 ? i4 : 0);
+  }
+  if (code === NC.ALBA_SYSTEM) {
+    // WE are the defender choosing the lesser loss: idx 1 = send cards
+    // from hand/Extra to the grave (half the activator's Extra count),
+    // idx 2 = return all our Extra-Deck monsters to the Extra Deck.
+    const i1 = byIdx(1), i2 = byIdx(2);
+    if (i1 >= 0 && i2 >= 0) {
+      const sendCt = Math.floor((view.extra[opp] || []).length / 2);
+      const myExValue = faceUpMons(view, me)
+        .filter(c => isExtraCd(cdOf(data, c.code)))
+        .reduce((s, c) => s + boardValue(c, data), 0);
+      return i32resp(myExValue >= 2200 && sendCt <= 3 ? i1 : i2);
+    }
+    return i32resp(0);
+  }
+  return i32resp(0);
+}
 function botAnswerInternal(prompt, state, data, mem) {
   mem = mem || makeBotMemory();
   const view = botView(state, prompt.player, data);
@@ -2649,7 +3475,7 @@ function botAnswerInternal(prompt, state, data, mem) {
     case 'SELECT_COUNTER': return counterAnswer(prompt);
     case 'SELECT_PLACE': case 'SELECT_DISFIELD': return placeAnswer(prompt, view, data);
     case 'SELECT_POSITION': return positionAnswer(prompt, view, data);
-    case 'SELECT_OPTION': return i32resp(0); // no pool effect needs a smarter default (see NOTES)
+    case 'SELECT_OPTION': return optionAnswer(prompt, view, data, mem);
     case 'SORT_CARD': {
       const mine = prompt.cards.every(c => c.con === view.me);
       if (mine && prompt.cards.some(c => c.loc === LOC.DECK)) {
@@ -3039,7 +3865,7 @@ const Engine = { MSG, SELECT_TYPES, PHASES, LOC, POS, POS_FACEUP, POS_ATTACK, PO
 // the policy's internal scorers, exposed read-only so a trace can name
 // the exact gate/score that declined an offered play. Not used by the
 // client or by any decision path.
-Engine.debug = { activationScore, pickSummon, pickSpsummon, hasProfitableAttack,
+Engine.debug = { activationScore, pickSummon, pickSpsummon, botView, hasProfitableAttack,
   profitableAttackIfStood, attackPlans, attackScore, lethalPlan, bestAttackPlan, handValue, discardCost,
   boardValue, atkOf, defOf, battlePower, monList, faceUpMons, oppMaxPower,
   myStrongestAtk, levelOf, CC };
