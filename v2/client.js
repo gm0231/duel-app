@@ -703,16 +703,42 @@ function renderSavedDecks() {
 // with that category's decks (rows carry a 一覧 button into the
 // in-modal contents view); picking a deck closes both and lands
 // back on the deck page with the choice applied.
+let deckCatImpBtn = null; // kept while detached (opponent side)
 function openDeckCat(side) {
   deckCatSide = side;
   $('deckcattitle').textContent = side === 'my' ? '自分のデッキ' : '相手のデッキ';
-  $('deckcatimp').style.display = side === 'my' ? '' : 'none';
+  // the imported category exists on the own side only. On the
+  // opponent side the button is REMOVED from the DOM, not merely
+  // display:none'd: a display flip in the same frame as the page
+  // switch could leave a faint non-tappable remnant of it painted
+  // on the category page (seen on the real device). A detached
+  // node cannot be painted at all.
+  const imp = $('deckcatimp') || deckCatImpBtn;
+  if (imp) {
+    deckCatImpBtn = imp;
+    if (side === 'my') {
+      if (!imp.isConnected) $('deckcatlist').appendChild(imp);
+      imp.style.display = '';
+    } else {
+      imp.remove();
+    }
+  }
   $('deckpage').style.display = 'none';
   $('deckcat').style.display = 'flex';
 }
 function closeDeckCat() {
   $('deckcat').style.display = 'none';
   $('deckpage').style.display = 'flex';
+}
+// the modal lists never carry a scroll offset over from a
+// previous view: a leftover horizontal offset once left the deck
+// names visibly cut on their left edge after returning from the
+// contents view. Reset on every open and every return.
+function resetDeckListScroll() {
+  for (const id of ['seg-mydeck', 'seg-opdeck']) {
+    const el = $(id);
+    if (el) { el.scrollTop = 0; el.scrollLeft = 0; }
+  }
 }
 function openDeckModal(cat) {
   deckModalSide = deckCatSide;
@@ -721,6 +747,7 @@ function openDeckModal(cat) {
   $('deckview').style.display = 'none';
   $('deckmodal').style.display = 'flex';
   applyDeckModalFilter();
+  resetDeckListScroll();
   // points appear once genesys-data is in (same lazy load the
   // import panel uses); until then the rows simply carry no pt.
   ensureGenesysData().then(() => { if (computeDeckPoints()) refreshDeckMeta(); });
@@ -797,11 +824,13 @@ function openDeckView(key) {
   $('seg-opdeck').style.display = 'none';
   $('deckmodalempty').style.display = 'none';
   el.scrollTop = 0;
+  el.scrollLeft = 0;
   $('deckview').style.display = 'flex';
 }
 function hideDeckView() {
   $('deckview').style.display = 'none';
   if (deckModalSide) applyDeckModalFilter();
+  resetDeckListScroll();
 }
 // built-in deck rows are generated from DATA.decks (category and
 // counts included), ahead of any saved rows already in the list.

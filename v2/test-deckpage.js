@@ -21,6 +21,12 @@
    - Starting from the deck page runs the existing flow unchanged:
      VS curtain (no start button on it), then both pre-duel pages
      are hidden and the duel board appears.
+   Regression contract (2026-11-08 field report): modal deck rows
+   must never overflow horizontally (the 一覧 button stays visible
+   without sideways scrolling; list scroll offsets reset on open
+   and on return from the contents view), and the imported
+   category button is absent from the DOM itself — not merely
+   hidden — on the opponent category page.
    Method: boot the real client in jsdom (harness as test-ui) and
    click through the pages with DOM clicks only. */
 const fs = require('fs');
@@ -117,6 +123,7 @@ async function boot() {
   doc.getElementById('mydeckcur').click();
   ok(disp('deckcat') !== 'none' && disp('deckpage') === 'none' &&
      doc.getElementById('deckcattitle').textContent === '自分のデッキ' &&
+     doc.getElementById('deckcatimp') && doc.getElementById('deckcatlist').contains(doc.getElementById('deckcatimp')) &&
      doc.getElementById('deckcatimp').style.display !== 'none',
     'DP10: own current row opens the category page (imported category offered)');
   catBtn('character').click();
@@ -154,8 +161,9 @@ async function boot() {
   // ---- opponent side: no imported category; genesys is empty ----
   doc.getElementById('opdeckcur').click();
   ok(doc.getElementById('deckcattitle').textContent === '相手のデッキ' &&
-     doc.getElementById('deckcatimp').style.display === 'none',
-    'DP17: opponent category page offers no imported category');
+     doc.getElementById('deckcatimp') === null &&
+     !doc.querySelector('#deckcatlist [data-cat="imported"]'),
+    'DP17: opponent category page holds no imported category (button removed from the DOM, not just hidden)');
   catBtn('genesys').click();
   ok(doc.getElementById('deckmodal').style.display === 'flex' &&
      doc.getElementById('deckmodaltitle').textContent.includes('2026年10月時点') &&
@@ -178,6 +186,39 @@ async function boot() {
   ok(visRows('seg-mydeck').filter(el => el.classList.contains('saveditem')).length === 0 &&
      doc.getElementById('deckmodalempty').textContent === '取り込んだデッキはまだありません',
     'DP20: imported category is reachable on the own side and says so when empty');
+  doc.getElementById('deckmodalx').click();
+  doc.getElementById('deckcatback').click();
+
+  // ---- regression: modal rows never overflow; scroll resets ----
+  // jsdom does no layout, so the geometric half is a stylesheet
+  // contract: the row's deck button must be the shrinking side
+  // (#deckmodal .deckrow .deck outranking #deckmodal .deck's
+  // width:100% / flex:0 0 auto), the row itself width-capped, and
+  // the list unable to scroll sideways at all. The scroll-offset
+  // half is behavioral: jsdom keeps scrollLeft/scrollTop as plain
+  // writable properties, so the reset is directly observable.
+  const rowCss = /#deckmodal \.deckrow \.deck\{[^}]*flex:1 1 auto[^}]*width:auto/.test(html) &&
+    /\.deckrow\{[^}]*width:100%[^}]*min-width:0/.test(html) &&
+    /#deckmodal \.decklist\{[^}]*overflow-x:hidden/.test(html);
+  ok(rowCss, 'DP25: stylesheet makes the row deck button the shrinking side and the list horizontally unscrollable');
+  const allRows = Array.from(doc.querySelectorAll('#seg-mydeck .deckrow, #seg-opdeck .deckrow'));
+  const rowShape = allRows.length === Object.keys(data.decks).length * 2 && allRows.every(r =>
+    r.children.length === 2 && r.children[0].classList.contains('deck') &&
+    r.children[1].classList.contains('decklist-btn') && !!r.querySelector('.deck .txt .dn'));
+  ok(rowShape, 'DP26: every built-in row is [deck button][一覧 button] with a shrinkable text block');
+  doc.getElementById('mydeckcur').click();
+  catBtn('character').click();
+  const myList = doc.getElementById('seg-mydeck');
+  myList.scrollLeft = 40; myList.scrollTop = 40;
+  doc.querySelector('#seg-mydeck .deckrow[data-key="ishizu"] .decklist-btn').click();
+  doc.getElementById('deckviewback').click();
+  ok(myList.scrollLeft === 0 && myList.scrollTop === 0,
+    'DP27: returning from the contents view resets the list scroll offsets');
+  myList.scrollLeft = 40; myList.scrollTop = 40;
+  doc.getElementById('deckmodalx').click();
+  catBtn('character').click();
+  ok(myList.scrollLeft === 0 && myList.scrollTop === 0,
+    'DP28: reopening the modal resets the list scroll offsets');
   doc.getElementById('deckmodalx').click();
   doc.getElementById('deckcatback').click();
 
