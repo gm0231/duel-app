@@ -1045,6 +1045,11 @@ class GameState {
 // (b) for ANNOUNCE_CARD (Gravekeeper's Trap), the opponent's remaining deck
 // estimated from PUBLIC zones only, mirroring what a human who knows the
 // fixed opposing decklist could infer.
+// ONE user-directed exception to the fair-information rule: Gravekeeper's
+// Trap (3) when the bot plays the Ishizu deck — see Duel.attachGKTrapOracle
+// and announceCardAnswer (the declaration names the actual next draw 90%
+// of the time, as Ishizu's Millennium Necklace precognition; user
+// instruction, round 3). Nothing else uses non-public information.
 //
 // Live ATK/DEF: mirror cells carry curAtk/curDef after Duel.refreshFieldStats
 // (Duel.run refreshes before every bot answer; test harnesses do the same).
@@ -3842,10 +3847,25 @@ function positionAnswer(prompt, view, data) {
   return i32resp(prompt.mask);
 }
 function announceCardAnswer(prompt, view, data) {
+  // USER-DIRECTED EXCEPTION (Ishizu only — see Duel.attachGKTrapOracle):
+  // for Gravekeeper's Trap (3), the Duel attaches the opponent's actual
+  // next draw as prompt._oracleTop. Name it 90% of the time; the other
+  // 10% deliberately uses the public-information guess below, with the
+  // top card excluded so the miss is a real miss. The split is a hash of
+  // the situation (no carried state), so it stays deterministic.
+  const oracle = prompt._oracleTop || 0;
+  if (oracle) {
+    const cdTop = data.cards[oracle];
+    if (cdTop && isDeclarable(cdTop, prompt.opcodes)) {
+      const h = ((oracle * 2654435761) ^ (view.turnCount * 2246822519) ^ (view.grave[view.opp].length * 389)) >>> 0;
+      if (h % 10 !== 0) return i32resp(oracle);
+    }
+  }
   const rem = remainingDeck(view, view.opp, data);
   let best = 0, bestV = -1;
   for (const key of Object.keys(data.cards)) {
     const cd = data.cards[key];
+    if (oracle && cd.code === oracle) continue; // deliberate-miss path: never name the top card
     if (!isDeclarable(cd, prompt.opcodes)) continue;
     if (rem && !deckHas(rem, cd.code)) continue; // publicly accounted for elsewhere
     let v = isMonsterCd(cd) ? cd.atk : handValue(cd.code, view, data) * 1.4;
@@ -4292,6 +4312,7 @@ class Duel {
           // mirror's live stats fresh for the bot seat (the human path already
           // refreshes from client.js before answering).
           try { this.refreshFieldStats(); } catch (e) {}
+          if (prompt.name === 'ANNOUNCE_CARD') { try { this.attachGKTrapOracle(prompt); } catch (e) {} }
           bytes = (opts.botAnswerer || botAnswer)(prompt, this.state, this.data, this.botMem);
         }
         if (!bytes) { this.stats.stopReason = 'answerer returned nothing for ' + prompt.name; break; }
@@ -4317,6 +4338,29 @@ class Duel {
     ccall('poc_destroy', null, ['number'], [duel]);
     this._duelHandle = null;
     return this.stats;
+  }
+  // USER-DIRECTED EXCEPTION — Gravekeeper's Trap (3), Ishizu deck only
+  // (round 3, user instruction: the Millennium Necklace's precognition as
+  // a character trait of Ishizu Ishtar). Every other decision in the CPU
+  // policy uses public information only; this single declaration is the
+  // one sanctioned exception, and it is deliberately imperfect (the
+  // policy names the real next draw 90% of the time — see
+  // announceCardAnswer). Gates, all required: the prompt is an
+  // ANNOUNCE_CARD for the bot seat, the bot seat's deck list is exactly
+  // the Ishizu list, and a face-up Gravekeeper's Trap is on the bot's
+  // field (the (3) effect is what is being answered). The human seat's
+  // prompts never pass through here, so nothing leaks to the UI. The
+  // other four decks never satisfy the deck gate.
+  attachGKTrapOracle(prompt) {
+    const st = this.state; if (!st || !st.deckLists) return;
+    const seat = prompt.player, opp = 1 - seat;
+    const mine = st.deckLists[seat], iz = this.data.decks && this.data.decks.ishizu;
+    if (!mine || !iz || !mine.main || !iz.main || mine.main.length !== iz.main.length) return;
+    const a = mine.main.slice().sort((x, y) => x - y), b = iz.main.slice().sort((x, y) => x - y);
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return;
+    if (!st.players[seat].szone.some(c => c && c.code === CC.GK_TRAP && (c.pos & 0x5))) return;
+    const top = this.queryCard(opp, LOC.DECK, st.players[opp].deckCount - 1);
+    if (top && top.code) prompt._oracleTop = top.code;
   }
   // Live card query via the driver's OCG_DuelQuery bridge. Returns the parsed
   // TLV record set {code,pos,level,atk,def,baseAtk,baseDef} or null (empty slot
