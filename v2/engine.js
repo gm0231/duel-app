@@ -1084,6 +1084,16 @@ const GUARDIAN_PIECES = [CC.SANGA, CC.HUGA, CC.SUIGA];
 const GRAVE_PROFIT = new Set([CC.KELBEK, CC.BLAST_HELD, CC.LOST_WIND, CC.TITANOCIDER,
   CC.DARK_ELEMENT, CC.FORCE_GUARDIAN, CC.DEMON_WIND, CC.JIRAI_TRAP, CC.SHADOW_GHOUL, CC.REBELLION]);
 const MILL_WHEN_SENT = new Set([CC.KELBEK]); // sent hand/deck -> GY: mill 5
+// Cards whose value re-arms when they go back to the deck (round 2,
+// item 5): Kelbek mills 5 for BOTH players when it is sent from the
+// hand/deck to the graveyard again, so returning it re-arms the mill
+// that stocks both graveyards; the Vernusylphs re-arm their discard
+// engines (deck-send / salvage + revive) and classic Agido re-rolls
+// its revival. When a selection returns our own graveyard cards to
+// the deck (Rebellion's fusion materials, Mudora/Keldo's shuffle),
+// these are worth more back in the deck than their static grave
+// presence suggests. Higher tier = stronger re-arm.
+const RE_DECK_TIER = { [CC.KELBEK]: 2, [CC.VERN_MORI]: 1, [CC.AGIDO]: 1, [CC.VERN_OKA]: 1, [CC.VERN_HANA]: 1 };
 // (v11 recipe swap: AGIDO is now the classic 《アギド》 — it has no
 // mill/grave-profit effects; only its battle-destruction trigger.)
 const NEGATION_CODES = new Set([CC.SOLEMN_STRIKE, CC.GRAVE_HOLE]);
@@ -3181,10 +3191,16 @@ function selectCardAnswer(prompt, view, data, mem) {
                                              ((cdOf(data, a.e.code) ? cdOf(data, a.e.code).atk : 0) + (bonus[a.e.code] || 150)));
     return take(s, Math.max(1, min));
   }
-  // --- fusion materials for 天至る叛逆 (returned to the deck): cheapest first
+  // --- fusion materials for 天至る叛逆 (returned to the deck): cards
+  // whose value re-arms in the deck go back first (Kelbek re-mills
+  // both players when it is sent to the grave again), then cheapest.
+  // The old cheapest-only order kept the recyclable millers buried in
+  // the graveyard and spent the deck's dead cards as materials.
   if ((mem.pendingFusionSpell === view.turnCount || ctxCode === CC.REBELLION) &&
       entries.every(x => x.e.con === me && x.e.loc !== LOC.EXTRA)) {
-    return take(entries.slice().sort((a, b) => locCost(a) - locCost(b)), Math.max(1, min));
+    const s = entries.slice().sort((a, b) =>
+      ((RE_DECK_TIER[b.e.code] || 0) - (RE_DECK_TIER[a.e.code] || 0)) || (locCost(a) - locCost(b)));
+    return take(s, Math.max(1, min));
   }
   // --- materials for the Extra/contact summon chosen at IDLECMD
   // (never for a deck search: those are answered by the deck branch)
@@ -3235,9 +3251,13 @@ function selectCardAnswer(prompt, view, data, mem) {
     return take(entries.slice().sort((a, b) => (tier(a) - tier(b)) || (locCost(a) - locCost(b))), Math.max(1, min));
   }
   // --- return cards from the graveyards to the decks: theirs first (their
-  // grave resources are the threat), ours only to fill the required count
+  // grave resources are the threat), ours only to fill the required count.
+  // Among OUR filler picks, cards that re-arm in the deck (RE_DECK_TIER)
+  // outrank plain low-value cards; the opponent's disruption order is
+  // untouched, and own cards still never join beyond the required count.
   if (ctxCode === CC.TRANSMIGRATION || ctxCode === CC.MUDORA || ctxCode === CC.KELDO) {
-    const scored = entries.map(x => ({ x, v: x.e.con === opp ? graveValue(x.e.code, data) : -graveValue(x.e.code, data) }))
+    const scored = entries.map(x => ({ x, v: x.e.con === opp ? graveValue(x.e.code, data)
+      : -graveValue(x.e.code, data) + (RE_DECK_TIER[x.e.code] || 0) * 300 }))
       .sort((a, b) => b.v - a.v);
     const picks = [];
     for (const s of scored) { if (picks.length >= min) break; picks.push(s.x.i); }
