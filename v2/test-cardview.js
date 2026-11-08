@@ -62,8 +62,8 @@ let failures = 0;
 const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (!cond) failures++; };
 
 const MUDORA = 99937011, KELBEK = 25926710, MORI = 36745317, HORUS = 36898537;
-const UNLISTED = 73628505;      // テラ・フォーミング (Terraforming) — GG main, no individual art (see test-cardart; the exemplar role sat with Mutiny in the Sky 71593652 until the 35th delivery gave it art and completed the Ishizu deck, so the role crossed to the GG deck, 2026-11-08)
-const LABYRINTH = 99551425;     // 迷宮の魔戦車 (Labyrinth Tank) — GG EX, no individual art (the unlisted-EX exemplar role sat with Luce 45409943 until the 19th delivery, then with Pluto 37706769 until the 23rd, then with Trilosukuta 21368273 until the 24th, then with Hyperion 63101468 until the 25th delivery, 2026-11-06 — Hyperion's registration completes the Ishizu EXTRA deck, so the role crosses to the GG deck: Labyrinth Tank is its only EX card that is neither a keycard nor art-registered)
+const UNLISTED = 73628505;      // テラ・フォーミング (Terraforming) — GG main (see test-cardart; the unlisted exemplar role sat with it until the painterly round, 2026-11-09, gave the GG deck's 28 art-less cards processed STD_ART — Terraforming now resolves the std art, and the checks below that rode it as the bare-placeholder exemplar now pin the std surfaces instead; the bare surface stays pinned by the hidden banished row CV3c and the null pop CV14)
+const LABYRINTH = 99551425;     // 迷宮の魔戦車 (Labyrinth Tank) — GG EX (the unlisted-EX exemplar role sat with Luce 45409943 until the 19th delivery, then with Pluto 37706769 until the 23rd, then with Trilosukuta 21368273 until the 24th, then with Hyperion 63101468 until the 25th delivery, 2026-11-06, then crossed to Labyrinth Tank — retired by the same painterly round: it now resolves processed STD_ART like every other pool card)
 const HYPERION = 63101468;      // マスターフレア・ヒュペリオン — 25th delivery (2026-11-06), plain CARD_ART with NO focus exception (his helmeted head sits high, crest ~4% / masked face ~10-13% of the big file, so center top frames helmet, face and torso in both bands); NOT a keycard (removed from the keycard list by the user's decision); follow-up (#25b) adds the 13th DECK_ART entry ('hyperion-ishizu', the Egyptian variant) with NO focus exception of its own either (measured separately — his crowned head sits high in the Egyptian painting too, sun-disc crown ~2-8% / masked face ~10-14% of the big file)
 const TRILO = 21368273;         // マナドゥム・トリロスークタ — 24th delivery (2026-11-06), plain CARD_ART with NO focus exception (his face sits high, ~17-19% of the big file, so center top frames helmet, face and torso in both bands); follow-up (#24b) adds the 12th DECK_ART entry ('trilo-ishizu', the Egyptian variant) with NO focus exception of its own either (measured separately — the face sits high in the Egyptian painting too, eyes ~18% / chin ~22% of the big file, sun disc and headdress framed at center top)
 const PLUTO = 37706769;         // 冥府の執行者 プルート — 23rd delivery (2026-11-06), plain CARD_ART with NO focus exception (his face sits high, ~16-25% of the big file, so center top frames head, wings and the star orb in both bands); follow-up (#23b) adds the 11th DECK_ART entry ('pluto-ishizu', the Egyptian variant) with NO focus exception of its own either (measured separately — his face sits high in the Egyptian painting too, eyes ~19% / chin ~24% of the big file)
@@ -131,8 +131,8 @@ async function boot() {
     ok(!!thM && thM.style.backgroundImage.includes('card-art-mudora-s.jpg'), 'CV1c: the thumbnail is the SMALL Mudora art file');
     ok(!!thM && thM.style.backgroundPosition === 'center top', 'CV1d: the thumbnail keeps the top-anchored crop (center top)');
     const thU = rU && rU.querySelector('.pthumb');
-    ok(!!thU, 'CV2: the unlisted row still carries a thumbnail frame (placeholder surface)');
-    ok(!!thU && thU.style.backgroundImage === '', 'CV2b: the unlisted thumbnail has NO inline image (class placeholder fallback, like tiles)');
+    ok(!!thU, 'CV2: the Terraforming row still carries a thumbnail frame');
+    ok(!!thU && thU.style.backgroundImage.includes('card-art-std-73628505-s.jpg'), 'CV2b: the Terraforming thumbnail is its processed STD_ART small file (it held the bare-placeholder exemplar role until the painterly round, 2026-11-09)');
     ok(!!rU && rU.textContent.includes(data.names[UNLISTED]), 'CV2c: the unlisted row still names its (public) card');
   }
 
@@ -158,7 +158,7 @@ async function boot() {
     const thH = rH && rH.querySelector('.pthumb');
     ok(!!thH && thH.style.backgroundImage.includes('card-art-horus-s.jpg'), 'CV4: the EX sheet thumbnails Horus with its small art');
     const thL = rL && rL.querySelector('.pthumb');
-    ok(!!thL && thL.style.backgroundImage === '', 'CV4b: the unlisted EX row thumbnail is the bare placeholder surface');
+    ok(!!thL && thL.style.backgroundImage.includes('card-art-std-99551425-s.jpg'), 'CV4b: the Labyrinth Tank EX row thumbnail is its processed STD_ART small file (the unlisted-EX exemplar role retired in the painterly round)');
   }
 
   // ---- EX sheet (opponent): count only, nothing resolves ----
@@ -190,7 +190,7 @@ async function boot() {
   window.eval('openCardInfo(' + UNLISTED + ')');
   {
     const art = doc.querySelector('#sheet .infoart');
-    ok(!!art && art.style.backgroundImage === '', 'CV8: an unlisted card\'s detail art is the bare placeholder surface (no inline image)');
+    ok(!!art && art.style.backgroundImage.includes('card-art-std-73628505.jpg') && !art.style.backgroundImage.includes('-s.jpg'), 'CV8: Terraforming\'s detail art is the BIG processed STD_ART file (it was the bare placeholder surface until the painterly round)');
   }
   window.eval('openCardInfo(' + MORI + ')');
   {
@@ -221,7 +221,7 @@ async function boot() {
   window.eval('openInfoPop(' + UNLISTED + ')');
   {
     const art = doc.querySelector('#infopop .popart');
-    ok(!!art && art.style.backgroundImage === '', 'CV12: an unlisted card\'s pop art is the bare placeholder surface (no inline image)');
+    ok(!!art && art.style.backgroundImage.includes('card-art-std-73628505.jpg') && !art.style.backgroundImage.includes('-s.jpg'), 'CV12: Terraforming\'s pop art is the BIG processed STD_ART file (it was the bare placeholder surface until the painterly round)');
   }
   window.eval('openInfoPop(' + MORI + ')');
   {

@@ -626,13 +626,22 @@ const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, 
 // -> 《現世と冥界の逆転》 17484499 -> 《転生の予言》 46652477
 // (after the 26th) -> 《天至る叛逆》 71593652 (after the
 // 33rd), and Mutiny gained art in the 35th delivery —
-// which completes the Ishizu deck, so no Ishizu card can
-// hold the role any more. The role crosses to the GG deck:
-// 《テラ・フォーミング》 73628505 (Terraforming), a real GG
-// main-deck card (x2) with no individual art. Usable on
-// every fallback surface (tile / hand / preview / ghost),
-// like every exemplar before it.
-const UNLISTED = 73628505;
+// which completed the Ishizu deck, so the role crossed to
+// the GG deck: 《テラ・フォーミング》 73628505 (Terraforming),
+// a real GG main-deck card (x2) with no individual art.
+// Painterly round (2026-11-09, user ruling): the GG deck's
+// 28 art-less cards — Terraforming among them — gained
+// processed STD_ART, so EVERY pool card now resolves some
+// art and no real card can hold the unlisted role any more.
+// The role retires to a phantom code that sits in no
+// registry, no deck and no card data; it is used ONLY where
+// the lookup never consults DATA (helper / focus / ghost /
+// registry probes). The board surfaces that used to ride
+// the exemplar now ride Terraforming itself as a STD_ART
+// subject (TERRA below, checks CA11/CA15/CA17 flipped to
+// the std art), and the CAGG section pins all 28.
+const UNLISTED = 99999999;
+const TERRA = 73628505;
 
 // ---- delivered art files (existence + top-anchored dimensions) ----
 for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.jpg', 640, 882],
@@ -704,7 +713,8 @@ ok(data.decks.ishizu.main.filter(c => c === CHAOSPOD).length === 2, 'CA0k: the I
 ok(data.decks.ishizu.main.filter(c => c === OKA).length === 1, 'CA0l: the Ishizu deck runs 1 copy of Oka');
 ok(data.decks.ishizu.main.filter(c => c === HANA).length === 2, 'CA0m: the Ishizu deck runs 2 copies of Hana');
 ok(data.decks.ishizu.main.filter(c => c === MORI).length === 3, 'CA0n: the Ishizu deck runs 3 copies of Mori');
-ok(data.decks.gg.main.filter(c => c === UNLISTED).length === 2, 'CA0o: the GG deck runs 2 copies of the unlisted exemplar (Terraforming — the role crossed decks in the 35th delivery, when Mutiny in the Sky gained art and completed the Ishizu deck)');
+ok(data.decks.gg.main.filter(c => c === TERRA).length === 2, 'CA0o: the GG deck runs 2 copies of Terraforming (the former unlisted exemplar — it gained processed STD_ART in the painterly round, 2026-11-09)');
+ok(!data.cards[UNLISTED] && ![...data.decks.ishizu.main, ...data.decks.ishizu.extra, ...data.decks.gg.main, ...data.decks.gg.extra].includes(UNLISTED), 'CA0o2: the phantom exemplar is in no deck and no card data (the role exists only as a registry-fallback probe now)');
 ok(data.decks.ishizu.main.filter(c => c === CARBON).length === 3, 'CA0p: the Ishizu deck runs 3 copies of Carbon');
 ok(data.decks.ishizu.main.filter(c => c === KAKAN).length === 1, 'CA0q: the Ishizu deck runs 1 copy of Kakan (Vernusylph Flower Crown)');
 ok(!data.decks.gg.main.includes(KAKAN) && !data.decks.gg.extra.includes(KAKAN), 'CA0r: the GG deck does NOT run Kakan (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
@@ -1344,7 +1354,7 @@ async function boot() {
       const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
       b.players[0].mzone[0] = mon(${MUDORA}, 0x1);  // own face-up ATK Mudora
       b.players[0].mzone[1] = mon(${MUDORA}, 0x4);  // own face-up DEF Mudora (2nd copy)
-      b.players[0].mzone[2] = mon(${UNLISTED}, 0x1); // own face-up unlisted exemplar (no art)
+      b.players[0].mzone[2] = mon(${TERRA}, 0x1);    // own face-up Terraforming (STD_ART subject since the painterly round)
       b.players[0].mzone[3] = mon(${KELDO}, 0x1);   // own face-up Keldo (4th delivery; the 2nd-delivery Agido left the pool in recipe v11, so it can no longer be fabricated from DATA)
       b.players[0].mzone[4] = mon(${KELBEK}, 0x1);  // own face-up Kelbek (3rd delivery)
       b.players[1].mzone[0] = mon(${MUDORA}, 0x1);  // opp face-up Mudora (public: art shows)
@@ -1352,7 +1362,7 @@ async function boot() {
       b.players[1].mzone[2] = mon(${KELDO}, 0x1);   // opp face-up Keldo (4th delivery; own row is full)
       b.players[1].mzone[3] = mon(${ZOLGA}, 0x1);   // opp face-up Zolga (5th delivery)
       b.players[1].mzone[4] = mon(${CARDAN}, 0x1);  // opp face-up Cardan (6th delivery)
-      b.players[0].hand = [{ code: ${MUDORA} }, { code: ${UNLISTED} }, { code: ${KELDO} }, { code: ${ZOLGA} }, { code: ${CARDAN} }];
+      b.players[0].hand = [{ code: ${MUDORA} }, { code: ${TERRA} }, { code: ${KELDO} }, { code: ${ZOLGA} }, { code: ${CARDAN} }];
       render(b);
       const artOf = (zone) => {
         const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
@@ -1364,7 +1374,7 @@ async function boot() {
       const pvMudora = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
       setPreview(${ZOLGA}, null);
       const pvZolga = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
-      setPreview(${UNLISTED}, null);
+      setPreview(${TERRA}, null);
       const pvUnlisted = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
       const ghost = fxGhostEl(${MUDORA}, false, 40, 55);
       const ghostBack = fxGhostEl(${MUDORA}, true, 40, 55);
@@ -1381,7 +1391,7 @@ async function boot() {
   ok(res.ownAtk !== null && res.ownDef !== null && res.oppDown !== null, 'CA8: non-vacuity — fabricated tiles rendered');
   ok(res.ownAtk.includes('card-art-mudora-s.jpg'), 'CA9: own face-up Mudora tile shows the individual art');
   ok(res.ownDef.includes('card-art-mudora-s.jpg'), 'CA10: every copy is covered (2nd Mudora, face-up DEF)');
-  ok(res.ownUnlisted === '', 'CA11: unlisted card tile keeps the placeholder (no inline art)');
+  ok(res.ownUnlisted.includes('card-art-std-73628505-s.jpg'), 'CA11: Terraforming tile shows its STD_ART (the former unlisted exemplar gained processed standard art in the painterly round)');
   ok(res.ownAgido !== null && res.ownAgido.includes('card-art-keldo-s.jpg'), 'CA11b: the fourth tile (Keldo) shows its own art (slug, not Mudora’s)');
   ok(res.ownKelbek !== null && res.ownKelbek.includes('card-art-kelbek-s.jpg'), 'CA11c: Kelbek tile shows its own art');
   ok(res.oppKeldo !== null && res.oppKeldo.includes('card-art-keldo-s.jpg'), 'CA11d: Keldo tile shows its own art');
@@ -1390,7 +1400,7 @@ async function boot() {
   ok(res.oppUp.includes('card-art-mudora-s.jpg'), 'CA12: opponent face-up Mudora shows the art (public information)');
   ok(res.oppDown === '' && !String(res.oppDown).includes('mudora'), 'CA13: opponent FACE-DOWN Mudora gets NO art (asymmetry / no leak)');
   const hMudora = res.handImgs.find(h => h.code === String(MUDORA));
-  const hUnlisted = res.handImgs.find(h => h.code === String(UNLISTED));
+  const hUnlisted = res.handImgs.find(h => h.code === String(TERRA));
   ok(!!hMudora && hMudora.style.includes('card-art-mudora-s.jpg'), 'CA14: hand Mudora shows the art');
   const hKeldo = res.handImgs.find(h => h.code === String(KELDO));
   ok(!!hKeldo && hKeldo.style.includes('card-art-keldo-s.jpg'), 'CA14b: hand Keldo shows the art');
@@ -1398,10 +1408,10 @@ async function boot() {
   ok(!!hZolga && hZolga.style.includes('card-art-zolga-s.jpg'), 'CA14c: hand Zolga shows the art');
   const hCardan = res.handImgs.find(h => h.code === String(CARDAN));
   ok(!!hCardan && hCardan.style.includes('card-art-cardan-s.jpg'), 'CA14d: hand Cardan shows the art');
-  ok(!!hUnlisted && hUnlisted.style === '', 'CA15: hand unlisted card keeps the placeholder');
+  ok(!!hUnlisted && hUnlisted.style.includes('card-art-std-73628505-s.jpg'), 'CA15: hand Terraforming shows its STD_ART');
   ok(res.pvMudora.includes('card-art-mudora-s.jpg'), 'CA16: resident preview shows the art for Mudora');
   ok(res.pvZolga.includes('card-art-zolga-s.jpg'), 'CA16b: resident preview shows the art for Zolga');
-  ok(res.pvUnlisted === '', 'CA17: resident preview falls back for unlisted cards');
+  ok(res.pvUnlisted.includes('card-art-std-73628505-s.jpg'), 'CA17: resident preview shows the STD_ART for Terraforming');
   ok(res.ghost.includes('card-art-mudora-s.jpg') && res.ghostPos.includes('top'), 'CA18: face-up FX ghost carries the art, top-pinned');
   ok(res.ghostBack === '' && res.ghostUnlisted === '', 'CA19: face-down and unlisted ghosts get no art');
 
@@ -2245,9 +2255,12 @@ async function boot() {
   // illustration, delivered locally as card-art-std-<code>
   // (big 640x882 / small 320x320). Field report 2026-11-08:
   // before this they showed the shared placeholder on every
-  // surface. The registration is scoped to exactly these 26
-  // codes — the pre-existing pool's display must not move
-  // (the UNLISTED exemplar above stays unlisted). ----
+  // surface. The registration was scoped to exactly these 26
+  // codes at the time — the pre-existing pool's display did
+  // not move. (The painterly round of 2026-11-09 later
+  // widened STD_ART to the GG deck's 28 as well and processed
+  // every std file; see the CAGG section. The scoping probe
+  // below now rides the phantom UNLISTED code.) ----
   const SQ = [...new Set([...data.decks.superquant.main, ...data.decks.superquant.extra])];
   ok(SQ.length === 26, 'CASQ0: the Super Quant deck has 26 unique cards');
   for (const c of SQ) {
@@ -2274,7 +2287,7 @@ async function boot() {
   ok(sqHelp.res.every(r => r.small === '../assets/card-art-std-' + r.code + '-s.jpg' && r.big === '../assets/card-art-std-' + r.code + '.jpg'), 'CASQ2: cardArtFile returns the std files (small + big) for all 26');
   ok(sqHelp.res.every(r => r.inline.includes('card-art-std-' + r.code + '-s.jpg')), 'CASQ3: artInline carries the std art for all 26 (no surface falls back to the placeholder)');
   ok(SQ.every(c => sqHelp.preloaded.includes('../assets/card-art-std-' + c + '-s.jpg') && sqHelp.preloaded.includes('../assets/card-art-std-' + c + '.jpg')), 'CASQ4: selecting the Super Quant deck preloads both std sizes (deck-select preload, no blank flash)');
-  ok(sqHelp.unlistedStd === null && sqHelp.unlistedFile === null, 'CASQ5: scoping — the GG unlisted exemplar stays unlisted in STD_ART too (existing 63 cards\u2019 display unchanged)');
+  ok(sqHelp.unlistedStd === null && sqHelp.unlistedFile === null, 'CASQ5: fallback \u2014 a code in no registry (the phantom exemplar) still resolves no art (the fallback path survives the full-pool coverage)');
   const resSQ = window.eval(`
     (() => {
       const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
@@ -2365,6 +2378,72 @@ async function boot() {
   ok(resENV.oppDown === '' && !String(resENV.oppDown).includes('std-13597785'), 'CAENV9: opponent FACE-DOWN Rukina gets NO art (asymmetry / no leak)');
   ok(resENV.hand !== null && resENV.hand.includes('card-art-std-13597785-s.jpg'), 'CAENV10: hand Rukina shows the std art');
   ok(resENV.pv.includes('card-art-std-13597785-s.jpg'), 'CAENV11: resident preview shows the std art for Rukina');
+
+  // ---- standard art (STD_ART): the painterly round
+  // (2026-11-09, user ruling) registers the GG deck's 28
+  // previously art-less cards the same way — generated from
+  // the YGOPRODeck cropped illustrations in the standard
+  // geometry, then given the same heavy painterly processing
+  // as every other std file (all 109 std files were processed
+  // this round; user paintings untouched). With these 28 the
+  // whole 144-card pool resolves some art. ----
+  const GGART = [2694423, 6498706, 8505920, 12580477, 12923641, 25955164, 26746975, 31548215, 33055499, 34771947, 34904525, 35026117, 40605147, 45223540, 45725480, 53194323, 60176682, 61398234, 62340868, 62411811, 73628505, 74003290, 89208725, 96661780, 97783338, 97940434, 98434877, 99551425];
+  ok(GGART.length === 28 && GGART.every(c => data.cards[c]), 'CAGG0: the 28 formerly art-less cards are all real pool cards');
+  for (const c of GGART) {
+    for (const suf of ['.jpg', '-s.jpg']) {
+      const p = path.join(V2, '..', 'assets', 'card-art-std-' + c + suf);
+      ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CAGG0f: card-art-std-' + c + suf + ' delivered (>10KB)');
+    }
+  }
+  const SANGA = 25955164;
+  const ggHelp = window.eval(`(() => {
+    const codes = ${JSON.stringify(GGART)};
+    const res = codes.map(c => ({
+      code: c,
+      inCardArt: Object.prototype.hasOwnProperty.call(CARD_ART, c),
+      std: STD_ART[c] || null,
+      small: cardArtFile(c, false),
+      big: cardArtFile(c, true),
+      inline: artInline(c),
+    }));
+    preloadCardArt(['gg']);
+    const uncovered = Object.keys(DATA.cards).map(Number).filter(c => !CARD_ART[c] && !STD_ART[c]);
+    const overlap = Object.keys(STD_ART).filter(c => CARD_ART[c]);
+    return { res, preloaded: [...artPreloaded], uncovered, overlap, stdCount: Object.keys(STD_ART).length };
+  })()`);
+  ok(ggHelp.res.every(r => !r.inCardArt && r.std === 'std-' + r.code), 'CAGG1: every formerly art-less card resolves through STD_ART (none is in CARD_ART)');
+  ok(ggHelp.res.every(r => r.small === '../assets/card-art-std-' + r.code + '-s.jpg' && r.big === '../assets/card-art-std-' + r.code + '.jpg'), 'CAGG2: cardArtFile returns the std files (small + big) for all 28');
+  ok(ggHelp.res.every(r => r.inline.includes('card-art-std-' + r.code + '-s.jpg')), 'CAGG3: artInline carries the std art for all 28 (no surface falls back to the placeholder)');
+  ok(GGART.every(c => ggHelp.preloaded.includes('../assets/card-art-std-' + c + '-s.jpg') && ggHelp.preloaded.includes('../assets/card-art-std-' + c + '.jpg')), 'CAGG4: selecting the GG deck preloads both std sizes (deck-select preload, no blank flash)');
+  ok(ggHelp.stdCount === 109 && ggHelp.overlap.length === 0, 'CAGG5: scoping — STD_ART holds exactly 109 codes and never shadows a user painting (no overlap with CARD_ART)');
+  ok(ggHelp.uncovered.length === 0, 'CAGG5b: full-pool coverage — every one of the 144 pool cards now resolves some art');
+  const resGG = window.eval(`
+    (() => {
+      const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
+      const P = () => ({ mzone: [null,null,null,null,null,null,null], szone: [null,null,null,null,null,null], grave: [], removed: [], extra: [], hand: [], deckCount: 38, lp: 8000 });
+      const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
+      b.players[0].mzone[0] = mon(${SANGA}, 0x1);  // own face-up Sanga
+      b.players[1].mzone[0] = mon(${SANGA}, 0x1);  // opp face-up Sanga (public)
+      b.players[1].mzone[1] = mon(${SANGA}, 0x8);  // opp face-down Sanga (MUST stay hidden)
+      b.players[0].hand = [{ code: ${SANGA} }];
+      render(b);
+      const artOf = (zone) => {
+        const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
+        const a = slot && slot.querySelector('.tile .art');
+        return a ? (a.getAttribute('style') || '') : null;
+      };
+      const h = document.querySelector('#hand .hcard[data-code="${SANGA}"] .himg');
+      setPreview(${SANGA}, null);
+      const pv = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      return { ownUp: artOf('0:4:0'), oppUp: artOf('1:4:0'), oppDown: artOf('1:4:1'), hand: h ? (h.getAttribute('style') || '') : null, pv };
+    })()
+  `);
+  ok(resGG.ownUp !== null && resGG.oppUp !== null && resGG.oppDown !== null, 'CAGG6: non-vacuity — Sanga board rendered');
+  ok(resGG.ownUp.includes('card-art-std-25955164-s.jpg'), 'CAGG7: own face-up Sanga tile shows the std art');
+  ok(resGG.oppUp.includes('card-art-std-25955164-s.jpg'), 'CAGG8: opponent FACE-UP Sanga shows the std art (public information)');
+  ok(resGG.oppDown === '' && !String(resGG.oppDown).includes('std-25955164'), 'CAGG9: opponent FACE-DOWN Sanga gets NO art (asymmetry / no leak)');
+  ok(resGG.hand !== null && resGG.hand.includes('card-art-std-25955164-s.jpg'), 'CAGG10: hand Sanga shows the std art');
+  ok(resGG.pv.includes('card-art-std-25955164-s.jpg'), 'CAGG11: resident preview shows the std art for Sanga');
 
   window.close();
   console.log(failures === 0 ? 'ALL CARDART CHECKS PASSED' : failures + ' CARDART CHECK(S) FAILED');
