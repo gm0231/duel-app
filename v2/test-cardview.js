@@ -38,6 +38,13 @@
      Unlisted cards get NO inline image (the .popart class
      background is the shared placeholder). A null code still
      never opens the pop (the secrecy guard upstream is intact).
+   - The meta line names the spell/trap KIND (detail-info round,
+     user report 2026-11-08): cardTypeLabel derives the official
+     compound name from the type bitmask — 通常魔法/通常罠 spelled
+     out, never omitted — and cardMetaLine carries it on the
+     detail sheet, the pop, the zone sheet and the resident
+     preview. Pool-wide, all 63 cards resolve a non-empty meta
+     line (CV-DI1..14).
    Method: boot the real client in jsdom (harness as
    test-cardart), fabricate a duel state, open the real sheets
    and assert the DOM contract. */
@@ -65,6 +72,7 @@ const MINERVA = 30100551;       // ライトロード・セイント ミネル�
 const CASTEL = 82633039;        // 鳥銃士カステル — 21st delivery (2026-11-06), plain CARD_ART with NO focus exception (his head sits high); follow-up (#21b) adds the 9th DECK_ART entry ('castel-ishizu', the Egyptian variant) with its own 6th ART_FOCUS entry ('center 20%', measured separately — the tall nemes headdress pushes his face lower than on the plain painting)
 const BAROMETT = 62967433;      // 神羊樹バロメット — 22nd delivery (2026-11-06), plain CARD_ART + the 7th ART_FOCUS entry ('center 40%' — her face sits mid-frame, eyes ~47% of the big file, so center top leaves the sheep essentially out of the pop band); follow-up (#22b) adds the 10th DECK_ART entry ('baromett-ishizu', the Egyptian variant) with its own 8th ART_FOCUS entry ('center 40%', measured separately — in the Egyptian painting her face sits mid-frame just as in the plain one, eyes ~50% of the big file)
 const GENSEI = 17484499;        // 現世と冥界の逆転 — 26th delivery (2026-11-06), plain CARD_ART with NO deck-scoped override + the 9th ART_FOCUS entry ('center 30%' — the two warriors sit mid-frame, the skeleton skull at ~26-33% of the big file, so center top leaves the pop band showing the paradise window and vortex with the subject essentially absent); an Ishizu keycard that fires on ACTIVATION (the keycardact stage art is pinned in test-keycardact KA3c)
+const SOSEI = 83764718, TSUKI = 14087893, KAKAN = 14108995, LABYWALL = 34771947, HAKAMORI = 98715423, TSUKOKU = 40605147; // spell/trap classification exemplars (detail-info round, 2026-11-08): 通常魔法 / 速攻魔法 / 永続魔法 / フィールド魔法 / 永続罠 / カウンター罠 — GENSEI doubles as the 通常罠 exemplar
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -230,6 +238,58 @@ async function boot() {
   {
     const pop = doc.getElementById('infopop');
     ok(pop.className !== 'on' && !pop.querySelector('.popart'), 'CV14: a null code never opens the pop (secrecy guard intact)');
+  }
+
+  // ---- spell/trap classification on the meta line (detail-info
+  // round, user report 2026-11-08: the detail never said what KIND
+  // of spell or trap a card is). cardTypeLabel derives the official
+  // compound name from the type bitmask — the plain case included
+  // (通常魔法 / 通常罠, never omitted) — and cardMetaLine carries it
+  // on every surface that shows the line (detail sheet, floating
+  // pop, zone sheet, resident preview). Pool-wide: every card in
+  // data.json resolves a non-empty meta line (monsters via
+  // attribute / race / level, spells and traps via the label). ----
+  {
+    const labels = window.eval(`(() => ({
+      sosei: cardTypeLabel(${SOSEI}), tsuki: cardTypeLabel(${TSUKI}), kakan: cardTypeLabel(${KAKAN}),
+      labywall: cardTypeLabel(${LABYWALL}), gensei: cardTypeLabel(${GENSEI}),
+      hakamori: cardTypeLabel(${HAKAMORI}), tsukoku: cardTypeLabel(${TSUKOKU}),
+      monster: cardTypeLabel(${MUDORA}),
+      coverage: (() => { let empty = 0, st = 0, mon = 0;
+        for (const id of Object.keys(DATA.cards)) { if (!cardMetaLine(+id)) empty++; if (cardTypeLabel(+id)) st++; else mon++; }
+        return { empty, st, mon, total: Object.keys(DATA.cards).length }; })()
+    }))()`);
+    ok(labels.sosei === '通常魔法', 'CV-DI1: a plain spell labels 通常魔法 (the plain case is spelled out, not omitted)');
+    ok(labels.tsuki === '速攻魔法', 'CV-DI2: Book of Moon labels 速攻魔法');
+    ok(labels.kakan === '永続魔法', 'CV-DI3: Vernusylph Corolla labels 永続魔法');
+    ok(labels.labywall === 'フィールド魔法', 'CV-DI4: Labyrinth Wall Shadow labels フィールド魔法');
+    ok(labels.gensei === '通常罠', 'CV-DI5: Exchange of the Spirit labels 通常罠');
+    ok(labels.hakamori === '永続罠', 'CV-DI6: Gravekeeper\'s Trap labels 永続罠');
+    ok(labels.tsukoku === 'カウンター罠', 'CV-DI7: Solemn Strike (神の通告) labels カウンター罠');
+    ok(labels.monster === '', 'CV-DI8: a monster gets no spell/trap label (its meta line is attribute / race / level)');
+    ok(labels.coverage.empty === 0 && labels.coverage.total === 63, 'CV-DI9: pool-wide, every one of the 63 cards resolves a non-empty meta line');
+    ok(labels.coverage.st === 28 && labels.coverage.mon === 35, 'CV-DI10: coverage split is 28 spells/traps labelled + 35 monsters on the attribute line');
+  }
+  window.eval('openCardInfo(' + GENSEI + ')');
+  {
+    const sub = doc.querySelector('#sheet .sub');
+    ok(!!sub && sub.textContent.includes('通常罠'), 'CV-DI11: the detail sheet meta line names the trap kind (通常罠)');
+  }
+  window.eval('openCardInfo(' + MUDORA + ')');
+  {
+    const sub = doc.querySelector('#sheet .sub');
+    ok(!!sub && sub.textContent.includes('地属性／天使族／レベル4'), 'CV-DI12: the monster detail meta line is unchanged (属性／種族／レベル)');
+    ok(!!sub && sub.textContent.includes('攻1500／守1800'), 'CV-DI12b: the monster stats line is unchanged');
+  }
+  window.eval('openInfoPop(' + TSUKI + ')');
+  {
+    const sub = doc.querySelector('#infopop .sub');
+    ok(!!sub && sub.textContent.includes('速攻魔法'), 'CV-DI13: the floating pop meta line names the spell kind (速攻魔法)');
+  }
+  window.eval('closeInfoPop()');
+  {
+    const pv = window.eval('(() => { setPreview(' + SOSEI + ', null); return document.getElementById("preview").innerHTML; })()');
+    ok(pv.includes('通常魔法'), 'CV-DI14: the resident preview meta line names the spell kind too (shared cardMetaLine)');
   }
 
   // ---- focus exceptions on the real bands (user ruling 2026-11-05) ----

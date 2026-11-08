@@ -1189,9 +1189,37 @@ function dismissalName(e) {
   return cardName(e.code) + (fx && fx.n && !fx.act ? ' の効果' + CIRCLED_NUM[fx.n - 1] : '');
 }
 function isXyzCode(code) { const d = cardData(code); return !!(d && (d.type & 0x800000)); }
+// Spell/trap classification (user report 2026-11-08: the detail
+// said nothing about what KIND of spell or trap a card is — not
+// even that it was one). Derived mechanically from the type
+// bitmask in data.json, in the official compound names, and the
+// plain case is spelled out too: a normal spell reads 通常魔法,
+// never just 魔法. Subtype bits are mutually exclusive on real
+// cards; the check order only matters for malformed data.
+// Monsters return '' — their meta line below already carries
+// attribute / race / level instead.
+function cardTypeLabel(code) {
+  const d = cardData(code); if (!d) return '';
+  const t = d.type | 0;
+  if (t & 0x2) {
+    if (t & 0x80000) return 'フィールド魔法';
+    if (t & 0x40000) return '装備魔法';
+    if (t & 0x10000) return '速攻魔法';
+    if (t & 0x20000) return '永続魔法';
+    if (t & 0x80) return '儀式魔法';
+    return '通常魔法';
+  }
+  if (t & 0x4) {
+    if (t & 0x100000) return 'カウンター罠';
+    if (t & 0x20000) return '永続罠';
+    return '通常罠';
+  }
+  return '';
+}
 function cardMetaLine(code, mats) {
   const d = cardData(code); if (!d) return '';
   const parts = [];
+  const tl = cardTypeLabel(code); if (tl) parts.push(tl);
   const attr = E.ATTRIBUTES.find(([b]) => b === d.attribute); if (attr) parts.push(attr[1] + '属性');
   const race = E.RACES.find(([b]) => BigInt(b) === BigInt(d.race)); if (race && (d.type & 0x1)) parts.push(race[1] + '族');
   if (d.type & 0x1) parts.push(isXyzCode(code) ? 'ランク' + d.level : 'レベル' + d.level);
