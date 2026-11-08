@@ -2303,6 +2303,69 @@ async function boot() {
   ok(resSQ.hand !== null && resSQ.hand.includes('card-art-std-84025439-s.jpg'), 'CASQ10: hand Magnus shows the std art');
   ok(resSQ.pv.includes('card-art-std-84025439-s.jpg'), 'CASQ11: resident preview shows the std art for Magnus');
 
+  // ---- standard art (STD_ART): the Elfennotes / White Forest
+  // built-ins (2026-11-08, env-decks round) extend the same
+  // registry by the 55 cards newly implemented for them. The two
+  // recipe cards that were already in the pool keep their prior
+  // display exactly: 《奈落の落とし穴》 already rides STD_ART
+  // (Super Quant round) and 《鳥銃士カステル》 carries its
+  // user-supplied CARD_ART painting — neither is re-registered. ----
+  const ENV = [...new Set([...data.decks.elfennotes.main, ...data.decks.elfennotes.extra, ...data.decks.whiteforest.main, ...data.decks.whiteforest.extra])];
+  const NEWENV = ENV.filter(c => c !== 29401950 && c !== 82633039);
+  ok(ENV.length === 57 && NEWENV.length === 55, 'CAENV0: the two decks span 57 distinct cards, 55 of them newly implemented');
+  for (const c of NEWENV) {
+    for (const suf of ['.jpg', '-s.jpg']) {
+      const p = path.join(V2, '..', 'assets', 'card-art-std-' + c + suf);
+      ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CAENV0f: card-art-std-' + c + suf + ' delivered (>10KB)');
+    }
+  }
+  const RUKINA = 13597785;
+  const envHelp = window.eval(`(() => {
+    const codes = ${JSON.stringify(NEWENV)};
+    const res = codes.map(c => ({
+      code: c,
+      inCardArt: Object.prototype.hasOwnProperty.call(CARD_ART, c),
+      std: STD_ART[c] || null,
+      small: cardArtFile(c, false),
+      big: cardArtFile(c, true),
+      inline: artInline(c),
+    }));
+    preloadCardArt(['elfennotes', 'whiteforest']);
+    return { res, preloaded: [...artPreloaded], castelStd: STD_ART[82633039] || null };
+  })()`);
+  ok(envHelp.res.every(r => !r.inCardArt && r.std === 'std-' + r.code), 'CAENV1: every newly implemented card resolves through STD_ART (none is in CARD_ART)');
+  ok(envHelp.res.every(r => r.small === '../assets/card-art-std-' + r.code + '-s.jpg' && r.big === '../assets/card-art-std-' + r.code + '.jpg'), 'CAENV2: cardArtFile returns the std files (small + big) for all 55');
+  ok(envHelp.res.every(r => r.inline.includes('card-art-std-' + r.code + '-s.jpg')), 'CAENV3: artInline carries the std art for all 55 (no surface falls back to the placeholder)');
+  ok(NEWENV.every(c => envHelp.preloaded.includes('../assets/card-art-std-' + c + '-s.jpg') && envHelp.preloaded.includes('../assets/card-art-std-' + c + '.jpg')), 'CAENV4: selecting either new deck preloads both std sizes (deck-select preload, no blank flash)');
+  ok(envHelp.castelStd === null, 'CAENV5: scoping — Castel is NOT in STD_ART (its CARD_ART painting display is unchanged)');
+  const resENV = window.eval(`
+    (() => {
+      const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
+      const P = () => ({ mzone: [null,null,null,null,null,null,null], szone: [null,null,null,null,null,null], grave: [], removed: [], extra: [], hand: [], deckCount: 38, lp: 8000 });
+      const b = { players: [P(), P()], phaseName: '', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], lastAttack: null };
+      b.players[0].mzone[0] = mon(${RUKINA}, 0x1);  // own face-up Rukina
+      b.players[1].mzone[0] = mon(${RUKINA}, 0x1);  // opp face-up Rukina (public)
+      b.players[1].mzone[1] = mon(${RUKINA}, 0x8);  // opp face-down Rukina (MUST stay hidden)
+      b.players[0].hand = [{ code: ${RUKINA} }];
+      render(b);
+      const artOf = (zone) => {
+        const slot = document.querySelector('.slot[data-zone="' + zone + '"]');
+        const a = slot && slot.querySelector('.tile .art');
+        return a ? (a.getAttribute('style') || '') : null;
+      };
+      const h = document.querySelector('#hand .hcard[data-code="${RUKINA}"] .himg');
+      setPreview(${RUKINA}, null);
+      const pv = (document.querySelector('#preview .pv-art') || {}).getAttribute ? (document.querySelector('#preview .pv-art').getAttribute('style') || '') : '';
+      return { ownUp: artOf('0:4:0'), oppUp: artOf('1:4:0'), oppDown: artOf('1:4:1'), hand: h ? (h.getAttribute('style') || '') : null, pv };
+    })()
+  `);
+  ok(resENV.ownUp !== null && resENV.oppUp !== null && resENV.oppDown !== null, 'CAENV6: non-vacuity — Rukina board rendered');
+  ok(resENV.ownUp.includes('card-art-std-13597785-s.jpg'), 'CAENV7: own face-up Rukina tile shows the std art');
+  ok(resENV.oppUp.includes('card-art-std-13597785-s.jpg'), 'CAENV8: opponent FACE-UP Rukina shows the std art (public information)');
+  ok(resENV.oppDown === '' && !String(resENV.oppDown).includes('std-13597785'), 'CAENV9: opponent FACE-DOWN Rukina gets NO art (asymmetry / no leak)');
+  ok(resENV.hand !== null && resENV.hand.includes('card-art-std-13597785-s.jpg'), 'CAENV10: hand Rukina shows the std art');
+  ok(resENV.pv.includes('card-art-std-13597785-s.jpg'), 'CAENV11: resident preview shows the std art for Rukina');
+
   window.close();
   console.log(failures === 0 ? 'ALL CARDART CHECKS PASSED' : failures + ' CARDART CHECK(S) FAILED');
   process.exit(failures === 0 ? 0 : 1);

@@ -178,9 +178,24 @@ async function boot() {
   ok(doc.getElementById('deckmodal').style.display === 'flex' &&
      doc.getElementById('deckmodaltitle').textContent.includes('2026年10月時点') &&
      doc.getElementById('seg-opdeck').style.display !== 'none' &&
-     visRows('seg-opdeck').length === 1 && visRows('seg-opdeck').every(el => el.dataset.cat === 'genesys') &&
+     visRows('seg-opdeck').length === 3 && visRows('seg-opdeck').every(el => el.dataset.cat === 'genesys') &&
      doc.getElementById('deckmodalempty').style.display === 'none',
-    'DP18: the Genesys category lists the 超量 deck (the 準備中 empty state is gone)');
+    'DP18: the Genesys category lists the three theme decks (超量 / エルフェンノーツ / 白き森 — the 準備中 empty state is gone)');
+  const elfRow = doc.querySelector('#seg-opdeck .deckrow[data-key="elfennotes"]');
+  elfRow.querySelector('.decklist-btn').click();
+  const elfViewTxt = doc.getElementById('deckviewlist').textContent;
+  ok(doc.getElementById('deckview').style.display === 'flex' &&
+     doc.getElementById('deckviewtitle').textContent === 'エルフェンノーツ' &&
+     elfViewTxt.includes('メイン（40枚）') && elfViewTxt.includes('エクストラ（15枚）') && elfViewTxt.includes('クリアウィング・シンクロ・ドラゴン'),
+    'DP18e: 一覧 shows the エルフェンノーツ contents (40 main / 15 extra, Clear Wing named)');
+  doc.getElementById('deckviewback').click();
+  segBtn('seg-opdeck', 'elfennotes').click();
+  ok(disp('deckpage') !== 'none' && segSel('seg-opdeck') === 'elfennotes' &&
+     doc.querySelector('#opdeckcur .dn').textContent === 'エルフェンノーツ' &&
+     doc.getElementById('decksum').textContent.includes('相手：エルフェンノーツ'),
+    'DP18f: picking エルフェンノーツ applies it as the opponent deck and returns to the deck page');
+  doc.getElementById('opdeckcur').click();
+  catBtn('genesys').click();
   const sqRow = doc.querySelector('#seg-opdeck .deckrow[data-key="superquant"]');
   sqRow.querySelector('.decklist-btn').click();
   const sqViewTxt = doc.getElementById('deckviewlist').textContent;

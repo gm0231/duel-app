@@ -5,8 +5,8 @@
    patches; anything uncovered is enumerated here, with counts).
    Loads the REAL client.js (vm + stub DOM, same technique as
    test-fxidentify) against the REAL data.json / fxmap.json and
-   asserts, for all 89 cards (63 -> 89 with the Super Quant deck,
-   2026-11-08):
+   asserts, for all 144 cards (63 -> 89 with the Super Quant deck,
+   89 -> 144 with the Elfennotes / White Forest decks, 2026-11-08):
      A. every fxmap target (map / pmap / yn / bare) names an
         existing printed segment of that card;
      B. every described activatable desc idx resolves (via
@@ -105,6 +105,12 @@ function describedBlocks(code) {
     const sid = s.match(re);
     if (sid) out.add(+sid[1]);
   }
+  // Clone-registered descriptions (mirror of gen-fxmap.js).
+  for (const m of s.matchAll(/local\s+(\w+)\s*=\s*\w+\s*:\s*Clone\(\)/g)) {
+    const re = new RegExp(m[1] + '\\s*:\\s*SetDescription\\(\\s*aux\\.Stringid\\(id,(\\d+)\\)');
+    const sid = s.match(re);
+    if (sid) out.add(+sid[1]);
+  }
   return out;
 }
 function undescribedActivatable(code) {
@@ -140,6 +146,12 @@ const EXCEPTIONS = {
   '2694423|1': '公式テキストに効果番号が存在しない（旧書式）',
   '79106360|0': '公式テキストに効果番号が存在しない（リバース書式）',
   '16135253|0': '公式テキストに効果番号が存在しない（旧書式）',
+  // env-decks round (2026-11-08): described indices that name
+  // restriction hints / procedures, never activation prompts
+  '17749468|0': '特殊召喚手続きの説明。発動プロンプトにはならない',
+  '4398189|3': '①の闇属性EXロック（CLIENT_HINT付き持続制限）の説明。プロンプトにならない',
+  '42302563|2': '②のSモンスター限定ロック（CLIENT_HINT付き持続制限）の説明。プロンプトにならない',
+  '82956214|1': '①のEX召喚ロック（CLIENT_HINT付き持続制限）の説明。プロンプトにならない',
 };
 // ---------- C: undescribed blocks knowingly not prompt-bearing ----------
 const NON_PROMPT = {
@@ -158,11 +170,28 @@ const NON_PROMPT = {
   '1825445': '②持続（「超量」カードへの対象耐性）。発動エントリにならない',
   '75493362': '②持続（妖精族の攻撃力アップ）。発動エントリにならない',
   '84025439': '②の段階適用（素材6種類時のサーチ／ドローロック持続）。発動エントリにならない。①と②の発動側はOVERRIDESで番号特定済み',
+  // env-decks round (2026-11-08): continuous / machinery blocks of
+  // the Elfennotes / White Forest additions, hand-audited
+  '821049': '③の解決で登録されるSモンスターへの攻撃力アップ持続。発動ではない',
+  '4398189': '②持続（「白き森」モンスターの戦闘破壊耐性）。発動エントリにならない',
+  '12375297': '①持続（Sモンスター以外のEX特殊召喚ロック）。発動エントリにならない',
+  '17749468': '②の適用機構（チェーン登録＋攻撃力ダウン処理）。発動ではない',
+  '41373230': '融合召喚成功時の登録処理（②耐性の付与）。発動ではない',
+  '41924516': '②持続（自軍Sモンスターの攻撃力アップ＋貫通付与）。発動エントリにならない',
+  '50954680': '②は強制トリガー（ダメージ計算時の攻撃力アップ、自動でチェーンに乗る）。選択プロンプトにならない',
+  '51522296': '①持続（「ドラグマ」モンスターへの効果耐性）。発動エントリにならない',
+  '53971455': '墓地へ送られた時の登録処理（②エンドフェイズ発動の予約）。発動ではない',
+  '60303688': '②のEX召喚ロック機構（発動後の持続制限）。発動ではない',
+  '62849088': '特殊召喚の記録処理（②の分岐条件の集計）。発動ではない',
+  '64491754': '①持続（中央ゾーンのモンスターの効果破壊耐性）。発動エントリにならない',
+  '77313225': '②持続（自軍Sモンスターの攻撃力アップ＋効果破壊耐性）。発動エントリにならない',
+  '82044279': '③の適用処理（破壊時の攻撃力アップ、持続）。発動ではない',
+  '85065943': '①持続（対象耐性）＋融合召喚成功時のフラグ登録処理。発動ではない',
 };
 
 // ---------- A + B + classification table ----------
 const clsCount = { '番号特定': 0, '番号特定（スコープ/yn/bare）': 0, '単一効果/発動慣例': 0, '番号対象なし': 0, '未カバー': 0 };
-console.log('---- pool classification (89) ----');
+console.log('---- pool classification (144) ----');
 for (const code of Object.keys(data.cards)) {
   const fx = fxmap[code];
   const segs = T.effectSegments(+code);
@@ -211,7 +240,7 @@ for (const code of Object.keys(data.cards)) {
   console.log(code + ' | ' + data.names[code] + ' | segs=' + segs.length + ' | desc=' + [...desc].join(',') + ' | ' + cls);
 }
 console.log('classification counts:', JSON.stringify(clsCount));
-ok(Object.keys(data.cards).length === 89, 'pool is 89 cards');
+ok(Object.keys(data.cards).length === 144, 'pool is 144 cards');
 ok(clsCount['未カバー'] === 0, 'no card is left unclassified/uncovered without an enumerated reason');
 
 // ---------- D: lingering-restriction scan ----------
@@ -238,6 +267,14 @@ const EXPECTED_RESTRICTIONS = [
   '67037924:墓地発動のタイミング制限',
   '17484499:カード名発動制限（デュエル中1枚）',
   '35726888:カード名発動制限（1ターン1枚）', '45725480:カード名発動制限（1ターン1枚）',
+  // env-decks round (2026-11-08): ストリチア ② carries the same
+  // S-only EX lock clause; the four Dogmatika S/T carry the
+  // 1-turn name limit. (《白き森の魔女》's limit is phrased
+  // 「発動できず」 and is NOT matched by the derivation pattern —
+  // enumerated as a gap in NOTES.md, not here.)
+  '42302563:EX召喚種別制限', '64491754:EX召喚種別制限',
+  '31002402:カード名発動制限（1ターン1枚）', '35569555:カード名発動制限（1ターン1枚）',
+  '60921537:カード名発動制限（1ターン1枚）', '82956214:カード名発動制限（1ターン1枚）',
 ];
 ok(JSON.stringify([...found].sort()) === JSON.stringify([...EXPECTED_RESTRICTIONS].sort()),
   'D: restriction scan finds exactly the enumerated set (found: ' + found.join(' / ') + ')');
@@ -336,8 +373,8 @@ T.setDATA(data); // restore the real pool for the sections below
 
 // ---------- G: card-name activation limits (brushup round 2) ----------
 ok(JSON.stringify(PC.nameLimitCards().map(x => x.code + ':' + x.scope).sort()) === JSON.stringify([
-  '17484499:duel', '35726888:turn', '45725480:turn',
-]), 'G1: card-name limit derivation = {現世と冥界の逆転:duel, おろかな副葬/七星の宝刀:turn} (マジックカード「死者蘇生」 left the pool in v11; the classic has no name limit)');
+  '17484499:duel', '31002402:turn', '35569555:turn', '35726888:turn', '45725480:turn', '60921537:turn', '82956214:turn',
+]), 'G1: card-name limit derivation = {現世と冥界の逆転:duel, おろかな副葬/七星の宝刀/凶導の福音/凶導の聖告/凶導の葬列/ドラグマ・パニッシュメント:turn} (マジックカード「死者蘇生」 left the pool in v11; the classic has no name limit)');
 PC.reset();
 ok(PC.nameLimitReason(35726888) === null, 'G2: おろかな副葬 unspent -> silent');
 PC.trackUsedFx({ turnCount: 1, chain: [{ code: 35726888, con: 0, loc: 2, seq: 0, desc: SID(35726888, 0) }] });
@@ -388,8 +425,8 @@ ok(PC.graveSentReason(67037924, 3) === null,
   'H8: one copy leaving makes the record ambiguous — stamps drop (silence over a guess)');
 
 // ---------- I: EX-summon type locks (brushup round 2) ----------
-ok(JSON.stringify(PC.exLockCards()) === JSON.stringify([{ code: 21368273, n: 2, typeBit: 0x2000, token: 'Sモンスター' }]),
-  'I1: EX-lock derivation = {マナドゥム・トリロスークタ: ②, Synchro only}');
+ok(JSON.stringify(PC.exLockCards()) === JSON.stringify([{ code: 21368273, n: 2, typeBit: 0x2000, token: 'Sモンスター' }, { code: 42302563, n: 2, typeBit: 0x2000, token: 'Sモンスター' }, { code: 64491754, n: 2, typeBit: 0x2000, token: 'Sモンスター' }]),
+  'I1: EX-lock derivation = {マナドゥム・トリロスークタ: ②, 獄花の大燿聖ストリチア: ②, エルフェンノーツ～廻郷のパラレリズム～: ② — Synchro only}');
 PC.reset();
 ok(PC.exSummonLock() === null, 'I2: no lock before the restricting effect is used');
 PC.trackUsedFx({ turnCount: 1, chain: [{ code: 21368273, con: 0, loc: 4, seq: 0, desc: SID(21368273, 0) }] });

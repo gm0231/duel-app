@@ -106,8 +106,13 @@ const reason = (code, con, seq, state) => AB.reason(code, con, MZONE, seq, state
   // (「X素材が無いこのカードは攻撃できない」) enforced by the core
   // itself — NOT a summon-turn block, so the A1/A2 derivations above
   // correctly stay at their enumerated sets.
-  ok(JSON.stringify(barring) === JSON.stringify([TANK, SHADOW, 36898537, 78625592, 85252081, 11646785, 57031794, 57450198].sort((a, b) => a - b)),
-    'B1: pool-wide attack-barring clauses == exactly the 8 enumerated cards');
+  // 《エルフェンノーツ～狂奏のラプソディア～》 joined with the
+  // Elfennotes deck (2026-11-08): its clause is an attack-TARGET
+  // lock on the opponent (「相手モンスターはそのモンスターにしか
+  // 攻撃できない」), likewise core-enforced continuous — not a
+  // summon-turn block either.
+  ok(JSON.stringify(barring) === JSON.stringify([TANK, SHADOW, 36898537, 78625592, 85252081, 11646785, 57031794, 57450198, 24092792].sort((a, b) => a - b)),
+    'B1: pool-wide attack-barring clauses == exactly the 9 enumerated cards');
   const pend = Object.values(data.cards).filter(c => (c.type & 0x1000000) !== 0).length;
   ok(pend === 0, 'B2: pool holds zero Pendulum monsters (Horus rider branch unreachable)');
   const ggAll = [...data.decks.gg.main, ...data.decks.gg.extra];

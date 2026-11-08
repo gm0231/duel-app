@@ -89,6 +89,16 @@ function describedBlocks(code) {
     const sid = src.match(re);
     if (sid) out.add(+sid[1]);
   }
+  // Clone-registered descriptions (env-decks round, 2026-11-08):
+  // `local e3=e2:Clone()` inherits the source effect's condition /
+  // target / operation wholesale; a SetDescription applied to the
+  // clone is a described activatable index of its own (Iris
+  // Swordsoul's origin branches of ②, Clear Wing's second negate).
+  for (const m of src.matchAll(/local\s+(\w+)\s*=\s*\w+\s*:\s*Clone\(\)/g)) {
+    const re = new RegExp(m[1] + '\\s*:\\s*SetDescription\\(\\s*aux\\.Stringid\\(id,(\\d+)\\)');
+    const sid = src.match(re);
+    if (sid) out.add(+sid[1]);
+  }
   return out;
 }
 // Every SetDescription idx the script mentions (for the
@@ -180,6 +190,80 @@ const OVERRIDES = {
   //   print — idx0=EVENT_TO_GRAVE revival=②, idx1=QUICK_O detach
   //   bounce, which lives inside printed ① (the 2+-materials bullet).
   84025439: { 0: 2, 1: 1 },
+  // Elfennotes / White Forest deck additions (2026-11-08), each
+  // hand-audited against the bundled script's registration order
+  // and the official text:
+  // ヴィサス＝アムリターラ: ① is the undescribed name-treat
+  //   continuous; idx0=SPSUMMON_SUCCESS search=②, idx1=IGNITION
+  //   destroy=③.
+  821049: { 0: 2, 1: 3 },
+  // 白き森の魔女: idx0=the activation itself=①, idx1=FZONE tuner
+  //   ignition=③ (② is the undescribed FIELD battle protection;
+  //   idx3 is the CLIENT_HINT lock description — see KNOWN).
+  4398189: { 0: 1, 1: 3 },
+  // 燿ける聖詩の獄神精: ① is the undescribed FIELD EX-summon lock;
+  //   idx0=QUICK_O level-up + Synchro=②, idx1=BE_MATERIAL search=③.
+  12375297: { 0: 2, 1: 3 },
+  // 耀聖の花詩ルキナ／波詩ディーナ／月詩フォルトナ (same shape):
+  //   idx0 is the self-summon procedure's description (see KNOWN);
+  //   idx1=MZONE IGNITION=②, idx2=center-zone QUICK_O=③.
+  13597785: { 1: 2, 2: 3 },
+  59581480: { 1: 2, 2: 3 },
+  85976588: { 1: 2, 2: 3 },
+  // エルフェンノーツ～狂奏のラプソディア～: idx0=QUICK_O special
+  //   summon=② (① is the undescribed continuous attack lock).
+  24092792: { 0: 2 },
+  // アーカナイト・マジシャン: idx0=counter trigger=①, idx1=IGNITION
+  //   destroy=③ (② is the undescribed ATK continuous).
+  31924889: { 0: 1, 1: 3 },
+  // 灰燼竜バスタード: idx0=GRAVE add-or-summon=③ (① is the
+  //   undescribed ATK continuous; ② is the immunity grant its
+  //   summon-registration machinery applies — idx1, see KNOWN).
+  41373230: { 0: 3 },
+  // 白き森の魔狼シルウィア: idx0=SPSUMMON_SUCCESS flip=① (② is the
+  //   undescribed FIELD continuous).
+  41924516: { 0: 1 },
+  // 獄花の大燿聖ストリチア: idx0=QUICK_O Synchro=② (① is the
+  //   undescribed center-zone ATK continuous; idx2 is the
+  //   CLIENT_HINT lock description ②'s resolution registers —
+  //   see KNOWN).
+  42302563: { 0: 2 },
+  // クリスタルウィング・シンクロ・ドラゴン: idx0=QUICK_O negate=①
+  //   (② is the undescribed TRIGGER_F damage-calc ATK gain).
+  50954680: { 0: 1 },
+  // 凶導の白き天底: idx0=IGNITION apply=② (① is the undescribed
+  //   FIELD immunity).
+  51522296: { 0: 2 },
+  // 白魔女ディアベルゼ: idx0=hand ignition self-summon=①,
+  //   idx1=summon trigger=② (③ is the undescribed FIELD lock).
+  60145298: { 0: 1, 1: 2 },
+  // 教導の聖女エクレシア: idx0=hand ignition self-summon=①,
+  //   idx1=summon search=② (③ is the undescribed battle
+  //   indestructible).
+  60303688: { 0: 1, 1: 2 },
+  // 妖眼の相剣師: idx0=hand QUICK_O self-summon=①; idx1/2/3 are
+  //   the SPSUMMON_SUCCESS effect and its two Clones — the three
+  //   origin branches (hand / Deck / Extra Deck) of printed ②.
+  62849088: { 0: 1, 1: 2, 2: 2, 3: 2 },
+  // スターダスト・チャージ・ウォリアー: idx0=SPSUMMON_SUCCESS
+  //   draw=① (② is the undescribed SINGLE continuous).
+  64880894: { 0: 1 },
+  // 聖痕喰らいし竜: idx0=SPSUMMON_SUCCESS return=①, idx1=GRAVE
+  //   end-phase search=③ (② is the undescribed continuous).
+  76666602: { 0: 1, 1: 3 },
+  // 白き森の魔性ルシエラ: idx0=SPSUMMON_SUCCESS search=① (② is
+  //   the undescribed FIELD continuous).
+  77313225: { 0: 1 },
+  // クリアウィング・シンクロ・ドラゴン: idx0=QUICK_O negate
+  //   (Level 5+ effect)=①, idx1=its Clone with the targeting
+  //   condition=② (③ is the undescribed CONTINUOUS ATK grant).
+  82044279: { 0: 1, 1: 2 },
+  // ドラグマ・パニッシュメント: idx0=the activation itself=①
+  //   (idx1 is the CLIENT_HINT lock description — see KNOWN).
+  82956214: { 0: 1 },
+  // 聖アザミナ: idx0=QUICK_O special summon=② (① is the
+  //   undescribed FIELD protection).
+  85065943: { 0: 2 },
 };
 // Prompt-scoped maps (see header): desc idx -> {idle, chain}.
 // マスターフレア・ヒュペリオン: idx0 is registered by BOTH its IGNITION
@@ -213,6 +297,13 @@ const BARE = {
   30100551: [{ loc: 4, scope: 'idle', n: 1 }, { loc: 16, scope: 'chain', n: 2 }],
   37706769: [{ loc: 16, scope: 'idle', n: 2 }],
   31525442: [{ loc: 2, scope: 'idle', n: 1 }, { loc: 16, scope: 'chain', n: 2 }],
+  // 粘糸壊獣クモグス (env-decks round, 2026-11-08): NO effect of
+  //   this card owns a description. Its only chain-scope
+  //   activatable is ④ (the counter-removing negate trigger on
+  //   the opponent's summon, MZONE) — the ①② summon procedures
+  //   only ever surface as idle spsummon entries and stay
+  //   unpinned, like every other procedure.
+  29726552: [{ loc: 4, scope: 'chain', n: 4 }],
 };
 // SetDescription indices that are described but knowingly NOT
 // activatable indices (excluded from the UNACCOUNTED alarm):
@@ -235,6 +326,29 @@ const KNOWN_NON_ACTIVATABLE = {
   //   shape as カルダーン idx2) — a hint for the SET card, never a
   //   prompt desc of this card itself.
   98349765: [4],
+  // Elfennotes / White Forest deck additions (2026-11-08):
+  // 調獄神ジュノーラ idx2 = the description of its alternative
+  //   Synchro procedure (treat the center-zone monster as a Tuner)
+  //   — part of the summoning text, never an activation prompt.
+  5914858: [2],
+  // 耀聖ルキナ／ディーナ／フォルトナ idx0 = each sister's
+  //   self-summon procedure description (same shape as Red
+  //   Layer's idx0) — a procedure, never an activation prompt.
+  13597785: [0], 59581480: [0], 85976588: [0],
+  // 教導の雷霆フルルドリス idx2 = the EFFECT_TRAP_ACT_IN_SET_TURN
+  //   grant description its ② registers on the trap it sets (same
+  //   shape as カルダーン idx2 / 第１９層 idx4).
+  73355772: [2],
+  // 灰燼竜バスタード idx1 = the EFFECT_IMMUNE_EFFECT grant
+  //   description its fusion-summon registration applies to itself
+  //   (CLIENT_HINT) — never a prompt of this card.
+  41373230: [1],
+  // 白き森の魔女 idx3 / 獄花の大燿聖ストリチア idx2 /
+  //   ドラグマ・パニッシュメント idx1 = the descriptions of the
+  //   EFFECT_CANNOT_SPECIAL_SUMMON locks (CLIENT_HINT) their own
+  //   resolutions register on the player — restriction hints,
+  //   never activation prompts.
+  4398189: [3], 42302563: [2], 82956214: [1],
 };
 
 const out = {};
