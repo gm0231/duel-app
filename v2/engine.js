@@ -1449,6 +1449,11 @@ function handValue(code, view, data) {
 // duplicates and currently-dead cards are cheap; disruption is expensive.
 function discardCost(code, view, data) {
   let v = handValue(code, view, data);
+  // The Chaos Seed Pod is the deck's only board reset, but its ATK-200
+  // handValue made it the cheapest discard fodder in the deck (observed
+  // feeding Gravekeeper's Trap (2) as a cost — round 3 autopsy). Price
+  // it as the irreplaceable piece it is.
+  if (code === CC.CHAOS_POD) v += 1500;
   if (GRAVE_PROFIT.has(code)) v -= 1400;
   if (WF_RESET.has(code)) v -= 450;      // it re-sets itself from the grave
   if (SQ_GY_PROFIT.has(code)) v -= 600;  // layers work from the grave
@@ -3537,25 +3542,11 @@ function selectCardAnswer(prompt, view, data, mem) {
     return take(s, Math.max(1, min));
   }
   // --- Vernusylph of the Flowering Fields (Hana): her graveyard picks
-  // alternate salvage-to-hand, then special summon (tracked per turn in
-  // mem). The generic grave order below prices Chaos Pod (ATK 200)
-  // last, so the board-reset line never assembled even though the set
-  // Pod's flip and Book of Taiyou already prioritize it when losing.
-  // On the special-summon pick, when we are behind by the same 1800
-  // battle-power gap those Pod lines use, revive the Pod instead of
-  // the biggest body (round 2, item 5).
-  if (ctxCode === CC.VERN_HANA && entries.every(x => x.e.con === me && x.e.loc === LOC.GRAVE)) {
-    if (!mem.hanaPicks || mem.hanaPicks.turn !== view.turnCount) mem.hanaPicks = { turn: view.turnCount, n: 0 };
-    const pickNo = mem.hanaPicks.n++;
-    if (pickNo % 2 === 1) {
-      const pod = entries.find(x => x.e.code === CC.CHAOS_POD);
-      if (pod) {
-        const myTot = faceUpMons(view, me).reduce((s, c) => s + battlePower(c, data), 0);
-        const oppTot = faceUpMons(view, opp).reduce((s, c) => s + battlePower(c, data), 0);
-        if (oppTot - myTot >= 1800) return take([pod], 1);
-      }
-    }
-  }
+  // NOTE (round 3): the round-2 "revive the Pod when behind" special
+  // case was removed. Hana's Special Summon is face-up only, so a
+  // revived Pod can never flip — the reset was dead on arrival
+  // (observed: Pod summoned face-up at 200 ATK and simply run over).
+  // The generic grave order below (biggest body) handles this pick.
   // --- picks from graveyards / banished (revive, salvage, recycle):
   // biggest body for revival, otherwise the most valuable resource
   if (entries.every(x => x.e.loc === LOC.GRAVE || x.e.loc === LOC.REMOVED)) {
