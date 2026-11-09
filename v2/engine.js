@@ -2127,6 +2127,14 @@ function activationScore(e, view, data, prompt) {
       return guardianPlaceScore(view, data, rem, fieldUp, oppMons);
     case CC.FOOLISH_GOODS: {
       if (deckHas(rem, CC.EXCHANGE) && !view.grave[me].includes(CC.EXCHANGE)) return 1050;
+      // Round 4, stage E2b: with Exchange already stocked in the
+      // graveyard, the next-best deck send is Rebellion itself — its
+      // graveyard (2) recycle is reliable now (stage E2), so a milled
+      // Rebellion is nearly a drawn one, and 25 of 80 baseline games
+      // never saw Rebellion surface at all. Rebellion is not in the
+      // Gate Guardian list, so this cannot fire for that deck.
+      if (view.grave[me].includes(CC.EXCHANGE) && deckHas(rem, CC.REBELLION) &&
+          view.extra[me].some(x => x.code === CC.LUCE)) return 1050;
       if (deckHas(rem, CC.DARK_ELEMENT) && !handCodes.includes(CC.DARK_ELEMENT)) return 1000;
       for (const g of [CC.FORCE_GUARDIAN, CC.DEMON_WIND, CC.JIRAI_TRAP])
         if (deckHas(rem, g) && !handCodes.includes(g)) return 850;
@@ -3438,6 +3446,9 @@ function selectCardAnswer(prompt, view, data, mem) {
     const score = (x) => {
       const e = x.e, d = cdOf(data, e.code);
       if (ctxCode === CC.FOOLISH_GOODS) {
+        // Stage E2b: once Exchange is stocked, Rebellion outranks the
+        // self-resetting traps as the send (see activationScore).
+        if (e.code === CC.REBELLION && view.grave[me].includes(CC.EXCHANGE)) return 2800;
         if (e.code === CC.EXCHANGE) return 2000;
         if (e.code === CC.DARK_ELEMENT) return 1500;
         return GRAVE_PROFIT.has(e.code) ? 1000 + graveValue(e.code, data) : handValue(e.code, view, data) * 0.3;
