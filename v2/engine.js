@@ -2196,7 +2196,14 @@ function activationScore(e, view, data, prompt) {
       }
       // ② graveyard shuffle (field/grave copy, ignition timing in main)
       const topOpp = view.grave[opp].map(c => graveValue(c, data)).sort((a, b) => b - a);
-      return (topOpp[0] || 0) + (topOpp[1] || 0) >= 1500 ? 850 : 0;
+      // Round 5, vs-Elfennotes plan: that deck's engine runs from the
+      // hand/field (fusion), so its graveyard is mostly spent material
+      // and the shuffle buys little — while firing (2) banishes this
+      // card, which is itself a Rebellion material when it sits in our
+      // graveyard. Raise the bar against Elfennotes so the body is
+      // kept for the Luce line unless their grave is genuinely loaded.
+      const bar = oppDeckId(view, data) === 'elfennotes' ? 2600 : 1500;
+      return (topOpp[0] || 0) + (topOpp[1] || 0) >= bar ? 850 : 0;
     }
     case CC.VERN_MORI: case CC.VERN_HANA: case CC.VERN_OKA: {
       const gyEarth = view.grave[me].some(c => { const d = cdOf(data, c); return isMonsterCd(d) && d.attribute === 0x01; });
