@@ -3512,7 +3512,6 @@ function selectCardAnswer(prompt, view, data, mem) {
         const hand = view.hand[me].map(x => x.code);
         const isEF = (c) => { const d = cdOf(data, c); return d && isMonsterCd(d) && d.attribute === 0x01 && d.race === 0x4; };
         const exchInGrave = view.grave[me].includes(CC.EXCHANGE);
-        const trapUp = view.zones[me].szone.some(c => c && c.faceUp && c.code === CC.GK_TRAP);
         const gyEarth = view.grave[me].some(c => { const d = cdOf(data, c); return isMonsterCd(d) && d.attribute === 0x01; });
         const sendable = [CC.KELBEK, CC.AGIDO, CC.MUDORA, CC.KELDO, CC.ZOLGA, CC.KALDAN, CC.CARBON].some(c => deckHas(rem, c));
         // Mirror the payout conditions of Mori's activationScore case
@@ -3541,8 +3540,11 @@ function selectCardAnswer(prompt, view, data, mem) {
             if (!exchInGrave && hand.some(c => isEF(c))) return 2100; // SSes and chains into the lock search
             return 1200;
           case CC.MUDORA:
-            if (!trapUp && deckHas(rem, CC.GK_TRAP) && hand.some(c => isEF(c))) return 2000; // SSes and places the Trap from the deck
-            return 1300;
+            // Searching WITH the Trap means the Trap is already face-up,
+            // so her Trap-placing line is spent; what remains is a
+            // self-summoning Level-4 body (needs an EARTH Fairy to
+            // discard) plus the (2) grave shuffle.
+            return hand.some(c => isEF(c)) ? 1500 : 1100;
           case CC.ZOLGA:
             if (rank4Left && fieldPartner) return 2300;
             if (rank4Left && handLine) return 2100;
