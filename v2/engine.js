@@ -1229,6 +1229,7 @@ function makeBotMemory() {
     knownSet: {},         // seq -> {code, def}: face-down opponent monster whose identity was revealed earlier this duel
     bouncedAtk: {},       // seq -> DEF lower bound learned when our attack into that set monster bounced
     attackWatch: null,    // {attSeq, attCode, attAtk, tgtSeq, turn}: in-flight attack into a face-down target, resolved from later public views
+    witchChip: null,      // round 9: {turn, seqs:Set} — White Forest monsters whose once-per-turn battle protection we already spent this turn
   };
 }
 
@@ -1519,6 +1520,12 @@ function deckHas(counts, code) { return !!counts && (counts.get(code) || 0) > 0;
 // learned DEF lower bound). Only information shown during the duel is
 // used; unknown set cards keep the gamble pricing.
 function attackScore(view, data, a, t, myValue, mem) {
+  // Round 9 (Ishizu seat only): Rapsodia forces every attack onto the
+  // opponent's center monster while one stands there — price any other
+  // target as the illegal / wasted declaration it would become.
+  const ishizuSeat9 = deckIdOfList(view.myDeck, data) === 'ishizu';
+  const aura9 = ishizuSeat9 ? oppAura(view, data) : null;
+  if (aura9 && aura9.rapsodiaCenter && t.seq !== 2) return -Infinity;
   if (!t.faceUp) {
     if (mem) {
       const ks = mem.knownSet && mem.knownSet[t.seq];
@@ -1536,6 +1543,24 @@ function attackScore(view, data, a, t, myValue, mem) {
   }
   const power = battlePower(t, data);
   const threat = boardValue(t, data);
+  // Round 9 (Ishizu seat only): under the White Forest Witch field
+  // spell, each of their White Forest monsters shrugs off its first
+  // battle destruction this turn. Baseline measurement: 77 of our
+  // attacks hit White Forest monsters under the Witch, and 50 that
+  // should have killed did not (49 of them in attack position, where
+  // full removal value was being paid for damage only). Until we have
+  // attacked that monster this turn (mem.witchChip), price the battle
+  // as damage-only in attack position and as pointless in defense.
+  if (aura9 && aura9.witchUp && a >= power) {
+    const tcd = cdOf(data, t.code);
+    if (tcd && hasSetC(tcd, SETC.WF)) {
+      const chipped = !!(mem && mem.witchChip && mem.witchChip.turn === view.turnCount && mem.witchChip.seqs.has(t.seq));
+      if (!chipped) {
+        if (!t.atkPos || a === power) return -Infinity;
+        return threat * 0.2 + (a - atkOf(t, data)) * 0.25;
+      }
+    }
+  }
   if (a > power) {
     // Saint Azamina: battle damage her controller would take is dealt
     // to the attacker instead — the overkill comes back at our LP.
@@ -1551,12 +1576,15 @@ function attackScore(view, data, a, t, myValue, mem) {
 function attackPlans(view, data, attackers, directSeqs, mem) {
   const targets = monList(view, view.opp);
   const azaminaOut = targets.some(c => c.faceUp && c.code === NC.AZAMINA);
+  // Round 9: while Rapsodia's center monster stands, a direct attack
+  // cannot be declared at all (Ishizu seat only).
+  const rapCenter9 = deckIdOfList(view.myDeck, data) === 'ishizu' && oppAura(view, data).rapsodiaCenter;
   const plans = [];
   for (const at of attackers) {
     const myCell = view.zones[view.me].mzone[at.seq];
     const myValue = boardValue(myCell, data);
     // A direct attack under Saint Azamina deals its damage to US.
-    if (directSeqs.has(at.seq) && !azaminaOut) plans.push({ seq: at.seq, atk: at.atk, targetSeq: -1, score: at.atk });
+    if (directSeqs.has(at.seq) && !azaminaOut && !rapCenter9) plans.push({ seq: at.seq, atk: at.atk, targetSeq: -1, score: at.atk });
     for (const t of targets) {
       const s = attackScore(view, data, at.atk, t, myValue, mem);
       if (s > -Infinity) plans.push({ seq: at.seq, atk: at.atk, targetSeq: t.seq, score: s });
@@ -1572,6 +1600,25 @@ function lethalPlan(view, data, attackers, mem) {
   if (!targets.length) return null;
   // Saint Azamina turns our battle damage back on us: no lethal exists.
   if (targets.some(c => c.faceUp && c.code === NC.AZAMINA)) return null;
+  // Round 9 (Ishizu seat only): Rapsodia leaves only the center
+  // monster attackable, and a White Forest monster whose Witch
+  // protection is unspent cannot be cleared this turn at all.
+  if (deckIdOfList(view.myDeck, data) === 'ishizu') {
+    const aura = oppAura(view, data);
+    if (aura.rapsodiaCenter) {
+      const center = targets.filter(t => t.seq === 2);
+      if (!center.length) return null;
+      targets.length = 0; targets.push(...center);
+    }
+    if (aura.witchUp) {
+      const chip = (mem && mem.witchChip && mem.witchChip.turn === view.turnCount) ? mem.witchChip.seqs : null;
+      for (const t of targets) {
+        if (!t.faceUp) continue;
+        const tcd = cdOf(data, t.code);
+        if (tcd && hasSetC(tcd, SETC.WF) && !(chip && chip.has(t.seq))) return null;
+      }
+    }
+  }
   // Face-down defenders price at a flat 1400, except where this duel has
   // publicly revealed more: a known identity prices at its real DEF, and
   // a target that already bounced an attack prices at the learned bound.
@@ -2197,6 +2244,12 @@ function activationScore(e, view, data, prompt) {
     case CC.GK_TRAP: {
       const cellTrap = view.zones[me].szone[e.seq];
       if (cellTrap && !cellTrap.faceUp) return view.grave[opp].length >= 4 ? 1100 : 950; // flip it face-up
+      // Round 9: Great Magnus with 6+ material types locks deck-to-
+      // hand searching entirely, so the (2)'s discard would buy a
+      // guaranteed whiff. (0 measured offers under the lock in the
+      // 480-game baseline — the guard is structural, flagged in
+      // DESIGN; material count >= 6 is the public proxy for types.)
+      if (oppAura(view, data).magnusMats >= 6) return 0;
       // ② search: needs a spare discard and a reason to dig
       const cheapest = Math.min(...handCodes.filter(c => c !== CC.GK_TRAP).map(c => discardCost(c, view, data)), Infinity);
       if (cheapest > 800) return 0;
@@ -2258,6 +2311,10 @@ function activationScore(e, view, data, prompt) {
       // The old gate returned 0 whenever the Normal Summon was already
       // spent — exactly the turn Carvon is summoned, its most reliable
       // window — and 800 otherwise, under the 900-1250 engine band.
+      // Round 9: the same Magnus search lock — (1) is a deck search
+      // paid for with this card's own body; under the lock it is a
+      // pure loss. (0 measured offers under the lock in the baseline.)
+      if (oppAura(view, data).magnusMats >= 6) return 0;
       // 240-game baseline: (1) offered 126 times, chosen 5 (all from
       // the 9 offers where the summon was still open; 0 of 117 offers
       // with the summon spent), and 27 of 62 Normal Summoned Carvons
@@ -2661,6 +2718,66 @@ function oppShadowUp(view) {
   const f = view.zones[view.opp].szone[5];
   return !!(f && f.faceUp && f.code === CC.WALL_SHADOW);
 }
+// ---------------------------------------------------------------- round 9
+// Opponent board-effect awareness. BOARD_EFFECTS.md classified the pool:
+// 61 of 144 cards exert an effect on us while face-up on the opponent's
+// field. BOARD_AURA is the machine-readable residue of that audit (only
+// the kinds the Ishizu seat's decisions actually read); oppAura() is the
+// single accessor — the round-8 Shadow rules above read the same table
+// through oppShadowUp(). Kinds with no measured decision scene in 480
+// games (the Wing negates, Stardust, Aristia, Granpulse's backrow
+// destruction) are listed for completeness and deliberately carry no
+// behaviour; see cpu-round9-ishizu/DESIGN.md for the scene counts.
+const BOARD_AURA = {
+  [CC.WALL_SHADOW]: ['summon-attack-lock', 'bp-destroy-sub1600'],
+  [NC.ELF_RAPSODIA]: ['attack-target-lock-center'],
+  [NC.WF_WITCH]: ['battle-protect-whiteforest'],
+  [NC.MAGNUS]: ['deck-bounce', 'effect-immune-4plus', 'search-lock-6plus'],
+  [NC.BEAST_PULSE]: ['backrow-destroy'],
+  [NC.STARDUST]: ['negate-destroy'],
+  [NC.CRYSTALWING]: ['negate-monster-effect'],
+  [NC.CLEARWING]: ['negate-monster-effect-lv5'],
+  [NC.ELF_ARISTIA]: ['negate-spell-trap'],
+  [CC.GG_THUNDERWIND]: ['negate-field-spell-trap'],
+  [CC.GG_WINDWATER]: ['negate-field-spell-trap'],
+  [NC.MIRADORA]: ['seal-extra-monster'],
+  [CC.CHAOS_HUNTER]: ['no-banish'],
+  [NC.SINFUL_GODDESS]: ['atk-drain-on-activation', 'seal-atk0'],
+  [NC.ELF_PARALLEL]: ['protect-center-from-destruction'],
+  [NC.WF_RUCIELA]: ['protect-synchro-from-destruction'],
+  [NC.DIABELLZE]: ['protect-all-from-destruction-with-pair'],
+  [NC.ALBA_SYSTEM]: ['dogmatika-immune-to-extra-effects'],
+};
+const DIABELL_CODES = new Set([NC.DIABELLSTAR, NC.DIABELLZE]);
+// What the opponent's face-up field is doing to us right now (public
+// information only: face-up cards and their material counts).
+function oppAura(view, data) {
+  const opp = view.opp;
+  const fuM = faceUpMons(view, opp);
+  const fuS = view.zones[opp].szone.filter(c => c && c.faceUp);
+  const has = (code) => fuM.some(c => c.code === code);
+  const magnus = fuM.find(c => c.code === NC.MAGNUS);
+  const granpulse = fuM.find(c => c.code === NC.BEAST_PULSE);
+  const field = view.zones[opp].szone[5];
+  return {
+    shadow: oppShadowUp(view),
+    rapsodiaCenter: fuS.some(c => c.code === NC.ELF_RAPSODIA) && !!view.zones[opp].mzone[2],
+    witchUp: !!(field && field.faceUp && field.code === NC.WF_WITCH),
+    magnusMats: magnus ? (magnus.materials || 0) : 0,
+    granpulseMats: granpulse ? (granpulse.materials || 0) : 0,
+    stardust: has(NC.STARDUST), crystalwing: has(NC.CRYSTALWING), clearwing: has(NC.CLEARWING),
+    aristiaArmed: fuS.some(c => c.code === NC.ELF_ARISTIA) &&
+      fuM.filter(c => data && hasSetC(cdOf(data, c.code), SETC.ELF)).length >= 3,
+    ggFieldNegate: has(CC.GG_THUNDERWIND) || has(CC.GG_WINDWATER),
+    miradora: has(NC.MIRADORA), chaosHunter: has(CC.CHAOS_HUNTER),
+    sinfulGoddess: has(NC.SINFUL_GODDESS),
+    parallelism: fuS.some(c => c.code === NC.ELF_PARALLEL),
+    ruciella: has(NC.WF_RUCIELA),
+    diabellPair: fuM.filter(c => DIABELL_CODES.has(c.code)).length >= 2,
+    albaSystem: has(NC.ALBA_SYSTEM),
+  };
+}
+
 // Under the opponent's Shadow, may this Ishizu monster still be normal
 // summoned face-up because the face-up body itself develops the board?
 // Only the plays whose value IS the face-up summon: Carvon (1) must
@@ -3295,6 +3412,17 @@ function battleAnswer(prompt, view, data, mem) {
     if (plan) {
       mem.lastAttacker = { seq: plan.seq, turn: view.turnCount };
       mem.plannedTargetSeq = plan.targetSeq;
+      // Round 9: attacking a White Forest monster under the Witch
+      // spends its once-per-turn battle protection — remember the
+      // zone so later attacks this turn price the kill correctly.
+      if (plan.targetSeq >= 0 && deckIdOfList(view.myDeck, data) === 'ishizu' && oppAura(view, data).witchUp) {
+        const tc9 = view.zones[view.opp].mzone[plan.targetSeq];
+        const tcd9 = tc9 && cdOf(data, tc9.code);
+        if (tcd9 && hasSetC(tcd9, SETC.WF)) {
+          if (!mem.witchChip || mem.witchChip.turn !== view.turnCount) mem.witchChip = { turn: view.turnCount, seqs: new Set() };
+          mem.witchChip.seqs.add(plan.targetSeq);
+        }
+      }
       // Attacking a face-down target: watch the outcome so a bounce
       // teaches us that target's DEF lower bound (public information:
       // the attacker publicly dies / the target publicly stays).
@@ -3368,6 +3496,31 @@ function removalBlocked(cell, ctxCode, view, data, mem) {
   }
   // The Sinful Goddess cannot be destroyed by effects.
   if (prof.destroys && cell.code === NC.SINFUL_GODDESS) return true;
+  // Round 9 (Ishizu seat only): static protection auras from the
+  // BOARD_AURA audit. Baseline whiffs: Luce (2) was aimed at the
+  // Parallelism-protected center monster 32 times in 480 games, at
+  // Diabell-pair-protected monsters 6 times, at Alba-System-covered
+  // Dogmatika monsters 5 times — every one a guaranteed no-op that
+  // the target picker priced at full value.
+  if (deckIdOfList(view.myDeck, data) === 'ishizu') {
+    const aura = oppAura(view, data);
+    const cellCd = cdOf(data, cell.code);
+    if (prof.destroys && isMonsterCd(cellCd)) {
+      // Parallelism: their center Main Monster Zone monster cannot
+      // be destroyed by effects.
+      if (aura.parallelism && cell.seq === 2) return true;
+      // Ruciella: their Illusion / Spellcaster Synchros cannot be
+      // destroyed by effects. (0 measured picks in the baseline;
+      // included with the same audit block, flagged in DESIGN.)
+      if (aura.ruciella && (cellCd.type & CT.SYNCHRO) && (cellCd.race & (0x2 | 0x2000000))) return true;
+      // Diabellze + a second Diabell: none of their monsters can be
+      // destroyed by effects.
+      if (aura.diabellPair) return true;
+    }
+    // Alba System: their Dogmatika monsters are unaffected by the
+    // effects of monsters Special Summoned from the Extra Deck.
+    if (aura.albaSystem && isExtraCd(myCd) && cellCd && hasSetC(cellCd, SETC.DOGMA)) return true;
+  }
   return false;
 }
 
@@ -3394,11 +3547,18 @@ function selectCardAnswer(prompt, view, data, mem) {
     if (e.con === opp) {
       if (e.loc === LOC.MZONE) {
         const c = view.zones[opp].mzone[e.seq];
-        if (c && removalBlocked(c, ctxCode, view, data, mem)) return -5000; // the removal would not touch it
+        if (c && removalBlocked(Object.assign({ seq: e.seq }, c), ctxCode, view, data, mem)) return -5000; // the removal would not touch it
         let v = c ? (c.faceUp ? boardValue(c, data) : 1000) : 700;
         // Combined Gate Guardian can negate one targeted effect: shade
         // the expected value of shooting removal at it.
         if (c && c.code === CC.GG_COMBINED && REMOVAL_PROFILE[ctxCode] && REMOVAL_PROFILE[ctxCode].targets) v -= 600;
+        // Round 9: Miradora seals one of our Extra Deck monsters
+        // while she stands. Her printed body prices near the bottom
+        // of every removal list, so she was targeted once in 480
+        // baseline games; while one of our face-up Extra monsters is
+        // out, removing the sealer outranks her body.
+        if (c && c.code === NC.MIRADORA && deckIdOfList(view.myDeck, data) === 'ishizu' &&
+            faceUpMons(view, me).some(m => isExtraCd(cdOf(data, m.code)))) v += 900;
         return v;
       }
       if (e.loc === LOC.SZONE) {
