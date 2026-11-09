@@ -2135,6 +2135,16 @@ function activationScore(e, view, data, prompt) {
       // Gate Guardian list, so this cannot fire for that deck.
       if (view.grave[me].includes(CC.EXCHANGE) && deckHas(rem, CC.REBELLION) &&
           view.extra[me].some(x => x.code === CC.LUCE)) return 1050;
+      // Round 7, item 3: Blast Held by Fate was missing from the send
+      // list. Sent from the deck, its own (2) immediately salvages a
+      // Level 4 EARTH Fairy from our graveyard, so while a salvage
+      // target sits in the grave this send is a free +1. In the
+      // 240-game baseline, 104 of 234 offers sat in exactly the state
+      // "Exchange stocked, Rebellion not sendable, Blast still in the
+      // deck" and scored 0 — FBG was drawn in 116 games and fired only
+      // 88 times across all states. Blast is not in the Gate Guardian
+      // list, so this cannot fire for that deck either.
+      if (deckHas(rem, CC.BLAST_HELD) && view.grave[me].some(c => { const d = cdOf(data, c); return isMonsterCd(d) && d.attribute === 0x01 && d.race === 0x4 && (d.level & 0xff) === 4; })) return 1000;
       if (deckHas(rem, CC.DARK_ELEMENT) && !handCodes.includes(CC.DARK_ELEMENT)) return 1000;
       for (const g of [CC.FORCE_GUARDIAN, CC.DEMON_WIND, CC.JIRAI_TRAP])
         if (deckHas(rem, g) && !handCodes.includes(g)) return 850;
@@ -2236,10 +2246,21 @@ function activationScore(e, view, data, prompt) {
       return handEarth && deckHas(rem, CC.KELBEK) !== false ? 950 : 0; // discard becomes the revive target pool
     }
     case CC.CARBON: {
-      if (!prompt.summon.length) return 0; // normal summon already spent
-      const hasTarget = rem ? [...rem.keys()].some(c => { const d = cdOf(data, c); return d && d.race === 0x4 && d.attribute === 0x01 && (d.level & 0xff) === 4 && d.atk > 1400; })
+      // (1) tributes this Normal Summoned copy to add ANY other EARTH
+      // Fairy from the deck (its script filter has no level/ATK limit).
+      // The old gate returned 0 whenever the Normal Summon was already
+      // spent — exactly the turn Carvon is summoned, its most reliable
+      // window — and 800 otherwise, under the 900-1250 engine band.
+      // 240-game baseline: (1) offered 126 times, chosen 5 (all from
+      // the 9 offers where the summon was still open; 0 of 117 offers
+      // with the summon spent), and 27 of 62 Normal Summoned Carvons
+      // were destroyed by battle with (1) never used — a 1200 body left
+      // in front of 2400 attackers. The search converts a doomed body
+      // into the deck's best remaining engine piece, so price it as a
+      // real activation whenever a target remains (round 7, item 1).
+      const hasTarget = rem ? [...rem.entries()].some(([c, n]) => { if (n <= 0 || c === CC.CARBON) return false; const d = cdOf(data, c); return d && d.race === 0x4 && d.attribute === 0x01; })
                             : true;
-      return hasTarget ? 800 : 0;
+      return hasTarget ? 1200 : 0;
     }
     case CC.SPHINX:
       return (deckHas(rem, CC.TAIYOU) || deckHas(rem, CC.MOON) ||
@@ -2344,7 +2365,16 @@ function activationScore(e, view, data, prompt) {
       return hasNormalTrap ? 950 : 0;
     }
     case CC.MINERVA:
-      return view.deckCount[me] > 10 ? 900 : (view.deckCount[me] > 6 ? 500 : 0);
+      // Round 7, item 4: the flat 900 kept losing the activation
+      // auction to the 1000-1250 engine band, so whether the mill
+      // happened turned on unrelated score noise (240-game baseline:
+      // offered 84 times, fired 57; the split by material count —
+      // 14/29 with 1 material, 43/55 with 2 — was the auction, not a
+      // condition). The mill is the deck's core plan; price it inside
+      // the band, still below the Mudora mill-discard (1250) and the
+      // Rebellion lines. The deck-size floor stays: late game the
+      // remaining deck is the last resource.
+      return view.deckCount[me] > 10 ? 1200 : (view.deckCount[me] > 6 ? 700 : 0);
     case CC.HYPERION: // ① copy an "Agent" — only Pluto qualifies in this pool
       return (view.grave[me].includes(CC.PLUTO) || handCodes.includes(CC.PLUTO)) ? 700 : 0;
     case CC.HEAVY_TANK: // ③ from the field: the same guardian-piece placement as Wall Shadow ②
@@ -3091,6 +3121,14 @@ function idleAnswer(prompt, view, data, mem) {
   prompt.sset.forEach((e, i) => {
     const d = cdOf(data, e.code);
     if (!d || e.code === CC.WALL_SHADOW) return;
+    if (e.code === CC.EXCHANGE) return; // round 7, item 2: never set
+      // Exchange. Its activation needs 15+ cards in BOTH graveyards —
+      // a state this format's ~8-turn games almost never reach (the
+      // grave-pair minimum touched 15 in only 13 of 240 baseline
+      // games) — and a face-down copy is a copy NOT in the graveyard,
+      // where the Gravekeeper's Trap lock needs it. Baseline: set 56
+      // times, still face-down at duel end 43, activated once. Keep it
+      // in hand as discard fodder for the Trap (2) instead.
     if (!((d.type & CT.TRAP) || (d.type & CT.QUICKPLAY))) return;
     if (e.code === CC.BLAST_HELD) {
       // Round 2, item 5: the Bomb stays in hand as Gravekeeper's Trap
@@ -3488,6 +3526,11 @@ function selectCardAnswer(prompt, view, data, mem) {
         // self-resetting traps as the send (see activationScore).
         if (e.code === CC.REBELLION && view.grave[me].includes(CC.EXCHANGE)) return 2800;
         if (e.code === CC.EXCHANGE) return 2000;
+        // Round 7, item 3: with Exchange already stocked, the Blast
+        // send (free salvage via its own (2)) outranks the generic
+        // grave-profit fallthrough but stays below Rebellion above.
+        if (e.code === CC.BLAST_HELD && view.grave[me].includes(CC.EXCHANGE) &&
+            view.grave[me].some(c => { const d = cdOf(data, c); return isMonsterCd(d) && d.attribute === 0x01 && d.race === 0x4 && (d.level & 0xff) === 4; })) return 2600;
         if (e.code === CC.DARK_ELEMENT) return 1500;
         return GRAVE_PROFIT.has(e.code) ? 1000 + graveValue(e.code, data) : handValue(e.code, view, data) * 0.3;
       }
@@ -3607,7 +3650,21 @@ function selectCardAnswer(prompt, view, data, mem) {
         if (e.code === CC.KELDO) return 1000;    // chains into another search later
         return handValue(e.code, view, data);
       }
-      if (ctxCode === CC.CARBON) return isMonsterCd(d) ? d.atk : 0;
+      if (ctxCode === CC.CARBON) {
+        // The search pick was raw ATK: in this deck that fetches Zolga,
+        // a 1700 that is dead unless it can ride into a Rank 4 — the
+        // same failure the round-6 rework removed from the
+        // Gravekeeper's Trap (2) search. Use the same purpose order:
+        // the mill engine first, then the summon-and-search pair, then
+        // the mill starter (round 7, item 1).
+        if (e.code === CC.KELBEK) return 2400;
+        if (e.code === CC.MUDORA) return 2100;
+        if (e.code === CC.KELDO) return 2000;
+        if (e.code === CC.VERN_MORI) return 1900;
+        if (e.code === CC.VERN_HANA) return 1700;
+        if (e.code === CC.ZOLGA) return 750; // Rank 4 material with a partner — not worth fetching cold
+        return 1000 + handValue(e.code, view, data) * 0.2;
+      }
       if (ctxCode === CC.GG_THUNDERWIND) {
         const pref = [CC.DARK_ELEMENT, CC.DEMON_WIND, CC.FORCE_GUARDIAN, CC.JIRAI_TRAP].indexOf(e.code);
         return pref >= 0 ? 2000 - pref * 100 : 100;
