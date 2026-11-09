@@ -2262,9 +2262,24 @@ function activationScore(e, view, data, prompt) {
         return clearable ? 1600 : 1350;
       }
       if (e.loc === LOC.GRAVE) {
+        // (2) recycle: send one Fairy/Fiend from the hand or the
+        // face-up field to the graveyard and add Rebellion back. The
+        // old gate only counted HAND fairies/fiends priced <= 600 —
+        // measured in the round-4 autopsy, it scored 0 on 179 of 183
+        // grave offers across 17 games where Rebellion sat in the
+        // graveyard with materials ready: the printed text also
+        // allows a face-up field monster, and the deck's hand
+        // fairies/fiends almost never price at <= 600 (Vernusylphs
+        // ~1000, Mudora/Keldo ~1400+). The send is not a loss either:
+        // it lands in the graveyard as the third fusion material, so
+        // with mats >= 2 the recycle converts directly into a Luce
+        // summon this turn — price it like one.
         const mats = view.grave[me].filter(c => { const d = cdOf(data, c); return d && (d.race === 0x8 || d.race === 0x4); }).length;
-        const cheap = handCodes.some(c => { const d = cdOf(data, c); return d && (d.race === 0x8 || d.race === 0x4) && discardCost(c, view, data) <= 600; });
-        return mats >= 2 && cheap ? 600 : 0;
+        if (mats < 2) return 0;
+        const isFF = (c) => { const d = cdOf(data, c); return d && isMonsterCd(d) && (d.race === 0x8 || d.race === 0x4); };
+        const handSend = handCodes.some(c => isFF(c) && discardCost(c, view, data) <= 1600);
+        const fieldSend = faceUpMons(view, me).some(c => isFF(c.code));
+        return (handSend || fieldSend) ? 1250 : 0;
       }
       return 0;
     }
