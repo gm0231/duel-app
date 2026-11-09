@@ -1469,22 +1469,6 @@ function discardCost(code, view, data) {
       !monList(view, view.opp).some(c => !c.faceUp)) v -= 300; // no face-downs to flip
   if (code === CC.COROLLA && !handCodes.some(c => c === CC.VERN_MORI || c === CC.VERN_HANA || c === CC.VERN_OKA)) v -= 250;
   if (code === CC.EXCHANGE && view.grave[view.me].length + view.grave[view.opp].length < 20) v -= 250; // far from live
-  if (code === CC.EXCHANGE) {
-    // Round 4, stage E1: Exchange in the graveyard is the missing half
-    // of the Gravekeeper's Trap lock, and the measured bottleneck was
-    // never drawing Foolish Burial Goods — it was that a searched
-    // Exchange sat in hand while every cost prompt spent a GRAVE_PROFIT
-    // card instead (its flat 400 loses to Kelbek ~0 / Bomb -400 /
-    // Lost Wind -500 at every price point). When the Trap half is
-    // already in place, spending Exchange on the next cost IS the lock:
-    // price it below the grave-profit fodder. With the Trap merely set
-    // or in hand (it flips at 950+, so "set" is nearly "live"), give
-    // it a smaller push. Exchange exists only in the Ishizu list, so
-    // no other deck's discard order can move.
-    const gkCells = view.zones[view.me].szone;
-    if (gkCells.some(c => c && c.code === CC.GK_TRAP && c.faceUp)) v -= 1400;
-    else if (gkCells.some(c => c && c.code === CC.GK_TRAP) || handCodes.includes(CC.GK_TRAP)) v -= 500;
-  }
   return v;
 }
 // Value of a card sitting in a graveyard (as a resource / as a threat).
