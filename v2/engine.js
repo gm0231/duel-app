@@ -2205,6 +2205,22 @@ function activationScore(e, view, data, prompt) {
       const bar = oppDeckId(view, data) === 'elfennotes' ? 2600 : 1500;
       return (topOpp[0] || 0) + (topOpp[1] || 0) >= bar ? 850 : 0;
     }
+    case CC.ZOLGA: {
+      if (e.loc !== LOC.HAND) return 0; // (2) is a graveyard trigger, answered elsewhere
+      // (1) is a free Special Summon while another EARTH Fairy is out
+      // (the core only offers it then). Until round 6 it had no case
+      // here and the generic fallback prices old-pool cards at 0 —
+      // measured: offered 112 times in 240 games, fired 0, and the
+      // searched copy (the Trap (2)'s top pick) only ever ate the
+      // Normal Summon. Its real value is as the second Level-4 body:
+      // with a Rank 4 still in the Extra Deck, firing it converts
+      // into Castel/Minerva this turn.
+      const partner4 = faceUpMons(view, me).some(c => { const d = cdOf(data, c.code);
+        return c.code !== CC.ZOLGA && d && d.attribute === 0x01 && d.race === 0x4 && (d.level & 0xff) === 4; });
+      const rank4 = view.extra[me].some(x => x.code === CC.CASTEL || x.code === CC.MINERVA);
+      if (partner4 && rank4) return 1350;
+      return 750; // still a free 1700 body, just behind the engine pieces
+    }
     case CC.VERN_MORI: case CC.VERN_HANA: case CC.VERN_OKA: {
       const gyEarth = view.grave[me].some(c => { const d = cdOf(data, c); return isMonsterCd(d) && d.attribute === 0x01; });
       const handEarth = handCodes.some(c => { const d = cdOf(data, c); return isMonsterCd(d) && d.attribute === 0x01 && c !== e.code; });
@@ -3481,12 +3497,69 @@ function selectCardAnswer(prompt, view, data, mem) {
         return handValue(e.code, view, data) * 0.5;
       }
       if (ctxCode === CC.GK_TRAP) {
-        let v = isMonsterCd(d) ? d.atk : 0;
-        if (e.code === CC.KELBEK && faceUpMons(view, opp).some(c => isExtraCd(cdOf(data, c.code)))) v += 350;
-        if (e.code === CC.KELDO && !view.grave[me].includes(CC.EXCHANGE)) v += 300;
-        if (e.code === CC.MUDORA) v += 150;
-        if (e.code === CC.ZOLGA) v += 100;
-        return v;
+        // Round 6: purpose-based ranking, replacing the raw-ATK branch
+        // (Zolga 1700+100 on top; Mori at its printed 900, the bottom).
+        // Measured on the old branch: 325 searches — Zolga picked 114
+        // times (35%), Mori once (0.3%), and the searched Zolga then
+        // never fired its (1) (no activationScore case), so the pick
+        // only ever ate the Normal Summon. The user caught this live:
+        // this deck wins by fattening both graveyards, so the search
+        // buys conversion into mill — Mori dumps Kelbek from the deck
+        // (Kelbek (2) mills 5 off both decks and can set a Trap), and
+        // Kelbek itself turns into a mill off any discard outlet,
+        // including next turn's Trap (2) cost.
+        const rem = remainingDeck(view, me, data);
+        const hand = view.hand[me].map(x => x.code);
+        const isEF = (c) => { const d = cdOf(data, c); return d && isMonsterCd(d) && d.attribute === 0x01 && d.race === 0x4; };
+        const exchInGrave = view.grave[me].includes(CC.EXCHANGE);
+        const trapUp = view.zones[me].szone.some(c => c && c.faceUp && c.code === CC.GK_TRAP);
+        const gyEarth = view.grave[me].some(c => { const d = cdOf(data, c); return isMonsterCd(d) && d.attribute === 0x01; });
+        const sendable = [CC.KELBEK, CC.AGIDO, CC.MUDORA, CC.KELDO, CC.ZOLGA, CC.KALDAN, CC.CARBON].some(c => deckHas(rem, c));
+        // Mirror the payout conditions of Mori's activationScore case
+        // (hand of 2+ once she joins it, an EARTH monster in the grave
+        // to revive, or a hand EARTH Fairy plus Kelbek left to dump).
+        const moriFires = hand.length >= 1 && sendable &&
+          (gyEarth || (hand.some(c => isEF(c)) && deckHas(rem, CC.KELBEK)));
+        // Zolga earns the pick only as a free Rank-4 material: a
+        // Level-4 EARTH Fairy already face-up (its (1) condition), or
+        // a self-summoning Keldo/Mudora in hand with a discard to
+        // spare — and a Rank 4 still in the Extra Deck to convert to.
+        const fieldPartner = faceUpMons(view, me).some(c => c.code !== CC.ZOLGA && isEF(c.code) && (cdOf(data, c.code).level & 0xff) === 4);
+        const handLine = (hand.includes(CC.KELDO) || hand.includes(CC.MUDORA)) && hand.filter(c => isEF(c)).length >= 2;
+        const rank4Left = view.extra[me].some(x => x.code === CC.CASTEL || x.code === CC.MINERVA);
+        switch (e.code) {
+          case CC.VERN_MORI:
+            if (moriFires) return deckHas(rem, CC.KELBEK) ? 2900 : 2700;
+            return sendable ? 2000 : 800; // engine piece for a later turn; dead once nothing is left to send
+          case CC.KELBEK: {
+            let v = 2400;
+            if (hand.some(c => c === CC.MUDORA || c === CC.KELDO || c === CC.VERN_MORI || c === CC.VERN_HANA || c === CC.VERN_OKA)) v += 300; // an outlet is already in hand
+            if (faceUpMons(view, opp).some(c => isExtraCd(cdOf(data, c.code)))) v += 350; // (1) bounce is live vs an Extra-Deck body
+            return v;
+          }
+          case CC.KELDO:
+            if (!exchInGrave && hand.some(c => isEF(c))) return 2100; // SSes and chains into the lock search
+            return 1200;
+          case CC.MUDORA:
+            if (!trapUp && deckHas(rem, CC.GK_TRAP) && hand.some(c => isEF(c))) return 2000; // SSes and places the Trap from the deck
+            return 1300;
+          case CC.ZOLGA:
+            if (rank4Left && fieldPartner) return 2300;
+            if (rank4Left && handLine) return 2100;
+            return 750; // otherwise a 1700 that eats the Normal Summon
+          case CC.VERN_HANA:
+            return gyEarth && hand.length >= 1 ? 1700 : 900; // revive + deck dump once the grave is stocked
+          case CC.VERN_OKA:
+            return (deckHas(rem, CC.VERN_MORI) || deckHas(rem, CC.VERN_HANA)) ? 1600 : 850; // tutors the engine pieces
+          case CC.KALDAN:
+            return (view.grave[me].includes(CC.GK_TRAP) || hand.includes(CC.GK_TRAP)) ? 1800 : 1000; // its summon sets the Trap, live the same turn
+          case CC.CARBON:
+            return 1400; // a search on legs: tribute it for any other EARTH Fairy
+          case CC.AGIDO:
+            return 1100;
+          default:
+            return handValue(e.code, view, data) * 0.3;
+        }
       }
       if (ctxCode === CC.KELDO) { // search Exchange of the Present World and
         // the Underworld, or a card that mentions it (round 2, item 5e):
@@ -3519,7 +3592,14 @@ function selectCardAnswer(prompt, view, data, mem) {
           if (trapLive) return 400;             // already face-up
           return exchInGrave ? 2600 : 2200;     // completes the lock, or starts it (its own ② searches onward)
         }
-        if (e.code === CC.KELBEK) return 1800;  // the mill engine; strongest under a live lock
+        if (e.code === CC.KELBEK) // the mill engine. Round 6: once the
+          // lock is already armed (Trap face-up + Exchange in grave),
+          // the lock fetches above are near-dead (300/400) and Kelbek
+          // is the best buy in the deck — any discard outlet turns it
+          // into a 5-card mill the opponent cannot answer from the
+          // grave — so it outranks even the Bomb line in that state.
+          // The round-2 order is untouched in every other state.
+          return (trapLive && exchInGrave) ? 3600 : 1800;
         if (e.code === CC.MUDORA) return 1500;  // re-places the Trap from the deck; shuffles graves
         if (e.code === CC.AGIDO) return 1200;
         if (e.code === CC.KELDO) return 1000;    // chains into another search later
