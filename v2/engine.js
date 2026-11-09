@@ -1469,19 +1469,6 @@ function discardCost(code, view, data) {
       !monList(view, view.opp).some(c => !c.faceUp)) v -= 300; // no face-downs to flip
   if (code === CC.COROLLA && !handCodes.some(c => c === CC.VERN_MORI || c === CC.VERN_HANA || c === CC.VERN_OKA)) v -= 250;
   if (code === CC.EXCHANGE && view.grave[view.me].length + view.grave[view.opp].length < 20) v -= 250; // far from live
-  // Round 5, vs-White-Forest plan: the Gravekeeper's Trap lock is worth
-  // the most against White Forest (their engine runs through the grave;
-  // on the 240-game scale, lock-live games vs WF went 11W-2L) and their
-  // games run longest, yet the lock completed least often there (13/60)
-  // because Exchange kept missing its discard window. Round 4's global
-  // version of this rule changed 0 of 80 games; gated to the one
-  // matchup where the lock is a primary win line, when the Trap is
-  // already face-up Exchange in hand is pure lock fuel — make it the
-  // preferred discard so the first cost prompt completes the lock.
-  if (code === CC.EXCHANGE && deckIdOfList(view.myDeck, data) === 'ishizu' &&
-      oppDeckId(view, data) === 'whiteforest' &&
-      view.zones[view.me].szone.some(c => c && c.faceUp && c.code === CC.GK_TRAP) &&
-      !view.grave[view.me].includes(CC.EXCHANGE)) v -= 1400;
   return v;
 }
 // Value of a card sitting in a graveyard (as a resource / as a threat).
