@@ -2182,10 +2182,17 @@ function activationScore(e, view, data, prompt) {
       if (bestGraveMonster >= 2100 && (myStrongestAtk(view, data) < bestGraveMonster || myMons.length <= 1)) return 1250;
       return bestGraveMonster >= 2600 ? 1100 : 0;
     case CC.EXCHANGE: {
+      // Round 8, item B: the core only offers Exchange when both
+      // graveyards hold 15+ cards — the swap IS this deck's namesake
+      // play — but the old gate priced it by a deck-count comparison
+      // that returned 0 in most legal windows (our deck runs 45 cards
+      // and drains no faster than the opponent's) and 800 otherwise,
+      // below the engine band: 40 idle offers, 0 activations in 480
+      // games. Price the legal window as the finisher it is; keep the
+      // two real guards.
       if (view.lp[me] <= 1200) return 0;
-      if (view.deckCount[me] <= 16) return 1400;
       if (view.deckCount[opp] <= 10) return 0; // don't hand them a fresh deck
-      return view.deckCount[me] <= view.deckCount[opp] ? 800 : 0;
+      return 1350;
     }
     case CC.GK_TRAP: {
       const cellTrap = view.zones[me].szone[e.seq];
@@ -2353,8 +2360,26 @@ function activationScore(e, view, data, prompt) {
       const topOpp = view.grave[opp].map(c => graveValue(c, data)).sort((a, b) => b - a);
       return (topOpp[0] || 0) + (topOpp[1] || 0) >= 1700 ? 800 : 0;
     }
-    case CC.CASTEL:
+    case CC.CASTEL: {
+      // Round 8, item B: (2) — detach 2, shuffle ANY other face-up
+      // card into the deck — shared this desc-blind case with (1)
+      // (detach 1, flip face-down) and lost every auction on the tie
+      // (equal scores keep the first entry): 27 offers, 0 activations
+      // in 480 games, while (1) fired 10 times. (2) is the deck's
+      // cleanest answer to a boss, so price it above (1) when a
+      // high-value face-up card is actually there to remove. The
+      // effect index comes from the raw desc (Castel is in neither
+      // FXN nor FXN_ID, so fxPrinted returns null for it; measured:
+      // desc idx 0 detaches 1 material = (1), idx 1 is offered only
+      // with 2 materials = (2)).
+      const dn = Number(e.desc);
+      const didx = Number.isFinite(dn) && Math.floor(dn / 1048576) === e.code ? dn % 1048576 : -1;
+      if (didx === 1) {
+        const best = Math.max(0, ...oppFU.map(c => boardValue(c, data)));
+        if (best >= 2400) return 1500;
+      }
       return oppFU.some(c => battlePower(c, data) >= 1800) ? 1150 : 0;
+    }
     case CC.PLUTO:
       return oppFU.some(c => { const d = cdOf(data, c.code); return d && (d.type & CT.EFFECT) && atkOf(c, data) >= 1800; }) ? 1000 : 0;
     case CC.LUCE:
@@ -2465,6 +2490,18 @@ function pickSpsummon(prompt, view, data, mem) {
         return d && (d.type & CT.XYZ) && (c.materials || 0) >= 3 && !removalBlocked(c, CC.CASTEL, view, data, mem);
       });
       if (boss || climb) bonus += 1100;
+    }
+    // Baromett is a live Rank 4 in this deck ((1) recycles a Normal
+    // Trap from the grave for a draw), but the flat table priced it
+    // under both Minerva and Castel on every axis, so it was offered
+    // 456 times and summoned 0 in 480 games. Once Minerva is spent
+    // and a Normal Trap is actually in the grave to recycle, let it
+    // outbid Castel's base line (Castel's boss answer above still
+    // wins when a boss is up).
+    if (e.code === CC.BAROMETT && deckIdOfList(view.myDeck, data) === 'ishizu') {
+      const hasNormalTrap = view.grave[me].some(c => { const d = cdOf(data, c); return d && (d.type & CT.TRAP) && !(d.type & CT.CONTINUOUS) && !(d.type & 0x100000); });
+      const minervaLeft = view.extra[me].some(x => x.code === CC.MINERVA);
+      if (hasNormalTrap && !minervaLeft) bonus = 1050;
     }
     if (e.loc === LOC.EXTRA && (cd.type & CT.XYZ)) {
       const rank = cd.level & 0xff;
@@ -2614,6 +2651,44 @@ function synchroPartnerBonus(cd, view, data) {
   return field.some(c => { const d = cdOf(data, c.code); return d && (d.type & CT.TUNER) && synLv.has(levelOf(c, data) + lvl); }) ? 300 : 0;
 }
 
+// Is the opponent's Labyrinth Wall Shadow face-up in their field zone?
+// (Round 8, item A: while it is up, a face-up monster with ATK under
+// 1600 is pure exposure for the Ishizu deck — Shadow (1) already
+// denies a level-4-or-lower body its attack on the turn it is
+// summoned, and Shadow (3) destroys one such face-up monster for free
+// at the start of our Battle Phase. Face-down, it can do neither.)
+function oppShadowUp(view) {
+  const f = view.zones[view.opp].szone[5];
+  return !!(f && f.faceUp && f.code === CC.WALL_SHADOW);
+}
+// Under the opponent's Shadow, may this Ishizu monster still be normal
+// summoned face-up because the face-up body itself develops the board?
+// Only the plays whose value IS the face-up summon: Carvon (1) must
+// tribute the normal-summoned face-up body this turn (round 7 line);
+// Kaldan (1) triggers on the summon and sets a Continuous Trap; and a
+// body that completes an Xyz or Synchro with a face-up partner already
+// on the field (materials must be face-up). Everything else is a
+// standalone body that develops nothing face-up and is set instead.
+function shadowFaceUpOk(e, cd, view, data) {
+  const me = view.me;
+  if (e.code === CC.CARBON) return true;
+  if (e.code === CC.KALDAN && view.hand[me].concat(view.grave[me]).some(c =>
+      { const d = cdOf(data, c.code !== undefined ? c.code : c); return d && (d.type & CT.TRAP) && (d.type & CT.CONTINUOUS); })) return true;
+  const lvl = cd.level & 0xff;
+  if (!lvl) return false;
+  const partners = faceUpMons(view, me);
+  if (partners.some(c => levelOf(c, data) === lvl) &&
+      view.extra[me].some(x => { const d = cdOf(data, x.code); return d && (d.type & CT.XYZ) && (d.level & 0xff) === lvl; })) return true;
+  const iAmTuner = (cd.type & CT.TUNER) !== 0;
+  for (const c of partners) {
+    const d2 = cdOf(data, c.code);
+    if (!d2 || ((d2.type & CT.TUNER) !== 0) === iAmTuner) continue; // need exactly one tuner in the pair
+    const sum = levelOf(c, data) + lvl;
+    if (view.extra[me].some(x => { const d = cdOf(data, x.code); return d && (d.type & CT.SYNCHRO) && (d.level & 0xff) === sum; })) return true;
+  }
+  return false;
+}
+
 function pickSummon(prompt, view, data) {
   const me = view.me;
   const oppPow = oppMaxPower(view, data);
@@ -2636,6 +2711,15 @@ function pickSummon(prompt, view, data) {
       // (tuners and starters are exempt: their effect outranks the wall line)
       if (oppPow > cd.atk && cd.def >= oppPow && prompt.mset.some(m => m.code === e.code) &&
           !STARTER_BONUS[e.code] && !(cd.type & CT.TUNER)) return;
+      // Round 8, item A: under the opponent's Labyrinth Wall Shadow, a
+      // sub-1600 body that develops nothing face-up is set, never
+      // summoned face-up (see oppShadowUp / shadowFaceUpOk). Measured
+      // on the pre-fix build: 106 face-up attack-position normal
+      // summons under Shadow in 480 games, 26 of them later destroyed
+      // in battle in attack position for 40,100 damage, plus Shadow
+      // (3) destroying a face-up sub-1600 monster in 10 of 11 firings.
+      if (cd.atk < 1600 && oppShadowUp(view) && deckIdOfList(view.myDeck, data) === 'ishizu' &&
+          prompt.mset.some(m => m.code === e.code) && !shadowFaceUpOk(e, cd, view, data)) return;
       let gain = cd.atk - cost * 0.85;
       if (e.code === CC.KALDAN && view.hand[me].concat(view.grave[me]).some(c =>
           { const d = cdOf(data, c.code !== undefined ? c.code : c); return d && (d.type & CT.TRAP) && (d.type & CT.CONTINUOUS); })) gain += 250;
@@ -2935,6 +3019,22 @@ function chainEntryValue(e, view, data, mem) {
       return faceUpMons(view, opp).some(c => battlePower(c, data) >= 2200) ? 1050 : 0;
     case CC.LUCE:
       return newBigOpp && atkOf(newBigOpp, data) >= 2200 ? 1100 : 0;
+    case CC.KELBEK: {
+      // Round 8, item B: Kelbek (1) — special summon this 1500 body
+      // from the hand and bounce one of the opponent's special
+      // summoned monsters — had no case anywhere in the chain path
+      // and fell through to the generic default 0 (Kelbek predates
+      // the new-theme tables): 82 chain offers, 0 activations in 480
+      // games. The core only offers it when a legal target exists.
+      if (e.loc === LOC.HAND) {
+        const best = Math.max(0, ...faceUpMons(view, opp).map(c => boardValue(c, data)));
+        return best >= 2000 ? 1400 : 1200;
+      }
+      // (2) the mill, asked as a chain entry from the graveyard: same
+      // deck-out floor as the EFFECTYN path.
+      if (view.deckCount[me] <= 8 && view.deckCount[opp] > 6) return 0;
+      return 1200;
+    }
     default:
       return newChainValue(e, view, data, mem,
         { topOpp, topCd, topThreat, chainWar, atkCell, atkDmg, myMonDies, myMonValue, newBigOpp });
@@ -3094,7 +3194,13 @@ function idleAnswer(prompt, view, data, mem) {
       const wallShadowUp = (() => { const f = view.zones[me].szone[5]; return !!(f && f.faceUp && f.code === CC.WALL_SHADOW); })();
       const cdCell = cdOf(data, cell.code);
       const summonTurnLocked = wallShadowUp && cdCell && (cdCell.level & 0xff) <= 4;
-      if (isMain1 && cell.code !== CC.CHAOS_POD && !summonTurnLocked &&
+      // Round 8, item A: the same lock applies under the OPPONENT's
+      // Shadow — flipping a sub-1600 Ishizu body "to attack" on the
+      // flip turn buys no attack (Shadow (1) covers flip summons) and
+      // only exposes it to Shadow (3) and battle damage.
+      const oppShadowLock = oppShadowUp(view) && cdCell && (cdCell.level & 0xff) <= 4 && cdCell.atk < 1600 &&
+        deckIdOfList(view.myDeck, data) === 'ishizu';
+      if (isMain1 && cell.code !== CC.CHAOS_POD && !summonTurnLocked && !oppShadowLock &&
           !(defOf(cell, data) >= oppPow && oppPow > atkOf(cell, data)) &&
           profitableAttackIfStood(view, data, cell, mem)) return cmdResp(2, i);
       continue;
@@ -4033,6 +4139,17 @@ function positionAnswer(prompt, view, data) {
   const has = (p) => (prompt.mask & p) !== 0;
   if (cd && ((cd.type & CT.FLIP) || prompt.code === CC.CHAOS_POD || prompt.code === CC.MEDUSA_WORM)) {
     if (has(POS.FD_DEF)) return i32resp(POS.FD_DEF);
+  }
+  // Round 8, item A: a special summon cannot be placed face-down, but
+  // under the opponent's Labyrinth Wall Shadow a sub-1600 Ishizu body
+  // still shelters in face-up Defense — no battle damage when it is
+  // destroyed, while every development use of a face-up body (Xyz /
+  // Synchro material, summon triggers) stays intact. Its attack was
+  // already denied this turn by Shadow (1) for a level-4-or-lower
+  // body, so attack position buys nothing.
+  if (cd && isMonsterCd(cd) && cd.atk < 1600 && deckIdOfList(view.myDeck, data) === 'ishizu' && oppShadowUp(view)) {
+    if (has(POS.FU_DEF)) return i32resp(POS.FU_DEF);
+    if (has(POS.FU_ATK)) return i32resp(POS.FU_ATK);
   }
   if (cd && isMonsterCd(cd)) {
     const oppPow = oppMaxPower(view, data);
