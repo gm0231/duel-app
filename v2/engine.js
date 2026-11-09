@@ -2251,6 +2251,12 @@ function activationScore(e, view, data, prompt) {
       if (!oppFU.length) return 0;
       const oppBest = Math.max(...oppFU.map(c => battlePower(c, data)));
       const myFlippable = faceUpMons(view, me).filter(c => c.code !== CC.LUCE);
+      // Round 5, vs-Super-Quant plan: flipping a material-stacked Mech
+      // Beast face-down stalls the Magnus climb (a face-down monster
+      // cannot serve as material for the carrier summon and cannot
+      // attack), even when its body is under the 2600 line below.
+      if (oppDeckId(view, data) === 'superquant' && myFlippable.length &&
+          oppFU.some(c => { const d = cdOf(data, c.code); return d && (d.type & CT.XYZ) && (c.materials || 0) >= 3; })) return 1200;
       if (oppBest >= 3200) return 1250; // desperate: even Luce is an acceptable cost
       if (oppBest >= 2600 && myFlippable.length) return 1200;
       return 0;
@@ -2396,7 +2402,16 @@ function pickSpsummon(prompt, view, data, mem) {
       const myBest = Math.max(0, ...faceUpMons(view, me).map(c => battlePower(c, data)));
       const boss = faceUpMons(view, view.opp).some(c => battlePower(c, data) >= 2600 &&
         battlePower(c, data) > myBest && !removalBlocked(c, CC.CASTEL, view, data, mem));
-      if (boss) bonus += 1100;
+      // Round 5, vs-Super-Quant plan: a Mech Beast Xyz carrying 3+
+      // materials is a Magnus one Magnacarrier step away, even when
+      // its printed body sits under the 2600 boss line (Grampulse
+      // 2500, Aeroboros 2200). Castel's shuffle removes the whole
+      // stack, so price the answer the same as a boss.
+      const climb = oppDeckId(view, data) === 'superquant' && faceUpMons(view, view.opp).some(c => {
+        const d = cdOf(data, c.code);
+        return d && (d.type & CT.XYZ) && (c.materials || 0) >= 3 && !removalBlocked(c, CC.CASTEL, view, data, mem);
+      });
+      if (boss || climb) bonus += 1100;
     }
     if (e.loc === LOC.EXTRA && (cd.type & CT.XYZ)) {
       const rank = cd.level & 0xff;
