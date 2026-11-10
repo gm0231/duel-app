@@ -2338,6 +2338,16 @@ function activationScore(e, view, data, prompt) {
       const oppTot = oppFU.reduce((s, c) => s + battlePower(c, data), 0);
       if (pod && oppTot - myTot >= 1800) return 1300;
       if (worm && oppFU.length) return 1200;
+      // Round 10, item 5: any flip Taiyou makes is a position change.
+      // With the Sphinx payoff armed, flipping a set monster (ours
+      // preferred — the pick branch takes our Pod/Worm first anyway)
+      // buys the (1) self-summon or the (3) bounce as well.
+      if (deckIdOfList(view.myDeck, data) === 'ishizu') {
+        const syn = sphinxSynergy(view, data);
+        const anySet = myMons.some(c => !c.faceUp) || monList(view, opp).some(c => !c.faceUp);
+        if (anySet && syn.gy) return 1050;
+        if (anySet && syn.field) return 1000;
+      }
       return 0;
     }
     case CC.MOON: {
@@ -2347,8 +2357,17 @@ function activationScore(e, view, data, prompt) {
       if (oppFU.some(c => atkOf(c, data) >= 2600)) return 650;
       return 0;
     }
-    case CC.MISCHIEF:
-      return monList(view, opp).some(c => !c.faceUp) && myStrongestAtk(view, data) >= 1800 ? 500 : 0;
+    case CC.MISCHIEF: {
+      // (1) flip the opponent's face-down monster into face-up Attack.
+      const base = monList(view, opp).some(c => !c.faceUp) && myStrongestAtk(view, data) >= 1800 ? 500 : 0;
+      // Round 10, item 5: that flip is a position change — with the
+      // Sphinx payoff armed it also triggers (1)/(3).
+      if (base && deckIdOfList(view.myDeck, data) === 'ishizu') {
+        const syn = sphinxSynergy(view, data);
+        if (syn.gy || syn.field) return 950;
+      }
+      return base;
+    }
     case CC.SILKY: {
       // (1) flips one face-up monster on EACH field face-down, then
       // Special Summons itself. It sat dead through 211 offers in 80
@@ -2367,6 +2386,17 @@ function activationScore(e, view, data, prompt) {
           oppFU.some(c => { const d = cdOf(data, c.code); return d && (d.type & CT.XYZ) && (c.materials || 0) >= 3; })) return 1200;
       if (oppBest >= 3200) return 1250; // desperate: even Luce is an acceptable cost
       if (oppBest >= 2600 && myFlippable.length) return 1200;
+      // Round 10, item 5: Silky flips one monster on EACH field — two
+      // position changes, the deck's most reliable Sphinx trigger.
+      // With the payoff armed, the flip-down of a mid-size boss buys
+      // the (1) self-summon (2500 body) or the (3) bounce as well.
+      // Baseline: synergy scenes saw Silky offered 396 times and
+      // fired 24 — priced as a standalone it almost never won a turn.
+      if (deckIdOfList(view.myDeck, data) === 'ishizu' && myFlippable.length) {
+        const syn = sphinxSynergy(view, data);
+        if (syn.gy && oppBest >= 1600) return 1150;
+        if (syn.field && oppBest >= 1800) return 1100;
+      }
       return 0;
     }
     case CC.REBELLION: {
@@ -2437,8 +2467,20 @@ function activationScore(e, view, data, prompt) {
       }
       return oppFU.some(c => battlePower(c, data) >= 1800) ? 1150 : 0;
     }
-    case CC.PLUTO:
-      return oppFU.some(c => { const d = cdOf(data, c.code); return d && (d.type & CT.EFFECT) && atkOf(c, data) >= 1800; }) ? 1000 : 0;
+    case CC.PLUTO: {
+      // (1) flip an Effect Monster face-down (cost: banish a monster
+      // from our grave). Round 10, item 5: the flip is a position
+      // change — with the Sphinx payoff armed it triggers (1)/(3) too,
+      // which lifts it into the engine band it kept losing to
+      // (baseline: 6 offers with Sphinx on the field, 0 activations).
+      const target = oppFU.some(c => { const d = cdOf(data, c.code); return d && (d.type & CT.EFFECT) && atkOf(c, data) >= 1800; });
+      if (!target) return 0;
+      if (deckIdOfList(view.myDeck, data) === 'ishizu') {
+        const syn = sphinxSynergy(view, data);
+        if (syn.gy || syn.field) return 1300;
+      }
+      return 1000;
+    }
     case CC.LUCE:
       if (oppFU.some(c => battlePower(c, data) >= 1800)) return 1200;
       return view.zones[opp].szone.some(c => c && c.faceUp) ? 800 : 0;
@@ -2717,6 +2759,26 @@ function synchroPartnerBonus(cd, view, data) {
 function oppShadowUp(view) {
   const f = view.zones[view.opp].szone[5];
   return !!(f && f.faceUp && f.code === CC.WALL_SHADOW);
+}
+// ---------------------------------------------------------------- round 10
+// Position-change synergy: 《転輪のスフィンクス》 is this deck's payoff
+// for changing monster positions — (1) when ANY monster's position is
+// changed, it can Special Summon itself from the hand/graveyard by
+// banishing a Spell from our graveyard; (3) while it stands face-up,
+// when ANOTHER monster's position changes, it bounces a field card to
+// the hand. The position changers (Silky, Pluto (1), Mischief, the
+// Books) were priced as standalones through round 9; sphinxSynergy()
+// reports whether the payoff is armed so their evaluations can price
+// the trigger in. gy = (1) can actually fire (Sphinx in hand/grave AND
+// a Spell in the grave to banish); field = (3) is live.
+function sphinxSynergy(view, data) {
+  const me = view.me;
+  const inReach = view.grave[me].includes(CC.SPHINX) || view.hand[me].some(x => x.code === CC.SPHINX);
+  const spellCost = view.grave[me].some(c => { const d = cdOf(data, c); return d && (d.type & 0x2) && !(d.type & 0x1); });
+  return {
+    gy: inReach && spellCost,
+    field: faceUpMons(view, me).some(c => c.code === CC.SPHINX),
+  };
 }
 // ---------------------------------------------------------------- round 9
 // Opponent board-effect awareness. BOARD_EFFECTS.md classified the pool:
@@ -3110,14 +3172,38 @@ function chainEntryValue(e, view, data, mem) {
     case CC.MOON: {
       if (atkCell && atkOf(atkCell, data) >= 1800 && (myMonDies || atkDmg >= 1500)) return 1400; // flip the attacker: attack stops
       if (newBigOpp && atkOf(newBigOpp, data) >= 2400) return 1050;
+      // Round 10, item 5: flipping their monster face-down is also a
+      // position change — with the Sphinx payoff armed, the flip buys
+      // the trigger (a 2500 self-summon or a bounce) on top of the stall.
+      if (deckIdOfList(view.myDeck, data) === 'ishizu') {
+        const syn = sphinxSynergy(view, data);
+        if ((syn.gy || syn.field) && faceUpMons(view, opp).some(c => atkOf(c, data) >= 1800)) return 700;
+      }
       return 0;
     }
     case CC.LOST_WIND:
       if (newBigOpp && isExtraCd(cdOf(data, newBigOpp.code)) && atkOf(newBigOpp, data) >= 1700) return 1150;
       return faceUpMons(view, opp).some(c => isExtraCd(cdOf(data, c.code)) && atkOf(c, data) >= 2000) ? 1000 : 0;
-    case CC.TITANOCIDER:
+    case CC.TITANOCIDER: {
       if (newBigOpp && isExtraCd(cdOf(data, newBigOpp.code)) && atkOf(newBigOpp, data) >= 1900) return 1150;
+      if (deckIdOfList(view.myDeck, data) !== 'ishizu') return 0;
+      // Round 10, item 1: the line above only prices a boss that was
+      // JUST summoned. The printed effect sets the target's ATK to 0
+      // and negates it, so against a LIVE attack from a standing
+      // Extra Deck monster it is a complete answer — the attacked
+      // monster survives and/or the damage vanishes outright. The
+      // 480-game autopsy counted 49 such live battle offers across
+      // 10 games with 0 activations; the replayed worst case (seed
+      // 21876) had a set Titanocider watch a 3750 Gate Guardian kill
+      // Luce at 300 LP and end the game. Same asymmetry Lost Wind
+      // never had: it owns a standing-monster fallback, this did not.
+      if (atkCell && isExtraCd(cdOf(data, atkCell.code)) &&
+          (myMonDies || atkDmg >= 800)) return 1400;
+      // Standing-boss fallback, level with Lost Wind's (1000): negate
+      // the chained effect of a big standing Extra monster and zero it.
+      if (topOpp && isMonsterCd(topCd) && isExtraCd(topCd) && topCd.atk >= 2200) return 1000;
       return 0;
+    }
     case CC.TRANSMIGRATION: {
       if (topOpp && topOpp.code === CC.REBORN) return 1300; // shuffle their revival target away
       if (topOpp && topOpp.tloc === LOC.GRAVE && graveValue(topOpp.code, data) >= 800) return 1200;
@@ -3190,7 +3276,41 @@ function effectYnAnswer(prompt, view, data, mem) {
       const oppBest = Math.max(0, ...faceUpMons(view, view.opp).map(c => atkOf(c, data)));
       const myFaceUp = faceUpMons(view, me);
       const myWeakest = myFaceUp.length ? Math.min(...myFaceUp.map(c => atkOf(c, data))) : Infinity;
-      return i32resp((oppBest >= 1700 && myWeakest <= 1800) || oppBest >= 2600 ? 1 : 0);
+      if ((oppBest >= 1700 && myWeakest <= 1800) || oppBest >= 2600) return i32resp(1);
+      // Round 10, item 5: same synergy as the activationScore case —
+      // two position changes with the Sphinx payoff armed.
+      if (deckIdOfList(view.myDeck, data) === 'ishizu' && myFaceUp.some(c => c.code !== CC.LUCE)) {
+        const syn = sphinxSynergy(view, data);
+        if ((syn.gy && oppBest >= 1600) || (syn.field && oppBest >= 1800)) return i32resp(1);
+      }
+      return i32resp(0);
+    }
+    case CC.MISCHIEF: {
+      // (2), from the graveyard on the opponent's attack declaration:
+      // flip one of OUR face-down Defense monsters face-up Attack.
+      // Through round 9 this had no case and fell through to the
+      // own-card default YES — 36 offers, 36 activations in the
+      // 480-game baseline, with the target left to the generic order
+      // (9 of the flips turned the OPPONENT's set monsters face-up,
+      // Shark included). Fire only when the flip itself pays, and arm
+      // the dedicated target pick in selectCardAnswer.
+      if (prompt.loc === LOC.GRAVE) {
+        const opp = view.opp;
+        const mySet = monList(view, me).filter(c => !c.faceUp);
+        const oppTot = faceUpMons(view, opp).reduce((s, c) => s + battlePower(c, data), 0);
+        const myTot = faceUpMons(view, me).reduce((s, c) => s + battlePower(c, data), 0);
+        const la = view.lastAttack;
+        const isTarget = (c) => !!(la && la.target && la.target.seq === c.seq);
+        let yes = false;
+        if (mySet.some(c => c.code === CC.CHAOS_POD) && oppTot - myTot >= 1800) yes = true; // the reset line (same bar as Taiyou/Pod)
+        else if (mySet.some(c => c.code === CC.MEDUSA_WORM) && faceUpMons(view, opp).length) yes = true; // flip: destroy their biggest
+        else if (mySet.some(c => c.code === CC.SPHINX && !isTarget(c)) && oppMaxPower(view, data) <= 2500) yes = true; // stand the 2500 up, arm (3)
+        else if (deckIdOfList(view.myDeck, data) === 'ishizu' && sphinxSynergy(view, data).gy &&
+                 mySet.some(c => !isTarget(c))) yes = true; // any safe flip triggers Sphinx (1)
+        if (yes) { mem.soudou2Turn = view.turnCount; return i32resp(1); }
+        return i32resp(0);
+      }
+      return i32resp(1);
     }
     case CC.CHAOS_HUNTER: {
       const cheapest = Math.min(...view.hand[me].filter(x => x.code !== prompt.code).map(x => discardCost(x.code, view, data)), Infinity);
@@ -3626,6 +3746,81 @@ function selectCardAnswer(prompt, view, data, mem) {
       return 1000;
     };
     return take(entries.slice().sort((a, b) => pref(b) - pref(a)), Math.max(1, min));
+  }
+  // --- Mischief (2) target (round 10, addendum): the yes in
+  // effectYnAnswer armed this pick. Flip OUR face-down monster — the
+  // Pod reset first, then the Worm's flip destruction, then any other
+  // set body of ours. The opponent's set monsters are the last resort:
+  // turning their hidden monster face-up Attack was the baseline's
+  // failure mode (an Armored Shark flipped into attack position).
+  if (mem.soudou2Turn === view.turnCount && view.turnPlayer === opp && prompt.selectHint === 528) {
+    mem.soudou2Turn = -1;
+    const pref = (x) => {
+      if (x.e.con === me && x.e.code === CC.CHAOS_POD) return 3000;
+      if (x.e.con === me && x.e.code === CC.MEDUSA_WORM) return 2900;
+      if (x.e.con === me) return 2000;
+      return 500;
+    };
+    return take(entries.slice().sort((a, b) => pref(b) - pref(a)), Math.max(1, min));
+  }
+  // --- Vernusylph of the Flowering Fields (1) (round 10, item 2):
+  // the printed effect is a SALVAGE (an EARTH monster from the grave
+  // to the hand) with an OPTIONAL Special Summon of another
+  // EARTH monster afterwards. The two picks answer different questions
+  // and get separate purpose orders; both demote the Sphinx, which
+  // Special Summons itself from the grave on any position change and
+  // is Level 8 (no Rank-4 line), so spending the Flower on it wastes
+  // the pick short of a concrete position-change plan.
+  if (ctxCode === CC.VERN_HANA && entries.every(x => x.e.con === me && x.e.loc === LOC.GRAVE)) {
+    const hint = prompt.selectHint;
+    const oppTot = faceUpMons(view, opp).reduce((s, c) => s + battlePower(c, data), 0);
+    const myTot = faceUpMons(view, me).reduce((s, c) => s + battlePower(c, data), 0);
+    const behind = oppTot - myTot >= 1800;
+    if (hint === 505 || hint === 506) {
+      // salvage: what does the card DO from the hand, in combination
+      // with what we already hold? The named line (user-supplied,
+      // text-verified): salvage Chaos Pod, set it, flip it with Book
+      // of Taiyou in hand or Mischief (2) in the grave = full reset.
+      // The Worm is the same shape one rung down (flip = destroy).
+      const flipReady = view.hand[me].some(x => x.code === CC.TAIYOU) || view.grave[me].includes(CC.MISCHIEF);
+      const score = (x) => {
+        const c = x.e.code, d = cdOf(data, c);
+        if (c === CC.CHAOS_POD) return behind ? (flipReady ? 5000 : 2600) : 1200;
+        if (c === CC.MEDUSA_WORM) return behind ? (flipReady ? 4200 : 2200) : 1600;
+        if (c === CC.SPHINX) return 300;
+        if (c === CC.KELBEK) return 2900; // hand-trap bounce + mill trigger
+        if (c === CC.KELDO) return 2700;
+        if (c === CC.AGIDO) return 2500;
+        if (c === CC.VERN_OKA) return 2100;
+        if (c === CC.VERN_MORI) return 2000;
+        if (c === CC.ZORGA) return 2000;
+        if (c === CC.KALDAN) return 1900;
+        if (c === CC.CARBON) return 1900;
+        if (c === CC.VERN_HANA) return 1500;
+        return 1000 + (d ? d.atk : 0) * 0.2;
+      };
+      const s = entries.slice().sort((a, b) => score(b) - score(a));
+      return take(s, Math.max(1, min));
+    }
+    if (hint === 509) {
+      // special summon: what does the body CONNECT to on the field?
+      // Level-4 EARTH Fairies are Xyz material now and a Rebellion
+      // (2) field cost later; Mori-to is the tuner for the Synchro
+      // line; a face-up Pod is a spent reset (round 3 finding).
+      const planInHand = view.hand[me].some(x => x.code === CC.TAIYOU || x.code === CC.MOON || x.code === CC.SILKY) ||
+        view.grave[me].includes(CC.MISCHIEF);
+      const score = (x) => {
+        const c = x.e.code, d = cdOf(data, c);
+        if (c === CC.SPHINX) return planInHand ? 1700 : 300;
+        if (c === CC.CHAOS_POD) return 350;
+        if (d && d.attribute === 0x01 && d.race === 0x4 && (d.level & 0xff) === 4) return 3000 + d.atk;
+        if (c === CC.VERN_MORI) return 1800;
+        if (c === CC.VERN_HANA) return 1200;
+        return 900 + (d ? d.atk : 0) * 0.2;
+      };
+      const s = entries.slice().sort((a, b) => score(b) - score(a));
+      return take(s, Math.max(1, min));
+    }
   }
   // --- Hand Destruction: the effect revealed the opponent's hand to us
   if (ctxCode === CC.HAND_DESTRUCTION) {
