@@ -217,7 +217,13 @@ const codesText = (main, extra, side) =>
     const window = await boot();
     const doc = window.document;
     doc.getElementById('todeck').click();
-    const main = data.decks.ishizu.main.map(c => c === 83764718 ? 83764719 : c);
+    // Since recipe v14 the shipped deck's revival slot is the Magic
+    // Card printing (28958464), so the variant fixture swaps THAT slot
+    // for the variant passcode 83764719; one Burial (35726888, 8pt)
+    // becomes a second Michizure (0pt) so the deck stays within
+    // 100pt once the variant normalizes to the 7pt representative.
+    const main = data.decks.ishizu.main.map(c => c === 28958464 ? 83764719 : c);
+    main[main.indexOf(35726888)] = 16435215;
     const res = await importText(window, codesText(main, data.decks.ishizu.extra, []));
     ok(res.textContent.includes('Genesis適合 ― そのまま対戦できます'), 'N7: the variant-passcode deck validates as playable');
     doc.getElementById('neuronsave').click();

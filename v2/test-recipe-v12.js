@@ -17,8 +17,14 @@
  * Epilogue (v13, 2026-11-10): the user's follow-up package put
  * Rollback into the deck alongside the Magic Card "Monster Reborn"
  * printing; it benched at 191W against the same 213W baseline and
- * was rolled back the same way, so R1/R2 pin the v11 deck state
- * again and the implementation scenarios are unchanged.
+ * was rolled back the same way, so R1/R2 pinned the v11 deck state
+ * again and the implementation scenarios were unchanged.
+ * Epilogue (v14, 2026-11-11): the final funding package (Magic
+ * Card printing in, Keldo 3->2, Mudora 3->2, Oka 1->2, Rollback
+ * in) benched 206W with the mechanism indicators intact and was
+ * ADOPTED, so R1/R2 now pin the v14 deck state: Rollback is in
+ * the shipped deck at x1, 《死者転生》 stays out (see
+ * ~/workspace/yugioh/ishizu-v14-check/DESIGN.md).
  * The shipped deck composition itself is pinned by
  * test-recipe-v11.js; this file pins that neither v12 card is in
  * the shipped deck, and that both cards resolve for real. */
@@ -34,18 +40,17 @@ const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (
 const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'data.json'), 'utf8'));
 const REINCARNATION = 74848038, ROLLBACK = 6351147, REBORN = 83764718, CARBON = 15079028;
 
-// ---------- 1. deck state across the v12 / v13 rounds ----------
-// Both deck candidates were rolled back (v12 in its own bench, v13
-// in the 2026-11-10 bench: 191W against the 213W v11 baseline — see
-// ishizu-v13-check/DESIGN.md). The shipped deck is the v11 recipe:
-// neither v12 card is in it, and the v13 Magic Card printing is
-// not either. All three card IMPLEMENTATIONS stay in the pool.
-ok(!data.decks.ishizu.main.includes(REINCARNATION) && !data.decks.ishizu.main.includes(ROLLBACK),
-  'R1: the shipped Ishizu deck runs NEITHER v12 card (both deck candidates rolled back after their benches)');
-ok(data.decks.ishizu.main.filter(c => c === REBORN).length === 1 &&
-   !data.decks.ishizu.main.includes(28958464) &&
+// ---------- 1. deck state across the v12 / v13 / v14 rounds ----------
+// v12 and v13 were both rolled back after their benches; v14
+// (2026-11-11) adopted Rollback into the shipped deck at x1.
+// 《死者転生》 remains out; its implementation stays in the pool.
+ok(!data.decks.ishizu.main.includes(REINCARNATION) &&
+   data.decks.ishizu.main.filter(c => c === ROLLBACK).length === 1,
+  'R1: the shipped Ishizu deck runs Rollback x1 (adopted in v14) and still no 《死者転生》');
+ok(!data.decks.ishizu.main.includes(REBORN) &&
+   data.decks.ishizu.main.filter(c => c === 28958464).length === 1 &&
    data.decks.ishizu.main.filter(c => c === CARBON).length === 3 && data.decks.ishizu.main.length === 45,
-  'R2: the shipped deck is the v11 recipe state (classic Reborn x1, no Magic Card printing, Carvon x3, 45 cards)');
+  'R2: the shipped deck is the v14 recipe state (Magic Card Reborn x1, no classic Reborn, Carvon x3, 45 cards)');
 
 // ---------- 2. both cards are fully in the pool ----------
 for (const c of [REINCARNATION, ROLLBACK]) {

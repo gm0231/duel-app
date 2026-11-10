@@ -20,7 +20,14 @@
  * This file now guards both halves: the printing fully implemented
  * (verbatim official script, STD_ART delivery, a real engine
  * resolution proving the rider and the name limit), and the
- * shipped deck back in its v11 state.
+ * shipped deck state.
+ * Epilogue (v14, 2026-11-11): the user's follow-up package kept
+ * this file's base (Magic Card printing in, Keldo 3->2, Rollback
+ * in) but replaced the Oka-out/Hana-in swap with Mudora 3->2 plus
+ * Oka 1->2; it benched 206W against the same 213W baseline with
+ * the mechanism indicators intact and was ADOPTED as v14, so
+ * section 1 below now pins the v14 deck state (see
+ * ~/workspace/yugioh/ishizu-v14-check/DESIGN.md).
  * Engine scenarios use scripted policies over rigged test decks and
  * scan deterministic seeds until the flow is observed (the same
  * calibration approach as test-recipe-v11/v12).                 */
@@ -37,15 +44,15 @@ const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'data.json'), 'utf8
 
 const MC_REBORN = 28958464, REBORN = 83764718, OKA = 9350312, KELDO = 63542003,
       HANA = 62133026, ROLLBACK = 6351147, COROLLA = 14108995, CARBON = 15079028,
-      LUCE = 45409943;
+      LUCE = 45409943, MUDORA = 99937011;
 
-// ---------- 1. the rolled-back deck state ----------
+// ---------- 1. the shipped deck state (v14 since 2026-11-11) ----------
 {
   const main = data.decks.ishizu.main;
   const n = (c) => main.filter(x => x === c).length;
-  ok(main.length === 45 && n(MC_REBORN) === 0 && n(REBORN) === 1 && n(OKA) === 1 &&
-     n(KELDO) === 3 && n(HANA) === 2 && n(ROLLBACK) === 0 && n(COROLLA) === 1 && n(CARBON) === 3,
-    'R1: the shipped Ishizu deck is back to the v11 recipe (v13 candidate rolled back after the 480-game bench: classic Reborn x1, Oka x1, Keldo x3, Hana x2, no Rollback, 45 cards)');
+  ok(main.length === 45 && n(MC_REBORN) === 1 && n(REBORN) === 0 && n(OKA) === 2 &&
+     n(KELDO) === 2 && n(MUDORA) === 2 && n(HANA) === 2 && n(ROLLBACK) === 1 && n(COROLLA) === 1 && n(CARBON) === 3,
+    'R1: the shipped Ishizu deck is the v14 recipe (v13 candidate rolled back; v14 adopted after its 480-game bench: Magic Card Reborn x1, Oka x2, Keldo x2, Mudora x2, Rollback x1, Hana x2, 45 cards)');
   ok(data.decks.ishizu.extra.length === 15 && data.decks.ishizu.extra.filter(c => c === LUCE).length === 3,
     'R2: the Extra deck is untouched (15 cards, Luce x3)');
 }
