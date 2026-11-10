@@ -2415,8 +2415,8 @@ async function boot() {
   ok(ggHelp.res.every(r => r.small === '../assets/card-art-std-' + r.code + '-s.jpg' && r.big === '../assets/card-art-std-' + r.code + '.jpg'), 'CAGG2: cardArtFile returns the std files (small + big) for all 28');
   ok(ggHelp.res.every(r => r.inline.includes('card-art-std-' + r.code + '-s.jpg')), 'CAGG3: artInline carries the std art for all 28 (no surface falls back to the placeholder)');
   ok(GGART.every(c => ggHelp.preloaded.includes('../assets/card-art-std-' + c + '-s.jpg') && ggHelp.preloaded.includes('../assets/card-art-std-' + c + '.jpg')), 'CAGG4: selecting the GG deck preloads both std sizes (deck-select preload, no blank flash)');
-  ok(ggHelp.stdCount === 111 && ggHelp.overlap.length === 0, 'CAGG5: scoping — STD_ART holds exactly 111 codes and never shadows a user painting (no overlap with CARD_ART)');
-  ok(ggHelp.uncovered.length === 0, 'CAGG5b: full-pool coverage — every one of the 146 pool cards now resolves some art');
+  ok(ggHelp.stdCount === 112 && ggHelp.overlap.length === 0, 'CAGG5: scoping — STD_ART holds exactly 112 codes and never shadows a user painting (no overlap with CARD_ART)');
+  ok(ggHelp.uncovered.length === 0, 'CAGG5b: full-pool coverage — every one of the 147 pool cards now resolves some art');
   const resGG = window.eval(`
     (() => {
       const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };

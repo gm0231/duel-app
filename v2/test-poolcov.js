@@ -191,7 +191,7 @@ const NON_PROMPT = {
 
 // ---------- A + B + classification table ----------
 const clsCount = { '番号特定': 0, '番号特定（スコープ/yn/bare）': 0, '単一効果/発動慣例': 0, '番号対象なし': 0, '未カバー': 0 };
-console.log('---- pool classification (146) ----');
+console.log('---- pool classification (147) ----');
 for (const code of Object.keys(data.cards)) {
   const fx = fxmap[code];
   const segs = T.effectSegments(+code);
@@ -240,7 +240,7 @@ for (const code of Object.keys(data.cards)) {
   console.log(code + ' | ' + data.names[code] + ' | segs=' + segs.length + ' | desc=' + [...desc].join(',') + ' | ' + cls);
 }
 console.log('classification counts:', JSON.stringify(clsCount));
-ok(Object.keys(data.cards).length === 146, 'pool is 146 cards');
+ok(Object.keys(data.cards).length === 147, 'pool is 147 cards');
 ok(clsCount['未カバー'] === 0, 'no card is left unclassified/uncovered without an enumerated reason');
 
 // ---------- D: lingering-restriction scan ----------
@@ -275,6 +275,10 @@ const EXPECTED_RESTRICTIONS = [
   '42302563:EX召喚種別制限', '64491754:EX召喚種別制限',
   '31002402:カード名発動制限（1ターン1枚）', '35569555:カード名発動制限（1ターン1枚）',
   '60921537:カード名発動制限（1ターン1枚）', '82956214:カード名発動制限（1ターン1枚）',
+  // v13 (2026-11-10): the Magic Card "Monster Reborn" returns to
+  // the pool — it carries both the revive-rider restriction and a
+  // 1-turn card-name activation limit.
+  '28958464:蘇生モンスターへの制約', '28958464:カード名発動制限（1ターン1枚）',
 ];
 ok(JSON.stringify([...found].sort()) === JSON.stringify([...EXPECTED_RESTRICTIONS].sort()),
   'D: restriction scan finds exactly the enumerated set (found: ' + found.join(' / ') + ')');
@@ -331,11 +335,12 @@ PC.reset();
 PC.trackUsedFx({ turnCount: 1, chain: [{ code: 99937011, con: 1, loc: 2, seq: 0, desc: SID(99937011, 0) }, { code: 63101468, con: 0, loc: 4, seq: 0, desc: SID(63101468, 0) }] });
 ok(JSON.stringify(PC.usedFx().find(u => u.code === 63101468).n) === '[2]' && PC.optUsedReason(63101468) === null,
   'F18d: Hyperion responding link attributes to ② (pmap chain); OPT reason stays silent (① unspent)');
-// 死者蘇生 latch — the rider card itself left the pool in the v11
-// recipe swap (the classic 《死者蘇生》 carries no rider), so the
-// latch is exercised against a fixture DATA whose texts carry the
-// rider under the old code; the mechanism derives the code from
-// the text, exactly as in production. Real DATA returns after F25.
+// 死者蘇生 latch — the rider card left the pool in the v11 recipe
+// swap (the classic 《死者蘇生》 carries no rider) and returned in
+// v13; the latch is exercised against a fixture DATA whose texts
+// carry the rider under the code; the mechanism derives the code
+// from the text, exactly as in production. Real DATA returns after
+// F25 (with v13 the fixture text is identical to the real one).
 const fixtureData = JSON.parse(JSON.stringify(data));
 fixtureData.names['28958464'] = 'マジックカード「死者蘇生」';
 fixtureData.texts['28958464'] = { name: 'マジックカード「死者蘇生」', text: 'このカード名のカードは１ターンに１枚しか発動できない。\n①：自分か相手の墓地のモンスター１体を対象として発動できる。そのモンスターを自分フィールドに特殊召喚する。このターン、この効果で特殊召喚したモンスターは攻撃できず、その効果は発動できない。' };
@@ -373,8 +378,8 @@ T.setDATA(data); // restore the real pool for the sections below
 
 // ---------- G: card-name activation limits (brushup round 2) ----------
 ok(JSON.stringify(PC.nameLimitCards().map(x => x.code + ':' + x.scope).sort()) === JSON.stringify([
-  '17484499:duel', '31002402:turn', '35569555:turn', '35726888:turn', '45725480:turn', '60921537:turn', '82956214:turn',
-]), 'G1: card-name limit derivation = {現世と冥界の逆転:duel, おろかな副葬/七星の宝刀/凶導の福音/凶導の聖告/凶導の葬列/ドラグマ・パニッシュメント:turn} (マジックカード「死者蘇生」 left the pool in v11; the classic has no name limit)');
+  '17484499:duel', '28958464:turn', '31002402:turn', '35569555:turn', '35726888:turn', '45725480:turn', '60921537:turn', '82956214:turn',
+]), 'G1: card-name limit derivation = {現世と冥界の逆転:duel, マジックカード「死者蘇生」/おろかな副葬/七星の宝刀/凶導の福音/凶導の聖告/凶導の葬列/ドラグマ・パニッシュメント:turn} (the Magic Card returns to the pool in v13; the classic has no name limit)');
 PC.reset();
 ok(PC.nameLimitReason(35726888) === null, 'G2: おろかな副葬 unspent -> silent');
 PC.trackUsedFx({ turnCount: 1, chain: [{ code: 35726888, con: 0, loc: 2, seq: 0, desc: SID(35726888, 0) }] });
