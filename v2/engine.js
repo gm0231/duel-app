@@ -1072,6 +1072,7 @@ const CC = {
   REBELLION: 71593652, REBORN: 83764718, COROLLA: 14108995, FOOLISH_GOODS: 35726888,
   GK_TRAP: 98715423, EXCHANGE: 17484499, BLAST_HELD: 51208877, SPIRITUAL_SWORDS: 78625592,
   TITANOCIDER: 67037924, TRANSMIGRATION: 46652477,
+  REINCARNATION: 74848038, ROLLBACK: 6351147,
   LUCE: 45409943, HORUS: 36898537, PLUTO: 37706769, BAROMETT: 62967433,
   HYPERION: 63101468, TRILOSUKTA: 21368273, CASTEL: 82633039, MINERVA: 30100551,
   SANGA: 25955164, HUGA: 62340868, SUIGA: 98434877, DARK_GUARDIAN: 26746975,
@@ -1087,7 +1088,8 @@ const GUARDIAN_PIECES = [CC.SANGA, CC.HUGA, CC.SUIGA];
 // Cards that PROFIT from being sent to / placed in the graveyard (mill
 // triggers, grave searches, self-reset): cheap to discard, good to mill.
 const GRAVE_PROFIT = new Set([CC.KELBEK, CC.BLAST_HELD, CC.LOST_WIND, CC.TITANOCIDER,
-  CC.DARK_ELEMENT, CC.FORCE_GUARDIAN, CC.DEMON_WIND, CC.JIRAI_TRAP, CC.SHADOW_GHOUL, CC.REBELLION]);
+  CC.DARK_ELEMENT, CC.FORCE_GUARDIAN, CC.DEMON_WIND, CC.JIRAI_TRAP, CC.SHADOW_GHOUL, CC.REBELLION,
+  CC.ROLLBACK]); // v12: Rollback's whole job is its graveyard (2)
 const MILL_WHEN_SENT = new Set([CC.KELBEK]); // sent hand/deck -> GY: mill 5
 // Cards whose value re-arms when they go back to the deck (round 2,
 // item 5): Kelbek mills 5 for BOTH players when it is sent from the
@@ -1429,6 +1431,7 @@ function handValue(code, view, data) {
   }
   const fixed = {
     [CC.RAIGEKI]: 1700, [CC.SOLEMN_STRIKE]: 1600, [CC.GRAVE_HOLE]: 1500, [CC.REBORN]: 1400,
+    [CC.REINCARNATION]: 1250, [CC.ROLLBACK]: 550,
     [CC.GK_TRAP]: 1100, [CC.FUSION_DEPLOYMENT]: 1050, [CC.DARK_ELEMENT]: 1200,
     [CC.CONCEALING]: 1250, [CC.MOON]: 950, [CC.FOOLISH_GOODS]: 950, [CC.TERRAFORMING]: 850,
     [CC.METAVERSE]: 850, [CC.SPIRITUAL_SWORDS]: 900, [CC.BLAST_HELD]: 1000,
@@ -2228,6 +2231,43 @@ function activationScore(e, view, data, prompt) {
     case CC.REBORN:
       if (bestGraveMonster >= 2100 && (myStrongestAtk(view, data) < bestGraveMonster || myMons.length <= 1)) return 1250;
       return bestGraveMonster >= 2600 ? 1100 : 0;
+    case CC.REINCARNATION: {
+      // v12 (Ishizu recipe swap): salvage, NOT revival — the monster
+      // returns to the HAND, so it pays only when the card restarts a
+      // line from there: Kelbek turns any discard outlet into a mill,
+      // Keldo/Mudora self-summon and search, the Vernusylphs re-arm
+      // their discard engines, and a salvaged Extra monster returns
+      // to the Extra Deck for the next Rebellion. Card-neutral by
+      // itself, so it also needs a discard that is not a key.
+      if (view.hand[me].length < 2) return 0;
+      const cheapest = Math.min(...handCodes.filter(c => c !== CC.REINCARNATION).map(c => discardCost(c, view, data)), Infinity);
+      if (cheapest > 800) return 0;
+      const gy = view.grave[me];
+      let best = 0;
+      if (gy.includes(CC.KELBEK)) best = Math.max(best, 1150);
+      if (gy.includes(CC.KELDO) || gy.includes(CC.MUDORA)) best = Math.max(best, 1100);
+      if (gy.includes(CC.LUCE) && (handCodes.includes(CC.REBELLION) || gy.includes(CC.REBELLION))) best = Math.max(best, 1100);
+      if (gy.includes(CC.VERN_MORI) || gy.includes(CC.VERN_HANA) || gy.includes(CC.VERN_OKA)) best = Math.max(best, 950);
+      if (gy.includes(CC.AGIDO)) best = Math.max(best, 900);
+      return best;
+    }
+    case CC.ROLLBACK: {
+      // (1) copies an OPPONENT graveyard trap at half our LP: never
+      // fired — no scene in this pool pays half our LP for it.
+      // (2) is the graveyard copy of OUR OWN Normal Trap; in a main
+      // phase the only copies that can pay are Exchange (priced like
+      // the printed card) and a standing Titanocider target.
+      // Bakudan's copy window is the attack declaration, which the
+      // core only offers inside chainEntryValue.
+      if (e.loc !== LOC.GRAVE) return 0;
+      if (deckIdOfList(view.myDeck, data) !== 'ishizu') return 0;
+      const gy = view.grave[me];
+      if (gy.includes(CC.EXCHANGE) && Math.min(gy.length, view.grave[opp].length) >= 15 &&
+          view.lp[me] > 1600 && view.deckCount[opp] > 10) return 1350;
+      if (gy.includes(CC.TITANOCIDER) && view.lp[me] > 2000 &&
+          faceUpMons(view, opp).some(c => isExtraCd(cdOf(data, c.code)) && atkOf(c, data) >= 2200)) return 1000;
+      return 0;
+    }
     case CC.EXCHANGE: {
       // Round 8, item B: the core only offers Exchange when both
       // graveyards hold 15+ cards — the swap IS this deck's namesake
@@ -3403,6 +3443,58 @@ function chainEntryValue(e, view, data, mem) {
       if (view.deckCount[me] <= 8 && view.deckCount[opp] > 6) return 0;
       return 1200;
     }
+    case CC.ROLLBACK: {
+      // v12: the graveyard (2) copy. The copy target is picked in the
+      // SELECT_CARD that follows (see the ctx branch there); this
+      // value answers "is the best available copy worth half our LP
+      // plus this card". (1) — a set copy of the OPPONENT's grave —
+      // is never fired: no measured scene pays half our LP for it.
+      if (e.loc !== LOC.GRAVE) return 0;
+      if (deckIdOfList(view.myDeck, data) !== 'ishizu') return 0;
+      const gy = view.grave[me];
+      let best = 0;
+      // (a) Exchange: the swap itself, at the printed card's gates
+      // (its 15+15 condition is re-checked by the core through
+      // CheckActivateEffect, so the copy is only offered when legal).
+      if (gy.includes(CC.EXCHANGE) && Math.min(gy.length, view.grave[opp].length) >= 15 &&
+          view.lp[me] > 1600 && view.deckCount[opp] > 10) best = Math.max(best, 1350);
+      // (b) Titanocider: the round-10 live criteria, unchanged — the
+      // standing-boss branches additionally ask LP > 2000, because
+      // the copy halves it where the printed card is free. The
+      // attack-save branch fires at any LP: it is the game it saves.
+      if (gy.includes(CC.TITANOCIDER)) {
+        if (newBigOpp && isExtraCd(cdOf(data, newBigOpp.code)) && atkOf(newBigOpp, data) >= 1900 &&
+            view.lp[me] > 2000) best = Math.max(best, 1150);
+        else if (atkCell && isExtraCd(cdOf(data, atkCell.code)) &&
+            (myMonDies || atkDmg >= 800)) best = Math.max(best, 1400);
+        // Standing-boss branch: the printed card's fallback reads
+        // the chain top, but the COPY additionally needs a legal
+        // target on the field at resolution — a chained Extra
+        // monster EFFECT (from hand/grave) is not one. Require the
+        // standing body itself (v12 bench: without this, Rollback
+        // fired for an uncopyable Titanocider and the core offered
+        // only a leftover Transmigration to copy).
+        else if (topOpp && isMonsterCd(topCd) && isExtraCd(topCd) && topCd.atk >= 2200 &&
+            faceUpMons(view, opp).some(c => isExtraCd(cdOf(data, c.code)) && atkOf(c, data) >= 2200) &&
+            view.lp[me] > 2000) best = Math.max(best, 1000);
+      }
+      // (c) Bakudan: only its own last-resort scenes (a lethal burn,
+      // or stopping our lethal), shaded below the printed case — the
+      // deck runs two Bombs, and a set one fires the same effect
+      // without the LP cost.
+      if (gy.includes(CC.BLAST_HELD) && atkCell) {
+        const big = faceUpMons(view, opp).slice().sort((x, y) =>
+          (cdOf(data, y.code) ? cdOf(data, y.code).atk : 0) - (cdOf(data, x.code) ? cdOf(data, x.code).atk : 0))[0];
+        if (big) {
+          const bigOrig = cdOf(data, big.code) ? cdOf(data, big.code).atk : 0;
+          const selfBurn = !gy.includes(CC.EXCHANGE); // same self-burn rule as the printed case
+          const burnSafe = !selfBurn || bigOrig < view.lp[me];
+          if (bigOrig >= view.lp[opp] && burnSafe) best = Math.max(best, 1900);
+          else if (atkCell.code === big.code && atkDmg >= view.lp[me] && burnSafe) best = Math.max(best, 1800);
+        }
+      }
+      return best;
+    }
     default:
       return newChainValue(e, view, data, mem,
         { topOpp, topCd, topThreat, chainWar, atkCell, atkDmg, myMonDies, myMonValue, newBigOpp });
@@ -3638,6 +3730,11 @@ function idleAnswer(prompt, view, data, mem) {
   prompt.sset.forEach((e, i) => {
     const d = cdOf(data, e.code);
     if (!d || e.code === CC.WALL_SHADOW) return;
+    if (e.code === CC.ROLLBACK) return; // v12: never set Rollback —
+      // its (1) is never fired by policy, and a set copy cannot
+      // reach the graveyard, where (2) is the card's whole job.
+      // It stays in hand as discard fodder (GRAVE_PROFIT prices
+      // the discard that way).
     if (e.code === CC.EXCHANGE) return; // round 7, item 2: never set
       // Exchange. Its activation needs 15+ cards in BOTH graveyards —
       // a state this format's ~8-turn games almost never reach (the
@@ -4034,6 +4131,46 @@ function selectCardAnswer(prompt, view, data, mem) {
     if (ctxCode === CC.REBELLION && s.length) mem.pendingSummon = { code: s[0].e.code, turn: view.turnCount };
     return take(s, Math.max(1, min));
   }
+  // --- Rollback (2): pick WHICH of our graveyard Normal Traps to
+  // copy. Same priority the chain value priced: Exchange (the swap)
+  // first, then the Titanocider answer, then the Bomb. A copied
+  // Exchange stays in the graveyard — the copy spends Rollback,
+  // never the original. This branch (and Reincarnation's below)
+  // sits ABOVE the pendingSummon materials branch on purpose: both
+  // prompts are same-turn selections of our own cards, and the
+  // materials branch's cheapest-first order captured the copy pick
+  // in the v12 bench (a Transmigration copied over a ripe Exchange
+  // whenever a summon had armed pendingSummon that turn).
+  if (ctxCode === CC.ROLLBACK && entries.every(x => x.e.loc === LOC.GRAVE)) {
+    const pairMin = Math.min(view.grave[me].length, view.grave[opp].length);
+    const score = (x) => {
+      const c = x.e.code;
+      if (x.e.con === me && c === CC.EXCHANGE) return pairMin >= 15 ? 3000 : 400;
+      if (x.e.con === me && c === CC.TITANOCIDER) return 2000;
+      if (x.e.con === me && c === CC.BLAST_HELD) return 1500;
+      return graveValue(c, data);
+    };
+    return take(entries.slice().sort((a, b) => score(b) - score(a)), Math.max(1, min));
+  }
+  // --- Reincarnation: pick the graveyard monster to salvage to the
+  // hand — the line-restart order of its activationScore case
+  // (Kelbek first: in hand it is a mill waiting for any outlet).
+  if (ctxCode === CC.REINCARNATION && entries.every(x => x.e.con === me && x.e.loc === LOC.GRAVE)) {
+    const score = (x) => {
+      const c = x.e.code, d = cdOf(data, c);
+      if (c === CC.KELBEK) return 3000;
+      if (c === CC.KELDO) return 2800;
+      if (c === CC.MUDORA) return 2700;
+      if (c === CC.LUCE) return (view.hand[me].some(h => h.code === CC.REBELLION) || view.grave[me].includes(CC.REBELLION)) ? 2600 : 700;
+      if (c === CC.VERN_MORI) return 2400;
+      if (c === CC.VERN_HANA) return 2300;
+      if (c === CC.VERN_OKA) return 2200;
+      if (c === CC.AGIDO) return 2000;
+      if (isExtraCd(d)) return 1200; // any other Extra monster also returns to the Extra Deck
+      return 1000 + (d ? d.atk : 0) * 0.2;
+    };
+    return take(entries.slice().sort((a, b) => score(b) - score(a)), Math.max(1, min));
+  }
   // --- fusion materials for 天至る叛逆 (returned to the deck): cards
   // whose value re-arms in the deck go back first (Kelbek re-mills
   // both players when it is sent to the grave again), then cheapest.
@@ -4166,6 +4303,12 @@ function selectCardAnswer(prompt, view, data, mem) {
         // grave-profit fallthrough but stays below Rebellion above.
         if (e.code === CC.BLAST_HELD && view.grave[me].includes(CC.EXCHANGE) &&
             view.grave[me].some(c => { const d = cdOf(data, c); return isMonsterCd(d) && d.attribute === 0x01 && d.race === 0x4 && (d.level & 0xff) === 4; })) return 2600;
+        // v12: Rollback sleeping in the graveyard is a second Exchange
+        // trigger (its (2) copy) — worth the send only with Exchange
+        // already stocked and the 15-card line in sight. Priced below
+        // the Rebellion / Blast sends so the existing order stands.
+        if (e.code === CC.ROLLBACK && view.grave[me].includes(CC.EXCHANGE) &&
+            Math.min(view.grave[me].length, view.grave[opp].length) >= 12) return 2400;
         if (e.code === CC.DARK_ELEMENT) return 1500;
         return GRAVE_PROFIT.has(e.code) ? 1000 + graveValue(e.code, data) : handValue(e.code, view, data) * 0.3;
       }
@@ -4394,6 +4537,16 @@ function selectCardAnswer(prompt, view, data, mem) {
     if (ctxCode === CC.GK_TRAP) {
       const bomb = entries.find(x => x.e.code === CC.BLAST_HELD);
       if (bomb) return take([bomb], Math.max(1, min));
+    }
+    // Reincarnation's discard (v12): pay with what the graveyard
+    // converts — Kelbek (discarding it mills 5 off both decks) and
+    // the Bomb (its (2) salvages) first; keys stay protected by
+    // their plain discardCost underneath the bumps.
+    if (ctxCode === CC.REINCARNATION) {
+      const bump = (c) => c === CC.KELBEK ? -900 : c === CC.BLAST_HELD ? -700 : c === CC.AGIDO ? -500 : 0;
+      const s = entries.slice().sort((a, b) =>
+        (discardCost(a.e.code, view, data) + bump(a.e.code)) - (discardCost(b.e.code, view, data) + bump(b.e.code)));
+      return take(s, Math.max(1, min));
     }
     const s = entries.slice().sort((a, b) => discardCost(a.e.code, view, data) - discardCost(b.e.code, view, data));
     if (min === 0 && prompt.cancelable) {

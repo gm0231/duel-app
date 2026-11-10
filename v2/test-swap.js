@@ -17,7 +17,10 @@
    Exchange of the Spirit resolves for both players mid-duel. (Seed was
    99 until the v11 recipe swap changed the Ishizu deck to 45 cards;
    the trajectory is deck-dependent, so the seed was re-scanned for
-   one where the swap still resolves.) At EVERY
+   one where the swap still resolves. The v12 recipe candidate was
+   benched and rolled back in 2026-11 — see
+   ishizu-v12-check/DESIGN.md — so the v11 trajectory and this seed
+   stand.) At EVERY
    prompt the mirror is cross-checked against the core itself (pile sizes
    and grave identities via Duel.queryCard scans) and totals must satisfy
    combined == pool and the control-adjusted per-seat rule.

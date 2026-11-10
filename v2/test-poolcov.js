@@ -191,7 +191,7 @@ const NON_PROMPT = {
 
 // ---------- A + B + classification table ----------
 const clsCount = { '番号特定': 0, '番号特定（スコープ/yn/bare）': 0, '単一効果/発動慣例': 0, '番号対象なし': 0, '未カバー': 0 };
-console.log('---- pool classification (144) ----');
+console.log('---- pool classification (146) ----');
 for (const code of Object.keys(data.cards)) {
   const fx = fxmap[code];
   const segs = T.effectSegments(+code);
@@ -240,7 +240,7 @@ for (const code of Object.keys(data.cards)) {
   console.log(code + ' | ' + data.names[code] + ' | segs=' + segs.length + ' | desc=' + [...desc].join(',') + ' | ' + cls);
 }
 console.log('classification counts:', JSON.stringify(clsCount));
-ok(Object.keys(data.cards).length === 144, 'pool is 144 cards');
+ok(Object.keys(data.cards).length === 146, 'pool is 146 cards');
 ok(clsCount['未カバー'] === 0, 'no card is left unclassified/uncovered without an enumerated reason');
 
 // ---------- D: lingering-restriction scan ----------
