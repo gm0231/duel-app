@@ -78,7 +78,7 @@ NeuronLib.setData(genesys);
 // ---------- 3. every distinct recipe card is fully implemented ----------
 const DISTINCT = [...new Set([...wf.main, ...wf.extra])];
 ok(DISTINCT.length === 33, 'S7: the recipe spans 33 distinct cards (got ' + DISTINCT.length + ')');
-ok(Object.keys(data.cards).length === 146, 'S8: the pool is now 146 cards (was 89; 144 after this deck, 146 with the Ishizu v12 additions)');
+ok(Object.keys(data.cards).length === 147, 'S8: the pool is now 147 cards (was 89; 144 after this deck, 146 with the Ishizu v12 additions, 147 with the v13 Magic Card printing)');
 for (const pc of DISTINCT) {
   const c = data.cards[pc];
   ok(!!c && !!data.scripts['c' + pc + '.lua'] && !!data.names[pc] && !!data.texts[pc] && !!data.texts[pc].text,

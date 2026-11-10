@@ -16,9 +16,11 @@
         material rider — the pool holds zero Pendulum monsters;
         光の護封霊剣② — it sits only in the human's deck, so the
         blocked side is always the CPU, never this UI);
-     C. the revive-rider derivation set is empty today (the
-        rider's attack half rides the monsterRevived latch and
-        arms only for a future pool card carrying the clause);
+     C. the revive-rider derivation set is exactly
+        {マジックカード「死者蘇生」 28958464} since the v13 round
+        put that printing into the pool (the rider's attack half
+        rides the monsterRevived latch, which arms from the
+        derived code automatically);
      D. behaviour: the reported Baromett case states the named
         reason, and every neighbouring case stays silent —
         no source on the field, next turn, the Level exception,
@@ -120,7 +122,8 @@ const reason = (code, con, seq, state) => AB.reason(code, con, MZONE, seq, state
     'B3: 光の護封霊剣 sits only in the human deck (its direct-attack block can only ever face the CPU)');
   const rider = Object.keys(data.texts).filter(code =>
     /この効果で特殊召喚したモンスターは攻撃できず、その効果は発動できない/.test(data.texts[code].text));
-  ok(rider.length === 0, 'C1: no pool card carries the revive rider today (attack half arms via the latch only)');
+  ok(JSON.stringify(rider) === JSON.stringify(['28958464']),
+    'C1: the revive-rider derivation set is exactly {28958464} (Magic Card "Monster Reborn", in the pool since v13 — the latch arms from this code)');
 }
 
 // ---- D1. the reported case: Baromett under Shadow --------------------

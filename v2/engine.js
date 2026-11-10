@@ -1069,7 +1069,7 @@ const CC = {
   CARBON: 15079028, VERN_MORI: 36745317, VERN_HANA: 62133026, VERN_OKA: 9350312,
   CHAOS_POD: 79106360, SILKY: 55702233, SPHINX: 46148485, KALDAN: 86605515,
   HAND_DESTRUCTION: 16435215, TAIYOU: 38699854, MOON: 14087893, MISCHIEF: 51612489,
-  REBELLION: 71593652, REBORN: 83764718, COROLLA: 14108995, FOOLISH_GOODS: 35726888,
+  REBELLION: 71593652, REBORN: 83764718, MC_REBORN: 28958464, COROLLA: 14108995, FOOLISH_GOODS: 35726888,
   GK_TRAP: 98715423, EXCHANGE: 17484499, BLAST_HELD: 51208877, SPIRITUAL_SWORDS: 78625592,
   TITANOCIDER: 67037924, TRANSMIGRATION: 46652477,
   REINCARNATION: 74848038, ROLLBACK: 6351147,
@@ -1431,7 +1431,7 @@ function handValue(code, view, data) {
   }
   const fixed = {
     [CC.RAIGEKI]: 1700, [CC.SOLEMN_STRIKE]: 1600, [CC.GRAVE_HOLE]: 1500, [CC.REBORN]: 1400,
-    [CC.REINCARNATION]: 1250, [CC.ROLLBACK]: 550,
+    [CC.REINCARNATION]: 1250, [CC.MC_REBORN]: 1150, [CC.ROLLBACK]: 550,
     [CC.GK_TRAP]: 1100, [CC.FUSION_DEPLOYMENT]: 1050, [CC.DARK_ELEMENT]: 1200,
     [CC.CONCEALING]: 1250, [CC.MOON]: 950, [CC.FOOLISH_GOODS]: 950, [CC.TERRAFORMING]: 850,
     [CC.METAVERSE]: 850, [CC.SPIRITUAL_SWORDS]: 900, [CC.BLAST_HELD]: 1000,
@@ -2231,6 +2231,28 @@ function activationScore(e, view, data, prompt) {
     case CC.REBORN:
       if (bestGraveMonster >= 2100 && (myStrongestAtk(view, data) < bestGraveMonster || myMons.length <= 1)) return 1250;
       return bestGraveMonster >= 2600 ? 1100 : 0;
+    case CC.MC_REBORN: {
+      // v13: Magic Card "Monster Reborn" — NOT the classic, and not
+      // priced like it. The revived monster cannot attack or
+      // activate its effects this turn, so the classic's immediate
+      // board swing is exactly what this printing does NOT buy.
+      // What survives the rider: a standing body (a wall now, fully
+      // live from next turn), continuous effects that never
+      // "activate" (Luce (1) shields our two edge zones the moment
+      // she lands), and same-turn use as summon material (being
+      // spent as material is not the revived monster activating
+      // anything, so a Level 4 revival can complete a live Xyz).
+      // Every shared scene is priced a step below the classic.
+      const gyAll = view.grave[me].concat(view.grave[opp]);
+      if (deckIdOfList(view.myDeck, data) === 'ishizu' && gyAll.includes(CC.LUCE))
+        return faceUpMons(view, me).some(c => c.code === CC.LUCE) ? 1000 : 1200;
+      const graveLv4 = gyAll.some(c => { const d = cdOf(data, c); return isMonsterCd(d) && (d.level & 0xff) === 4; });
+      if (graveLv4 && faceUpMons(view, me).some(c => { const d = cdOf(data, c.code); return d && (d.level & 0xff) === 4; })) return 1000;
+      if (bestGraveMonster >= 2400 && (myStrongestAtk(view, data) < bestGraveMonster || myMons.length <= 1)) return 1050;
+      if (bestGraveMonster >= 2800) return 1000;
+      if (bestGraveMonster >= 2000 && myMons.length === 0) return 900;
+      return 0;
+    }
     case CC.REINCARNATION: {
       // v12 (Ishizu recipe swap): salvage, NOT revival — the monster
       // returns to the HAND, so it pays only when the card restarts a
@@ -3183,6 +3205,7 @@ function newChainValue(e, view, data, mem, C) {
       if (topOpp && topOpp.tloc === LOC.GRAVE)
         return graveValue(topOpp.code, data) >= 700 ? (ishizuGraveHot ? 1550 : 1400) : 1200;
       if (topOpp && topOpp.code === CC.REBORN) return 1350;
+      if (topOpp && topOpp.code === CC.MC_REBORN) return 1350; // v13: the Magic Card printing is the same play to answer
       return 0;
     }
     case NC.SKULL_MEISTER: {
@@ -3241,6 +3264,21 @@ function newChainValue(e, view, data, mem, C) {
         if (atkCell && atkDmg >= 1500) return 1300;
         return oppBest >= 1800 ? 1300 : 0;
       }
+      return 0;
+    }
+    case CC.MC_REBORN: {
+      // v13: Quick-Play revival chained on the OPPONENT's turn — the
+      // one window the idle score cannot see. Fire only as a wall:
+      // an attack is coming, our board is empty or the attacked
+      // monster dies anyway, and a grave body actually stops it
+      // (the revived monster cannot attack this turn, but nothing
+      // forces it to: interposing it is pure defense, and it stands
+      // fully live from our next turn). On our own turn the
+      // main-phase score prices the card instead.
+      if (!isOppBattle || !atkCell) return 0;
+      const wall = Math.max(0, ...view.grave[me].concat(view.grave[opp])
+        .map(c => { const d = cdOf(data, c); return isMonsterCd(d) ? Math.max(d.atk, d.def) : 0; }));
+      if ((monList(view, me).length === 0 || myMonDies) && wall > atkOf(atkCell, data)) return 1250;
       return 0;
     }
     case NC.LANCER:
@@ -3323,6 +3361,7 @@ function chainEntryValue(e, view, data, mem) {
       if (!topOpp) return 0;
       if ([CC.RAIGEKI, CC.CONCEALING, CC.DEMON_WIND, CC.FORCE_GUARDIAN].includes(topOpp.code)) return 1500;
       if (topOpp.code === CC.REBORN && bestGraveAtk(view, data) >= 2200) return 1100;
+      if (topOpp.code === CC.MC_REBORN && bestGraveAtk(view, data) >= 2200) return 1100; // v13 printing
       return 0;
     }
     case CC.GG_WATERTHUNDER: { // ① zero an opposing monster's ATK
@@ -3389,6 +3428,7 @@ function chainEntryValue(e, view, data, mem) {
     }
     case CC.TRANSMIGRATION: {
       if (topOpp && topOpp.code === CC.REBORN) return 1300; // shuffle their revival target away
+      if (topOpp && topOpp.code === CC.MC_REBORN) return 1300; // v13 printing, same answer
       if (topOpp && topOpp.tloc === LOC.GRAVE && graveValue(topOpp.code, data) >= 800) return 1200;
       return 0;
     }
@@ -4168,6 +4208,31 @@ function selectCardAnswer(prompt, view, data, mem) {
       if (c === CC.AGIDO) return 2000;
       if (isExtraCd(d)) return 1200; // any other Extra monster also returns to the Extra Deck
       return 1000 + (d ? d.atk : 0) * 0.2;
+    };
+    return take(entries.slice().sort((a, b) => score(b) - score(a)), Math.max(1, min));
+  }
+  // --- Magic Card "Monster Reborn" (v13): pick the revival target.
+  // The rider (the revived monster cannot attack or activate its
+  // effects this turn) reprices the pick versus a plain body grab:
+  // Luce first — a 3000 wall whose (1) is continuous and works the
+  // moment she lands, with (2) live from next turn — then standing
+  // bodies by size, with a material bonus for a Level 4 that
+  // completes an Xyz next to a Level 4 we already field (the Xyz it
+  // feeds is fully live even though the material is restricted).
+  // Candidates may sit in EITHER grave; the classic Reborn has no
+  // dedicated branch and stays untouched. Placed with the other
+  // same-turn own picks, above the pending-material branch, per the
+  // v12 lesson (a same-turn pick must not be stolen by materials).
+  if (ctxCode === CC.MC_REBORN && entries.every(x => x.e.loc === LOC.GRAVE)) {
+    const haveLv4 = faceUpMons(view, me).some(c => { const d = cdOf(data, c.code); return d && (d.level & 0xff) === 4; });
+    const score = (x) => {
+      const c = x.e.code, d = cdOf(data, c);
+      if (!isMonsterCd(d)) return -1000;
+      if (c === CC.LUCE) return 3000;
+      let v = 800 + (d.atk || 0) * 0.6 + (d.def || 0) * 0.15;
+      if (haveLv4 && (d.level & 0xff) === 4) v += 550;
+      if (isExtraCd(d)) v += 150;
+      return v;
     };
     return take(entries.slice().sort((a, b) => score(b) - score(a)), Math.max(1, min));
   }

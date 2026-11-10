@@ -5,6 +5,12 @@
    《死者蘇生》 83764718) resolving for real in engine duels, the
    classic Reborn carrying NO revive rider on the client, and full
    bot duels on the new deck (both seats).
+   A v13 candidate (Magic Card Reborn in the revival slot, Keldo
+   3->2, Oka out, Hana 2->3, Rollback in) was implemented and
+   benched in 2026-11-10 and rolled back after measuring 191W
+   against this recipe's 213W baseline (see test-recipe-v13.js);
+   the v11 recipe below remains the shipped one, and the Magic
+   Card printing remains in the pool for imported decks.
    Engine scenarios use scripted policies over rigged test decks and
    scan deterministic seeds until the flow is observed (the same
    calibration approach as test-swap).                       */
@@ -38,7 +44,10 @@ ok(JSON.stringify(count(data.decks.ishizu.main)) === JSON.stringify(EXPECT_MAIN)
 ok(JSON.stringify(count(data.decks.ishizu.extra)) === JSON.stringify(EXPECT_EXTRA) && data.decks.ishizu.extra.length === 15,
   'R2: ishizu extra = the decided 15-card recipe, card for card');
 ok(data.decks.gg.main.length === 40 && data.decks.gg.extra.length === 15, 'R3: GG deck untouched (40/15)');
-for (const gone of [12332865, 62320425, 28958464])
+// 28958464 (the Magic Card printing) is not in this list anymore:
+// since the v13 round it exists IN the pool (implementation kept
+// after the deck rollback) — just not in the shipped deck.
+for (const gone of [12332865, 62320425])
   ok(!(gone in data.cards) && !(gone in data.names) && !(gone in data.scripts), 'R4: ' + gone + ' fully out of the pool');
 
 // ---------- helpers for the engine scenarios ----------
