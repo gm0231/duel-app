@@ -2265,6 +2265,14 @@ function activationScore(e, view, data, prompt) {
         return cheapest <= 700 ? 1050 : 0;
       }
       // ② graveyard shuffle (field/grave copy, ignition timing in main)
+      // Round 11, stage 3 (user addendum): while the Gravekeeper's
+      // Trap lock is complete, the opponent's graveyard is already
+      // unusable — there is nothing to hurry back. Hold the shuffle
+      // (firing it also banishes this card from our grave, where it
+      // is a Rebellion material); it stays in reserve for the turn
+      // the lock breaks. The one exception is our own Exchange's
+      // activation chain, priced in chainEntryValue instead.
+      if (deckIdOfList(view.myDeck, data) === 'ishizu' && phasePriority(view, data).lock) return 0;
       const topOpp = view.grave[opp].map(c => graveValue(c, data)).sort((a, b) => b - a);
       // Round 5, vs-Elfennotes plan: that deck's engine runs from the
       // hand/field (fusion), so its graveyard is mostly spent material
@@ -2760,6 +2768,141 @@ function oppShadowUp(view) {
   const f = view.zones[view.opp].szone[5];
   return !!(f && f.faceUp && f.code === CC.WALL_SHADOW);
 }
+// ---------------------------------------------------------------- round 11
+// Phase priority: the user's frame for this deck is that three kinds
+// of decision — search, graveyard stocking (mill), graveyard recovery
+// — are only worth what the CURRENT phase says they are worth.
+//   early (both graves thin): mill first; search counts only as a
+//     means to mill (fetch Mori / Kelbek); recovery is out of the
+//     question (returning cards pushes the 15-card line away).
+//   approaching 15: still mill-leaning, watching the lagging grave;
+//     shuffle-backs target the opponent's grave only, our own grave
+//     minimal and never Exchange.
+//   the 15 line met / lock armed: search and board-building take
+//     over (stand the Trap up, the Rebellion -> Luce finishing
+//     line); mill's value falls off.
+//   lock live: recovery > search > mill — except that while Luce is
+//     still missing, anything that touches Rebellion (send it, dig
+//     for it) outranks everything, and the longer the lock runs the
+//     stronger that gets.
+//   behind (opponent's board stronger): recovery on top (salvage an
+//     answer), search turns into answer-hunting, mill last.
+//   endgame (Luce standing / opponent LP low): all three drop;
+//     keep the board and attack. With our own deck thin, stop
+//     milling (the mill eats our last cards too).
+//   versus a deck that feeds on its graveyard (White Forest), our
+//     mill is discounted — half of it stocks THEIR engine — and
+//     draining their grave is worth more.
+// phasePriority() is the single read for that frame; the category
+// rules below consult it instead of re-deriving the state.
+function phasePriority(view, data) {
+  const me = view.me, opp = view.opp;
+  const myG = view.grave[me].length, oppG = view.grave[opp].length;
+  const pairMin = Math.min(myG, oppG);
+  const trapUp = view.zones[me].szone.some(c => c && c.faceUp && c.code === CC.GK_TRAP);
+  const exchGY = view.grave[me].includes(CC.EXCHANGE);
+  const lock = trapUp && exchGY;
+  const luceOut = faceUpMons(view, me).some(c => c.code === CC.LUCE);
+  const myPow = faceUpMons(view, me).reduce((s, c) => s + battlePower(c, data), 0);
+  const oppPow = faceUpMons(view, opp).reduce((s, c) => s + battlePower(c, data), 0);
+  const rem = remainingDeck(view, me, data);
+  return {
+    myG, oppG, pairMin, trapUp, exchGY, lock, luceOut,
+    behind: oppPow - myPow >= 1800,
+    deckThin: view.deckCount[me] <= 10,
+    stage: lock ? 'lock' : pairMin >= 15 ? 'ready' : pairMin < 8 ? 'early' : 'approach',
+    oppGraveDeck: ['whiteforest', 'superquant'].includes(deckIdOfList(view.oppDeck, data)),
+    // --- inputs kept for the NEXT layer (win-line selection: is the
+    // Exchange line alive, or should the deck beat down?). Nothing in
+    // this round's rules reads them yet; they are exposed so that
+    // layer can be built on this reader instead of re-deriving state.
+    dist15: Math.max(0, 15 - pairMin),
+    lagging: myG < oppG ? 'me' : myG > oppG ? 'opp' : 'even',
+    exchInHand: view.hand[me].some(x => x.code === CC.EXCHANGE),
+    exchInDeck: deckHas(rem, CC.EXCHANGE),
+    rebInGrave: view.grave[me].includes(CC.REBELLION),
+    rebInHand: view.hand[me].some(x => x.code === CC.REBELLION),
+    luceInExtra: view.extra[me].some(x => x.code === CC.LUCE),
+    graveFF: view.grave[me].filter(c => { const d = cdOf(data, c); return d && (d.race === 0x4 || d.race === 0x8); }).length,
+    millLeft: {
+      kelbek: deckHas(rem, CC.KELBEK),
+      mori: (rem && rem.get(CC.VERN_MORI)) || 0,
+      minerva: view.extra[me].some(x => x.code === CC.MINERVA),
+    },
+    myPow, oppPow, oppLP: view.lp[opp], deckN: view.deckCount[me],
+    // Endgame deck race (user's endgame principles): after the
+    // Exchange swap the decks ARE the old graveyards, so the race
+    // is read off the remaining counts — ahead means the lock can
+    // simply wait the opponent out, behind means the deck must
+    // beat down. NOTE (round 11 measurement): the relative mill
+    // stop the principle implies (stop milling once our deck is no
+    // longer ahead) was implemented and benched — it cost wins and
+    // Luce arrivals (the Kelbek mill is also this deck's digging
+    // engine), so the mill rules keep their old absolute deck-out
+    // floors and this field is exposed for the win-line layer.
+    oppDeckN: view.deckCount[opp],
+    deckRace: view.deckCount[me] > view.deckCount[opp] ? 'ahead'
+      : view.deckCount[me] < view.deckCount[opp] ? 'behind' : 'even',
+  };
+}
+// Zolga search policy (round 11, user-specified): a search never
+// buys 《予見者ゾルガ》 on spec. Two scenes pay for it, and both
+// require the resulting play to BREAK the opponent's board, not
+// merely to be makeable:
+//   A) Xyz — exactly one face-up EARTH Fairy (Level 4) stands, the
+//      Normal Summon is gone (spent, or nothing summonable in
+//      hand), and Zolga (1) pairs into a Castel whose (2) removes
+//      a wall we cannot beat (printed power >= 2200, and not one
+//      of the round-9 protected targets).
+//   B) Synchro — a Level-4 EARTH Fairy stands, Silky (Level 2
+//      tuner) sleeps in our graveyard, the hand cannot produce the
+//      second body (no monsters, or no Normal Summon), and after
+//      Silky flips Zolga and an opposing monster down, the Fairy +
+//      Silky make a Level-6 (Trilosukta / Metaphys Horus) against
+//      a board worth breaking (best opposing body >= 2200). Silky
+//      also needs an opposing face-up monster to flip.
+// Diagnosis (480 games, stage-2 build): 15 Trap (2) Zolga picks —
+// 4 matched A, 0 matched B alone, 11 matched neither (the old rule
+// looked only at a standing partner / hand line and never at the
+// Normal Summon or the opposing board). If Zolga is already in
+// hand or grave the search is out of scope and stays at the floor.
+function zolgaSearchScore(view, data, mem) {
+  const me = view.me, opp = view.opp;
+  if (view.turnPlayer !== me) return 300;
+  if (view.hand[me].some(x => x.code === CC.ZOLGA) || view.grave[me].includes(CC.ZOLGA)) return 300;
+  const fuEF = faceUpMons(view, me).filter(c => { const d = cdOf(data, c.code);
+    return d && isMonsterCd(d) && d.attribute === 0x01 && d.race === 0x4; });
+  if (!fuEF.length) return 300;
+  const lv4 = (c) => (cdOf(data, c.code).level & 0xff) === 4;
+  const nsGone = !(mem && mem.nsOpenTurn === view.turnCount && mem.nsOpen);
+  const oppFU = faceUpMons(view, opp);
+  const oppBest = Math.max(0, ...oppFU.map(c => battlePower(c, data)));
+  if (fuEF.length === 1 && lv4(fuEF[0]) && nsGone &&
+      view.extra[me].some(x => x.code === CC.CASTEL)) {
+    const cells = view.zones[opp].mzone;
+    for (let i = 0; i < cells.length; i++) {
+      const c = cells[i];
+      if (c && c.faceUp && battlePower(c, data) >= 2200 &&
+          !removalBlocked(Object.assign({ seq: i }, c), CC.CASTEL, view, data, mem)) return 2300;
+    }
+  }
+  const handMonsters = view.hand[me].some(x => isMonsterCd(cdOf(data, x.code)));
+  if (fuEF.some(lv4) && view.grave[me].includes(CC.SILKY) && (!handMonsters || nsGone) &&
+      oppFU.length && oppBest >= 2200 &&
+      view.extra[me].some(x => x.code === CC.TRILOSUKTA || x.code === CC.HORUS)) return 2300;
+  return 300;
+}
+
+// Round 11, stage 3 (REVERTED after measurement): a class-restricted
+// shuffle-target order (only opponent cards whose graveyard is itself
+// a weapon — grave-profit / grave-effect classes) was implemented on
+// the user's addendum and benched: it cost 11 wins over 480 games
+// (213 -> 202 with it, all else equal) and 7 Luce arrivals, worst
+// against Elfennotes, so the target order stays the plain graveValue
+// order. The addendum's other half — holding the shuffle while the
+// lock is complete — measured clean and IS in force above (see
+// activationScore / chainEntryValue for Mudora and Keldo).
+
 // ---------------------------------------------------------------- round 10
 // Position-change synergy: 《転輪のスフィンクス》 is this deck's payoff
 // for changing monster positions — (1) when ANY monster's position is
@@ -3210,6 +3353,28 @@ function chainEntryValue(e, view, data, mem) {
       return 0;
     }
     case CC.MUDORA: case CC.KELDO: {
+      // Round 11, addendum (user-specified play, Q&A-verified):
+      // chained to our own Exchange activation, the grave copy's
+      // (2) returns cards from the opponent's graveyard. Exchange's
+      // 15-card condition is checked only on activation, never
+      // re-checked at resolution, so the returns cannot stop the
+      // swap — they shrink the deck the opponent is about to
+      // receive. Per the user's timing standard the compression is
+      // worth spending the pieces on ONLY when the calculation
+      // stands: BOTH Mudora and Keldo in our graveyard (up to 5
+      // returns each while Exchange is face-up on the chain), and
+      // the opponent's post-swap deck (their grave minus the 10
+      // returned) lands at near-death (<= 5). Otherwise the lock
+      // comes first and the pieces are held. (The Exchange gate
+      // itself never waits for this: it fires in every legal
+      // window, so there is no delay for the play to excuse.)
+      if (e.loc === LOC.GRAVE && chain.some(l => l.code === CC.EXCHANGE && l.player === me) &&
+          view.grave[me].includes(CC.MUDORA) && view.grave[me].includes(CC.KELDO) &&
+          view.grave[opp].length - 10 <= 5) return 1400;
+      // Round 11, stage 3: under the completed lock, hold (see the
+      // activationScore case) — the opponent's grave is unusable
+      // while the lock stands.
+      if (deckIdOfList(view.myDeck, data) === 'ishizu' && phasePriority(view, data).lock) return 0;
       const topOppGrave = view.grave[opp].map(c => graveValue(c, data)).sort((a, b) => b - a);
       return (topOppGrave[0] || 0) + (topOppGrave[1] || 0) >= 1700 ? 1050 : 0;
     }
@@ -3373,6 +3538,15 @@ function attemptOk(mem, view, kind, e) {
 function idleAnswer(prompt, view, data, mem) {
   const me = view.me;
   const isMain1 = view.phaseName === 'MAIN1';
+  // Round 11: remember whether a Normal Summon is still available
+  // this turn (the core only lists summon/set options while one
+  // is). The Zolga search policy below reads this: its exceptions
+  // exist precisely for turns where the second body cannot come
+  // from a Normal Summon.
+  if (mem) {
+    mem.nsOpen = ((prompt.summon || []).length + (prompt.mset || []).length) > 0;
+    mem.nsOpenTurn = view.turnCount;
+  }
   // Chaos Pod flip is a full board reset: only when clearly behind, and
   // before anything else (our own plays would be shuffled away too).
   const podIdx = prompt.repos.findIndex(e => e.code === CC.CHAOS_POD);
@@ -4050,9 +4224,11 @@ function selectCardAnswer(prompt, view, data, mem) {
             // discard) plus the (2) grave shuffle.
             return hand.some(c => isEF(c)) ? 1500 : 1100;
           case CC.ZOLGA:
-            if (rank4Left && fieldPartner) return 2300;
-            if (rank4Left && handLine) return 2100;
-            return 750; // otherwise a 1700 that eats the Normal Summon
+            // Round 11: the two-exception policy (zolgaSearchScore).
+            // The old prices (partner standing 2300 / hand line
+            // 2100) fired in scenes the policy forbids: they never
+            // looked at the Normal Summon or the opposing board.
+            return zolgaSearchScore(view, data, mem);
           case CC.VERN_HANA:
             return gyEarth && hand.length >= 1 ? 1700 : 900; // revive + deck dump once the grave is stocked
           case CC.VERN_OKA:
@@ -4098,14 +4274,36 @@ function selectCardAnswer(prompt, view, data, mem) {
           if (trapLive) return 400;             // already face-up
           return exchInGrave ? 2600 : 2200;     // completes the lock, or starts it (its own ② searches onward)
         }
-        if (e.code === CC.KELBEK) // the mill engine. Round 6: once the
-          // lock is already armed (Trap face-up + Exchange in grave),
-          // the lock fetches above are near-dead (300/400) and Kelbek
-          // is the best buy in the deck — any discard outlet turns it
-          // into a 5-card mill the opponent cannot answer from the
-          // grave — so it outranks even the Bomb line in that state.
-          // The round-2 order is untouched in every other state.
-          return (trapLive && exchInGrave) ? 3600 : 1800;
+        if (e.code === CC.KELBEK) { // the mill engine. Round 6: once
+          // the lock is already armed (Trap face-up + Exchange in
+          // grave), the lock fetches above are near-dead (300/400) and
+          // Kelbek is the best buy in the deck — any discard outlet
+          // turns it into a 5-card mill the opponent cannot answer
+          // from the grave — so it outranks even the Bomb line in
+          // that state.
+          // Round 11, stage 2: that state almost never coincides with
+          // a Keldo (1) search (2 events in the 480-game baseline), so
+          // the rule was untestable as placed, and everywhere else
+          // Kelbek sat at a flat 1800 below the structural fetches —
+          // measured: 0 Kelbek picks in 115 searches. The phase layer
+          // prices it now. In the stocking phases (early /
+          // approaching), the frame prices search as a means to
+          // mill, and Kelbek is the only mill this search can buy:
+          // it converts off ANY discard outlet — including the Trap
+          // (2) this search used to fetch instead — so it outranks
+          // the Trap fetch (2600/2200) there, while staying below
+          // the Exchange fetch that completes the lock (3000) and
+          // the Bomb line (3400). Behind, the search hunts answers
+          // and Kelbek keeps its base price. (A stricter first draft
+          // of this boost — Trap secured AND an outlet in hand —
+          // matched 3 of 115 recorded scenes and won none of them:
+          // Keldo (1) usually fires BEFORE the Trap is anywhere,
+          // which is precisely when the mill buy matters.)
+          const ph = phasePriority(view, data);
+          if (trapLive && exchInGrave) return 3600;
+          if ((ph.stage === 'early' || ph.stage === 'approach') && !ph.behind) return 2700;
+          return 1800;
+        }
         if (e.code === CC.MUDORA) return 1500;  // re-places the Trap from the deck; shuffles graves
         if (e.code === CC.AGIDO) return 1200;
         if (e.code === CC.KELDO) return 1000;    // chains into another search later
@@ -4123,7 +4321,7 @@ function selectCardAnswer(prompt, view, data, mem) {
         if (e.code === CC.KELDO) return 2000;
         if (e.code === CC.VERN_MORI) return 1900;
         if (e.code === CC.VERN_HANA) return 1700;
-        if (e.code === CC.ZOLGA) return 750; // Rank 4 material with a partner — not worth fetching cold
+        if (e.code === CC.ZOLGA) return zolgaSearchScore(view, data, mem); // round 11: same two-exception policy as the Trap (2) search
         return 1000 + handValue(e.code, view, data) * 0.2;
       }
       if (ctxCode === CC.GG_THUNDERWIND) {
