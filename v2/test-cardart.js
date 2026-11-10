@@ -698,19 +698,19 @@ for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
-ok(data.decks.ishizu.main.filter(c => c === MUDORA).length === 3, 'CA0b: the Ishizu deck runs 3 copies of Mudora');
+ok(data.decks.ishizu.main.filter(c => c === MUDORA).length === 2, 'CA0b: the Ishizu deck runs 2 copies of Mudora (3 in v11; recipe v14 trimmed one to fund Rollback)');
 ok(data.decks.ishizu.main.filter(c => c === AGIDO).length === 0 &&
    data.decks.ishizu.main.filter(c => c === 16135253).length === 1,
   'CA0c: recipe v11 — the deck runs the CLASSIC Agido (16135253) x1; per the user ruling of 2026-11-04 the classic card aliases the Ancient Guard Agido art (see CA7b2/CA7c)');
 ok(data.decks.ishizu.main.filter(c => c === KELBEK).length === 1, 'CA0d: the Ishizu deck runs 1 copy of Kelbek');
-ok(data.decks.ishizu.main.filter(c => c === KELDO).length === 3, 'CA0e: the Ishizu deck runs 3 copies of Keldo');
+ok(data.decks.ishizu.main.filter(c => c === KELDO).length === 2, 'CA0e: the Ishizu deck runs 2 copies of Keldo (3 in v11; recipe v14, freed 4 points with the Reborn swap)');
 ok(data.decks.ishizu.main.filter(c => c === ZOLGA).length === 1, 'CA0f: the Ishizu deck runs 1 copy of Zolga');
 ok(data.decks.ishizu.main.filter(c => c === CARDAN).length === 3, 'CA0g: the Ishizu deck runs 3 copies of Cardan');
 ok(data.decks.ishizu.main.filter(c => c === SPHINX).length === 1, 'CA0h: the Ishizu deck runs 1 copy of Sphinx');
 ok(data.decks.ishizu.main.filter(c => c === TAIYOU).length === 1, 'CA0i: the Ishizu deck runs 1 copy of Taiyou');
 ok(data.decks.ishizu.main.filter(c => c === TSUKI).length === 1, 'CA0j: the Ishizu deck runs 1 copy of Tsuki');
 ok(data.decks.ishizu.main.filter(c => c === CHAOSPOD).length === 2, 'CA0k: the Ishizu deck runs 2 copies of Chaos Pod');
-ok(data.decks.ishizu.main.filter(c => c === OKA).length === 1, 'CA0l: the Ishizu deck runs 1 copy of Oka');
+ok(data.decks.ishizu.main.filter(c => c === OKA).length === 2, 'CA0l: the Ishizu deck runs 2 copies of Oka (1 in v11; recipe v14 doubled it)');
 ok(data.decks.ishizu.main.filter(c => c === HANA).length === 2, 'CA0m: the Ishizu deck runs 2 copies of Hana');
 ok(data.decks.ishizu.main.filter(c => c === MORI).length === 3, 'CA0n: the Ishizu deck runs 3 copies of Mori');
 ok(data.decks.gg.main.filter(c => c === TERRA).length === 2, 'CA0o: the GG deck runs 2 copies of Terraforming (the former unlisted exemplar — it gained processed STD_ART in the painterly round, 2026-11-09)');
@@ -748,7 +748,7 @@ ok(data.decks.ishizu.main.filter(c => c === KYOSHIN).length === 1, 'CA0z20: the 
 ok(!data.decks.gg.main.includes(KYOSHIN) && !data.decks.gg.extra.includes(KYOSHIN), 'CA0z21: the GG deck does NOT run Kyoshin (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
 ok(data.decks.ishizu.main.filter(c => c === YOGEN).length === 1, 'CA0z22: the Ishizu deck runs 1 copy of Tensei no Yogen (33rd delivery — recipe v11)');
 ok(!data.decks.gg.main.includes(YOGEN) && !data.decks.gg.extra.includes(YOGEN), 'CA0z23: the GG deck does NOT run Yogen (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
-ok(data.decks.ishizu.main.filter(c => c === SOSEI).length === 1, 'CA0z24: the Ishizu deck runs 1 copy of Shisha Sosei (34th delivery — recipe v11, the normal printing 83764718)');
+ok(data.decks.ishizu.main.filter(c => c === 28958464).length === 1 && !data.decks.ishizu.main.includes(SOSEI), 'CA0z24: recipe v14 — the Ishizu deck runs 1 copy of the Magic Card printing of Shisha Sosei (28958464); the normal printing 83764718 (34th delivery art) stays in the pool and its registration below is unchanged');
 ok(!data.decks.gg.main.includes(SOSEI) && !data.decks.gg.extra.includes(SOSEI), 'CA0z25: the GG deck does NOT run Shisha Sosei (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
 ok(data.decks.ishizu.main.filter(c => c === HANGYAKU).length === 2, 'CA0z26: the Ishizu deck runs 2 copies of Hangyaku (35th delivery — recipe v11)');
 ok(!data.decks.gg.main.includes(HANGYAKU) && !data.decks.gg.extra.includes(HANGYAKU), 'CA0z27: the GG deck does NOT run Hangyaku (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
@@ -1254,7 +1254,7 @@ async function boot() {
   ok(helpers.preloaded.includes('../assets/card-art-yogen-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-yogen-ishizu.jpg'), 'CA7z126: boot preloads the deck-scoped Yogen art too');
   ok(helpers.soseiSlug === 'sosei' && helpers.soseiInline.includes('card-art-sosei-s.jpg') && helpers.soseiInline.includes('background-position:center top'), 'CA7z127: Sosei maps and stamps like the others (34th delivery)');
   ok(helpers.soseiSmall === '../assets/card-art-sosei-s.jpg' && helpers.soseiBig === '../assets/card-art-sosei.jpg', 'CA7z128: Sosei art files resolve (small + big)');
-  ok(helpers.preloaded.includes('../assets/card-art-sosei-s.jpg') && helpers.preloaded.includes('../assets/card-art-sosei.jpg'), 'CA7z129: boot preloads Sosei too (main-deck membership warms the art from deck-select time)');
+  ok(helpers.preloaded.includes('../assets/card-art-std-28958464-s.jpg') && helpers.preloaded.includes('../assets/card-art-std-28958464.jpg') && !helpers.preloaded.includes('../assets/card-art-sosei-s.jpg'), 'CA7z129: boot preloads the v14 revival slot — the Magic Card printing STD art warms via its Ishizu main-deck membership; the classic printing art no longer warms (out of every shipped deck since v14)');
   ok(helpers.soseiDeckArt === undefined && helpers.soseiIshizu === '../assets/card-art-sosei-s.jpg' && helpers.soseiGg === '../assets/card-art-sosei-s.jpg', 'CA7z130: Sosei has NO deck-scoped override — plain registration, every deck context keeps the base art');
   ok(helpers.hangyakuSlug === 'hangyaku' && helpers.hangyakuInline.includes('card-art-hangyaku-s.jpg') && helpers.hangyakuInline.includes('background-position:center top'), 'CA7z131: Hangyaku maps and stamps like the others (35th delivery)');
   ok(helpers.hangyakuSmall === '../assets/card-art-hangyaku-s.jpg' && helpers.hangyakuBig === '../assets/card-art-hangyaku.jpg', 'CA7z132: Hangyaku art files resolve (small + big)');

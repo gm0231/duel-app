@@ -1,19 +1,26 @@
 'use strict';
-/* test-recipe-v11.js — the v11 Ishizu recipe swap (user's MD build,
-   2026-11-03): deck composition, the three newly implemented cards
-   (《丘と芽吹の春化精》 9350312, classic 《アギド》 16135253, classic
-   《死者蘇生》 83764718) resolving for real in engine duels, the
-   classic Reborn carrying NO revive rider on the client, and full
-   bot duels on the new deck (both seats).
-   A v13 candidate (Magic Card Reborn in the revival slot, Keldo
-   3->2, Oka out, Hana 2->3, Rollback in) was implemented and
-   benched in 2026-11-10 and rolled back after measuring 191W
-   against this recipe's 213W baseline (see test-recipe-v13.js);
-   the v11 recipe below remains the shipped one, and the Magic
-   Card printing remains in the pool for imported decks.
-   Engine scenarios use scripted policies over rigged test decks and
-   scan deterministic seeds until the flow is observed (the same
-   calibration approach as test-swap).                       */
+/* test-recipe-v14.js — the v14 Ishizu recipe (adopted 2026-11-11
+   after the user's "final decision" bench on funding
+   《トランザクション・ロールバック》): on the v13 base (classic
+   《死者蘇生》 swapped for the Magic Card printing 28958464,
+   《宿神像ケルドウ》 3->2, Rollback in), 《剣神官ムドラ》 3->2 funds
+   the Rollback slot and 《丘と芽吹の春化精》 1->2 doubles the card
+   the v13 split runs proved strongest. 45 cards / 99 points.
+   Benched 480 games against the round-11 v11 baseline (213W,
+   exactly reproduced by the control runs): 206W with the
+   mechanism indicators intact or improved (Xyz 322, mill depth
+   7.93, 15-card arrivals 43, Luce arrivals 231, lock win rate
+   65.6%) — inside the error band per the adoption rule, so the
+   deck ships as v14. The Mori-trimming twin candidate measured
+   201W and was dropped. Full record:
+   ~/workspace/yugioh/ishizu-v14-check/DESIGN.md.
+   This file pins the v14 composition and re-runs the v11-era
+   implementation scenarios (Hills, classic Agido, classic Reborn
+   — all still in the pool — plus full bot duels on the shipped
+   decks and the classic-Reborn no-rider client check).
+   Engine scenarios use scripted policies over rigged test decks
+   and scan deterministic seeds until the flow is observed (the
+   same calibration approach as test-swap).                       */
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -28,9 +35,9 @@ const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'data.json'), 'utf8
 
 // ---------- 1. deck composition (the decided recipe) ----------
 const EXPECT_MAIN = {
-  99937011: 3, 63542003: 3, 25926710: 1, 31525442: 1, 16135253: 1, 86605515: 3,
-  36745317: 3, 9350312: 1, 62133026: 2, 15079028: 3, 46148485: 1, 79106360: 2,
-  55702233: 2, 16435215: 1, 35726888: 2, 83764718: 1, 71593652: 2, 38699854: 1,
+  99937011: 2, 63542003: 2, 25926710: 1, 31525442: 1, 16135253: 1, 86605515: 3,
+  36745317: 3, 9350312: 2, 62133026: 2, 15079028: 3, 46148485: 1, 79106360: 2,
+  55702233: 2, 16435215: 1, 35726888: 2, 28958464: 1, 6351147: 1, 71593652: 2, 38699854: 1,
   14087893: 1, 51612489: 1, 14108995: 1, 17484499: 1, 98715423: 3, 51208877: 2,
   46652477: 1, 78625592: 1, 67037924: 1,
 };
@@ -40,13 +47,13 @@ const EXPECT_EXTRA = {
 };
 const count = (arr) => { const m = {}; for (const c of arr) m[c] = (m[c] || 0) + 1; return m; };
 ok(JSON.stringify(count(data.decks.ishizu.main)) === JSON.stringify(EXPECT_MAIN) && data.decks.ishizu.main.length === 45,
-  'R1: ishizu main = the decided 45-card recipe, card for card');
+  'R1: ishizu main = the decided v14 45-card recipe, card for card');
 ok(JSON.stringify(count(data.decks.ishizu.extra)) === JSON.stringify(EXPECT_EXTRA) && data.decks.ishizu.extra.length === 15,
   'R2: ishizu extra = the decided 15-card recipe, card for card');
 ok(data.decks.gg.main.length === 40 && data.decks.gg.extra.length === 15, 'R3: GG deck untouched (40/15)');
-// 28958464 (the Magic Card printing) is not in this list anymore:
-// since the v13 round it exists IN the pool (implementation kept
-// after the deck rollback) — just not in the shipped deck.
+// 28958464 (the Magic Card printing) IS in the shipped deck since
+// v14; the classic printing 83764718 stays in the pool (section 4
+// and 6 below still verify it) for imported decks.
 for (const gone of [12332865, 62320425])
   ok(!(gone in data.cards) && !(gone in data.names) && !(gone in data.scripts), 'R4: ' + gone + ' fully out of the pool');
 
@@ -283,6 +290,6 @@ const REBORN = 83764718, MUDORA = 99937011;
   }
 }
 
-console.log(failures ? failures + ' RECIPE-V11 CHECK(S) FAILED' : 'ALL RECIPE-V11 CHECKS PASSED');
+console.log(failures ? failures + ' RECIPE-V14 CHECK(S) FAILED' : 'ALL RECIPE-V14 CHECKS PASSED');
 process.exit(failures ? 1 : 0);
 })().catch(e => { console.error('FATAL', e); process.exit(2); });

@@ -33,6 +33,14 @@
  * (fdss 0, correctness checks still 0 violations). Seed 7 exercises the
  * scenario under the new behaviour (fdss 4, SHUFFLE_SET_CARD 2), so it
  * was ADDED to the batch; the original seeds and all gates are unchanged.
+ *
+ * Seed note (recipe v14, 2026-11-11): the shipped Ishizu deck changed
+ * (Mudora/Keldo 3->2, Oka 1->2, classic Reborn -> Magic Card printing,
+ * Rollback in), the five seeds' game paths moved, and the batch stopped
+ * producing code-0 face-down special summons entirely (fdss 0 across all
+ * five; the correctness checks still passed with 0 violations). Seed 14
+ * exercises the scenario on the v14 deck (fdss 4, SHUFFLE_SET_CARD 1),
+ * so it was ADDED to the batch the same way; gates unchanged.
  */
 const fs = require('fs');
 const path = require('path');
@@ -218,7 +226,7 @@ class WireIdentity {
 (async () => {
   const M = await factory();
   const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'data.json'), 'utf8'));
-  const SEEDS = [11, 222, 33, 44, 7];
+  const SEEDS = [11, 222, 33, 44, 7, 14];
   let violations = 0, queryMismatch = 0, checks = 0, fdFlipsChecked = 0, retries = 0, completed = 0, shuffleTotal = 0;
   const violationExamples = [];
   let fdssTotal = 0; const fdssExamplesAll = [];
