@@ -1557,6 +1557,27 @@ function liveMats(con, loc, seq) {
   const c = duelState.players[con] && duelState.players[con].mzone[seq];
   return c ? (c.materials || 0) : null;
 }
+// fx-ui round 2 (F5): the LIVE stats of the monster standing at
+// a zone key — the same values the zone strip prints (curAtk /
+// curDef). Presentation cards (ace banner, cut-in) must read
+// these, never the printed base values alone: a monster whose
+// stats come from its materials or from modifiers showed the
+// wrong numbers (and the old 0 -> base count-up showed
+// ATK 0 / DEF 0 for most of its window). Falls back to the
+// printed values when the standing entry cannot be read or is
+// a different card — a stale snapshot never lends its numbers
+// to another monster.
+function fxLiveStatsAt(key, code) {
+  if (key && duelState && duelState.players) {
+    const [con, loc, seq] = key.split(':').map(Number);
+    if (loc === E.LOC.MZONE) {
+      const c = duelState.players[con] && duelState.players[con].mzone[seq];
+      if (c && c.code === code && c.curAtk != null) return { atk: c.curAtk, def: c.curDef };
+    }
+  }
+  const d = cardData(code);
+  return { atk: d ? d.atk : 0, def: d ? d.def : 0 };
+}
 // Source context of a prompt (Phase 2 item 1): the chain link whose effect is
 // asking. Attached by the engine driver from the core's CHAINING stream.
 function contextLineHTML(prompt) {
@@ -3648,7 +3669,7 @@ function fxProcessInner(evs, state) {
       // already owns this summon, stand down completely.
       if (fxAceRecent && fxAceRecent.code === code && fxAceRecent.con === con && fxTimeMs <= fxAceRecent.until) { consumedArr.add(ar.key); continue; }
       const mats = (method === 'fusion' || method === 'xyz' || method === 'synchro') ? matDepsOf(con) : [];
-      const sc = fxAceSceneV3({ code, key: ar.key, con, method, mats: mats.map(m => ({ key: m.key, code: m.entry.code })) });
+      const sc = fxAceSceneV3({ code, key: ar.key, con, method, stats: (ar.entry && ar.entry.atk != null) ? { atk: ar.entry.atk, def: ar.entry.def } : null, mats: mats.map(m => ({ key: m.key, code: m.entry.code })) });
       if (sc) {
         for (const m of mats) { consumedDep.add(m.key); fxRecord('converge', { code: m.entry.code, via: 'acescene' }); }
         fxRecord('portal', { method, code, via: 'acescene' });
@@ -4047,9 +4068,13 @@ function fxLpCount(con, to, startAtFx, opts) {
   // plate, translateY(-100%)) was clipped by the viewport. The
   // opponent variant anchors at the plate's BOTTOM edge and drifts
   // DOWN into the board (proto p1c: the glyph box sits at the
-  // plate's lower interior, fully on screen). My own plate (mid
-  // screen) keeps the upward form.
-  const dmgDown = isDmg && con !== HP;
+  // plate's lower interior, fully on screen).
+  // fx-ui round 2 (F6a): my own plate goes down too — the only
+  // thing above it is the mid-bar log line, and the upward number
+  // landed exactly on that text (measured overlap on the
+  // published build). Both seats now share the downward grammar;
+  // the seats still differ by colour (gold mine / lapis opp).
+  const dmgDown = isDmg;
   // Redesign F: a NON-battle LP drop (effect damage / LP cost) is
   // presented by its own chip (fxLpChip), not by this battle damage
   // number — the LP loop passes opts.noNum for those batches so the
@@ -4116,15 +4141,17 @@ function fxHealFloat(con, amount) {
   // plate's top edge (r.y) and rising 26px — was clipped. The
   // opponent variant follows the redesign-A damage-number rule:
   // anchor at the plate's BOTTOM interior edge and drift DOWN into
-  // the board. My own plate keeps the original upward float.
+  // the board. fx-ui round 2 (F6a): my own plate floats down too —
+  // above it sits only the log line, and the upward float landed
+  // on that text (same collision as the damage chips).
   // Redesign F heal grammar: this node IS the heal chip — it also
   // carries the fx3-lpchip classes (gold for me, lapis-white for the
   // opponent), so a heal is presented exactly once, as one node.
-  const down = con !== HP;
+  const down = true;
   const d = document.createElement('div');
-  d.className = 'fx fx-healfloat fx3-lpchip fx3-lpchip--heal fx3-lpchip--' + (down ? 'opp' : 'mine') +
-    (down ? ' fx-healfloat--down fx3-lpchip--down' : '');
-  d.dataset.direction = down ? 'down' : 'up';
+  d.className = 'fx fx-healfloat fx3-lpchip fx3-lpchip--heal fx3-lpchip--' + (con !== HP ? 'opp' : 'mine') +
+    ' fx-healfloat--down fx3-lpchip--down';
+  d.dataset.direction = 'down';
   d.dataset.lpKind = 'heal';
   d.textContent = '+' + amount;
   d.style.left = r.cx + 'px'; d.style.top = (down ? (r.y + r.h - 3) : r.y) + 'px';
@@ -4159,8 +4186,11 @@ function fxHealFloat(con, amount) {
 // effect damage — instead of the battle damage number, so "paid"
 // and "was dealt" never read the same. The chip lingers (residual
 // light, ~2.4 s) while fxLpCount counts the counter monotonically
-// underneath it. The opponent variant anchors at the plate's bottom
-// interior and drifts down (same anti-clip rule as above).
+// underneath it. The chip anchors at the plate's bottom
+// interior and drifts down: for the opponent that is the
+// anti-clip rule above; for my own plate it is fx-ui round 2
+// (F6a) — the upward chip landed on the mid-bar log line and
+// hid its text.
 // `stack` offsets a second chip in the same batch (pay + damage)
 // so the two chips never overlap. Animation is WAAPI
 // transform/opacity only; all glow is static CSS paint.
@@ -4168,7 +4198,7 @@ function fxLpChip(con, chip, amount, stack) {
   const el = fxLpEl(con); if (!el) return null;
   const r = fxRel(el); if (!r) return null;
   const layer = fxLayerEl(); if (!layer) return null;
-  const down = con !== HP;
+  const down = true;
   const idx = stack || 0;
   const d = document.createElement('div');
   d.className = 'fx fx3-lpchip fx3-lpchip--' + chip + (down ? ' fx3-lpchip--down' : '');
@@ -4991,6 +5021,10 @@ function fxAceSceneV3(o) {
   // presentation must still run (the cut-in is the payload)
   const zr = slotEl ? fxRel(slotEl) : { cx: ar.cx, cy: ar.y + ar.h * (o.con === HP ? 0.60 : 0.28), w: 56, h: 76 };
   const d = cardData(o.code);
+  // F5: the banner's numbers are the monster's LIVE stats — the
+  // callers pass the zone snapshot's values when they have them,
+  // otherwise they are read off the standing state here.
+  const live = (o.stats && o.stats.atk != null) ? o.stats : fxLiveStatsAt(o.key, o.code);
   const cols = FX_PORTAL_COLS[o.method] || FX_PORTAL_COLS.generic;
   const nodes = [];
   // ---- zone side (#fxlayer)
@@ -5064,7 +5098,7 @@ function fxAceSceneV3(o) {
   card.style.boxShadow = '0 0 42px ' + cols[0] + '77, 0 6px 24px #000c'; // static frame shadow, set once; the breathing glow is canvas now (V4)
   card.innerHTML = '<div class="nm' + kindCls(o.code) + '">' + cardName(o.code) + '</div>';
   const banner = hmk('banner'); banner.style.opacity = '0'; // L12/L13
-  banner.innerHTML = '<div class="cn">' + cardName(o.code) + '</div><div class="rule"></div><div class="cs"></div>';
+  banner.innerHTML = '<div class="cn">' + cardName(o.code) + '</div><div class="rule"></div><div class="cs">' + (d && (d.type & 0x1) ? 'ATK ' + live.atk + ' ／ DEF ' + live.def : '') + '</div>';
   const ruleEl = banner.querySelector('.rule');
   const csEl = banner.querySelector('.cs');
   const ccx = ar.cx, ccy = ar.y + ar.h * 0.40;
@@ -5189,15 +5223,16 @@ function fxAceSceneV3(o) {
       if (ringA) { const u = FXE.outCubic(fxSeg(te, 950, 1550)); ringA.style.transform = 'scale(' + (0.4 + 1.2 * u).toFixed(3) + ')'; ringA.style.opacity = String(0.8 * (1 - u) * (te >= 950 ? 1 : 0)); }
       if (ringB) { const u = FXE.outCubic(fxSeg(te, 1100, 1700)); ringB.style.transform = 'scale(' + (0.4 + 1.2 * u).toFixed(3) + ')'; ringB.style.opacity = String(0.7 * (1 - u) * (te >= 1100 ? 1 : 0)); }
       // L12/L13: banner snaps in; V4 stagger — the name lands, the
-      // gold rule draws (1180-1400), the count starts at 1280
+      // gold rule draws (1180-1400). fx-ui round 2 (F5): the stats
+      // no longer count up from 0 over the printed base values —
+      // that window read as ATK 0 / DEF 0 on a standing monster
+      // and landed on the wrong total for anything modified. The
+      // live values are set in the banner markup at build time
+      // and simply land with the banner.
       if (banner) {
         banner.style.opacity = String(fxSeg(te, 1100, 1400) * holdOut);
         banner.style.transform = 'translateX(' + (-26 * (1 - FXE.snap(fxSeg(te, 1100, 1400)))).toFixed(1) + 'px)';
         if (ruleEl) { ruleEl.style.transform = 'scaleX(' + fxSeg(te, 1180, 1400).toFixed(3) + ')'; ruleEl.style.opacity = String(fxSeg(te, 1100, 1400) * holdOut); }
-        if (csEl && d && d.atk != null) {
-          const u = FXE.outCubic(fxSeg(te, 1280, 1680));
-          csEl.textContent = 'ATK ' + Math.round(d.atk * u) + ' ／ DEF ' + Math.round(d.def * u);
-        }
       }
       // L17: the landing beat on the real board zone (the rings are
       // drawLow soft rings now; the zone glow stays DOM)
@@ -5309,16 +5344,25 @@ function fxKeycardCutin(code, con, key) {
 // A) -> the scrim dims the field -> the card, large, with a
 // name/ATK/DEF banner. ~4.7 s; any tap skips it.
 let fxCutinTimer = null, fxCutinGen = 0;
-function fxCutinShow(code, deckKey) {
+function fxCutinShow(code, deckKey, con) {
   const host = $('fxcutin'); if (!host) return;
   ++fxCutinGen;
   const d = cardData(code);
+  // F5: same live-stats rule as the ace banner — when the seat
+  // is known, the numbers come from the monster standing on
+  // that seat's field, not from the printed card.
+  let liveSt = null;
+  if (con != null && duelState && duelState.players && duelState.players[con]) {
+    const c = duelState.players[con].mzone.find(m => m && m.code === code);
+    if (c && c.curAtk != null) liveSt = { atk: c.curAtk, def: c.curDef };
+  }
+  const st = liveSt || (d ? { atk: d.atk, def: d.def } : null);
   const vw = Math.min(window.innerWidth || 390, 430);
   const w = Math.round(Math.min(250, vw * 0.62)), h = Math.round(w * 1.38);
   host.innerHTML = '<div class="scrim"></div>' +
     '<div class="bigcard" style="width:' + w + 'px;height:' + h + 'px;' + artCss(code, true, deckKey) + '"><div class="nm' + kindCls(code) + '">' + cardName(code) + '</div></div>' +
     '<div class="banner"><div class="cn">' + cardName(code) + '</div>' +
-    '<div class="cs">' + (d && (d.type & 0x1) ? 'ATK ' + d.atk + ' ／ DEF ' + d.def : '') + '</div></div>';
+    '<div class="cs">' + (d && (d.type & 0x1) && st ? 'ATK ' + st.atk + ' ／ DEF ' + st.def : '') + '</div></div>';
   host.className = 'on';
   const sc = host.querySelector('.scrim'); fxAnim(sc, [{ opacity: 0 }, { opacity: 1 }], { duration: 320, easing: 'ease-out' });
   const bc = host.querySelector('.bigcard');
@@ -5386,10 +5430,11 @@ function fxRoundBEvents(evs, prev, cur, diff) {
         // path; the presentation runs without the converge)
         let key = null;
         for (const k in cur.z) { const ze = cur.z[k]; if (ze && ze.code === ev.code && k.split(':')[0] === String(ev.con) && k.split(':')[1] === String(E.LOC.MZONE)) { key = k; break; } }
-        const sc = key ? fxAceSceneV3({ code: ev.code, key, con: ev.con, method: null, mats: [] }) : null;
+        const ze = key ? cur.z[key] : null;
+        const sc = key ? fxAceSceneV3({ code: ev.code, key, con: ev.con, method: null, stats: (ze && ze.atk != null) ? { atk: ze.atk, def: ze.def } : null, mats: [] }) : null;
         if (sc) { fxRecord('cutin', { code: ev.code, via: 'acescene-event' }); fxAceRecent = { code: ev.code, con: ev.con, until: fxTimeMs + 8000 }; continue; }
         if (fxAceSceneRef && !fxAceSceneRef.dead) continue; // an ace scene is presenting; never poster over it
-        fxCutinShow(ev.code, deckKeyOfSeat(ev.con));
+        fxCutinShow(ev.code, deckKeyOfSeat(ev.con), ev.con);
         fxRecord('cutin', { code: ev.code });
       }
     }
@@ -5538,7 +5583,7 @@ function fxRoundBEvents(evs, prev, cur, diff) {
     if (delta > 0) {
       fxHealFloat(p, delta);
       fxRecord('healfloat', { player: p, amount: delta });
-      fxRecord('lpchip', { player: p, chip: 'heal', amount: delta, signed: delta, variant: p === HP ? 'mine' : 'opp', down: p !== HP });
+      fxRecord('lpchip', { player: p, chip: 'heal', amount: delta, signed: delta, variant: p === HP ? 'mine' : 'opp', down: true });
     } else if (chipLoss) {
       const loss = -delta;
       let payAmt = 0, dmgAmt = 0;
@@ -5558,8 +5603,8 @@ function fxRoundBEvents(evs, prev, cur, diff) {
         payAmt -= excess;
       }
       let stack = 0;
-      if (payAmt > 0) { fxLpChip(p, 'pay', payAmt, stack++); fxRecord('lpchip', { player: p, chip: 'pay', amount: payAmt, signed: -payAmt, variant: 'pay', down: p !== HP }); }
-      if (dmgAmt > 0) { fxLpChip(p, 'damage', dmgAmt, stack++); fxRecord('lpchip', { player: p, chip: 'damage', amount: dmgAmt, signed: -dmgAmt, variant: 'damage', down: p !== HP }); }
+      if (payAmt > 0) { fxLpChip(p, 'pay', payAmt, stack++); fxRecord('lpchip', { player: p, chip: 'pay', amount: payAmt, signed: -payAmt, variant: 'pay', down: true }); }
+      if (dmgAmt > 0) { fxLpChip(p, 'damage', dmgAmt, stack++); fxRecord('lpchip', { player: p, chip: 'damage', amount: dmgAmt, signed: -dmgAmt, variant: 'damage', down: true }); }
     }
   }
 }
@@ -6170,9 +6215,18 @@ function uiAnswer(prompt, state) {
     // any prompt cycle (no currentPrompt, no stats refresh, no dock).
     if (prompt.name === 'SELECT_CHAIN' && chainPassDecision(prompt, state) === 'pass') { resolve(E.i32resp(-1)); return; }
     if (prompt.name === 'SELECT_EFFECTYN' && duelNoConfirm.has(effectYnKey(prompt))) { flashAutoPass(cardName(prompt.code)); resolve(E.i32resp(0)); return; }
-    // An arriving prompt takes the sheet back from the FX settings
-    // sheet (round B) — the settings sheet must never sit over a dock
-    if ($('sheet') && $('sheet').querySelector('#fxseg-cutin')) sheetClose();
+    // An arriving prompt takes the sheet back from any open view
+    // (round B took it from the FX settings sheet; fx-ui round 2
+    // F4 generalises): a card detail / pile / log view left open
+    // behind an arriving prompt kept its text over the prompt —
+    // worst with the chain dock, which draws UNDER the sheet, so
+    // the two texts overlapped. The floating detail pop goes too
+    // (sheet prompts closed it via sheetOpen; dock prompts never
+    // did). A prompt-owned sheet is never open at this point: the
+    // previous prompt's answer already closed it (finishPrompt ->
+    // clearInteraction), so what is open here can only be a view.
+    closeInfoPop();
+    { const sw = $('sheetwrap'); if (sw && sw.className === 'on' && sw.dataset.kind === 'view') sheetClose(); }
     currentPrompt = { prompt, resolve };
     syncFxBtnInert();
     // The 攻撃 action's target choice is the SELECT_CARD that
@@ -6690,7 +6744,13 @@ function uiChain(prompt, state) {
           (cfx && cfx.n ? '<div class="fxline">' + (cfx.act ? '発動：' : '効果' + CIRCLED_NUM[cfx.n - 1] + '：') + fxExcerpt(cfx) + (fxTruncated(cfx) ? '<span class="fxmore">（続きは「詳細」で読めます）</span>' : '') + '</div>' : '') +
           (prompt.forced ? '' : '<span class="dismiss" data-dismiss="' + i + '">' + (disChain ? '聞くに戻す' : 'このチェーンでは聞かない') + '</span>') +
           (prompt.forced || disChain ? '' : '<span class="dueldismiss" data-dueldismiss="' + i + '">このデュエル中は聞かない（このカードのこの効果）</span>') +
-          '<span class="candinfo" data-info="' + i + '">詳細</span></div>';
+          '<span class="candinfo" data-info="' + i + '">詳細</span>' +
+          // fx-ui round 2 (F3): the activation itself gets an
+          // explicit button — "tap the candidate's box" was an
+          // undiscoverable way to commit to a chain activation.
+          // A chain-dismissed candidate cannot be activated (its
+          // box tap is inert too), so it gets no button.
+          (disChain ? '' : '<button class="candact" data-chainact="' + i + '">発動する</button>') + '</div>';
       }).join('') + '</div>' +
       (() => {
         // one row per dismissed CLASS: two copies of one card's
@@ -6710,9 +6770,15 @@ function uiChain(prompt, state) {
     }
     firstDraw = false;
     $('dock').querySelectorAll('[data-chain]').forEach(c => c.addEventListener('click', (ev) => {
-      if (ev.target.dataset.dismiss != null || ev.target.dataset.dueldismiss != null || ev.target.dataset.info != null) return;
+      if (ev.target.dataset.dismiss != null || ev.target.dataset.dueldismiss != null || ev.target.dataset.info != null || ev.target.dataset.chainact != null) return;
       if (dismissedChains.has(chainKey(prompt.entries[+c.dataset.chain]))) return; // chain-dismissed: un-dismiss via × first
       playClick(); finishPrompt(E.i32resp(+c.dataset.chain));
+    }));
+    // F3: the explicit 発動する button answers with exactly the
+    // box tap's bytes; stopPropagation keeps the box handler from
+    // answering twice.
+    $('dock').querySelectorAll('[data-chainact]').forEach(b => b.addEventListener('click', (ev) => {
+      ev.stopPropagation(); playClick(); finishPrompt(E.i32resp(+b.dataset.chainact));
     }));
     // R-SEL-1: reading a candidate never answers the prompt —
     // the detail floats over the dock and closes back onto it.
@@ -6832,6 +6898,18 @@ function gridReqNote(o) {
   return '（必須）';
 }
 // ---- generic card-grid selection sheet (tray conventions) ----
+// fx-ui round 2 (F7): a selection grid taller than the sheet
+// must SAY it continues — a candidate below the fold was
+// indistinguishable from a candidate that does not exist (an
+// attack-target sheet read as offering a single target). The
+// cue shows only while more cards sit below the fold and goes
+// away at the bottom.
+function gridScrollCueUpdate() {
+  const cue = document.querySelector('#sheet #gridmore'); if (!cue) return;
+  const sh = $('sheet'); if (!sh) return;
+  const more = sh.scrollHeight - sh.scrollTop - sh.clientHeight > 24;
+  cue.style.display = more ? '' : 'none';
+}
 function gridSheet(o) {
   // o: {title, purpose?, sub, cards:[{code,locLabel,extra,locked}], selected:Set(idx), valid:fn, confirmLabel, cancelable, onToggle}
   // purpose: the plain-words purpose line (selectPurposeText), rendered
@@ -6858,7 +6936,11 @@ function gridSheet(o) {
         (hid ? '' : (statsLine(c.code) ? '<div class="stats">' + statsLine(c.code) + '</div>' : '') +
         (hid ? '' : (o.showText && cardText(c.code) ? '<div class="itext">' + cardText(c.code) + '</div>' : ''))) + '</div>';
       }).join('') + '</div>' +
-      '<div class="btnrow"><button class="bigbtn" id="grid-confirm" ' + (o.valid() ? '' : 'disabled') + '>' + (o.valid() ? (o.confirmLabel || '決定') : (o.needLabel ? o.needLabel() : (o.confirmLabel || '決定'))) + '</button>' +
+      // F7: the scroll cue rides INSIDE the sticky button row as
+      // a full-width first line — shown only while the sheet can
+      // still scroll (gridScrollCueUpdate), so it is always in
+      // view without ever covering the buttons or the tiles.
+      '<div class="btnrow"><div id="gridmore" style="display:none">▼ まだ下にカードがあります</div><button class="bigbtn" id="grid-confirm" ' + (o.valid() ? '' : 'disabled') + '>' + (o.valid() ? (o.confirmLabel || '決定') : (o.needLabel ? o.needLabel() : (o.confirmLabel || '決定'))) + '</button>' +
       (o.cancelable ? '<button class="bigbtn sub" id="grid-cancel">選ばずにやめる</button>' : '') + '</div>');
     $('sheet').querySelectorAll('[data-grid]').forEach(g => g.addEventListener('click', (ev) => { if (ev.target.closest('[data-gdetail]')) return; playClick();
       if (o.onToggle(+g.dataset.grid) === 'max') { const gs = $('gsub'); if (gs) { const orig = gs.innerHTML; gs.textContent = 'これ以上選べません。選んだカードをタップすると外せます'; setTimeout(() => { if (gs.isConnected) gs.innerHTML = orig; }, 1500); } return; }
@@ -6870,7 +6952,10 @@ function gridSheet(o) {
     $('grid-confirm').addEventListener('click', () => { playClick(); o.onConfirm([...o.selected]); });
     const cancel = $('grid-cancel');
     if (cancel) cancel.addEventListener('click', () => { playClick(); finishPrompt(E.cancelResp()); });
+    requestAnimationFrame(gridScrollCueUpdate); // F7: size the cue to this draw
   };
+  const sh0 = $('sheet');
+  if (sh0 && !sh0.dataset.cueBound) { sh0.dataset.cueBound = '1'; sh0.addEventListener('scroll', gridScrollCueUpdate, { passive: true }); }
   draw();
 }
 // BU-13 (brushup round 3): SELECT_CARD itself carries no purpose

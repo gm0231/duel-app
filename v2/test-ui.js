@@ -95,6 +95,11 @@ async function playDuel(window, opts) {
       else if (q('#grid-cancel', sheet)) click(q('#grid-cancel', sheet));
       else if (q('#sheet-cancel', sheet)) click(q('#sheet-cancel', sheet));
     } else if (dockOn) {
+      // fx-ui round 2 (F3): tally docks that offer the candidate's
+      // own 発動する button (presence in real play; the button's
+      // answer path itself is exercised by the capture rig — an
+      // activation here would reroute the duel unpredictably).
+      if (q('[data-chainact]', $('dock'))) obs.f3Seen = (obs.f3Seen || 0) + 1;
       const dd = q('[data-dueldismiss]', $('dock'));
       if (dd && opts.useDismissal && obs.dismissClicked === 0) { obs.dismissClicked++; click(dd); }
       else click(q('#chain-pass', $('dock')) || q('[data-chain]', $('dock')));
@@ -158,6 +163,11 @@ async function boot() {
     ok(!obs.retrySeen, 'UI3: run 1 retry warning never shown (MSG_RETRY proxy == 0)');
     ok(obs.jpSeen, 'UI4: Japanese card names rendered in hand');
     ok(!obs.stalled && !obs.timedOut, 'UI5: run 1 never stalled/timed out');
+    // UI-F3 tally only: whether a candidate dock appears at all is
+    // draw-dependent (a 4-turn loss may deal none), so presence is
+    // asserted deterministically in test-chainpass DK15/DK16 and the
+    // fxround2 synth capture; here we just report what real play dealt.
+    console.log('  UI-F3 tally: run 1 dock ticks with the 発動する button: ' + (obs.f3Seen || 0));
     if (obs.announce.length) {
       ok(obs.announce.every(a => a.ctx && a.ctx.includes('墓守の罠')), 'UI6: ANNOUNCE_CARD grid shows Gravekeeper\'s Trap context');
       ok(obs.announce.every(a => !a.offersExtraType), 'UI7: ANNOUNCE_CARD grid offers no Extra-Deck-type card');

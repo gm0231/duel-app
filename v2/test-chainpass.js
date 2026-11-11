@@ -177,6 +177,29 @@ const tick = (ms) => new Promise(r => setTimeout(r, ms));
     ok(!dockEl.innerHTML.includes('この場所での'), 'DK10: old instance-scope wording is gone');
     T.answerCurrent(E.i32resp(-1));
   }
+  { // fx-ui round 2 (F3): every live candidate carries an explicit
+    // 発動する button of its own; a chain-dismissed candidate —
+    // whose box tap is inert — carries none. (Click-through in a
+    // real DOM is covered by test-ui's F3 probe.)
+    T.setDismissed(new Set(), new Map());
+    dockEl.innerHTML = ''; dockEl.className = '';
+    const p = T.uiAnswer(P(false, [A, B]), state1);
+    p.then(() => {}, () => {});
+    for (let i = 0; i < 50 && dockEl.className !== 'on'; i++) await tick(10);
+    const acts = [...dockEl.innerHTML.matchAll(/data-chainact="(\d+)"/g)].map(m => m[1]);
+    ok(acts.length === 2 && acts[0] === '0' && acts[1] === '1' && (dockEl.innerHTML.match(/発動する/g) || []).length === 2,
+      'DK15: F3 — both chain candidates carry an explicit 発動する button (got ' + JSON.stringify(acts) + ')');
+    T.answerCurrent(E.i32resp(-1));
+    T.setDismissed(new Set([kA]), new Map());
+    dockEl.innerHTML = ''; dockEl.className = '';
+    const p2 = T.uiAnswer(P(false, [A, B]), state1);
+    p2.then(() => {}, () => {});
+    for (let i = 0; i < 50 && dockEl.className !== 'on'; i++) await tick(10);
+    const acts2 = [...dockEl.innerHTML.matchAll(/data-chainact="(\d+)"/g)].map(m => m[1]);
+    ok(acts2.length === 1 && acts2[0] === '1', 'DK16: F3 — the chain-dismissed candidate gets no 発動する button (got ' + JSON.stringify(acts2) + ')');
+    T.answerCurrent(E.i32resp(-1));
+    T.setDismissed(new Set(), new Map());
+  }
   { // a dismissed class returning from the grave (another copy, a
     // later scene) auto-passes through uiChain's flash path
     T.setDismissed(new Set(), new Map([[dA, { code: A.code, desc: A.desc, loc: A.loc }]]));

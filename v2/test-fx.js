@@ -450,6 +450,18 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     ok(!has(recs, 'synchro'), 'FXS7b: no standalone synchro scene/record on the ace path (no double presentation)');
     ok(doc.querySelectorAll('.fx3-synpip').length >= 6, 'FXS7c: level pips ride the ace scene zone phase (got ' + doc.querySelectorAll('.fx3-synpip').length + ')');
     ok(!!doc.querySelector('.fx3-syntuner'), 'FXS7d: the ace-path tuner wears the lapis ring');
+
+    // fx-ui round 2 (F5): the ace banner reads the monster's LIVE
+    // stats — a Horus standing at a modified 3000/900 banners
+    // 3000/900 from the moment it is built: never the old
+    // count-up's ATK 0 / DEF 0 window, never the printed 2300/1600.
+    fx.reset();
+    step(fakeState(s => { s.players[0].mzone[1] = mon(TUNER); s.players[0].mzone[3] = mon(NONTUN); }));
+    st = fakeState(s => { const m = mon(HORUS); m.curAtk = 3000; m.curDef = 900; s.players[0].mzone[2] = m; s.players[0].grave = [TUNER, NONTUN]; });
+    recs = step(st, [{ kind: 'spsummon', code: HORUS, con: 0 }]);
+    ok(has(recs, 'cutin', r => r.code === HORUS && r.via === 'acescene'), 'FXS9: the modified Horus still takes the ace scene');
+    const csNow = doc.querySelector('#fxcutin .banner .cs');
+    ok(!!csNow && csNow.textContent === 'ATK 3000 ／ DEF 900', 'FXS9b: F5 — the ace banner stands at the LIVE stats 3000/900 at build (got ' + (csNow ? JSON.stringify(csNow.textContent) : 'none') + ')');
     ok(fx.error === null, 'FXS8: fxError stayed null through every synchro step (got: ' + fx.error + ')');
     window.close();
   }
@@ -498,8 +510,11 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     ok(samples.every((v, i) => i === 0 || v <= samples[i - 1]), 'FXA3b: F1 — the LP display is monotonic non-increasing for the whole count (distinct: ' + samples.filter((v, i) => i === 0 || v !== samples[i - 1]).join('>') + ')');
     ok(samples[samples.length - 1] === 7100 && fx.lpShown(1) === 7100, 'FXA3c: F1 — the count settles exactly on the state value 7100');
 
-    // --- F2 contrast: damage to ME keeps the upward variant, and
-    // the F1 pin applies to my counter too.
+    // --- F2 contrast: the F1 pin applies to my counter too. The
+    // direction half is superseded by fx-ui round 2 (F6a): damage
+    // to ME uses the downward variant as well — above my plate
+    // sits only the mid-bar log line, and the upward number
+    // landed on that text (measured on the published build).
     fx.reset();
     st = fakeState(s => { s.log = []; s.players[1].mzone[0] = mon(NORMAL2); });
     render(st); step(st);
@@ -508,7 +523,7 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     render(st); step(st, [{ kind: 'attack', code: NORMAL2, con: 1, direct: true }, { kind: 'damage', player: 0, amount: 900 }]);
     ok(myLpEl.textContent === '8000', 'FXA4: F1 — my counter is pinned to the start value at scene creation too (got ' + myLpEl.textContent + ')');
     const myNum = doc.querySelector('.fx3-dmgnum');
-    ok(!!myNum && !myNum.classList.contains('fx3-dmgnum--down'), 'FXA4b: F2 — my damage number keeps the upward variant (class=' + (myNum ? myNum.className : 'none') + ')');
+    ok(!!myNum && myNum.classList.contains('fx3-dmgnum--down'), 'FXA4b: fx-ui round 2 (F6a) — my damage number uses the downward variant too (class=' + (myNum ? myNum.className : 'none') + ')');
     await new Promise(r => setTimeout(r, 1300));
     ok(myLpEl.textContent === '7100' && fx.lpShown(0) === 7100, 'FXA4c: my LP count settles exactly on 7100 (got ' + myLpEl.textContent + ')');
 
@@ -732,7 +747,7 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     ok(has(recs, 'lpchip', r => r.chip === 'heal' && r.player === 0 && r.amount === 600 && r.signed === 600 && r.variant === 'mine'), 'FXF3: my heal records a heal chip with the mine (gold) variant');
     ok(has(recs, 'healfloat', r => r.amount === 600), 'FXF3b: the legacy healfloat record still fires for a heal');
     const myHeal = doc.querySelector('.fx-healfloat');
-    ok(!!myHeal && myHeal.textContent === '+600' && myHeal.classList.contains('fx3-lpchip--heal') && myHeal.classList.contains('fx3-lpchip--mine') && !myHeal.classList.contains('fx-healfloat--down') && myHeal.dataset.direction === 'up', 'FXF3c: my heal node is the +600 gold chip and keeps the upward float (class=' + (myHeal ? myHeal.className : 'none') + ')');
+    ok(!!myHeal && myHeal.textContent === '+600' && myHeal.classList.contains('fx3-lpchip--heal') && myHeal.classList.contains('fx3-lpchip--mine') && myHeal.classList.contains('fx-healfloat--down') && myHeal.dataset.direction === 'down', 'FXF3c: fx-ui round 2 (F6a) — my heal node is the +600 gold chip on the downward float (above my plate sits only the log line; class=' + (myHeal ? myHeal.className : 'none') + ')');
 
     // --- F-heal (opponent): + chip in lapis-white, and the float
     // becomes the DOWNWARD variant (audit F2 remainder)
