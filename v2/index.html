@@ -234,13 +234,27 @@
   #preview.compact .pv-text{display:none;}
   #preview.compact .pv-meta{display:none;}
   /* ---------- chain dock ---------- */
-  #dock{position:absolute;left:0;right:0;bottom:0;z-index:40;background:#171208f2;border-top:2px solid var(--gold);padding:8px;display:none;}
-  #dock.on{display:block;}
+  /* fx-ui round 3 (G1): the dock ground is FULLY opaque — it used to
+     be #171208f2 (alpha .95), so whatever bright art sat behind the
+     dock (preview strip text, hand art, board tiles) ghosted through
+     the empty right half of the dock and through the gaps around the
+     candidate cards, colliding with the candidates' own text. The
+     top shadow gives the dock a hard edge against the board. */
+  #dock{position:absolute;left:0;right:0;bottom:0;z-index:40;background:#171208;border-top:2px solid var(--gold);box-shadow:0 -10px 28px rgba(0,0,0,.6);padding:8px;display:none;}
+  /* fx-ui round 3 (G2): the dock is a flex column capped at
+     100dvh - 108px (top bar + opponent field + chain context stay
+     visible). Title/context/duel-section/pass row are pinned; only
+     the candidate row may scroll (vertically, inside the dock), so
+     the primary actions are always on screen — the dock used to be
+     an unbounded block and could push パス off the bottom. */
+  #dock.on{display:flex;flex-direction:column;max-height:calc(100dvh - 108px);}
+  #dock>.ttl,#dock>.ctx,#dock>.row,#dock>.sub{flex:0 0 auto;}
+  #dock>.duelsection{flex:0 1 auto;overflow-y:auto;max-height:110px;}
   #dock .ttl{font-size:12px;color:var(--gold);font-weight:700;}
   #dock .ctx{font-size:11px;color:var(--txt-dim);margin:2px 0 6px;}
   #dock .toplink{text-decoration:underline dotted;text-underline-offset:2px;}
-  #dock .cands{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;}
-  .cand{flex:0 0 auto;max-width:150px;border:1px solid var(--gold);border-radius:6px;background:var(--panel2);padding:6px 8px;font-size:11px;cursor:pointer;position:relative;}
+  #dock .cands{display:flex;gap:6px;overflow-x:auto;overflow-y:auto;padding-bottom:4px;flex:1 1 auto;min-height:0;}
+  .cand{flex:0 0 auto;max-width:172px;border:1px solid var(--gold);border-radius:6px;background:var(--panel2);padding:6px 8px;font-size:11px;cursor:pointer;position:relative;}
   .cand .loc{color:var(--txt-dim);font-size:10px;}
   .cand .dismiss{display:inline-block;margin-top:5px;font-size:10px;color:#f0c08a;background:#2a1c0d;border:1px solid #a86a2a;border-radius:6px;padding:6px 8px;cursor:pointer;}
   .cand.dismissed{opacity:.45;border-style:dashed;}
@@ -412,8 +426,16 @@
   .cand .candact:active{filter:brightness(1.3);}
   #dock .duelsection{font-size:10px;color:var(--txt-dim);margin-top:6px;}
   #dock .duelsection button{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:11.5px;padding:9px 12px;min-height:38px;margin-left:6px;cursor:pointer;}
-  #autopass{display:none;position:absolute;left:8px;bottom:calc(var(--hh) + 33px);z-index:45;background:#4a3a10ee;color:#ffe9a8;border:1px solid var(--gold);border-radius:12px;font-size:12px;padding:9px 13px;min-height:38px;cursor:pointer;}
-  #autopass.on{display:block;}
+  /* BU-32 (fx-ui round 3): in 毎回 mode the dock shows this note in
+     place of the (inert) 聞かない controls. */
+  #dock .respnote{font-size:11px;line-height:1.55;color:#f0d089;background:#2a1c0d;border:1px solid #8a6a20;border-radius:8px;padding:7px 9px;}
+  /* fx-ui round 3 (BU-15): the auto-pass chip is IN FLOW as the top
+     bar's third item. It used to float (absolute, bottom: hand +
+     33px) over the preview strip / pile row and covered effect
+     text; in flow it can never overlay anything — appearing or
+     disappearing only narrows/widens the centre turn label. */
+  #autopass{display:none;flex:0 1 auto;margin-left:6px;background:#4a3a10;color:#ffe9a8;border:1px solid var(--gold);border-radius:12px;font-size:11.5px;padding:6px 10px;min-height:32px;cursor:pointer;max-width:54%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  #autopass.on{display:flex;align-items:center;}
   #autopass.flash{background:#7a5a10;color:#fff;font-weight:700;}
   /* ---------- presentation FX layer (rounds A/B) ----------
      All duel presentation lives in #fxlayer as absolutely positioned
@@ -874,6 +896,7 @@
   <div id="topbar">
     <div><div class="who">相手（CPU）</div><div class="lp" id="oppLp">8000</div></div>
     <div class="mid" id="turninfo">—</div>
+    <div id="autopass"></div>
   </div>
   <div id="placehint"></div>
   <div class="field" id="oppField">
@@ -907,7 +930,6 @@
   <div id="fxlayer"><canvas id="fxcv"></canvas></div>
   <div id="fxcutin"><canvas id="fxcvTop"></canvas></div>
   <div id="dock"></div>
-  <div id="autopass"></div>
   <div id="sheetwrap"><button id="sheetx" title="閉じる">×</button><button id="peekbtn">盤面を見る</button><div id="sheet"></div><div id="peekbar"></div></div>
   <div id="infopop"></div>
   <div class="overlay" id="start">

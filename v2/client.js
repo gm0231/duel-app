@@ -6171,7 +6171,7 @@ function peekBoardTap(x, y) {
   }
   return false;
 }
-function dockClose() { $('dock').className = ''; $('dock').innerHTML = ''; syncAutoPassChipPos(); }
+function dockClose() { $('dock').className = ''; $('dock').innerHTML = ''; }
 function clearInteraction() {
   sheetClose(); dockClose();
   cmdPromptOpen = false;
@@ -6226,7 +6226,11 @@ function uiAnswer(prompt, state) {
     // previous prompt's answer already closed it (finishPrompt ->
     // clearInteraction), so what is open here can only be a view.
     closeInfoPop();
-    { const sw = $('sheetwrap'); if (sw && sw.className === 'on' && sw.dataset.kind === 'view') sheetClose(); }
+    // fx-ui round 3 (G1): classList, not className === 'on' — a
+    // PEEKED view carries 'on peek', and round 2's exact match let
+    // exactly that state survive the prompt's arrival (measured:
+    // the peeked detail stayed up behind the chain dock).
+    { const sw = $('sheetwrap'); if (sw && sw.classList.contains('on') && sw.dataset.kind === 'view') sheetClose(); }
     currentPrompt = { prompt, resolve };
     syncFxBtnInert();
     // The 攻撃 action's target choice is the SELECT_CARD that
@@ -6296,6 +6300,13 @@ function fxPromptLink(prompt, state) {
   } catch (e) {}
 }
 function dispatchPrompt(prompt, state) {
+  // fx-ui round 3 (G1): re-assert the no-stale-detail invariant at
+  // the moment of dispatch. uiAnswer already closed the pop and any
+  // view sheet when the prompt ARRIVED, but the prompt gate can sit
+  // behind presentation beats before dispatch; nothing the player
+  // does in that window may leave a detail pop floating over the
+  // prompt that is about to render.
+  closeInfoPop();
   if (prompt.name !== 'SELECT_PLACE' && prompt.name !== 'SELECT_DISFIELD' && prompt.name !== 'SELECT_POSITION') lastPlaceCard = null;
   switch (prompt.name) {
     case 'SELECT_IDLECMD': case 'SELECT_BATTLECMD': return uiCmd(prompt, state);
@@ -6625,26 +6636,23 @@ function chainPassDecision(prompt, state) {
   if (allDuel) return 'flash';
   return allAny ? 'pass' : 'show';
 }
-// BU-15: the auto-pass chip's home (CSS bottom: hand height +
-// 33px) sits INSIDE the chain dock's span whenever the dock is
-// open, straddling its dismissal buttons and splitting their
-// labels. A state display must never cover the controls it
-// describes: while the dock is up, the chip rides directly
-// above the dock's top edge (the dock's own duelsection still
-// lists the same state inside); when the dock closes, the
-// inline bottom is dropped and the CSS home applies again.
-function syncAutoPassChipPos() {
-  const el = $('autopass'); if (!el) return;
-  const dock = $('dock');
-  if (dock && dock.className === 'on' && dock.offsetHeight) el.style.bottom = (dock.offsetHeight + 6) + 'px';
-  else el.style.bottom = '';
-}
+// BU-15 (fx-ui round 3): the auto-pass chip is in-flow in the top
+// bar (see index.html) — it no longer has a position to sync. It
+// used to float over the board and ride above the open dock; both
+// placements covered content (preview text, the pile row, dock
+// buttons). In flow it can never overlay anything.
 function updateAutoPassChip() {
   const el = $('autopass'); if (!el) return;
   if (Date.now() < autoPassFlashUntil) return; // flash text still showing
-  if (dismissedDuel.size) { el.textContent = '自動パス設定中：' + dismissedDuel.size + ' 件（タップで管理）'; el.className = 'on'; }
+  if (dismissedDuel.size) {
+    // BU-32: in 毎回 mode the dismissals are inert by design; the
+    // chip must say so instead of implying suppression is active.
+    el.textContent = fxSettings.resp === 'on'
+      ? '自動パス：' + dismissedDuel.size + ' 件（毎回モードでは無効）'
+      : '自動パス設定中：' + dismissedDuel.size + ' 件（タップで管理）';
+    el.className = 'on';
+  }
   else { el.className = ''; el.textContent = ''; }
-  syncAutoPassChipPos();
 }
 function flashAutoPass(names) {
   const el = $('autopass'); if (!el) return;
@@ -6658,6 +6666,7 @@ function openDismissManager() {
   const rows = [...dismissedDuel.entries()].map(([k, v]) =>
     '<div class="sortrow"><span>' + dismissalName(v) + '</span><span class="mv"><button data-undismiss="' + k + '">解除</button></span></div>').join('');
   sheetOpenView('<div class="ttl">自動パスの設定（このデュエル）</div>' +
+    (fxSettings.resp === 'on' ? '<div class="sub" style="color:#f0c08a">いまの応答モードは「毎回」のため、下の設定は効いていません（「おまかせ」で有効になります）。</div>' : '') +
     '<div class="sub">ここにある「カードの効果」だけが残ったチェーン確認は、自動でパスされます。同じカードの同じ効果なら、置かれた場所・コピー・場面が変わっても聞きません。他に候補がある確認は通常どおり表示されます。</div>' +
     (rows || '<div class="sub">設定中のカードはありません</div>') +
     '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">閉じる</button></div>');
@@ -6696,7 +6705,7 @@ function openFxSettings() {
       el.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { playClick(); apply(b.dataset.v); draw(); }));
     };
     wire('fxseg-cutin', (v) => { fxSettings.cutin = v === 'on'; fxSaveSettings(); syncFxSegs(); });
-    wire('fxseg-resp', (v) => { fxSettings.resp = v; fxSaveSettings(); syncFxSegs(); });
+    wire('fxseg-resp', (v) => { fxSettings.resp = v; fxSaveSettings(); syncFxSegs(); updateAutoPassChip(); });
     $('sheet-cancel').addEventListener('click', () => { playClick(); sheetClose(); });
   };
   draw();
@@ -6742,8 +6751,16 @@ function uiChain(prompt, state) {
         return '<div class="cand' + (disChain ? ' dismissed' : '') + '" data-chain="' + i + '">' + cardName(e.code) +
           '<div class="loc">' + locLabel(e) + (disChain ? '（このチェーンでは聞かない）' : '') + '</div>' +
           (cfx && cfx.n ? '<div class="fxline">' + (cfx.act ? '発動：' : '効果' + CIRCLED_NUM[cfx.n - 1] + '：') + fxExcerpt(cfx) + (fxTruncated(cfx) ? '<span class="fxmore">（続きは「詳細」で読めます）</span>' : '') + '</div>' : '') +
-          (prompt.forced ? '' : '<span class="dismiss" data-dismiss="' + i + '">' + (disChain ? '聞くに戻す' : 'このチェーンでは聞かない') + '</span>') +
-          (prompt.forced || disChain ? '' : '<span class="dueldismiss" data-dueldismiss="' + i + '">このデュエル中は聞かない（このカードのこの効果）</span>') +
+          // BU-32 (fx-ui round 3): in 毎回 mode dismissals are
+          // inert BY DESIGN (chainPassDecision always shows), so
+          // the 聞かない controls are not rendered at all — the
+          // dock shows the respnote below instead. Rendering them
+          // let a tap register a dismissal, light the chip and
+          // even auto-pass the CURRENT prompt via the click
+          // handler, while the next prompt asked again: a promise
+          // the mode cannot keep.
+          (prompt.forced || noDismiss ? '' : '<span class="dismiss" data-dismiss="' + i + '">' + (disChain ? '聞くに戻す' : 'このチェーンでは聞かない') + '</span>') +
+          (prompt.forced || noDismiss || disChain ? '' : '<span class="dueldismiss" data-dueldismiss="' + i + '">このデュエル中は聞かない（このカードのこの効果）</span>') +
           '<span class="candinfo" data-info="' + i + '">詳細</span>' +
           // fx-ui round 2 (F3): the activation itself gets an
           // explicit button — "tap the candidate's box" was an
@@ -6756,7 +6773,9 @@ function uiChain(prompt, state) {
         // one row per dismissed CLASS: two copies of one card's
         // effect in a single prompt are the same class (BU-04)
         const dd = [...new Map(prompt.entries.filter(e => dismissedDuel.has(duelKey(e))).map(e => [duelKey(e), e])).values()];
-        if (noDismiss || !dd.length) return '';
+        if (noDismiss) return prompt.forced ? '' :
+          '<div class="duelsection respnote">『聞かない』設定は、応答モード「毎回」では効きません（「おまかせ」で有効になります）</div>';
+        if (!dd.length) return '';
         return '<div class="duelsection">自動パス設定中：' + [...new Set(dd.map(e => dismissalName(e)))].join('・') +
           dd.map(e => '<button data-undismiss="' + duelKey(e) + '">' + dismissalName(e) + ' を解除</button>').join('') + '</div>';
       })() +
@@ -6822,7 +6841,6 @@ function uiChain(prompt, state) {
     }));
     const pass = $('chain-pass');
     if (pass) pass.addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(-1)); });
-    syncAutoPassChipPos(); // BU-15: the chip clears the dock it now sits over
   };
   draw();
 }
@@ -7227,7 +7245,7 @@ window.__oppinfo = { boardCardAt, peekInfoTap };
 // placement, the BU-22 peek answer band, the BU-23 derived
 // requirement notes and the BU-28 truncation flag, so
 // test-clarity.js can pin them without a live duel.
-window.__clarity = { syncChipPos: syncAutoPassChipPos, syncPeekBar, gridReqNote, announceDupNote, fxTruncated };
+window.__clarity = { syncPeekBar, gridReqNote, announceDupNote, fxTruncated };
 function uiYesNo(prompt, state) {
   const isEff = prompt.name === 'SELECT_EFFECTYN';
   // WHICH card and WHICH effect is being asked must be readable on
@@ -8118,7 +8136,7 @@ function wireSeg(id, apply) {
   wireSeg('seg-first', (v) => { firstChoice = v; updateDeckSum(); });
   syncFxSegs(); // reflect any persisted round-B settings before wiring
   wireSeg('seg-cutin', (v) => { fxSettings.cutin = v === 'on'; fxSaveSettings(); });
-  wireSeg('seg-resp', (v) => { fxSettings.resp = v; fxSaveSettings(); });
+  wireSeg('seg-resp', (v) => { fxSettings.resp = v; fxSaveSettings(); updateAutoPassChip(); });
   $('fxbtn').addEventListener('click', () => { playClick(); openFxSettings(); });
   // R-SEL-2: while a selection sheet is up, the board can be
   // checked without answering anything — the sheet slides down

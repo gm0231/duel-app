@@ -80,7 +80,10 @@ async function boot() {
   ok(doc.getElementById('loadmsg').textContent.includes('準備完了'), 'CL0a: client boots');
   ok(!!doc.getElementById('peekbar'), 'CL0b: #peekbar exists in the sheet wrap');
   const C = window.__clarity;
-  ok(!!C && typeof C.syncChipPos === 'function' && typeof C.syncPeekBar === 'function' && typeof C.gridReqNote === 'function' && typeof C.announceDupNote === 'function' && typeof C.fxTruncated === 'function', 'CL0c: __clarity surface exists');
+  // fx-ui round 3 (BU-15): syncChipPos left the __clarity surface —
+  // the chip moved in-flow into the top bar and has no position to
+  // sync any more (see CL9).
+  ok(!!C && typeof C.syncChipPos === 'undefined' && typeof C.syncPeekBar === 'function' && typeof C.gridReqNote === 'function' && typeof C.announceDupNote === 'function' && typeof C.fxTruncated === 'function', 'CL0c: __clarity surface exists (syncChipPos retired in fx-ui round 3)');
   const click = (el) => { if (el) el.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })); return !!el; };
   const waitFor = async (fn, label) => { for (let i = 0; i < 60 && !fn(); i++) await new Promise(r => setTimeout(r, 50)); ok(!!fn(), label); };
 
@@ -187,21 +190,27 @@ async function boot() {
     await waitFor(() => window.eval('window.__clChain') !== null, 'CL8e: chain prompt still passes as before');
   }
 
-  // ---------- BU-15: chip vs dock placement ----------
+  // ---------- BU-15: chip placement ----------
+  // fx-ui round 3 REWRITE of this block. The round-B mechanism (the
+  // chip floats over the board at home, and rides above the open
+  // dock via syncAutoPassChipPos) still left the chip covering the
+  // preview strip's last line and the pile row in live play. The
+  // chip is now IN FLOW as the top bar's third item: it cannot
+  // overlay anything, dock open or closed. The invariant pinned
+  // here replaces the ride-above geometry: chip parent is #topbar
+  // and no inline bottom is ever set.
   window.eval(`(() => {
     dismissedDuel.set('cl-probe', { code: ${MUDORA}, desc: 0 });
     updateAutoPassChip();
-    const dock = document.getElementById('dock');
-    Object.defineProperty(dock, 'offsetHeight', { value: 210, configurable: true });
     return true;
   })()`);
   const chip = doc.getElementById('autopass');
   ok(chip.className === 'on' && chip.textContent.includes('自動パス設定中：1 件'), 'CL9a: chip shows the auto-pass state');
-  ok(chip.style.bottom === '', 'CL9b: dock closed -> chip at its CSS home (no inline bottom)');
-  window.eval(`(() => { document.getElementById('dock').className = 'on'; window.__clarity.syncChipPos(); return true; })()`);
-  ok(chip.style.bottom === '216px', 'CL9c: dock open -> chip rides above the dock (height 210 + 6), never over its buttons');
+  ok(chip.parentElement === doc.getElementById('topbar'), 'CL9b: chip lives in flow inside #topbar (cannot overlay board, preview or dock)');
+  window.eval(`(() => { document.getElementById('dock').className = 'on'; updateAutoPassChip(); return true; })()`);
+  ok(chip.style.bottom === '' && chip.parentElement === doc.getElementById('topbar'), 'CL9c: dock open -> chip stays in the top bar, no inline positioning');
   window.eval('dockClose()');
-  ok(doc.getElementById('dock').className === '' && chip.style.bottom === '', 'CL9d: dock closed -> chip returns home');
+  ok(doc.getElementById('dock').className === '' && chip.style.bottom === '', 'CL9d: dock closed -> chip unchanged (no position state to restore)');
   window.eval(`(() => { dismissedDuel.delete('cl-probe'); updateAutoPassChip(); return true; })()`);
 
   console.log(failures ? ('FAILURES: ' + failures) : 'ALL CLARITY CHECKS PASSED');
