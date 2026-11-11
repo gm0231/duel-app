@@ -1244,6 +1244,7 @@ function makeBotMemory() {
     attackWatch: null,    // {attSeq, attCode, attAtk, tgtSeq, turn}: in-flight attack into a face-down target, resolved from later public views
     witchChip: null,      // round 9: {turn, seqs:Set} — White Forest monsters whose once-per-turn battle protection we already spent this turn
     exchFired: 0,         // round 12: turn on which WE activated Exchange of the Spirit (printed or Rollback copy); 0 = never. Arms the post-swap win-line brake.
+    r15Log: [],           // round 15: every decision a theme forecast actually changed, with its premise ({turn, kind, premise})
   };
 }
 
@@ -2347,7 +2348,10 @@ function activationScore(e, view, data, prompt) {
       // the lock breaks. The one exception is our own Exchange's
       // activation chain, priced in chainEntryValue instead.
       if (deckIdOfList(view.myDeck, data) === 'ishizu' && phasePriority(view, data).lock) return 0;
-      const topOpp = view.grave[opp].map(c => graveValue(c, data)).sort((a, b) => b - a);
+      // Round 15: the bar reads the opponent's graveyard through the
+      // theme profile — a Monarch S/T sleeping there is a body or a
+      // search next turn, so it counts above its generic value.
+      const topOpp = view.grave[opp].map(c => graveValue(c, data) + themeGraveBonus(view, data, c)).sort((a, b) => b - a);
       // Round 5, vs-Elfennotes plan: that deck's engine runs from the
       // hand/field (fusion), so its graveyard is mostly spent material
       // and the shuffle buys little — while firing (2) banishes this
@@ -2532,7 +2536,7 @@ function activationScore(e, view, data, prompt) {
     case CC.LOST_WIND:
       return oppFU.some(c => isExtraCd(cdOf(data, c.code)) && atkOf(c, data) >= 1700) ? 950 : 0;
     case CC.TRANSMIGRATION: {
-      const topOpp = view.grave[opp].map(c => graveValue(c, data)).sort((a, b) => b - a);
+      const topOpp = view.grave[opp].map(c => graveValue(c, data) + themeGraveBonus(view, data, c)).sort((a, b) => b - a);
       return (topOpp[0] || 0) + (topOpp[1] || 0) >= 1700 ? 800 : 0;
     }
     case CC.CASTEL: {
@@ -3127,6 +3131,190 @@ function shadowFaceUpOk(e, cd, view, data) {
   return false;
 }
 
+// ---------------------------------------------------------------- round 15
+// Reading the opponent's THEME: what their deck is trying to do, what
+// their graveyard means, and what their next turn can bring. Two
+// disciplines bind everything in this section (user-directed):
+//   - Public information only. Counts come from the registered deck
+//     list minus what has been publicly seen (their hand stays a
+//     count, never contents) — the same accounting remainingDeck()
+//     already does for the deck itself.
+//   - A forecast is a bet, and a bet that misses makes a play look
+//     senseless from the outside. Forecasts therefore only ever bias
+//     toward caution (walls, conservation), never talk the policy
+//     out of a play that is certainly good (a lethal line, a battle
+//     that certainly profits), and they only fire when the theme is
+//     identified AND a concrete resource signal is visible
+//     (themeForecast returns null otherwise). Every decision a
+//     forecast actually changes is recorded via predNote() with its
+//     premise, so prediction-caused losses can be counted afterwards.
+// The profiles below are derived from the registered lists in
+// data.json and the printed texts; the derivation is written out in
+// cpu-round15-themes/DESIGN.md.
+const PRIME_MONARCH = 54241725, EHTHER_M = 96570609, EREBUS_M = 23064604, STORMFORTH_M = 79844764;
+const MONARCH_ST = new Set([22842126, 33609262, 9283801, 63899196, STORMFORTH_M, 61466310, 5795980, PRIME_MONARCH, 18235309]);
+const MONARCH_VASSALS = new Set([95457011, 59463312, 67584223]);
+
+// Public accounting of the opponent's deck: per code, how many copies
+// are registered, how many have been publicly seen (graveyard,
+// banished, face-up field, face-up Extra), and how many are therefore
+// still unseen (deck or hand — indistinguishable, honestly reported).
+function oppPublicInfo(view, data) {
+  const list = view.oppDeck;
+  if (!list) return null;
+  const opp = view.opp;
+  const total = new Map(), seen = new Map(), exTotal = new Map();
+  for (const c of list.main) total.set(c, (total.get(c) || 0) + 1);
+  for (const c of list.extra || []) exTotal.set(c, (exTotal.get(c) || 0) + 1);
+  const see = (code) => { if (code) seen.set(code, (seen.get(code) || 0) + 1); };
+  for (const c of view.grave[opp]) see(c);
+  for (const c of view.removed[opp]) see(c);
+  for (const c of monList(view, opp)) if (c.faceUp) see(c.code);
+  for (const c of view.zones[opp].szone) if (c && c.faceUp) see(c.code);
+  for (const e of view.extra[opp]) if (e.code && (e.pos & POS_FACEUP)) see(e.code);
+  return {
+    total, seen, exTotal,
+    left(code) { return (total.get(code) || 0) - (seen.get(code) || 0); },
+    seenN(code) { return seen.get(code) || 0; },
+  };
+}
+function predNote(mem, view, kind, premise) {
+  if (!mem) return;
+  (mem.r15Log || (mem.r15Log = [])).push({ turn: view.turnCount, kind, premise });
+}
+// Next-turn threat forecast. Returns null unless the opponent's theme
+// is identified AND a concrete, publicly visible resource signal says
+// the theme's next play is actually loaded. nextAtk is the largest
+// battle power their next turn can plausibly put on the field from
+// those visible resources — never from their hidden hand's contents
+// (a hand COUNT is public and may gate a signal, nothing more).
+function themeForecast(view, data) {
+  const theme = oppDeckId(view, data);
+  if (!theme) return null;
+  const opp = view.opp;
+  const info = oppPublicInfo(view, data);
+  if (!info) return null;
+  const fuM = faceUpMons(view, opp);
+  const handN = view.hand[opp].length;
+  const grave = view.grave[opp];
+  switch (theme) {
+    case 'monarch': {
+      // The tribute line is loaded when a body is already available:
+      // a vassal standing, or the Prime Monarch in the graveyard with
+      // another Monarch S/T to banish for its self-summon (that body
+      // plus Ehther's graveyard banish is the whole chain). Their
+      // graveyard S/T count is the resource either way.
+      const graveST = grave.filter(c => MONARCH_ST.has(c)).length;
+      const vassalUp = fuM.some(c => MONARCH_VASSALS.has(c.code));
+      const primeBody = grave.includes(PRIME_MONARCH) && graveST >= 2;
+      if ((vassalUp || primeBody) && handN >= 1)
+        return { theme, nextAtk: 2800, why: 'monarch-tribute-line', graveST, stormforthLeft: info.left(STORMFORTH_M) };
+      if (graveST >= 2 && handN >= 3)
+        return { theme, nextAtk: 2800, why: 'monarch-grave-stock', graveST, stormforthLeft: info.left(STORMFORTH_M) };
+      return null;
+    }
+    case 'gg': {
+      // Contact fusions read the FACE-UP pieces (monster zones and
+      // the S/T zones Wall Shadow parks them in): 3 distinct pieces
+      // make the 3750/3800 class, 2 make a 2450-2550 gate.
+      const up = new Set();
+      for (const c of fuM) if (GUARDIAN_PIECES.includes(c.code)) up.add(c.code);
+      for (const c of view.zones[opp].szone) if (c && c.faceUp && GUARDIAN_PIECES.includes(c.code)) up.add(c.code);
+      if (up.size >= 3) return { theme, nextAtk: 3750, why: 'gg-three-pieces' };
+      if (up.size === 2) return { theme, nextAtk: 2550, why: 'gg-two-pieces' };
+      if (up.size === 1 && info.left(CC.FUSION_DEPLOYMENT) >= 1 && handN >= 2)
+        return { theme, nextAtk: 2550, why: 'gg-deployment-second-piece' };
+      return null;
+    }
+    case 'superquant': {
+      // Magnus needs three Mech Beast KINDS across field + graveyard
+      // and the Carrier to bind them; a standing Beast or two Layers
+      // is a 2700-class Xyz next turn.
+      const kinds = new Set();
+      for (const c of fuM) if (hasSetC(cdOf(data, c.code), SETC.BEAST)) kinds.add(c.code);
+      for (const c of grave) if (hasSetC(cdOf(data, c), SETC.BEAST)) kinds.add(c);
+      const carrierSeen = info.seenN(NC.CARRIER) > 0 ||
+        (view.zones[opp].szone[5] && view.zones[opp].szone[5].faceUp && view.zones[opp].szone[5].code === NC.CARRIER);
+      if (kinds.size >= 3 && carrierSeen) return { theme, nextAtk: 3600, why: 'sq-magnus-line', kinds: kinds.size };
+      const beastsUp = fuM.some(c => hasSetC(cdOf(data, c.code), SETC.BEAST));
+      const layersUp = fuM.filter(c => hasSetC(cdOf(data, c.code), SETC.SQ)).length;
+      if (beastsUp || layersUp >= 2) return { theme, nextAtk: 2700, why: 'sq-beast-line', kinds: kinds.size };
+      return null;
+    }
+    case 'elfennotes': {
+      // Ecclesia standing with an Extra Deck monster on the field is
+      // Fleurdelis (2500) in hand range; a tuner + non-tuner pair is
+      // their synchro climb (Junora 3100 is the top of the list).
+      const anyExtraUp = faceUpMons(view, view.me).concat(fuM)
+        .some(c => isExtraCd(cdOf(data, c.code)));
+      if (fuM.some(c => c.code === NC.ECCLESIA) && anyExtraUp && info.left(NC.FLEUR_THUNDER) >= 1)
+        return { theme, nextAtk: 2500, why: 'ef-fleurdelis-line' };
+      const tuner = fuM.some(c => { const d = cdOf(data, c.code); return d && (d.type & CT.TUNER); });
+      const nonTuner = fuM.some(c => { const d = cdOf(data, c.code); return d && !(d.type & CT.TUNER); });
+      if (tuner && nonTuner) return { theme, nextAtk: 3100, why: 'ef-synchro-line' };
+      return null;
+    }
+    case 'whiteforest': {
+      const wfUp = fuM.filter(c => hasSetC(cdOf(data, c.code), SETC.WF)).length;
+      const tuner = fuM.some(c => { const d = cdOf(data, c.code); return d && (d.type & CT.TUNER); });
+      if (wfUp >= 2 && tuner) return { theme, nextAtk: 3100, why: 'wf-synchro-line' };
+      return null;
+    }
+    case 'ishizu': {
+      // Mirror: three Fiend/Fairy bodies in their graveyard with a
+      // Rebellion still unseen is Luce (3500) one activation away.
+      const ff = grave.filter(c => { const d = cdOf(data, c); return d && (d.race === 0x4 || d.race === 0x8); }).length;
+      if (ff >= 3 && info.left(CC.REBELLION) >= 1)
+        return { theme, nextAtk: 3500, why: 'mirror-luce-line', ff };
+      return null;
+    }
+  }
+  return null;
+}
+// How much a card in the OPPONENT's graveyard is worth as their
+// next-turn resource, on top of the generic graveValue — the theme
+// reading of "what their graveyard means". Used by the Mudora/Keldo
+// shuffle (its activation bar and its target order).
+function themeGraveBonus(view, data, code) {
+  const theme = oppDeckId(view, data);
+  if (!theme) return 0;
+  const opp = view.opp;
+  switch (theme) {
+    case 'monarch': {
+      // Their graveyard S/T are bodies and searches next turn (Prime
+      // Monarch self-summons; Pantheism / Erebus / Idea recycle), and
+      // the two big Monarchs themselves work from the graveyard.
+      if (code === PRIME_MONARCH) return 900;
+      if (MONARCH_ST.has(code)) return 500;
+      if (code === EREBUS_M || code === EHTHER_M) return 500;
+      return 0;
+    }
+    case 'gg': {
+      // Any Gate Guardian monster in their graveyard switches Dark
+      // Element (1) on; the LAST one is the condition itself. Earlier
+      // copies only feed salvage, which graveValue already prices
+      // through GRAVE_PROFIT on the salvage spells.
+      if (GUARDIAN_PIECES.includes(code) || code === CC.DARK_GUARDIAN) {
+        const ggInGrave = view.grave[opp].filter(c => GUARDIAN_PIECES.includes(c) || c === CC.DARK_GUARDIAN).length;
+        if (ggInGrave <= 1) return 600;
+      }
+      return 0;
+    }
+    case 'whiteforest': {
+      // Their S/T re-set themselves from the graveyard; sending one
+      // back to the deck denies the re-set entirely.
+      if (WF_RESET.has(code)) return 350;
+      return 0;
+    }
+    case 'superquant': {
+      // A Magnus in the graveyard splits back into three Mech Beasts.
+      if (code === NC.MAGNUS) return 300;
+      return 0;
+    }
+  }
+  return 0;
+}
+
 function pickSummon(prompt, view, data) {
   const me = view.me;
   const oppPow = oppMaxPower(view, data);
@@ -3559,7 +3747,7 @@ function chainEntryValue(e, view, data, mem) {
       // activationScore case) — the opponent's grave is unusable
       // while the lock stands.
       if (deckIdOfList(view.myDeck, data) === 'ishizu' && phasePriority(view, data).lock) return 0;
-      const topOppGrave = view.grave[opp].map(c => graveValue(c, data)).sort((a, b) => b - a);
+      const topOppGrave = view.grave[opp].map(c => graveValue(c, data) + themeGraveBonus(view, data, c)).sort((a, b) => b - a);
       return (topOppGrave[0] || 0) + (topOppGrave[1] || 0) >= 1700 ? 1050 : 0;
     }
     case CC.GK_TRAP: { // ② search during the opponent's main phase: dig for a defender
@@ -4458,12 +4646,28 @@ function selectCardAnswer(prompt, view, data, mem) {
       entries.every(x => x.e.loc === LOC.GRAVE || x.e.loc === LOC.REMOVED)) {
     // (the location gate matters: without it this branch also captured
     // Keldo ①'s deck search, shadowing the dedicated search ranking)
-    const scored = entries.map(x => ({ x, v: x.e.con === opp ? graveValue(x.e.code, data)
-      : -graveValue(x.e.code, data) + (RE_DECK_TIER[x.e.code] || 0) * 300 }))
-      .sort((a, b) => b.v - a.v);
-    const picks = [];
-    for (const s of scored) { if (picks.length >= min) break; picks.push(s.x.i); }
-    for (const s of scored) { if (picks.length >= max) break; if (s.v >= 700 && !picks.includes(s.x.i)) picks.push(s.x.i); }
+    // Round 15: the opponent's entries are valued through the theme
+    // profile (themeGraveBonus) — against Monarch the S/T sleeping in
+    // their graveyard outrank generic monsters, and against GG the
+    // last grave piece carries the Dark Element condition. When the
+    // profile actually changes the pick set, the change is recorded
+    // with its premise (r15Log, kind 'shuffle').
+    const pickFrom = (bonus) => {
+      const sc = entries.map(x => ({ x, v: x.e.con === opp
+        ? graveValue(x.e.code, data) + (bonus ? themeGraveBonus(view, data, x.e.code) : 0)
+        : -graveValue(x.e.code, data) + (RE_DECK_TIER[x.e.code] || 0) * 300 }))
+        .sort((a, b) => b.v - a.v);
+      const pk = [];
+      for (const s of sc) { if (pk.length >= min) break; pk.push(s.x.i); }
+      for (const s of sc) { if (pk.length >= max) break; if (s.v >= 700 && !pk.includes(s.x.i)) pk.push(s.x.i); }
+      return pk;
+    };
+    const picks = pickFrom(true);
+    if (entries.some(x => x.e.con === opp && themeGraveBonus(view, data, x.e.code) > 0)) {
+      const basePicks = pickFrom(false);
+      if (basePicks.join() !== picks.join())
+        predNote(mem, view, 'shuffle', { theme: oppDeckId(view, data), ctx: ctxCode });
+    }
     return cardsResp(picks);
   }
   // --- guardian-piece placement (Wall Shadow ② / Heavy Tank ③): the
@@ -5091,7 +5295,7 @@ function placeAnswer(prompt, view, data, mem) {
   if (avail & 0x80000000) push(opp, LOC.SZONE, 7);
   return placeResp(zones.slice(0, prompt.count));
 }
-function positionAnswer(prompt, view, data) {
+function positionAnswer(prompt, view, data, mem) {
   const cd = cdOf(data, prompt.code);
   const has = (p) => (prompt.mask & p) !== 0;
   if (cd && ((cd.type & CT.FLIP) || prompt.code === CC.CHAOS_POD || prompt.code === CC.MEDUSA_WORM)) {
@@ -5117,15 +5321,69 @@ function positionAnswer(prompt, view, data) {
     // untouched (this branch needs the opposing monster zones
     // completely empty), and a 0-ATK body still defends.
     if (monList(view, view.opp).length === 0 && cd.atk > 0 && has(POS.FU_ATK)) return i32resp(POS.FU_ATK);
-    if (cd.atk >= cd.def) {
-      if (has(POS.FU_ATK) && !(oppPow > cd.atk && cd.def >= oppPow)) return i32resp(POS.FU_ATK);
-      if (has(POS.FU_DEF)) return i32resp(POS.FU_DEF);
-      if (has(POS.FU_ATK)) return i32resp(POS.FU_ATK);
-    } else {
-      if (has(POS.FU_DEF) && (cd.def >= 1500 || oppPow > cd.atk)) return i32resp(POS.FU_DEF);
-      if (has(POS.FU_ATK)) return i32resp(POS.FU_ATK);
-      if (has(POS.FU_DEF)) return i32resp(POS.FU_DEF);
+    const decide = (pow) => {
+      if (cd.atk >= cd.def) {
+        if (has(POS.FU_ATK) && !(pow > cd.atk && cd.def >= pow)) return POS.FU_ATK;
+        if (has(POS.FU_DEF)) return POS.FU_DEF;
+        if (has(POS.FU_ATK)) return POS.FU_ATK;
+      } else {
+        // Round 15 blind-spot fix: this branch used to send EVERY
+        // DEF-over-ATK body with DEF >= 1500 into face-up Defense on
+        // its own stats alone — the condition never looked at the
+        // opposing field at all. Measured on fresh seeds (1,440
+        // games): Sphinx (2500/3000) chose Defense in 523 of 681
+        // position prompts, and in 366 of those an opposing face-up
+        // monster was beatable in battle by its 2500 ATK. If this
+        // body can actually beat something across the table, stand
+        // it up — unless the opposing strongest both outpowers its
+        // ATK and is walled by its DEF (the same survival caveat the
+        // ATK >= DEF branch above uses). Current public board only;
+        // no forecast is involved in this part.
+        if (has(POS.FU_ATK) &&
+            faceUpMons(view, view.opp).some(c => battlePower(c, data) < cd.atk) &&
+            !(pow > cd.atk && cd.def >= pow)) return POS.FU_ATK;
+        if (has(POS.FU_DEF) && (cd.def >= 1500 || pow > cd.atk)) return POS.FU_DEF;
+        if (has(POS.FU_ATK)) return POS.FU_ATK;
+        if (has(POS.FU_DEF)) return POS.FU_DEF;
+      }
+      return null;
+    };
+    let chosen = decide(oppPow);
+    // Round 15, layer 3: the theme forecast may raise the power this
+    // body is measured against — but ONLY toward Defense. A forecast
+    // is a bet; it may add a wall, it may never talk the policy out
+    // of standing a body up, and it never touches the empty-field
+    // rule above (that scene is the user's confirmed specification).
+    // Every forecast-driven change is recorded with its premise.
+    if (chosen === POS.FU_ATK) {
+      const fc = themeForecast(view, data);
+      if (fc && fc.nextAtk > oppPow && decide(fc.nextAtk) === POS.FU_DEF) {
+        // Exception: when this body can destroy, in battle, a monster
+        // that IS part of the forecast's own premise (a Monarch
+        // vassal, a Guardian piece, a Quant layer), breaking the
+        // premise is the better read of the same signal — the wall
+        // would preserve the very line it fears. (First measurement
+        // without this exception: the flips concentrated exactly on
+        // such scenes and the win change was flat-negative.)
+        const signalHit = faceUpMons(view, view.opp).some(c => {
+          if (battlePower(c, data) >= cd.atk) return false;
+          const d = cdOf(data, c.code);
+          switch (fc.theme) {
+            case 'monarch': return MONARCH_VASSALS.has(c.code);
+            case 'gg': return GUARDIAN_PIECES.includes(c.code);
+            case 'superquant': return d && (hasSetC(d, SETC.SQ) || hasSetC(d, SETC.BEAST));
+            case 'elfennotes': return c.code === NC.ECCLESIA || (d && (d.type & CT.TUNER) !== 0);
+            case 'whiteforest': return d && hasSetC(d, SETC.WF);
+            default: return false;
+          }
+        });
+        if (!signalHit) {
+          predNote(mem, view, 'position', { theme: fc.theme, why: fc.why, nextAtk: fc.nextAtk, oppPow, code: cd.code });
+          chosen = POS.FU_DEF;
+        }
+      }
     }
+    if (chosen != null) return i32resp(chosen);
   }
   for (const p of [POS.FU_ATK, POS.FU_DEF, POS.FD_DEF, POS.FD_ATK]) if (has(p)) return i32resp(p);
   return i32resp(prompt.mask);
@@ -5334,7 +5592,7 @@ function botAnswerInternal(prompt, state, data, mem) {
     case 'SELECT_SUM': return sumAnswer(prompt, view, data);
     case 'SELECT_COUNTER': return counterAnswer(prompt);
     case 'SELECT_PLACE': case 'SELECT_DISFIELD': return placeAnswer(prompt, view, data, mem);
-    case 'SELECT_POSITION': return positionAnswer(prompt, view, data);
+    case 'SELECT_POSITION': return positionAnswer(prompt, view, data, mem);
     case 'SELECT_OPTION': return optionAnswer(prompt, view, data, mem);
     case 'SORT_CARD': {
       const mine = prompt.cards.every(c => c.con === view.me);
@@ -5752,7 +6010,7 @@ const Engine = { MSG, SELECT_TYPES, PHASES, LOC, POS, POS_FACEUP, POS_ATTACK, PO
 Engine.debug = { activationScore, pickSummon, pickSpsummon, botView, hasProfitableAttack,
   profitableAttackIfStood, attackPlans, attackScore, lethalPlan, bestAttackPlan, handValue, discardCost,
   boardValue, atkOf, defOf, battlePower, monList, faceUpMons, oppMaxPower,
-  myStrongestAtk, levelOf, CC };
+  myStrongestAtk, levelOf, CC, themeForecast, oppPublicInfo, themeGraveBonus, positionAnswer };
 if (typeof module !== 'undefined') module.exports = Engine;
 else global.Engine = Engine;
 })(typeof window !== 'undefined' ? window : globalThis);
