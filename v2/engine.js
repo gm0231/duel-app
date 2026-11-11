@@ -2552,9 +2552,30 @@ function activationScore(e, view, data, prompt) {
       }
       return 1000;
     }
-    case CC.LUCE:
-      if (oppFU.some(c => battlePower(c, data) >= 1800)) return 1200;
-      return view.zones[opp].szone.some(c => c && c.faceUp) ? 800 : 0;
+    case CC.LUCE: {
+      // Round 13, iteration 4: Ecclesia cannot be destroyed by battle
+      // by a monster Special Summoned from the Extra Deck, and her
+      // 1500 power sits under the 1800 line below, so (2) was never
+      // priced at her — in the traced baseline game Luce and Minerva
+      // bounced off her four times across a 36-turn lock and the deck
+      // milled itself out. When she stands and none of our face-up
+      // monsters can destroy her by battle (a non-Extra attacker over
+      // her current battle power), effect destruction is the only way
+      // through, and it must outbid Rebellion's 1250: summoning a
+      // second Luce does not clear the wall either. (An observed-wall
+      // version was measured first and rejected, -18: attacks stopped
+      // by chains taught false walls and (2) fired at random.)
+      const _wall = oppFU.some(c => c.code === 60303688 &&
+          !faceUpMons(view, me).some(m => {
+            const d = cdOf(data, m.code);
+            const fromExtra = d && (d.type & (CT.FUSION | CT.SYNCHRO | CT.XYZ)) !== 0;
+            return !fromExtra && atkOf(m, data) > battlePower(c, data);
+          }));
+      const _r = oppFU.some(c => battlePower(c, data) >= 1800) ? 1200
+        : _wall ? 1320
+        : view.zones[opp].szone.some(c => c && c.faceUp) ? 800 : 0;
+      return _r;
+    }
     case CC.BAROMETT: {
       const hasNormalTrap = view.grave[me].some(c => { const d = cdOf(data, c); return d && (d.type & CT.TRAP) && !(d.type & CT.CONTINUOUS) && !(d.type & 0x100000); });
       return hasNormalTrap ? 950 : 0;
