@@ -134,11 +134,24 @@
   #midbar{background:var(--panel);border-top:1px solid var(--tile-edge);border-bottom:1px solid var(--tile-edge);padding:3px 6px;}
   /* the chain row's height is ALWAYS reserved (visibility toggles, never
      display) so a chain appearing mid-duel cannot shift the board */
-  #chainbar{display:flex;visibility:hidden;gap:4px;overflow-x:auto;height:21px;padding:2px 0;}
+  /* ROUND 4 (H3): the mid band's rows no longer freeze their heights.
+     Under a browser minimum-font-size (16px), the 10px texts render at
+     16px while height/line-height stayed frozen at 21/15px, so the
+     latest history line was permanently half-clipped. Heights now
+     follow the line boxes (min-height floors + unitless line-height);
+     at the default font size the rendered heights are UNCHANGED
+     (chainbar 21 / logline 15 / phasebar 34 = midbar 78, the layout
+     budget's accounting stands), and in enlarged-font environments
+     the band grows and the layout fit loop absorbs the difference.
+     The chain chips, the history button and the phase cell carry
+     matching explicit line-heights (see .link / #loghistbtn /
+     #phasebar .pwho/.lp) so their content fits the budgeted heights
+     at the default size instead of painting outside a frozen box. */
+  #chainbar{display:flex;visibility:hidden;gap:4px;overflow-x:auto;min-height:21px;padding:1px 0;}
   #chainbar.on{visibility:visible;}
   #chainbar.idle{visibility:visible;align-items:center;}
-  #chainbar .prevlog{flex:1;min-width:0;font-size:10px;color:var(--txt-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  #loghistbtn{flex:0 0 auto;height:19px;font-size:10px;color:var(--gold);background:#241a0e;border:1px solid var(--gold-dim);border-radius:5px;padding:0 9px;cursor:pointer;}
+  #chainbar .prevlog{flex:1;min-width:0;font-size:10px;line-height:1.5;color:var(--txt-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  #loghistbtn{flex:0 0 auto;min-height:19px;line-height:1.2;font-size:10px;color:var(--gold);background:#241a0e;border:1px solid var(--gold-dim);border-radius:5px;padding:0 9px;cursor:pointer;}
   .loghistrow{font-size:11px;line-height:1.6;padding:3px 0;border-bottom:1px solid #2c2416;color:var(--txt);}
   .loghistrow .lt{color:var(--txt-dim);margin-right:6px;}
   /* log-detail round: the history sheet renders the detailed
@@ -153,13 +166,21 @@
   .loghistrow.solve{color:var(--gold);font-weight:700;margin-top:5px;}
   .loghistrow.res{padding-left:14px;}
   .loghistrow.neg{color:#e08a8a;}
-  .link{flex:0 0 auto;font-size:10px;border:1px solid var(--gold-dim);border-radius:10px;padding:2px 7px;background:var(--panel2);white-space:nowrap;}
+  .link{flex:0 0 auto;font-size:10px;line-height:1.2;border:1px solid var(--gold-dim);border-radius:10px;padding:2px 7px;background:var(--panel2);white-space:nowrap;}
   .link.solving{border-color:#ffd94d;background:#4a3a10;color:#fff;box-shadow:0 0 10px #ffd94d99,0 0 0 2px #ffd94d;}
   .link.negated{text-decoration:line-through;opacity:.55;}
   .link .no{color:var(--gold);font-weight:700;}
-  #logline{font-size:10px;color:var(--txt-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:15px;line-height:15px;}
-  #phasebar{display:flex;align-items:center;gap:8px;height:34px;}
-  #phasebar .lp{font-size:16px;font-weight:700;color:var(--gold);}
+  #logline{font-size:10px;color:var(--txt-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.5;}
+  #phasebar{display:flex;align-items:center;gap:8px;min-height:34px;}
+  /* ROUND 4 (H3) fittings: explicit line-heights size the phase
+     cell's two lines (10px label + 16px LP) to 12 + 21.6 = 33.6 <= 34
+     at the default font size, so the bar renders its budgeted 34px
+     from CONTENT (the old frozen height:34px silently let the
+     natural-metrics stack — ~15 + ~24 = 39 — paint outside the box).
+     Under a minimum-font-size the label line grows (16px x 1.2) and
+     the min-height floor lets the bar follow. */
+  #phasebar .pwho{font-size:10px;color:var(--txt-dim);line-height:1.2;}
+  #phasebar .lp{font-size:16px;font-weight:700;color:var(--gold);line-height:1.35;}
   #phaseinfo{flex:0 1 auto;min-width:72px;font-size:13px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   /* redesign E (p5b): once a phase sweep has settled, the phase
      name "sits" in the phase bar — gold and bold. render() only
@@ -181,7 +202,10 @@
      line, ellipsis as backstop only. */
   #phasebtn{background:var(--gold);color:#191104;border:0;border-radius:6px;font-size:12.5px;font-weight:700;padding:0 6px;height:32px;min-width:104px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   #phasebtn:disabled{background:#4a3d22;color:#8a7c55;}
-  #menubtn,#fxbtn{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:6px;font-size:12px;padding:0 8px;height:36px;}
+  /* ROUND 4 (H3): 34px, the phase bar's budgeted height — at 36px
+     these buttons were the row's tallest content and painted 1px
+     past the old frozen 34px box on both sides. */
+  #menubtn,#fxbtn{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:6px;font-size:12px;padding:0 8px;height:34px;}
   #fxbtn.inert{opacity:.42;filter:saturate(.5);}
   /* ---------- hand ---------- */
   #handbar{background:var(--panel);border-top:1px solid var(--gold-dim);padding:3px 4px 5px;}
@@ -254,7 +278,14 @@
   #dock .ctx{font-size:11px;color:var(--txt-dim);margin:2px 0 6px;}
   #dock .toplink{text-decoration:underline dotted;text-underline-offset:2px;}
   #dock .cands{display:flex;gap:6px;overflow-x:auto;overflow-y:auto;padding-bottom:4px;flex:1 1 auto;min-height:0;}
-  .cand{flex:0 0 auto;max-width:172px;border:1px solid var(--gold);border-radius:6px;background:var(--panel2);padding:6px 8px;font-size:11px;cursor:pointer;position:relative;}
+  /* ROUND 4 (H2): candidates GROW to fill the dock's width — with 1-2
+     candidates the old fixed 172px column left the right two-thirds of
+     the dock as empty black ground. flex:1 1 0 with a 172px floor:
+     1 candidate takes the full row, 2 split it, and 3+ keep the
+     established horizontal scroll at the same 172px minimum. Wider
+     candidates also wrap less, so the dock's fixed block (pass row +
+     explanation) keeps more room at short viewports. */
+  .cand{flex:1 1 0;min-width:172px;border:1px solid var(--gold);border-radius:6px;background:var(--panel2);padding:6px 8px;font-size:11px;cursor:pointer;position:relative;}
   .cand .loc{color:var(--txt-dim);font-size:10px;}
   .cand .dismiss{display:inline-block;margin-top:5px;font-size:10px;color:#f0c08a;background:#2a1c0d;border:1px solid #a86a2a;border-radius:6px;padding:6px 8px;cursor:pointer;}
   .cand.dismissed{opacity:.45;border-style:dashed;}
@@ -909,7 +940,7 @@
     <div id="chainbar"></div>
     <div id="logline">読み込み中…</div>
     <div id="phasebar">
-      <div><div style="font-size:10px;color:var(--txt-dim)">自分</div><div class="lp" id="myLp">8000</div></div>
+      <div><div class="pwho">自分</div><div class="lp" id="myLp">8000</div></div>
       <div id="phaseinfo">—</div>
       <button id="menubtn" disabled>その他</button>
       <button id="fxbtn">演出設定</button>

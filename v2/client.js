@@ -6785,7 +6785,13 @@ function uiChain(prompt, state) {
       (prompt.forced ? '' : '<div class="sub">パス＝このタイミングでは何も発動しません。場面が変わると、また確認されることがあります。</div>');
     $('dock').className = 'on'; // exact class is a contract (tests/tools match on it) — do not append state classes here
     if (firstDraw && $('dock').animate) { // a NEW prompt visibly arrives, even if its text matches the previous one
-      try { $('dock').animate([{ transform: 'translateY(14px)', opacity: .25 }, { transform: 'none', opacity: 1 }], { duration: 300, easing: 'ease-out' }); } catch (e) {}
+      // ROUND 4 (H1): transform ONLY — no opacity keyframes. Round 3 made the
+      // dock ground fully opaque, but an element-level opacity fade fades the
+      // BACKGROUND with the content: for the 300ms of arrival the board behind
+      // showed through the ground and its text doubled up with the dock's own.
+      // The slide alone carries the arrival; the ground stays opaque at every
+      // frame of the transition.
+      try { $('dock').animate([{ transform: 'translateY(14px)' }, { transform: 'none' }], { duration: 300, easing: 'ease-out' }); } catch (e) {}
     }
     firstDraw = false;
     $('dock').querySelectorAll('[data-chain]').forEach(c => c.addEventListener('click', (ev) => {
