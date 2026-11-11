@@ -65,7 +65,7 @@ NeuronLib.setData(genesys);
 // ---------- 3. the 26 new cards are fully implemented ----------
 const NEW_CODES = [...new Set([...sq.main, ...sq.extra])];
 ok(NEW_CODES.length === 26, 'S7: the recipe spans 26 distinct cards');
-ok(Object.keys(data.cards).length === 147, 'S8: the pool is now 147 cards (was 63 before this deck, 89 with it, 144 after the Elfennotes / White Forest additions, 146 with the Ishizu v12 additions, 147 with the v13 Magic Card printing)');
+ok(Object.keys(data.cards).length === 165, 'S8: the pool is now 165 cards (was 63 before this deck, 89 with it, 144 after the Elfennotes / White Forest additions, 147 with the v13 Magic Card printing, 165 with the Monarch deck)');
 for (const pc of NEW_CODES) {
   const c = data.cards[pc];
   ok(!!c && !!data.scripts['c' + pc + '.lua'] && !!data.names[pc] && !!data.texts[pc] && !!data.texts[pc].text,

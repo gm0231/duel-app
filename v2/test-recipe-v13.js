@@ -64,7 +64,7 @@ const MC_REBORN = 28958464, REBORN = 83764718, OKA = 9350312, KELDO = 63542003,
      data.scripts['c' + MC_REBORN + '.lua'] === off,
     'R3: 28958464 (' + data.names[MC_REBORN] + ') is in the pool with name/text and the verbatim official script');
   ok(data.cards[MC_REBORN].type === 65538, 'R4: 28958464 is a Quick-Play Spell (type 65538)');
-  ok(Object.keys(data.cards).length === 147, 'R5: the pool is 147 cards (146 + the Magic Card printing)');
+  ok(Object.keys(data.cards).length === 165, 'R5: the pool is 165 cards (146 + the Magic Card printing + the 18 Monarch implementations)');
   const fx = JSON.parse(fs.readFileSync(path.join(__dirname, 'fxmap.json'), 'utf8'));
   ok(fx[MC_REBORN] && fx[MC_REBORN].n === 1, 'R6: fxmap describes the printing\'s single numbered effect');
   const clientSrc = fs.readFileSync(path.join(__dirname, 'client.js'), 'utf8');

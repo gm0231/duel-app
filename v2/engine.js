@@ -1141,6 +1141,17 @@ const NC = {
 // decks minus the original 63). Generic fallbacks apply ONLY to these,
 // so the old decks' tuned behaviour cannot drift.
 const NEW_CODES = new Set([821049, 1825445, 3496543, 4398189, 5800323, 5914858, 10424147, 11646785, 12369277, 12375297, 13597785, 14883228, 17063599, 17749468, 18158393, 20145685, 21147203, 21281085, 23151193, 24092792, 24508238, 24779554, 25592142, 27480536, 29401950, 29726552, 31002402, 31924889, 35569555, 35778533, 41373230, 41924516, 42302563, 44508094, 47819246, 50590801, 50954680, 51522296, 53971455, 57031794, 57450198, 58753372, 59432181, 59581480, 59975920, 60145298, 60303688, 60921537, 61980241, 62849088, 62995268, 64491754, 64880894, 66646087, 67630394, 67750322, 69680031, 70913714, 72332074, 72444406, 73046708, 73355772, 73422829, 75493362, 76666602, 77313225, 78397661, 80532587, 82044279, 82956214, 84025439, 85065943, 85252081, 85374678, 85976588, 92034192, 94192409, 98349765, 98385955, 98506199, 99289828]);
+// Monarch deck additions (2026-11-11): without registration the
+// generic fallbacks price every one of these at 0 and the bot
+// never activates a single Monarch spell, trap or monster effect
+// (measured: 183 Pantheism offers, 0 activations; the deck won
+// 0/30 bench games on summons and mandatory triggers alone).
+// fxKinds reads their verbs (search / draw / special summon) from
+// the printed text, which covers the engine pieces; the two
+// shapes it cannot see (Erebus (1)'s bounce, Escalation's grant)
+// carry hand cases in newChainValue.
+for (const c of [31596518, 96570609, 23064604, 67584223, 95457011, 59463312, 9748752, 87288189, 69230391,
+  22842126, 33609262, 9283801, 63899196, 79844764, 61466310, 5795980, 54241725, 18235309]) NEW_CODES.add(c);
 // Setcodes (data.json `setcodes` values) for the new themes.
 const SETC = { SQ: 220, SQM: 4316, BEAST: 8412, DOGMA: 326, ELF: 464, WF: 426, SIN: 516, AZAMINA: 436 };
 function hasSetC(cd, s) { return !!cd && Array.isArray(cd.setcodes) && cd.setcodes.includes(s); }
@@ -3332,6 +3343,19 @@ function newChainValue(e, view, data, mem, C) {
     }
     case NC.LANCER:
       return printed === 3 && newBigOpp ? 900 : 0; // steal their grave card as material
+    case 23064604: // 冥帝エレボス (1): the on-summon return-to-deck —
+      // a bounce, which the generic tail's kind list does not price;
+      // (2) is a grave entry and keeps the tail's grave value.
+      if (printed === 1) return 1200;
+      break;
+    case 18235309: { // 連撃の帝王: the activation itself grants the
+      // extra Tribute Summon — worth firing only when a Monarch is
+      // in hand and a tribute stands on our field.
+      const handM = view.hand[me].map(x => x.code);
+      if (handM.some(c => [31596518, 96570609, 23064604, 9748752, 87288189, 69230391].includes(c)) &&
+          monList(view, me).length >= 1) return 1000;
+      break;
+    }
     default:
       break;
   }

@@ -58,7 +58,7 @@ for (const c of [REINCARNATION, ROLLBACK]) {
   ok(!!(data.cards[c] && data.names[c] && data.texts[c] && data.texts[c].text) && data.scripts['c' + c + '.lua'] === off,
     'R3: ' + c + ' (' + data.names[c] + ') is in the pool with name/text and the verbatim official script');
 }
-ok(Object.keys(data.cards).length === 147, 'R4: the pool is 147 cards (144 + the two v12 implementations + the v13 Magic Card printing)');
+ok(Object.keys(data.cards).length === 165, 'R4: the pool is 165 cards (144 + the two v12 implementations + the v13 Magic Card printing + the 18 Monarch implementations)');
 
 // ---------- helpers for the engine scenarios ----------
 function installSeededCrypto(seed) {

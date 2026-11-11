@@ -264,6 +264,36 @@ const OVERRIDES = {
   // 聖アザミナ: idx0=QUICK_O special summon=② (① is the
   //   undescribed FIELD protection).
   85065943: { 0: 2 },
+  // Monarch deck additions (2026-11-11), each hand-audited
+  // against the bundled script's registration order:
+  // 帝王の轟毅: idx0=GY ignition=② (① is the card activation).
+  5795980: { 0: 2 },
+  // 冥帝従騎エイドス: idx0=summon trigger=①, idx1=GY ignition=②
+  //   (idx3/idx4 are the grants/locks those operations register —
+  //   see KNOWN_NON_ACTIVATABLE and the poolcov exceptions).
+  59463312: { 0: 1, 1: 2 },
+  // 帝王の開岩: idx0=SZONE trigger on the controller's Tribute
+  //   Summon=② (① is the undescribed continuous EX lock).
+  61466310: { 0: 2 },
+  // 源帝従騎テセラ: idx0=hand ignition=①, idx1=MZONE ignition=②,
+  //   idx2=sent-to-GY trigger=③ (idx3 is ③'s EX lock hint).
+  67584223: { 0: 1, 1: 2, 2: 3 },
+  // 爆炎帝テスタロス／怨邪帝ガイウス: the single mandatory
+  //   Tribute-Summon trigger is described at idx1 (idx0 is the
+  //   one-tribute procedure slot)=①.
+  69230391: { 1: 1 },
+  87288189: { 1: 1 },
+  // 叛逆の帝王: idx0=activation=①, idx1=GY ignition=②
+  //   (idx3 is ①'s post-resolution EX lock hint).
+  9283801: { 0: 1, 1: 2 },
+  // 天帝従騎イデア: idx0=summon trigger=①, idx1=sent-to-GY
+  //   trigger=② (idx2 is ①'s EX lock hint).
+  95457011: { 0: 1, 1: 2 },
+  // 天帝アイテール: idx1=summon trigger=①, idx2=hand quick
+  //   (opponent's Main Phase Tribute Summon)=②.
+  96570609: { 1: 1, 2: 2 },
+  // 冥帝エレボス: idx1=summon trigger=①, idx2=GY quick=②.
+  23064604: { 1: 1, 2: 2 },
 };
 // Prompt-scoped maps (see header): desc idx -> {idle, chain}.
 // マスターフレア・ヒュペリオン: idx0 is registered by BOTH its IGNITION
@@ -349,6 +379,16 @@ const KNOWN_NON_ACTIVATABLE = {
   //   resolutions register on the player — restriction hints,
   //   never activation prompts.
   4398189: [3], 42302563: [2], 82956214: [1],
+  // Monarch deck additions (2026-11-11):
+  // 冥帝従騎エイドス idx3 = the description of the extra Tribute
+  //   Summon grant (EFFECT_EXTRA_SUMMON_COUNT-style FIELD effect)
+  //   its ① operation registers on the player — part of ①'s own
+  //   text, never a prompt desc of this card itself.
+  59463312: [3],
+  // 帝王の烈旋 idx1 = the description of the opponent-monster
+  //   tribute grant (CLIENT_HINT) its activation registers —
+  //   part of printed ①, never an activation prompt.
+  79844764: [1],
 };
 
 const out = {};
