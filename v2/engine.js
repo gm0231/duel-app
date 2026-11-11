@@ -2407,7 +2407,7 @@ function activationScore(e, view, data, prompt) {
       const worm = myMons.find(c => !c.faceUp && c.code === CC.MEDUSA_WORM);
       const myTot = faceUpMons(view, me).reduce((s, c) => s + battlePower(c, data), 0);
       const oppTot = oppFU.reduce((s, c) => s + battlePower(c, data), 0);
-      if (pod && oppTot - myTot >= 1800) return 1300;
+      if (pod && podResetPays(view, data)) return 1300;
       if (worm && oppFU.length) return 1200;
       // Round 10, item 5: any flip Taiyou makes is a position change.
       // With the Sphinx payoff armed, flipping a set monster (ours
@@ -3688,7 +3688,7 @@ function effectYnAnswer(prompt, view, data, mem) {
         const la = view.lastAttack;
         const isTarget = (c) => !!(la && la.target && la.target.seq === c.seq);
         let yes = false;
-        if (mySet.some(c => c.code === CC.CHAOS_POD) && oppTot - myTot >= 1800) yes = true; // the reset line (same bar as Taiyou/Pod)
+        if (mySet.some(c => c.code === CC.CHAOS_POD) && podResetPays(view, data)) yes = true; // the reset line (shared Pod gate)
         else if (mySet.some(c => c.code === CC.MEDUSA_WORM) && faceUpMons(view, opp).length) yes = true; // flip: destroy their biggest
         else if (mySet.some(c => c.code === CC.SPHINX && !isTarget(c)) && oppMaxPower(view, data) <= 2500) yes = true; // stand the 2500 up, arm (3)
         else if (deckIdOfList(view.myDeck, data) === 'ishizu' && sphinxSynergy(view, data).gy &&
@@ -3756,6 +3756,24 @@ function attemptOk(mem, view, kind, e) {
   mem.attempts[key] = (mem.attempts[key] || 0) + 1;
   return mem.attempts[key] <= 2;
 }
+// Chaos Pod's flip is a FULL board reset — it shuffles away OUR
+// monsters too. The old gate priced the scene from face-up monsters
+// only, so a developed board of face-down / defense-position bodies
+// counted as ~0: the Pod flipped into empty or stronger opposing
+// fields and reset OUR advantage (user-found in real play: Book of
+// Taiyou flipped a set Pod with four of our monsters standing and
+// nothing across). The gate now reads the whole field: the opponent
+// must have a board worth erasing, and counting every monster — our
+// face-down bodies at their DEF (our own cards, known to us), their
+// face-down bodies at a flat 1000 (identity hidden) — we must be
+// behind by the same 1800 bar.
+function podResetPays(view, data) {
+  const oppMons = monList(view, view.opp);
+  if (!oppMons.length) return false; // nothing across to reset
+  const mine = monList(view, view.me).reduce((s, c) => s + (c.faceUp ? battlePower(c, data) : defOf(c, data)), 0);
+  const theirs = oppMons.reduce((s, c) => s + (c.faceUp ? battlePower(c, data) : 1000), 0);
+  return theirs - mine >= 1800;
+}
 function idleAnswer(prompt, view, data, mem) {
   const me = view.me;
   const isMain1 = view.phaseName === 'MAIN1';
@@ -3771,11 +3789,7 @@ function idleAnswer(prompt, view, data, mem) {
   // Chaos Pod flip is a full board reset: only when clearly behind, and
   // before anything else (our own plays would be shuffled away too).
   const podIdx = prompt.repos.findIndex(e => e.code === CC.CHAOS_POD);
-  if (podIdx >= 0) {
-    const myTot = faceUpMons(view, me).reduce((s, c) => s + battlePower(c, data), 0);
-    const oppTot = faceUpMons(view, view.opp).reduce((s, c) => s + battlePower(c, data), 0);
-    if (oppTot - myTot >= 1800) return cmdResp(2, podIdx);
-  }
+  if (podIdx >= 0 && podResetPays(view, data)) return cmdResp(2, podIdx);
   // activations, best first
   let bestAct = -1, bestScore = 499;
   prompt.activate.forEach((e, i) => {
@@ -4156,7 +4170,7 @@ function selectCardAnswer(prompt, view, data, mem) {
   // --- Book of Taiyou: flip our set flip-monster if it pays, else expose theirs
   if (ctxCode === CC.TAIYOU) {
     const pref = (x) => {
-      if (x.e.con === me && x.e.code === CC.CHAOS_POD) return 3000;
+      if (x.e.con === me && x.e.code === CC.CHAOS_POD) return podResetPays(view, data) ? 3000 : 100;
       if (x.e.con === me && x.e.code === CC.MEDUSA_WORM) return 2900;
       if (x.e.con === me) { const d = cdOf(data, x.e.code); return 1500 + (d ? d.atk : 0); }
       return 1000;
@@ -4172,7 +4186,7 @@ function selectCardAnswer(prompt, view, data, mem) {
   if (mem.soudou2Turn === view.turnCount && view.turnPlayer === opp && prompt.selectHint === 528) {
     mem.soudou2Turn = -1;
     const pref = (x) => {
-      if (x.e.con === me && x.e.code === CC.CHAOS_POD) return 3000;
+      if (x.e.con === me && x.e.code === CC.CHAOS_POD) return podResetPays(view, data) ? 3000 : 100;
       if (x.e.con === me && x.e.code === CC.MEDUSA_WORM) return 2900;
       if (x.e.con === me) return 2000;
       return 500;
@@ -5066,6 +5080,13 @@ function positionAnswer(prompt, view, data) {
   }
   if (cd && isMonsterCd(cd)) {
     const oppPow = oppMaxPower(view, data);
+    // Read the opposing field (user-found defect): with NO monster
+    // across, a body that can attack belongs in Attack Position —
+    // Defense deals no damage and applies no pressure while the
+    // opponent rebuilds for free. Walls against a standing board are
+    // untouched (this branch needs the opposing monster zones
+    // completely empty), and a 0-ATK body still defends.
+    if (monList(view, view.opp).length === 0 && cd.atk > 0 && has(POS.FU_ATK)) return i32resp(POS.FU_ATK);
     if (cd.atk >= cd.def) {
       if (has(POS.FU_ATK) && !(oppPow > cd.atk && cd.def >= oppPow)) return i32resp(POS.FU_ATK);
       if (has(POS.FU_DEF)) return i32resp(POS.FU_DEF);
