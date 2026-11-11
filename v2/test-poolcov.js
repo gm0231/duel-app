@@ -5,8 +5,10 @@
    patches; anything uncovered is enumerated here, with counts).
    Loads the REAL client.js (vm + stub DOM, same technique as
    test-fxidentify) against the REAL data.json / fxmap.json and
-   asserts, for all 144 cards (63 -> 89 with the Super Quant deck,
-   89 -> 144 with the Elfennotes / White Forest decks, 2026-11-08):
+   asserts, for all 165 cards (63 -> 89 with the Super Quant deck,
+   89 -> 144 with the Elfennotes / White Forest decks, 2026-11-08;
+   144 -> 147 with the v12/v13 additions; 147 -> 165 with the
+   Monarch deck, 2026-11-11):
      A. every fxmap target (map / pmap / yn / bare) names an
         existing printed segment of that card;
      B. every described activatable desc idx resolves (via
@@ -152,6 +154,12 @@ const EXCEPTIONS = {
   '4398189|3': '①の闇属性EXロック（CLIENT_HINT付き持続制限）の説明。プロンプトにならない',
   '42302563|2': '②のSモンスター限定ロック（CLIENT_HINT付き持続制限）の説明。プロンプトにならない',
   '82956214|1': '①のEX召喚ロック（CLIENT_HINT付き持続制限）の説明。プロンプトにならない',
+  // Monarch round (2026-11-11): described indices that name the
+  // EX-summon locks the card's own effects register on resolution
+  '59463312|4': '②本文のEX特殊召喚ロック（解決時に登録される持続制限）の説明。プロンプトにならない',
+  '67584223|3': '③本文のEX特殊召喚ロック（解決時に登録される持続制限）の説明。プロンプトにならない',
+  '9283801|3': '①本文のEX特殊召喚ロック（解決後に登録される持続制限）の説明。プロンプトにならない',
+  '95457011|2': '①本文のEX特殊召喚ロック（CLIENT_HINT付き持続制限）の説明。プロンプトにならない',
 };
 // ---------- C: undescribed blocks knowingly not prompt-bearing ----------
 const NON_PROMPT = {
@@ -187,11 +195,15 @@ const NON_PROMPT = {
   '77313225': '②持続（自軍Sモンスターの攻撃力アップ＋効果破壊耐性）。発動エントリにならない',
   '82044279': '③の適用処理（破壊時の攻撃力アップ、持続）。発動ではない',
   '85065943': '①持続（対象耐性）＋融合召喚成功時のフラグ登録処理。発動ではない',
+  // Monarch round (2026-11-11): continuous / machinery blocks of
+  // the Monarch additions, hand-audited
+  '61466310': '①持続（EXデッキからの特殊召喚ロック）。発動エントリにならない',
+  '79844764': '①の適用機構（発動ターンEX特殊召喚ロックの登録処理）。発動ではない',
 };
 
 // ---------- A + B + classification table ----------
 const clsCount = { '番号特定': 0, '番号特定（スコープ/yn/bare）': 0, '単一効果/発動慣例': 0, '番号対象なし': 0, '未カバー': 0 };
-console.log('---- pool classification (147) ----');
+console.log('---- pool classification (165) ----');
 for (const code of Object.keys(data.cards)) {
   const fx = fxmap[code];
   const segs = T.effectSegments(+code);
@@ -240,7 +252,7 @@ for (const code of Object.keys(data.cards)) {
   console.log(code + ' | ' + data.names[code] + ' | segs=' + segs.length + ' | desc=' + [...desc].join(',') + ' | ' + cls);
 }
 console.log('classification counts:', JSON.stringify(clsCount));
-ok(Object.keys(data.cards).length === 147, 'pool is 147 cards');
+ok(Object.keys(data.cards).length === 165, 'pool is 165 cards');
 ok(clsCount['未カバー'] === 0, 'no card is left unclassified/uncovered without an enumerated reason');
 
 // ---------- D: lingering-restriction scan ----------
@@ -279,6 +291,11 @@ const EXPECTED_RESTRICTIONS = [
   // the pool — it carries both the revive-rider restriction and a
   // 1-turn card-name activation limit.
   '28958464:蘇生モンスターへの制約', '28958464:カード名発動制限（1ターン1枚）',
+  // Monarch round (2026-11-11): 《帝王の深怨》 carries the 1-turn
+  // card-name activation limit. (《帝王の烈旋》's limit is phrased
+  // 「発動できず」 and is NOT matched by the derivation pattern —
+  // the same enumerated gap as 《白き森の魔女》, see NOTES.md.)
+  '33609262:カード名発動制限（1ターン1枚）',
 ];
 ok(JSON.stringify([...found].sort()) === JSON.stringify([...EXPECTED_RESTRICTIONS].sort()),
   'D: restriction scan finds exactly the enumerated set (found: ' + found.join(' / ') + ')');
@@ -378,8 +395,8 @@ T.setDATA(data); // restore the real pool for the sections below
 
 // ---------- G: card-name activation limits (brushup round 2) ----------
 ok(JSON.stringify(PC.nameLimitCards().map(x => x.code + ':' + x.scope).sort()) === JSON.stringify([
-  '17484499:duel', '28958464:turn', '31002402:turn', '35569555:turn', '35726888:turn', '45725480:turn', '60921537:turn', '82956214:turn',
-]), 'G1: card-name limit derivation = {現世と冥界の逆転:duel, マジックカード「死者蘇生」/おろかな副葬/七星の宝刀/凶導の福音/凶導の聖告/凶導の葬列/ドラグマ・パニッシュメント:turn} (the Magic Card returns to the pool in v13; the classic has no name limit)');
+  '17484499:duel', '28958464:turn', '31002402:turn', '33609262:turn', '35569555:turn', '35726888:turn', '45725480:turn', '60921537:turn', '82956214:turn',
+]), 'G1: card-name limit derivation = {現世と冥界の逆転:duel, マジックカード「死者蘇生」/おろかな副葬/七星の宝刀/帝王の深怨/凶導の福音/凶導の聖告/凶導の葬列/ドラグマ・パニッシュメント:turn} (the Magic Card returns to the pool in v13; the classic has no name limit; 帝王の深怨 joins with the Monarch deck, 2026-11-11)');
 PC.reset();
 ok(PC.nameLimitReason(35726888) === null, 'G2: おろかな副葬 unspent -> silent');
 PC.trackUsedFx({ turnCount: 1, chain: [{ code: 35726888, con: 0, loc: 2, seq: 0, desc: SID(35726888, 0) }] });
