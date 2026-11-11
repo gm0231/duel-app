@@ -205,13 +205,17 @@ const EXCHANGE = 17484499;
   const fx = JSON.parse(fs.readFileSync(path.join(__dirname, 'fxmap.json'), 'utf8'));
   ok(fx[ROLLBACK] && fx[ROLLBACK].n === 2, 'R7: fxmap describes both of Rollback\'s numbered effects');
   const clientSrc = fs.readFileSync(path.join(__dirname, 'client.js'), 'utf8');
-  ok(clientSrc.includes("74848038: 'std-74848038'") && clientSrc.includes("6351147: 'std-6351147'"),
-    'R8: STD_ART registers both new cards');
-  for (const c of [REINCARNATION, ROLLBACK]) {
+  ok(clientSrc.includes("74848038: 'std-74848038'") && !clientSrc.includes("6351147: 'std-6351147'") && clientSrc.includes("6351147: 'rollback'"),
+    'R8: STD_ART still registers Reincarnation; Rollback\'s std registration was retired by the 36th art delivery (2026-11-11) — it resolves through CARD_ART now');
+  for (const c of [REINCARNATION]) {
     for (const suf of ['.jpg', '-s.jpg']) {
       const p = path.join(__dirname, '..', 'assets', 'card-art-std-' + c + suf);
       ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'R9: card-art-std-' + c + suf + ' delivered (>10KB)');
     }
+  }
+  for (const suf of ['.jpg', '-s.jpg']) {
+    const p = path.join(__dirname, '..', 'assets', 'card-art-std-' + ROLLBACK + suf);
+    ok(!fs.existsSync(p), 'R9b: card-art-std-' + ROLLBACK + suf + ' retired with the 36th art delivery (the user painting replaces it)');
   }
 }
 
