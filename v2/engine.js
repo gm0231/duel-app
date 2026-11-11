@@ -4609,6 +4609,38 @@ function selectCardAnswer(prompt, view, data, mem) {
         if (e.code === CC.ZOLGA) return zolgaSearchScore(view, data, mem); // round 11: same two-exception policy as the Trap (2) search
         return 1000 + handValue(e.code, view, data) * 0.2;
       }
+      if (ctxCode === CC.VERN_MORI) {
+        // Mori (1)'s deck send (round 13): this selection had NO
+        // dedicated branch and fell to the generic tail (raw ATK),
+        // which sent Sphinx (2400) first — a measured pillar, kept —
+        // but ranked Zolga (1700, dead in the grave: no grave effect,
+        // no trigger) above Kelbek (its send IS a 5+5 mill) and above
+        // Mudora / Keldo (whose (2) is live FROM the grave). Census
+        // of the 480-game baseline: 372 sends — Sphinx 263, Zolga 66,
+        // Mudora 28, Hana 8, Kelbek 2. Purpose order now:
+        //   Sphinx stays the default (its self-summon fired 248 times
+        //   in the round-10 census; the "no Spell in grave = dead"
+        //   hypothesis was measured and rejected — it reached the
+        //   field at the same rate either way, 54% vs 57%).
+        //   Kelbek outranks it only in the one scene where the mill
+        //   itself is the payoff: the lagging grave is 10-14, so one
+        //   Kelbek (2) puts BOTH graves at 15+ and arms the Exchange
+        //   line this turn.
+        //   Then the grave-live shufflers, the fellow Vernusylph
+        //   bodies (revivable, fusion stock), Agido, Carbon, Kaldan,
+        //   and Zolga last — in the grave it is only fusion stock,
+        //   which every other candidate also is.
+        const pairMin = Math.min(view.grave[me].length, view.grave[opp].length);
+        if (e.code === CC.SPHINX) return 2800;
+        if (e.code === CC.KELBEK) return pairMin >= 10 && pairMin < 15 ? 3100 : 2500;
+        if (e.code === CC.MUDORA || e.code === CC.KELDO) return 2200;
+        if (e.code === CC.VERN_MORI || e.code === CC.VERN_HANA || e.code === CC.VERN_OKA) return 1800;
+        if (e.code === CC.AGIDO) return 1500;
+        if (e.code === CC.CARBON) return 1200;
+        if (e.code === CC.KALDAN) return 1100;
+        if (e.code === CC.ZOLGA) return 400;
+        return d.atk + handValue(e.code, view, data) * 0.2;
+      }
       if (ctxCode === CC.GG_THUNDERWIND) {
         const pref = [CC.DARK_ELEMENT, CC.DEMON_WIND, CC.FORCE_GUARDIAN, CC.JIRAI_TRAP].indexOf(e.code);
         return pref >= 0 ? 2000 - pref * 100 : 100;
