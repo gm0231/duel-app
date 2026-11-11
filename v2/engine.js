@@ -1232,6 +1232,7 @@ function makeBotMemory() {
     bouncedAtk: {},       // seq -> DEF lower bound learned when our attack into that set monster bounced
     attackWatch: null,    // {attSeq, attCode, attAtk, tgtSeq, turn}: in-flight attack into a face-down target, resolved from later public views
     witchChip: null,      // round 9: {turn, seqs:Set} — White Forest monsters whose once-per-turn battle protection we already spent this turn
+    exchFired: 0,         // round 12: turn on which WE activated Exchange of the Spirit (printed or Rollback copy); 0 = never. Arms the post-swap win-line brake.
   };
 }
 
@@ -2857,6 +2858,21 @@ function oppShadowUp(view) {
 //     draining their grave is worth more.
 // phasePriority() is the single read for that frame; the category
 // rules below consult it instead of re-deriving the state.
+// Round 12, win-line brake (post-Exchange only): once WE have
+// activated Exchange of the Spirit, the decks ARE the old
+// graveyards. While our remaining deck is not larger than the
+// opponent's, pure self-mill only brings our own deck-out closer —
+// the wins in the autopsy (seeds 123006 / 126930) were LP races
+// the bot won while still milling itself from 15 to 8 and 14 to 7.
+// Deliberately scoped to the post-swap state: round 11 measured a
+// GENERAL relative mill stop (applied whenever our deck stopped
+// being ahead) and it cost wins and Luce arrivals, because the
+// Kelbek mill is also this deck's digging engine. Nothing before
+// the swap changes.
+function postSwapBehind(view, mem) {
+  return !!(mem && mem.exchFired > 0 &&
+    view.deckCount[view.me] <= view.deckCount[view.opp]);
+}
 function phasePriority(view, data) {
   const me = view.me, opp = view.opp;
   const myG = view.grave[me].length, oppG = view.grave[opp].length;
@@ -3304,6 +3320,9 @@ function newChainValue(e, view, data, mem, C) {
 function chainEntryValue(e, view, data, mem) {
   const me = view.me, opp = view.opp;
   const chain = view.chain;
+  // Round 12: our printed Exchange is on this chain — record the
+  // activation for the post-swap win-line brake.
+  if (mem && chain.some(l => l.code === CC.EXCHANGE && l.player === me)) mem.exchFired = view.turnCount;
   const top = chain[chain.length - 1];
   const topOpp = top && top.player === opp ? top : null;
   const below = chain[chain.length - 2];
@@ -3481,6 +3500,10 @@ function chainEntryValue(e, view, data, mem) {
       // (2) the mill, asked as a chain entry from the graveyard: same
       // deck-out floor as the EFFECTYN path.
       if (view.deckCount[me] <= 8 && view.deckCount[opp] > 6) return 0;
+      // Round 12, win-line brake: post-swap and not ahead in the
+      // deck race, the mutual mill stops paying once our own deck
+      // is thin — the race is read off the remaining counts.
+      if (postSwapBehind(view, mem) && view.deckCount[me] <= 12) return 0;
       return 1200;
     }
     case CC.ROLLBACK: {
@@ -3565,6 +3588,9 @@ function effectYnAnswer(prompt, view, data, mem) {
     case CC.KELBEK: {
       if (prompt.loc === LOC.GRAVE) { // ② mill trigger
         if (myDeck <= 8 && oppDeck > 6) return i32resp(0); // don't mill ourselves out
+        // Round 12, win-line brake: same post-swap floor as the
+        // chain path.
+        if (postSwapBehind(view, mem) && myDeck <= 12) return i32resp(0);
         return i32resp(1);
       }
       return i32resp(1); // ① special summon trigger
@@ -3690,13 +3716,17 @@ function idleAnswer(prompt, view, data, mem) {
   // activations, best first
   let bestAct = -1, bestScore = 499;
   prompt.activate.forEach((e, i) => {
-    const s = activationScore(e, view, data, prompt);
+    let s = activationScore(e, view, data, prompt);
+    // Round 12, win-line brake: post-swap and not ahead in the deck
+    // race, Minerva (1) is a pure self-mill — hold it.
+    if (e.code === CC.MINERVA && postSwapBehind(view, mem)) s = 0;
     if (s > bestScore) { bestScore = s; bestAct = i; }
   });
   if (bestAct >= 0) {
     const e = prompt.activate[bestAct];
     if (attemptOk(mem, view, 'act', e)) {
       if (e.code === CC.REBELLION && e.loc === LOC.HAND) mem.pendingFusionSpell = view.turnCount;
+      if (e.code === CC.EXCHANGE) mem.exchFired = view.turnCount; // round 12: printed Exchange fired from idle
       return cmdResp(5, bestAct);
     }
     bestAct = -1; // this activation keeps aborting; move on to other plays
@@ -4190,7 +4220,12 @@ function selectCardAnswer(prompt, view, data, mem) {
       if (x.e.con === me && c === CC.BLAST_HELD) return 1500;
       return graveValue(c, data);
     };
-    return take(entries.slice().sort((a, b) => score(b) - score(a)), Math.max(1, min));
+    const sortedRb = entries.slice().sort((a, b) => score(b) - score(a));
+    // Round 12: an Exchange copy is an Exchange activation for the
+    // win-line layer — record it when it is the actual top pick.
+    if (mem && sortedRb.length && sortedRb[0].e.code === CC.EXCHANGE && sortedRb[0].e.con === me && pairMin >= 15)
+      mem.exchFired = view.turnCount;
+    return take(sortedRb, Math.max(1, min));
   }
   // --- Reincarnation: pick the graveyard monster to salvage to the
   // hand — the line-restart order of its activationScore case
