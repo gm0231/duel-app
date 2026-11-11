@@ -1225,7 +1225,7 @@ function makeBotMemory() {
     unselectStreak: {},   // termination guard for SELECT_UNSELECT_CARD
     attempts: {},         // per-turn attempt counts for IDLECMD activations/summons (anti-cancel-loop)
     pendingRemoval: null, // {code} — removal target we fired at, watched for observed immunity
-    learnedImmune: {},    // code -> true: a removal resolved and this card stayed (observed)
+    learnedImmune: {},    // code -> {destroy?, move?}: a removal of that KIND resolved and this card stayed (observed)
     hanaPicks: null,      // {turn, n}: Hana's alternating grave picks this turn (salvage, then special summon)
     revealedOpp: {},      // seq -> {code, def}: opponent monster last seen FACE-UP at that zone (public)
     knownSet: {},         // seq -> {code, def}: face-down opponent monster whose identity was revealed earlier this duel
@@ -2552,9 +2552,30 @@ function activationScore(e, view, data, prompt) {
       }
       return 1000;
     }
-    case CC.LUCE:
-      if (oppFU.some(c => battlePower(c, data) >= 1800)) return 1200;
-      return view.zones[opp].szone.some(c => c && c.faceUp) ? 800 : 0;
+    case CC.LUCE: {
+      // Round 13, iteration 4: Ecclesia cannot be destroyed by battle
+      // by a monster Special Summoned from the Extra Deck, and her
+      // 1500 power sits under the 1800 line below, so (2) was never
+      // priced at her — in the traced baseline game Luce and Minerva
+      // bounced off her four times across a 36-turn lock and the deck
+      // milled itself out. When she stands and none of our face-up
+      // monsters can destroy her by battle (a non-Extra attacker over
+      // her current battle power), effect destruction is the only way
+      // through, and it must outbid Rebellion's 1250: summoning a
+      // second Luce does not clear the wall either. (An observed-wall
+      // version was measured first and rejected, -18: attacks stopped
+      // by chains taught false walls and (2) fired at random.)
+      const _wall = oppFU.some(c => c.code === 60303688 &&
+          !faceUpMons(view, me).some(m => {
+            const d = cdOf(data, m.code);
+            const fromExtra = d && (d.type & (CT.FUSION | CT.SYNCHRO | CT.XYZ)) !== 0;
+            return !fromExtra && atkOf(m, data) > battlePower(c, data);
+          }));
+      const _r = oppFU.some(c => battlePower(c, data) >= 1800) ? 1200
+        : _wall ? 1320
+        : view.zones[opp].szone.some(c => c && c.faceUp) ? 800 : 0;
+      return _r;
+    }
     case CC.BAROMETT: {
       const hasNormalTrap = view.grave[me].some(c => { const d = cdOf(data, c); return d && (d.type & CT.TRAP) && !(d.type & CT.CONTINUOUS) && !(d.type & 0x100000); });
       return hasNormalTrap ? 950 : 0;
@@ -3965,7 +3986,12 @@ function battleAnswer(prompt, view, data, mem) {
 // Static interaction table for the fixed pool (stage 6 of the CPU
 // diagnosis), plus what the bot learns by observation: a removal that
 // resolved while its target stayed on the field face-up marks that card
-// as untouchable for the rest of the duel (mem.learnedImmune).
+// as untouchable FOR THAT KIND of removal (mem.learnedImmune). The
+// kind split matters (round 13): the old blanket record let a failed
+// DESTROY (Luce (2) into the Sinful Goddess's printed destruction
+// immunity) permanently disable Castel's shuffle and Moon Book's flip
+// against the same card — neither destroys, and both are the deck's
+// real answers to exactly that boss.
 const REMOVAL_PROFILE = {
   [NC.BOTTOMLESS]: { targets: false, destroys: true },
   [CC.RAIGEKI]: { targets: false, destroys: true },
@@ -3981,7 +4007,13 @@ function removalBlocked(cell, ctxCode, view, data, mem) {
   if (!cell || !cell.faceUp || !cell.code) return false;
   const prof = REMOVAL_PROFILE[ctxCode];
   if (!prof) return false;
-  if (mem && mem.learnedImmune && mem.learnedImmune[cell.code]) return true;
+  const li = mem && mem.learnedImmune && mem.learnedImmune[cell.code];
+  if (li) {
+    // Kind-aware (round 13): a failed destroy only retires destroys; a
+    // failed flip / shuffle / bounce only retires its own kind.
+    if (prof.destroys && li.destroy) return true;
+    if (!prof.destroys && li.move) return true;
+  }
   const myCd = cdOf(data, ctxCode);
   // Great Magnus with 4+ material types ignores non-Super Quant effects.
   if (cell.code === NC.MAGNUS && (cell.materials || 0) >= 4 &&
@@ -4085,10 +4117,11 @@ function selectCardAnswer(prompt, view, data, mem) {
     else chosen = sorted.slice(0, n);
     // Stage 6: remember removal targets. If the target is still on the
     // field face-up at our next main phase, the removal did not move it
-    // and its code is recorded as (observed) untouchable.
+    // and its code is recorded as (observed) untouchable FOR THAT KIND
+    // (destroy vs move — round 13 kind split; see learnedImmune).
     if (mem && REMOVAL_PROFILE[ctxCode]) {
       const t = chosen.find(x => x.e.con === opp && (x.e.loc === LOC.MZONE || x.e.loc === LOC.SZONE));
-      if (t) mem.pendingRemoval = { code: t.e.code, seq: t.e.seq, loc: t.e.loc };
+      if (t) mem.pendingRemoval = { code: t.e.code, seq: t.e.seq, loc: t.e.loc, kind: REMOVAL_PROFILE[ctxCode].destroys ? 'destroy' : 'move' };
     }
     return cardsResp(chosen.map(x => x.i));
   };
@@ -4608,6 +4641,38 @@ function selectCardAnswer(prompt, view, data, mem) {
         if (e.code === CC.VERN_HANA) return 1700;
         if (e.code === CC.ZOLGA) return zolgaSearchScore(view, data, mem); // round 11: same two-exception policy as the Trap (2) search
         return 1000 + handValue(e.code, view, data) * 0.2;
+      }
+      if (ctxCode === CC.VERN_MORI) {
+        // Mori (1)'s deck send (round 13): this selection had NO
+        // dedicated branch and fell to the generic tail (raw ATK),
+        // which sent Sphinx (2400) first — a measured pillar, kept —
+        // but ranked Zolga (1700, dead in the grave: no grave effect,
+        // no trigger) above Kelbek (its send IS a 5+5 mill) and above
+        // Mudora / Keldo (whose (2) is live FROM the grave). Census
+        // of the 480-game baseline: 372 sends — Sphinx 263, Zolga 66,
+        // Mudora 28, Hana 8, Kelbek 2. Purpose order now:
+        //   Sphinx stays the default (its self-summon fired 248 times
+        //   in the round-10 census; the "no Spell in grave = dead"
+        //   hypothesis was measured and rejected — it reached the
+        //   field at the same rate either way, 54% vs 57%).
+        //   Kelbek outranks it only in the one scene where the mill
+        //   itself is the payoff: the lagging grave is 10-14, so one
+        //   Kelbek (2) puts BOTH graves at 15+ and arms the Exchange
+        //   line this turn.
+        //   Then the grave-live shufflers, the fellow Vernusylph
+        //   bodies (revivable, fusion stock), Agido, Carbon, Kaldan,
+        //   and Zolga last — in the grave it is only fusion stock,
+        //   which every other candidate also is.
+        const pairMin = Math.min(view.grave[me].length, view.grave[opp].length);
+        if (e.code === CC.SPHINX) return 2800;
+        if (e.code === CC.KELBEK) return pairMin >= 10 && pairMin < 15 ? 3100 : 2500;
+        if (e.code === CC.MUDORA || e.code === CC.KELDO) return 2200;
+        if (e.code === CC.VERN_MORI || e.code === CC.VERN_HANA || e.code === CC.VERN_OKA) return 1800;
+        if (e.code === CC.AGIDO) return 1500;
+        if (e.code === CC.CARBON) return 1200;
+        if (e.code === CC.KALDAN) return 1100;
+        if (e.code === CC.ZOLGA) return 400;
+        return d.atk + handValue(e.code, view, data) * 0.2;
       }
       if (ctxCode === CC.GG_THUNDERWIND) {
         const pref = [CC.DARK_ELEMENT, CC.DEMON_WIND, CC.FORCE_GUARDIAN, CC.JIRAI_TRAP].indexOf(e.code);
@@ -5200,7 +5265,10 @@ function botAnswerInternal(prompt, state, data, mem) {
         const pr = mem.pendingRemoval;
         const zone = pr.loc === LOC.SZONE ? view.zones[view.opp].szone : view.zones[view.opp].mzone;
         const cellNow = zone[pr.seq];
-        if (cellNow && cellNow.code === pr.code && cellNow.faceUp) mem.learnedImmune[pr.code] = true;
+        if (cellNow && cellNow.code === pr.code && cellNow.faceUp) {
+          const li = mem.learnedImmune[pr.code] || (mem.learnedImmune[pr.code] = {});
+          li[pr.kind || 'destroy'] = true;
+        }
         mem.pendingRemoval = null;
       }
       return idleAnswer(prompt, view, data, mem);
