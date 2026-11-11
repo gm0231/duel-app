@@ -941,7 +941,11 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     recs = step(after, [{ kind: 'attack', code: SANGA, con: 0, direct: true }, { kind: 'damage', player: 1, amount: 5600 }]);
     ok(has(recs, 'finisher'), 'FXI-G2: the duel-ending attack still fires the finisher (sanity)');
     const gate = fx.finisherGateMs();
-    ok(gate === 2450, 'FXI-G3: with the finisher just fired, the result gate reads exactly 2450 ms (got ' + gate + ')');
+    // fx-ui round: the finisher now books a beat behind a
+    // same-batch lethal attack, so its wash starts after the
+    // blow — the gate is (start delay) + 2450, still exactly
+    // "the wash has fully cleared from its actual start".
+    ok(gate > 2450 && gate <= 3600 && (gate - 2450) >= 900, 'FXI-G3: with the finisher just fired behind the lethal attack beat, the result gate covers the wash from its delayed start (2450 + delay, got ' + gate + ')');
     ok(gate > 2400, 'FXI-G4: the gate is strictly after the wash fully disappears (2400 ms)');
     ok(fx.error === null, 'FXI-Z: fxError stayed null through every redesign-C/E/G step (got: ' + fx.error + ')');
     window.close();

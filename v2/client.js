@@ -2344,6 +2344,10 @@ function drainSeEvents(state) {
   if (!state.events || !state.events.length) return;
   const evs = state.events.splice(0, state.events.length);
   noteReviveFromEvents(evs, state); // 死者蘇生 rider latch (pool-coverage block above)
+  // a pending battle SE whose attack scene never came (geometry
+  // failure) fires now, one batch late — sound must mark the truth,
+  // never be dropped and never leak into a later battle.
+  if (fxPendingBattleSe) { const p = fxPendingBattleSe; fxPendingBattleSe = null; if (p.atk) playSe(p.atk); if (p.hit) playSe(p.hit); }
   // V3 stage 2 SE sync: battle damage arriving in the SAME batch as
   // its attack is one beat — its hit SE is held for the attack
   // scene's impact cue (t=280 on the FX clock). Damage arriving in a
@@ -2360,11 +2364,11 @@ function drainSeEvents(state) {
       case 'summon': playSe('summon_circle'); break;
       case 'spsummon': playSe('summon_big'); break;
       case 'flipsummon': playSe('summon_land'); break;
-      case 'attack': { const d = ev.code != null ? cardData(ev.code) : null; playSe(d ? (ATTR_SE[d.attribute] || 'atk_sword_big') : 'atk_sword_big'); break; }
+      case 'attack': { const d = ev.code != null ? cardData(ev.code) : null; if (!fxPendingBattleSe) fxPendingBattleSe = { atk: null, hit: null, at: performance.now() }; fxPendingBattleSe.atk = d ? (ATTR_SE[d.attribute] || 'atk_sword_big') : 'atk_sword_big'; break; }
       case 'damage': {
         const seName = ev.amount >= 1500 ? 'hit_critical' : ev.amount >= 500 ? 'hit_big' : null;
         if (!seName) break;
-        if (batchAtk && ev.player === 1 - batchAtk.con) fxAddScene({ kind: 'secue', dur: 300, cues: [{ at: 280, fn: () => playSe(seName) }], render: () => {} });
+        if (batchAtk && ev.player === 1 - batchAtk.con) { if (!fxPendingBattleSe) fxPendingBattleSe = { atk: null, hit: null, at: performance.now() }; fxPendingBattleSe.hit = seName; }
         else playSe(seName);
         break;
       }
@@ -2511,6 +2515,30 @@ function fxPlaceGhost(code, faceDown, pt, w, h, deckKey) {
 // stagger elsewhere; the kill timer accounts for it.
 // `deckKey` (optional): the owning seat's deck id, so the ghost wears
 // that deck's per-deck art override (DECK_ART) like the tiles do.
+// fx-ui round: hand-origin detection for field arrivals. Own hand:
+// the card's identity left the hand bag this batch. Opponent: only
+// the public signal — the hand count dropped (identities are hidden;
+// a face-up arrival's code is public, a set flies face-down anyway).
+// Grave / removed origins are excluded by the callers' own checks
+// before this is consulted.
+function fxHandOrigin(con, code, prev, cur) {
+  if (con === HP) {
+    if (code == null) return false;
+    return fxBagDiff(prev.myHand, cur.myHand).removed.includes(code);
+  }
+  return cur.handLen[con] < prev.handLen[con];
+}
+// where a card leaves the hand: own seat uses the exact pre-render
+// card rect when captured, both seats fall back to the hand anchor
+// (the anchor helper itself is local to fxProcessInner, so callers
+// pass it in).
+function fxHandFromPt(con, code, anchorPt) {
+  if (con === HP && code != null) {
+    const r = fxHandRects.find(x => x.code === code);
+    if (r) return r;
+  }
+  return anchorPt;
+}
 function fxFly(code, faceDown, fromPt, toPt, w, h, dur, delay, deckKey) {
   const d = fxPlaceGhost(code, faceDown, fromPt, w, h, deckKey); if (!d) return;
   const dl = delay || 0;
@@ -2530,7 +2558,7 @@ function fxZoneGlow(key, ms) {
   fxAnim(d, [{ opacity: 0 }, { opacity: 1, offset: 0.25 }, { opacity: 0 }], { duration: ms || 620, easing: 'ease-out' });
   fxKill(d, (ms || 620) + 40);
 }
-function fxPortal(key, method, glowMs) {
+function fxPortal(key, method, glowMs, t0) {
   // V4-5: the portal is a scene on the shared clock (was WAAPI).
   // 60 ms staging: zone glow 0-, rings 60-, spiral 180, birth
   // flash 330, the summon lands 330-520. Two counter-rotating
@@ -2548,8 +2576,12 @@ function fxPortal(key, method, glowMs) {
   d.innerHTML = '<div class="r1"></div><div class="r2"></div>';
   d.style.opacity = '0';
   const gMs = glowMs || 620;
-  fxAddScene({
-    kind: 'portal', dur: 840, winLow: [[320, 540]],
+  // fx-ui round: an explicit t0 means the caller already booked the
+  // beat (a flight + portal + callout share one slot); otherwise the
+  // portal books its own.
+  const portalDef = { kind: 'portal', dur: 840, winLow: [[320, 540]] };
+  if (t0 != null) portalDef.t0 = t0; else portalDef.beat = 700;
+  fxAddScene(Object.assign(portalDef, {
     cues: [
       { at: 180, fn: () => fxSpawnBurst('low', { seed: (Math.random() * 1e9) | 0, o: [r.cx, r.cy], n: 10, t0: fxTimeMs + 180, life: [380, 620], mode: 'spiral', r: [6, size * 0.52], turns: 1.5, size: [2.5, 4.5], cols: [col, '#ffffff'] }) },
       { at: 330, fn: () => { const t2 = fxSlotEl(key); if (t2) fxAnim(t2, [{ filter: 'brightness(1.6)' }, { filter: 'brightness(1)' }], { duration: 190, easing: 'ease-out' }); } },
@@ -2576,7 +2608,7 @@ function fxPortal(key, method, glowMs) {
       d.children[1].style.transform = 'rotate(' + (-rot * 0.7).toFixed(1) + 'deg)';
     },
     onDone() { try { d.remove(); } catch (e) {} if (glow) { try { glow.remove(); } catch (e) {} } },
-  });
+  }));
 }
 function fxPuff(key) { // normal summons & sets: a small placement beat only
   const el = fxSlotEl(key); if (!el) return;
@@ -2597,7 +2629,7 @@ function fxPuff(key) { // normal summons & sets: a small placement beat only
 // result; a face-down arrival never calls out (its identity is not
 // public yet), and the ace scene's summons stand down via the
 // arrival branch order (they are consumed before reaching here).
-function fxSummonCallout(key, code, con, pos) {
+function fxSummonCallout(key, code, con, pos, t0) {
   if (code == null || (pos != null && (pos & E.POS_FACEUP) === 0)) return;
   const el = fxSlotEl(key); if (!el) return;
   const app = $('app'); if (!app) return;
@@ -2613,8 +2645,13 @@ function fxSummonCallout(key, code, con, pos) {
   const rim = fxNode(con === HP ? 'fx3-goldframe' : 'fx3-lapisframe', cx, cy, W, H);
   if (rim) { rim.style.opacity = '0'; rim.style.zIndex = 7; }
   const hold = con === HP ? 640 : 800, dur = hold + 260;
-  fxAddScene({
-    kind: 'summoncall', dur,
+  // fx-ui round: the callout is a major beat. Callers staging a
+  // hand->field flight pass the booked t0 so the card leaves the
+  // hand exactly as the callout opens; otherwise the beat is booked
+  // here (span = the hold plus a breath of air before the next act).
+  const callDef = { kind: 'summoncall', dur };
+  if (t0 != null) callDef.t0 = t0; else callDef.beat = dur - 80;
+  fxAddScene(Object.assign(callDef, {
     render(t) {
       const s = 0.7 + 0.3 * FXE.settle(fxSeg(t, 0, 200));
       card.style.transform = 'scale(' + s.toFixed(3) + ')';
@@ -2629,7 +2666,7 @@ function fxSummonCallout(key, code, con, pos) {
       }
     },
     onDone() { try { card.remove(); } catch (e) {} if (rim) { try { rim.remove(); } catch (e) {} } },
-  });
+  }));
 }
 function fxWhiteFlash(key) { // destruction: flash white, gone (restrained)
   const el = fxSlotEl(key); if (!el) return;
@@ -2875,7 +2912,7 @@ function fxSynchroSceneV3(o) {
     outlineIn: [450, 550], outlineOut: [1000, 1200], pipFade: [1400, 1600], numOut: [1380, 1560],
   };
   const sc = fxAddScene({
-    kind: 'synchro', dur: 1900,
+    kind: 'synchro', dur: 1900, beat: 1200,
     render(t) {
       for (const g of matGhosts) {
         const u = fxSeg(t, 480, 720);
@@ -3084,8 +3121,35 @@ function fxHitStop(ms) {
   if (until > fxStopUntilWall) fxStopUntilWall = until;
   fxEnsureLoop();
 }
+// ---- beat book (fx-ui round): the "間" scheduler. Major presentations
+// (opponent activations / summons / solves / attacks) reserve a start
+// slot on the FX clock so they play one after another with a readable
+// dwell instead of all firing on the same frame and overlapping into
+// mush (the "パッパ進む" defect). A scene opts in with def.beat = the
+// dwell (ms) its slot reserves; fxAddScene starts it at the booked
+// time. Backlog cap: if the book runs more than FX_BEAT_CAP ahead of
+// the clock, the tail compresses toward now — queued presentation
+// never lags the game state by more than the cap (compress, never
+// drop: every booked beat still plays, just closer together).
+let fxBeatTail = 0;
+const FX_BEAT_CAP = 2400;
+function fxBookBeat(spanMs) {
+  const now = fxTimeMs;
+  if (fxBeatTail < now) fxBeatTail = now;
+  if (fxBeatTail - now > FX_BEAT_CAP) fxBeatTail = now + 350;
+  const start = fxBeatTail;
+  fxBeatTail = start + Math.max(0, spanMs | 0);
+  return start;
+}
+// ms until every booked beat has STARTED (0 when the book is clear) —
+// the prompt gate waits on this so a choice never pops up while the
+// action that caused it is still queued behind earlier beats.
+function fxBeatPendingMs() { return Math.max(0, fxBeatTail - fxTimeMs); }
+
 function fxAddScene(def) {
   const sc = Object.assign({ t0: fxTimeMs, dead: false }, def);
+  if (sc.t0 == null) sc.t0 = fxTimeMs; // an explicit t0: undefined must not poison the clock math
+  if (def.beat != null && def.t0 == null) sc.t0 = fxBookBeat(def.beat);
   fxScenes.push(sc);
   fxEnsureLoop();
   return sc;
@@ -3410,7 +3474,7 @@ function fxStressScene() {
 }
 function fxResetFoundation() {
   fxScenes = []; fxBursts = [];
-  fxStopUntilWall = 0; fxTimeMs = 0; fxLastWall = 0;
+  fxStopUntilWall = 0; fxTimeMs = 0; fxLastWall = 0; fxBeatTail = 0; // beat book restarts with the FX clock
   fxAceSceneRef = null; fxFinisherSceneRef = null; fxAceRecent = null; fxKeycardSceneRef = null; // stage 3 scene refs (hosts are wiped by fxResetDuel)
   fxChainWordScene = null; fxBannerScene = null; // V4 scene refs
   // redesign E: the sweep's leftovers live outside #fxlayer (the
@@ -3507,7 +3571,12 @@ function fxProcessInner(evs, state) {
   const ptOf = (key) => { const el = fxSlotEl(key); return el ? fxRel(el) : null; };
   const handPt = (con) => {
     if (con === HP) { const el = $('handbar'); return el ? fxRel(el) : null; }
-    const el = $('opppiles'); return el ? fxRel(el) : null;
+    // fx-ui round: $('opppiles') does not exist — the opponent's
+    // hand anchor is their 手札 pile chip (it is also where their
+    // cards visibly live in this UI). The old lookup returned null,
+    // which silently killed every opponent hand flight (the deck ->
+    // hand draw flight included: recorded, never seen).
+    const el = $('opppiles') || fxPileEl(con, 'hand'); return el ? fxRel(el) : null;
   };
   const pilePt = (con, kind) => { const el = fxPileEl(con, kind); return el ? fxRel(el) : null; };
   const consumedArr = new Set(), consumedDep = new Set();
@@ -3560,10 +3629,11 @@ function fxProcessInner(evs, state) {
     const isSetMon = !isSp && !isNormal && code != null &&
       evs.some(e => e.kind === 'set' && e.loc === E.LOC.MZONE && e.con === con && e.code === code);
     if (fromGrave || fromRemoved) { // revival / return: NO flight — the zone lights and it appears
-      fxPortal(ar.key, 'revive', 700); // V4-5: the zone glow is folded into the portal scene
+      const rvStart = fxBookBeat(con !== HP ? 1000 : 800); // fx-ui round: portal + callout share one beat
+      fxPortal(ar.key, 'revive', 700, rvStart); // V4-5: the zone glow is folded into the portal scene
       fxRecord('portal', { method: 'revive', code });
       if ((ar.entry.pos & E.POS_FACEUP) !== 0) { // FX coverage: a revival names its card too
-        fxSummonCallout(ar.key, code, con, ar.entry.pos);
+        fxSummonCallout(ar.key, code, con, ar.entry.pos, rvStart + 300);
         fxRecord('summoncall', { code, how: 'revive', con });
       }
       consumedArr.add(ar.key);
@@ -3616,10 +3686,29 @@ function fxProcessInner(evs, state) {
       }
     }
     if (isNormal || isSetMon) {
-      fxPuff(ar.key); fxRecord('place', { how: isNormal ? 'summon' : 'set', code });
-      if (isNormal && (ar.entry.pos & E.POS_FACEUP) !== 0) { // FX coverage: the plainest summon in the game was the one with no card presentation at all
-        fxSummonCallout(ar.key, code, con, ar.entry.pos);
-        fxRecord('summoncall', { code, how: 'summon', con });
+      // fx-ui round: a summon / set OUT OF THE HAND flies hand ->
+      // zone — the physical tell every other movement in the game
+      // already had (the old "grammar asymmetry" left the plainest
+      // play in the game teleporting). The flight and the callout
+      // share one booked beat: the card leaves the hand as its
+      // presentation opens and lands into the callout's settle.
+      const fromHand = fxHandOrigin(con, code, prev, cur);
+      if (fromHand) {
+        const bStart = fxBookBeat(con !== HP ? 960 : 740);
+        const bDelay = Math.max(0, bStart - fxTimeMs);
+        const fromPt = fxHandFromPt(con, code, handPt(con)), toPt = ptOf(ar.key);
+        if (fromPt && toPt) { fxFly(isNormal ? code : null, !isNormal, fromPt, toPt, toPt.w - 2, toPt.h - 24, 400, bDelay, deckKeyOfSeat(con)); fxRecord('flight', { to: 'field', from: 'hand', code }); }
+        fxRecord('place', { how: isNormal ? 'summon' : 'set', code });
+        if (isNormal && (ar.entry.pos & E.POS_FACEUP) !== 0) {
+          fxSummonCallout(ar.key, code, con, ar.entry.pos, bStart + 180);
+          fxRecord('summoncall', { code, how: 'summon', con });
+        }
+      } else {
+        fxPuff(ar.key); fxRecord('place', { how: isNormal ? 'summon' : 'set', code });
+        if (isNormal && (ar.entry.pos & E.POS_FACEUP) !== 0) { // FX coverage: the plainest summon in the game was the one with no card presentation at all
+          fxSummonCallout(ar.key, code, con, ar.entry.pos);
+          fxRecord('summoncall', { code, how: 'summon', con });
+        }
       }
       // Round B (B10): an advance (tribute) summon's tributes leave the
       // way fusion/Xyz materials do — they glow and converge into the
@@ -3635,18 +3724,46 @@ function fxProcessInner(evs, state) {
       consumedArr.add(ar.key); continue;
     }
     // other special summons (from hand / deck / extra): zone glows first
-    fxPortal(ar.key, method, 600); // V4-5: glow folded in
-    fxRecord('portal', { method, code });
-    if ((ar.entry.pos & E.POS_FACEUP) !== 0) { // FX coverage: the portal lights the zone; the callout names the card (never for a face-down arrival — not public yet)
-      fxSummonCallout(ar.key, code, con, ar.entry.pos);
-      fxRecord('summoncall', { code, how: 'spsummon', con });
+    if (fxHandOrigin(con, code, prev, cur)) {
+      // fx-ui round: out of the hand, the card itself travels —
+      // flight, then the portal births it, then the callout names
+      // it, all on one booked beat.
+      const bStart = fxBookBeat(con !== HP ? 1040 : 820);
+      const bDelay = Math.max(0, bStart - fxTimeMs);
+      const fromPt = fxHandFromPt(con, code, handPt(con)), toPt = ptOf(ar.key);
+      const faceDown = (ar.entry.pos & E.POS_FACEUP) === 0;
+      if (fromPt && toPt) { fxFly(faceDown ? null : code, faceDown, fromPt, toPt, toPt.w - 2, toPt.h - 24, 380, bDelay, deckKeyOfSeat(con)); fxRecord('flight', { to: 'field', from: 'hand', code }); }
+      fxPortal(ar.key, method, 600, bStart + 150);
+      fxRecord('portal', { method, code });
+      if (!faceDown) {
+        fxSummonCallout(ar.key, code, con, ar.entry.pos, bStart + 330);
+        fxRecord('summoncall', { code, how: 'spsummon', con });
+      }
+    } else {
+      fxPortal(ar.key, method, 600); // V4-5: glow folded in
+      fxRecord('portal', { method, code });
+      if ((ar.entry.pos & E.POS_FACEUP) !== 0) { // FX coverage: the portal lights the zone; the callout names the card (never for a face-down arrival — not public yet)
+        fxSummonCallout(ar.key, code, con, ar.entry.pos);
+        fxRecord('summoncall', { code, how: 'spsummon', con });
+      }
     }
     consumedArr.add(ar.key);
   }
   // arrivals on the spell/trap zone (sets): a small placement beat
   for (const ar of arrived) {
     if (consumedArr.has(ar.key)) continue;
-    if (ar.key.split(':').map(Number)[1] === E.LOC.SZONE) { fxPuff(ar.key); fxRecord('place', { how: 'set', code: ar.entry.code }); consumedArr.add(ar.key); }
+    if (ar.key.split(':').map(Number)[1] === E.LOC.SZONE) {
+      // fx-ui round: a set out of the hand flies face-down to its
+      // zone like everything else; a set arriving from elsewhere
+      // (deck / grave) keeps the placement beat.
+      if (fxHandOrigin(ar.key.split(':').map(Number)[0], ar.entry.code, prev, cur)) {
+        const con2 = ar.key.split(':').map(Number)[0];
+        const fromPt = fxHandFromPt(con2, ar.entry.code, handPt(con2)), toPt = ptOf(ar.key);
+        if (fromPt && toPt) { fxFly(null, true, fromPt, toPt, toPt.w - 2, toPt.h - 24, 380, 0, deckKeyOfSeat(con2)); fxRecord('flight', { to: 'field', from: 'hand', code: ar.entry.code }); }
+        fxRecord('place', { how: 'set', code: ar.entry.code });
+      } else { fxPuff(ar.key); fxRecord('place', { how: 'set', code: ar.entry.code }); }
+      consumedArr.add(ar.key);
+    }
   }
   // remaining departures fly / vanish by destination
   for (const dep of fieldDeps) {
@@ -3796,6 +3913,51 @@ function fxProcessInner(evs, state) {
       if (fromPt && toPt) fxFly(code, false, fromPt, toPt, 44, 58, 430, i * 110, deckKeyOfSeat(p));
     }
     if (n > 0) pileLand(p, 'grave');
+  }
+  // ---- public pile departures (fx-ui round): cards leaving the
+  // graveyard / removed pile for the OTHER public pile or back to
+  // the deck — Mudora/Keldo banishing themselves as a cost, their
+  // returns shuffling cards into the deck, grave banishes — only
+  // ticked the pile counters until now: the movement itself was
+  // invisible, the same hole redesign I(1) closed for deck ->
+  // grave. Both piles are public, so ghosts are face-up. Matching
+  // is by multiset against the destination pile's arrivals, with
+  // the arrivals this batch already presented (revivals, own-hand
+  // salvage) subtracted first, and deck returns count-capped by
+  // the deck's actual growth — the I(1) cross-check discipline.
+  for (const srcKind of ['grave', 'removed']) {
+    const srcD = srcKind === 'grave' ? graveD : remD;
+    const otherKind = srcKind === 'grave' ? 'removed' : 'grave';
+    const otherD = srcKind === 'grave' ? remD : graveD;
+    for (let p = 0; p < 2; p++) {
+      if (!srcD[p].removed.length) continue;
+      const left = srcD[p].removed.slice();
+      const subtract = (code) => { const i = left.indexOf(code); if (i >= 0) left.splice(i, 1); };
+      for (const ar of arrived) { // revivals / returns to the field already presented by the arrival pass
+        const [acon] = ar.key.split(':').map(Number);
+        if (acon === p && ar.entry.code != null) subtract(ar.entry.code);
+      }
+      if (p === HP) for (const code of myD.added) subtract(code); // own salvage already flew in the hand pass
+      if (!left.length) continue;
+      const fromPt = pilePt(p, srcKind);
+      let n = 0;
+      const toOther = [];
+      for (const code of otherD[p].added.slice()) { const i = left.indexOf(code); if (i >= 0) { toOther.push(code); left.splice(i, 1); } }
+      const toPtOther = pilePt(p, otherKind);
+      for (const code of toOther) {
+        fxRecord('flight', { to: otherKind, from: srcKind, code });
+        if (fromPt && toPtOther) fxFly(code, false, fromPt, toPtOther, 44, 58, 430, n++ * 110, deckKeyOfSeat(p));
+      }
+      if (toOther.length) pileLand(p, otherKind);
+      const deckGrowth = Math.max(0, cur.deck[p] - prev.deck[p]);
+      const toDeck = left.splice(0, Math.min(left.length, deckGrowth));
+      const toPtDeck = pilePt(p, 'deck');
+      for (const code of toDeck) {
+        fxRecord('flight', { to: 'deck', from: srcKind, code });
+        if (fromPt && toPtDeck) fxFly(code, false, fromPt, toPtDeck, 44, 58, 430, n++ * 110, deckKeyOfSeat(p));
+      }
+      if (toDeck.length) pileLand(p, 'deck');
+    }
   }
   // ---- pile count ticks where no flight already landed
   for (let p = 0; p < 2; p++) {
@@ -4047,6 +4209,12 @@ const FX_ATTR_WASH = { 1: 'rgba(170,115,60,.50)', 2: 'rgba(40,110,255,.42)', 4: 
 // owns the white peak + rising particles at the target, timed to
 // the blow, and suppresses the diff pass's immediate white flash.
 let fxLastAttackScene = null; // {t0, defCon} — the LP loop schedules its count from this
+// fx-ui round: battle SEs (declaration whoosh + hit) are stashed by
+// drainSeEvents and cued by the attack SCENE itself (declaration at
+// its start, hit at its t=280 impact) — with beat-booked scenes the
+// batch-arrival time is no longer the presentation time, and sound
+// must land on the picture, not on the engine's bookkeeping.
+let fxPendingBattleSe = null; // {atk, hit, at}
 function fxAttackKeys(evs, state) {
   // attacker/target zone keys for each attack event in a batch
   // (shared by the scene wiring and the destroy-flash suppression)
@@ -4101,11 +4269,22 @@ function fxAttackSceneV3(o) {
     }
   }
   // L7 attribute particles, born at the impact point on the FX clock
-  fxSpawnBurst('low', { add: 1, seed: (Math.random() * 1e9) | 0, o: [tPt.cx, tPt.cy], n: 26, t0: fxTimeMs + 280, life: [300, 560], speed: [110, 330], ang: [0, Math.PI * 2], grav: 520, dragK: 2.6, size: [2.5, 6], cols: [col, '#ffffff', col], alpha: .95 });
-  if (o.destroyed) fxSpawnBurst('low', { add: 1, seed: (Math.random() * 1e9) | 0, o: [tPt.cx, tPt.cy], n: 8, t0: fxTimeMs + 410, life: [320, 520], speed: [16, 54], ang: [-Math.PI / 2, 0.9], grav: -60, size: [2.5, 5], cols: ['#ffffff', '#ffe9a8'], alpha: .9 });
+  // fx-ui round: the beat is booked up front — bursts and the
+  // stashed battle SEs all ride the scene's own start, so the blow
+  // looks and sounds like one event even when it queued behind
+  // earlier presentations.
+  const atkStart = fxBookBeat(1020);
+  fxSpawnBurst('low', { add: 1, seed: (Math.random() * 1e9) | 0, o: [tPt.cx, tPt.cy], n: 26, t0: atkStart + 280, life: [300, 560], speed: [110, 330], ang: [0, Math.PI * 2], grav: 520, dragK: 2.6, size: [2.5, 6], cols: [col, '#ffffff', col], alpha: .95 });
+  if (o.destroyed) fxSpawnBurst('low', { add: 1, seed: (Math.random() * 1e9) | 0, o: [tPt.cx, tPt.cy], n: 8, t0: atkStart + 410, life: [320, 520], speed: [16, 54], ang: [-Math.PI / 2, 0.9], grav: -60, size: [2.5, 5], cols: ['#ffffff', '#ffe9a8'], alpha: .9 });
+  const atkCues = [{ at: 280, fn: () => fxHitStop(70) }]; // L4: the world stops at the collision
+  if (fxPendingBattleSe && performance.now() - fxPendingBattleSe.at < 1500) {
+    const p = fxPendingBattleSe; fxPendingBattleSe = null;
+    if (p.atk) atkCues.push({ at: 5, fn: () => playSe(p.atk) });
+    if (p.hit) atkCues.push({ at: 280, fn: () => playSe(p.hit) });
+  }
   const sc = fxAddScene({
-    kind: 'attack', dur: 1000, winLow: [[0, 780]],
-    cues: [{ at: 280, fn: () => fxHitStop(70) }], // L4: the world stops at the collision
+    kind: 'attack', dur: 1000, winLow: [[0, 780]], t0: atkStart,
+    cues: atkCues,
     // V4 (proposal 追記 V4-2): every light layer lives on the low
     // canvas — L1 halo + rim sweep, the L3 comet, the L5 three-tier
     // impact bloom, L6 soft rings, L9 rising streaks. The DOM keeps
@@ -4289,7 +4468,10 @@ function fxFinisherGateMs() {
   // the duel-end handler below, which awaits this before showing
   // the result — nothing else in the flow reads the gate.
   const remain = (sc.t0 + 2450) - fxTimeMs;
-  return Math.max(0, Math.min(2450, remain));
+  // fx-ui round: the finisher may itself start late (it books a
+  // beat behind a same-batch lethal attack) — the cap must cover
+  // that delay or the result would resurface under the wash tail.
+  return Math.max(0, Math.min(3600, remain));
 }
 function fxFinisherSceneV3(attr) {
   const host = $('fxcutin'); if (!host) return;
@@ -4336,7 +4518,7 @@ function fxFinisherSceneV3(attr) {
   // (the wash is drawn in drawTop as a scaled disc raster, R4)
   const appEl = app;
   const sc = fxAddScene({
-    kind: 'finisher', dur: 2900, winTop: [[110, 2400]],
+    kind: 'finisher', dur: 2900, winTop: [[110, 2400]], beat: 1080, // fx-ui round: if the lethal attack shared this batch, the wash rises after its beat, never before the blow lands
     cues: [
       { at: 1200, fn: () => playSe((ATTR_SE && ATTR_SE[attr]) || 'atk_sword_big') },  // launch
       { at: 1420, fn: () => { fxHitStop(110); playSe('hit_critical'); } },          // impact
@@ -4508,7 +4690,7 @@ function fxChainMarkLanded(n, code) {
 // the chain bar's label (fxChainMarkLanded). Callers pass the
 // duration of their own presentation (chain pop 950, set tilt 820).
 let fxChainWordScene = null;
-function fxChainWord(cx, cy, durMs) {
+function fxChainWord(cx, cy, durMs, t0) {
   const layer = fxLayerEl(); if (!layer) return;
   if (fxChainWordScene && !fxChainWordScene.dead) { fxChainWordScene.dead = true; if (fxChainWordScene.cleanup) fxChainWordScene.cleanup(); }
   const dur = durMs || 950;
@@ -4518,8 +4700,9 @@ function fxChainWord(cx, cy, durMs) {
   d.innerHTML = '<span>C</span><span>H</span><span>A</span><span>I</span><span>N</span>';
   layer.appendChild(d);
   const spans = [...d.children];
-  const sc = fxAddScene({
-    kind: 'chainword', dur,
+  const wordDef = { kind: 'chainword', dur };
+  if (t0 != null) wordDef.t0 = t0;
+  const sc = fxAddScene(Object.assign(wordDef, {
     render(t) {
       d.style.opacity = String(Math.min(fxSeg(t, 130, 250), 1 - fxSeg(t, dur - 150, dur)));
       spans.forEach((sp, i) => {
@@ -4529,11 +4712,11 @@ function fxChainWord(cx, cy, durMs) {
       });
     },
     onDone() { try { d.remove(); } catch (e) {} if (fxChainWordScene === sc) fxChainWordScene = null; },
-  });
+  }));
   sc.cleanup = () => { try { d.remove(); } catch (e) {} };
   fxChainWordScene = sc;
 }
-function fxChainSceneV3(n, code, deckKey) {
+function fxChainSceneV3(n, code, deckKey, con) {
   const layer = fxLayerEl(); if (!layer) return;
   const app = $('app'); if (!app) return;
   const ar = fxRel(app);
@@ -4583,8 +4766,17 @@ function fxChainSceneV3(n, code, deckKey) {
     }
     fxChainWord(cx, cy - H / 2 - 40);
   }
+  // fx-ui round: the dwell scales with the amount of information —
+  // a long effect text earns a longer at-rest read before the card
+  // travels to its chip (間の配分は情報量で決める). hold extends ONLY
+  // the rest segment; arrival (220) and travel (250) are unchanged.
+  const holdMs = Math.max(0, Math.min(450, Math.round((cardText(code).length - 130) * 1.1)));
+  const DUR = 950 + holdMs, TV0 = 700 + holdMs, TV1 = 950 + holdMs;
   fxAddScene({
-    kind: 'chainpop', dur: 950, winLow: [[0, 950]],
+    kind: 'chainpop', dur: DUR, winLow: [[0, DUR]],
+    // beat: the next major presentation waits out this pop's read —
+    // the opponent's chain builds link by link instead of stacking.
+    beat: DUR - 100 + (con != null && con !== HP ? 180 : 40),
     drawLow(ctx, t) {
       if (t < 150) { // rim light runs once around the popped card
         const u = fxSeg(t, 0, 150), a0 = -Math.PI / 2 + u * Math.PI * 2;
@@ -4598,7 +4790,7 @@ function fxChainSceneV3(n, code, deckKey) {
       const ru = fxSeg(t, 60, 300); // soft ring behind the slamming number
       if (ru > 0 && ru < 1) fxDrawSoftRing(ctx, cx, cy + H / 2 + 1, 26 * (0.6 + 0.75 * FXE.outCubic(ru)), '#59d8f2', .8 * (1 - ru), .12);
       if (linkPts) {
-        const du = fxSeg(t, 150, 400), la = .85 * (1 - fxSeg(t, 800, 950));
+        const du = fxSeg(t, 150, 400), la = .85 * (1 - fxSeg(t, TV1 - 150, TV1));
         if (du > 0 && la > 0) {
           ctx.save();
           ctx.globalCompositeOperation = 'lighter';
@@ -4613,17 +4805,17 @@ function fxChainSceneV3(n, code, deckKey) {
     render(t) {
       // L1: the card arrives by 220 ms (settle curve overshoots, then rests); white rim ignites in 80 ms
       const s = 0.7 + 0.3 * FXE.settle(fxSeg(t, 0, 220));
-      // L4: 700-950 the card travels FLIP-style to its chip and lands small
-      const u = FXE.inOut(fxSeg(t, 700, 950));
+      // L4: TV0-TV1 the card travels FLIP-style to its chip and lands small
+      const u = FXE.inOut(fxSeg(t, TV0, TV1));
       const sc2 = fxLerp(s, Math.max(0.14, 26 / H), u);
       card.style.transform = 'translate(' + (dx * u).toFixed(1) + 'px,' + (dy * u).toFixed(1) + 'px) scale(' + sc2.toFixed(3) + ')';
       const rim = t < 80 ? t / 80 : 1 - fxSeg(t, 260, 480);
-      if (rimEl) { rimEl.style.transform = card.style.transform; rimEl.style.opacity = String(0.95 * Math.max(0, rim) * (1 - fxSeg(t, 890, 950))); }
-      card.style.opacity = String(1 - fxSeg(t, 890, 950));
+      if (rimEl) { rimEl.style.transform = card.style.transform; rimEl.style.opacity = String(0.95 * Math.max(0, rim) * (1 - fxSeg(t, TV1 - 60, TV1))); }
+      card.style.opacity = String(1 - fxSeg(t, TV1 - 60, TV1));
       // L2: the number slams 1.6 -> 1.0 over 60-220 (its ring is the drawLow soft ring now)
       const ns = 1.6 - 0.6 * FXE.settle(fxSeg(t, 60, 220));
       no.style.transform = 'translateX(-50%) scale(' + ns.toFixed(3) + ')';
-      no.style.opacity = String(1 - fxSeg(t, 890, 950));
+      no.style.opacity = String(1 - fxSeg(t, TV1 - 60, TV1));
     },
     onDone() {
       card.remove();
@@ -4636,7 +4828,7 @@ function fxChainSceneV3(n, code, deckKey) {
     },
   });
 }
-function fxChainSolveSceneV3(n, code, neg, deckKey) {
+function fxChainSolveSceneV3(n, code, neg, deckKey, con) {
   const layer = fxLayerEl(); if (!layer) return;
   const app = $('app'); if (!app) return;
   const ar = fxRel(app);
@@ -4663,6 +4855,9 @@ function fxChainSolveSceneV3(n, code, neg, deckKey) {
   if (neg) { grayCopy = fxPlaceGhost(code, false, { cx, cy }, W, H, deckKey); if (grayCopy) { grayCopy.style.filter = 'grayscale(1)'; grayCopy.style.opacity = '0'; grayCopy.style.zIndex = 7; } }
   fxAddScene({
     kind: 'chainsolve', dur: 450,
+    // beat: a chain unwinds link by link — the next solve (or the
+    // next action) waits for this link's flip-and-land to read.
+    beat: 470 + (con != null && con !== HP ? 150 : 0),
     cues: neg ? [] : [{ at: 200, fn: () => fxSpawnBurst('low', { seed: (Math.random() * 1e9) | 0, o: [cx, cy], n: 10, life: [380, 620], speed: [14, 46], ang: [-Math.PI / 2, 0.8], grav: -50, size: [2.5, 5], cols: ['#ffd94d', '#ffe9a8'], alpha: .95 }) }],
     render(t) {
       const u = FXE.snap(fxSeg(t, 0, 180));
@@ -4690,9 +4885,15 @@ function fxChainSolveSceneV3(n, code, neg, deckKey) {
 }
 // ---- set S/T activation (B9): the card tips into the chain
 // presentation — tilted, white-rimmed — it never flips inside its zone
-function fxSetActivate(code, linkNo, targetKey, deckKey) {
+function fxSetActivate(code, linkNo, targetKey, deckKey, con) {
   const layer = fxLayerEl(); if (!layer) return;
   const app = $('app'); if (!app) return;
+  // fx-ui round: a set card flipping up is a major beat like any
+  // other activation — book its slot so it does not fire on top of
+  // the previous action; the WAAPI tilt and its scenes start at the
+  // booked time (delay on the same FX-clock reading).
+  const beatStart = fxBookBeat((con != null && con !== HP) ? 800 : 580);
+  const beatDelay = Math.max(0, beatStart - fxTimeMs);
   const ar = fxRel(app);
   const d = fxPlaceGhost(code, false, { cx: ar.cx, cy: ar.y + ar.h * 0.36 }, 74, 96, deckKey); if (!d) return;
   // Redesign B (p2c, audit C3): when a SET S/T becomes link 2+, the
@@ -4708,7 +4909,7 @@ function fxSetActivate(code, linkNo, targetKey, deckKey) {
     const bar = $('chainbar');
     let wx = ar.cx, wy = ar.y + ar.h * 0.36 - 70; // fallback: above the tilted pop
     if (bar) { const br = fxRel(bar); if (br.w > 0 || br.h > 0) { wx = br.cx; wy = br.y - 16; } }
-    fxChainWord(wx, wy, 820);
+    fxChainWord(wx, wy, 820, beatStart);
     if (!targetKey && duelState && duelState.players) { // fallback: locate the tile from the standing state by code
       for (let con = 0; con < 2 && !targetKey; con++) {
         const P = duelState.players[con];
@@ -4728,7 +4929,7 @@ function fxSetActivate(code, linkNo, targetKey, deckKey) {
     }
     fxRecord('setactivatechain', { code, n: linkNo, frame: !!frameEl, targetKey: targetKey || null });
     fxAddScene({
-      kind: 'setland', dur: 820,
+      kind: 'setland', dur: 820, t0: beatStart,
       render(t) { if (frameEl) frameEl.style.opacity = String(0.95 * fxSeg(t, 40, 160) * (1 - fxSeg(t, 640, 820))); },
       onDone() { if (frameEl) frameEl.remove(); fxChainMarkLanded(linkNo, code); }, // the tilt lands like a pop: the word is absorbed into the bar
     });
@@ -4743,14 +4944,15 @@ function fxSetActivate(code, linkNo, targetKey, deckKey) {
     const noEl = d.querySelector('.setno');
     if (noEl) {
       noEl.style.transformOrigin = '0 0';
-      fxAddScene({ kind: 'setno', dur: 780, render(t) { noEl.style.transform = 'scale(' + (1.7 - 0.7 * FXE.settle(fxSeg(t, 40, 200))).toFixed(3) + ')'; } });
+      fxAddScene({ kind: 'setno', dur: 780, t0: beatStart, render(t) { noEl.style.transform = 'scale(' + (1.7 - 0.7 * FXE.settle(fxSeg(t, 40, 200))).toFixed(3) + ')'; } });
     }
   }
   d.style.transform = 'rotate(-14deg)';
   d.style.boxShadow = '0 0 0 2px #ffffff, 0 0 20px #ffffffaa';
   d.style.zIndex = 5;
-  fxAnim(d, [{ opacity: 0 }, { opacity: 1, offset: 0.18 }, { opacity: 1, offset: 0.8 }, { opacity: 0 }], { duration: 780, easing: 'ease-out' });
-  fxKill(d, 820);
+  d.style.opacity = '0'; // held invisible until the booked beat starts the tilt (the WAAPI delay below)
+  fxAnim(d, [{ opacity: 0 }, { opacity: 1, offset: 0.18 }, { opacity: 1, offset: 0.8 }, { opacity: 0 }], { duration: 780, easing: 'ease-out', delay: beatDelay });
+  fxKill(d, 820 + beatDelay);
 }
 // ---- V3 stage 3: the ace appearance scene (proposal 1.1). ONE
 // timeline (4,600 ms) owns the whole event — materials, portal,
@@ -4841,10 +5043,11 @@ function fxAceSceneV3(o) {
     outlineIn: [150, 260], outlineOut: [560, 700], pipFade: [720, 900], numOut: [880, 1000],
   };
   // L17 landing rings are soft rings on the low canvas now (V4)
+  const aceStart = fxBookBeat(1500); // fx-ui round: booked up front so every burst below rides the scene's own start
   const zoneGlowL = fxNode('fx3-emph', zr.cx, zr.cy, zr.w, zr.h); // L17 zone glow
   if (zoneGlowL) { zoneGlowL.style.borderColor = cols[0]; zoneGlowL.style.opacity = '0'; nodes.push(zoneGlowL); }
-  fxSpawnBurst('low', { mode: 'spiral', seed: (Math.random() * 1e9) | 0, o: [zr.cx, zr.cy], n: 46, t0: fxTimeMs + 300, life: [500, 850], r: [46, 96], turns: 1.6, size: [3, 7], cols: [cols[0], '#ffffff', cols[1]], delayMax: 300, alpha: .95 }); // L5
-  fxSpawnBurst('low', { seed: (Math.random() * 1e9) | 0, o: [zr.cx, zr.cy], n: 10, t0: fxTimeMs + 4200, life: [300, 520], speed: [40, 120], ang: [0, Math.PI * 2], grav: 380, dragK: 1.6, size: [2, 5], cols: ['#ffe9a8', '#ffffff'], alpha: .8 }); // L17 dust
+  fxSpawnBurst('low', { mode: 'spiral', seed: (Math.random() * 1e9) | 0, o: [zr.cx, zr.cy], n: 46, t0: aceStart + 300, life: [500, 850], r: [46, 96], turns: 1.6, size: [3, 7], cols: [cols[0], '#ffffff', cols[1]], delayMax: 300, alpha: .95 }); // L5
+  fxSpawnBurst('low', { seed: (Math.random() * 1e9) | 0, o: [zr.cx, zr.cy], n: 10, t0: aceStart + 4200, life: [300, 520], speed: [40, 120], ang: [0, Math.PI * 2], grav: 380, dragK: 1.6, size: [2, 5], cols: ['#ffe9a8', '#ffffff'], alpha: .8 }); // L17 dust
   // ---- presentation side (#fxcutin)
   host.innerHTML = ''; host.className = 'on';
   const hmk = (cls) => { const n2 = document.createElement('div'); n2.className = cls; host.appendChild(n2); nodes.push(n2); return n2; };
@@ -4867,11 +5070,11 @@ function fxAceSceneV3(o) {
   const ccx = ar.cx, ccy = ar.y + ar.h * 0.40;
   const ringMk = () => { const r = hmk('fx fx3-ring'); r.style.left = (ccx - 32) + 'px'; r.style.top = (ccy - 32) + 'px'; r.style.width = '64px'; r.style.height = '64px'; r.style.borderColor = cols[0]; r.style.opacity = '0'; return r; };
   const ringA = ringMk(), ringB = ringMk(); // L10
-  fxSpawnBurst('top', { seed: (Math.random() * 1e9) | 0, o: [ccx, ccy], n: 24, t0: fxTimeMs + 950, life: [380, 720], speed: [120, 300], ang: [0, Math.PI * 2], grav: 300, dragK: 2.2, size: [3, 7], cols: [cols[0], '#ffffff', cols[1]], alpha: .95 }); // L11
-  fxSpawnBurst('top', { seed: (Math.random() * 1e9) | 0, o: [ccx, ccy + 40], n: 26, t0: fxTimeMs + 1300, life: [1800, 2600], speed: [8, 26], ang: [-Math.PI / 2, .9], grav: -14, dragK: .4, size: [2, 5], cols: [cols[0], '#ffffff'], delayMax: 800, alpha: .55 }); // L14
+  fxSpawnBurst('top', { seed: (Math.random() * 1e9) | 0, o: [ccx, ccy], n: 24, t0: aceStart + 950, life: [380, 720], speed: [120, 300], ang: [0, Math.PI * 2], grav: 300, dragK: 2.2, size: [3, 7], cols: [cols[0], '#ffffff', cols[1]], alpha: .95 }); // L11
+  fxSpawnBurst('top', { seed: (Math.random() * 1e9) | 0, o: [ccx, ccy + 40], n: 26, t0: aceStart + 1300, life: [1800, 2600], speed: [8, 26], ang: [-Math.PI / 2, .9], grav: -14, dragK: .4, size: [2, 5], cols: [cols[0], '#ffffff'], delayMax: 800, alpha: .55 }); // L14
   const portalAngle = (te) => { const ds = (te - 300) / 1000; if (ds <= 0) return 0; if (ds < 0.4) return 625 * ds * ds; return 100 + 500 * (ds - 0.4); };
   const sc = fxAddScene({
-    kind: 'ace', dur: 4600, winLow: [[140, 1200], [4150, 4600]], winTop: [[740, 4600]],
+    kind: 'ace', dur: 4600, winLow: [[140, 1200], [4150, 4600]], winTop: [[740, 4600]], t0: aceStart,
     cues: [{ at: 700, fn: () => playSe('summon_big') }], // L6 is the SE sync point A (the landing sound of the special summon)
     // V4 (proposal 追記 V4-1): the light layers — funnel core + rim
     // at the zone, material heat, the 700 ms three-tier flash bloom
@@ -5069,9 +5272,10 @@ function fxKeycardCutin(code, con, key) {
   const ccx = ar.cx, ccy = ar.y + ar.h * 0.40;
   const ringMk = () => { const r = hmk('fx fx3-ring'); r.style.left = (ccx - 32) + 'px'; r.style.top = (ccy - 32) + 'px'; r.style.width = '64px'; r.style.height = '64px'; r.style.borderColor = cols[0]; r.style.opacity = '0'; return r; };
   const ringA = ringMk(), ringB = ringMk();
-  fxSpawnBurst('top', { seed: (Math.random() * 1e9) | 0, o: [ccx, ccy], n: 20, t0: fxTimeMs + 350, life: [380, 720], speed: [120, 300], ang: [0, Math.PI * 2], grav: 300, dragK: 2.2, size: [3, 7], cols: [cols[0], '#ffffff', cols[1]], alpha: .95 });
+  const kcStart = fxBookBeat(1500); // fx-ui round: booked up front so the burst rides the same start as the scene
+  fxSpawnBurst('top', { seed: (Math.random() * 1e9) | 0, o: [ccx, ccy], n: 20, t0: kcStart + 350, life: [380, 720], speed: [120, 300], ang: [0, Math.PI * 2], grav: 300, dragK: 2.2, size: [3, 7], cols: [cols[0], '#ffffff', cols[1]], alpha: .95 });
   const sc = fxAddScene({
-    kind: 'keycardact', dur: 2400,
+    kind: 'keycardact', dur: 2400, t0: kcStart,
     render(t) {
       const te = sc.skipLocal != null && t > sc.skipLocal ? 2000 + (t - sc.skipLocal) : t;
       const holdOut = 1 - fxSeg(te, 2000, 2320);
@@ -5229,7 +5433,7 @@ function fxRoundBEvents(evs, prev, cur, diff) {
       const raw = st.chain[cur.links.length - 1];
       if (raw && raw.loc === E.LOC.SZONE && raw.seq != null) targetKey = raw.con + ':' + raw.loc + ':' + raw.seq;
     }
-    fxSetActivate(ev.code, isNewLink ? cur.links.length : 0, targetKey, deckKeyOfSeat(ev.con));
+    fxSetActivate(ev.code, isNewLink ? cur.links.length : 0, targetKey, deckKeyOfSeat(ev.con), ev.con);
     if (isNewLink) popDone = true;
     fxRecord('setactivate', { code: ev.code });
   }
@@ -5273,6 +5477,10 @@ function fxRoundBEvents(evs, prev, cur, diff) {
     if (direct) fxRecord('directattack', { code: ev.code });
     else fxRecord('impact', { code: ev.code, attr });
   }
+  // fx-ui round: if this batch declared an attack but no attack
+  // scene took its stashed SEs (geometry failure), fire them now —
+  // late truth beats silence, and nothing leaks into the next battle.
+  if (fxPendingBattleSe) { const p = fxPendingBattleSe; fxPendingBattleSe = null; if (p.atk) playSe(p.atk); if (p.hit) playSe(p.hit); }
   // ---- finisher (B7): only the blow that ends the duel gets the
   // full-screen wash (attribute-tinted); the result overlay follows.
   // Keyed on the winner transition + a recent hit (see fxLastHitAt)
@@ -5286,7 +5494,7 @@ function fxRoundBEvents(evs, prev, cur, diff) {
   // number (see fxSetActivate)
   if (grew && !popDone) {
     const n = cur.links.length;
-    fxChainSceneV3(n, cur.links[n - 1].code, deckKeyOfSeat(cur.links[n - 1].con));
+    fxChainSceneV3(n, cur.links[n - 1].code, deckKeyOfSeat(cur.links[n - 1].con), cur.links[n - 1].con);
     fxRecord('chainpop', { n, code: cur.links[n - 1].code });
   } else if (grew) {
     fxRecord('chainpop', { n: cur.links.length, code: cur.links[cur.links.length - 1].code, via: 'tilt' });
@@ -5294,7 +5502,7 @@ function fxRoundBEvents(evs, prev, cur, diff) {
   if (cur.solving !== prev.solving && cur.solving > 0) {
     fxRecord('chainsolving', { n: cur.solving });
     const link = cur.links[cur.solving - 1];
-    if (link) fxChainSolveSceneV3(cur.solving, link.code, !!link.neg, deckKeyOfSeat(link.con));
+    if (link) fxChainSolveSceneV3(cur.solving, link.code, !!link.neg, deckKeyOfSeat(link.con), link.con);
   }
   // ---- LP (B7 -> V3 stage 2 -> Redesign F): the counter counts on
   // the FX clock; after an attack it starts at attack+400 ms (impact
@@ -5936,6 +6144,16 @@ function finishPrompt(bytes) {
   clearInteraction();
   if (duelState) render(duelState);
   if (cp) { currentPrompt = null; cp.resolve(bytes); }
+  syncFxBtnInert();
+}
+// BU-25: while a prompt is open the FX settings sheet cannot open
+// (openFxSettings stands down) — say so on the button itself
+// (dimmed + not-pressed look) instead of silently ignoring taps.
+function syncFxBtnInert() {
+  const b = $('fxbtn'); if (!b) return;
+  const inert = !!currentPrompt;
+  b.classList.toggle('inert', inert);
+  b.setAttribute('aria-disabled', inert ? 'true' : 'false');
 }
 function uiAnswer(prompt, state) {
   return new Promise((resolve) => {
@@ -5956,6 +6174,7 @@ function uiAnswer(prompt, state) {
     // sheet (round B) — the settings sheet must never sit over a dock
     if ($('sheet') && $('sheet').querySelector('#fxseg-cutin')) sheetClose();
     currentPrompt = { prompt, resolve };
+    syncFxBtnInert();
     // The 攻撃 action's target choice is the SELECT_CARD that
     // immediately follows it; bind the attacker to that one prompt
     // only, so its sheet can name whose attack it is (P1-2).
@@ -5967,15 +6186,60 @@ function uiAnswer(prompt, state) {
     // in-process Duel's version is synchronous and returns undefined, so
     // awaiting it keeps the fallback path behaving exactly as before.
     const refreshed = duel ? Promise.resolve().then(() => duel.refreshFieldStats()) : Promise.resolve();
-    refreshed.catch(() => {}).then(() => {
+    // fx-ui round: the prompt never pops out of nowhere. It opens
+    // only after every booked presentation beat has STARTED (the
+    // action that caused this choice has visibly begun, usually
+    // finished), then points back at its cause (fxPromptLink). The
+    // instant-resolve paths above (auto-pass, zero-option chains)
+    // skip the gate entirely — they open no UI, so there is nothing
+    // to be surprised by. Hard cap so a long opponent combo can
+    // never stall the duel behind its own presentation queue.
+    refreshed.catch(() => {}).then(() => fxPromptGate()).then(() => {
       try {
         dispatchPrompt(prompt, state);
+        fxPromptLink(prompt, state);
+        syncFxBtnInert();
       } catch (err) {
         // never dead-end: fall back to the bot policy answer for this prompt
         finishPrompt(E.botAnswer(prompt, state, DATA, E.makeBotMemory()));
       }
     });
   });
+}
+// Wait until the beat book has drained to "everything started" —
+// polled on the FX clock (hit-stop freezes both sides coherently).
+function fxPromptGate() {
+  if (fxBeatPendingMs() <= 40) return Promise.resolve();
+  return new Promise((res) => {
+    const t0 = performance.now();
+    const iv = setInterval(() => {
+      if (fxBeatPendingMs() <= 40 || performance.now() - t0 > 1200) { clearInterval(iv); res(); }
+    }, 40);
+  });
+}
+// Point back at the prompt's cause: the chain's top link pulses in
+// gold when a chain is live; otherwise the activating card's zone
+// (when the prompt carries its code and that card stands face-up)
+// gets one quiet glow. Nothing is pointed at when the cause cannot
+// be identified — the link is never invented.
+function fxPromptLink(prompt, state) {
+  try {
+    if (state && state.chain && state.chain.length) {
+      const chip = fxChainChipEl(state.chain.length);
+      if (chip) { chip.classList.remove('linkpulse'); void chip.offsetWidth; chip.classList.add('linkpulse'); setTimeout(() => { try { chip.classList.remove('linkpulse'); } catch (e) {} }, 2000); }
+      return;
+    }
+    if (prompt && prompt.code != null && state && state.players) {
+      for (let con = 0; con < 2; con++) {
+        const P = state.players[con]; if (!P) continue;
+        for (const [loc, zone] of [[E.LOC.MZONE, P.mzone], [E.LOC.SZONE, P.szone]]) {
+          if (!zone) continue;
+          const i = zone.findIndex(c => c && c.code === prompt.code && (c.pos & E.POS_FACEUP) !== 0);
+          if (i >= 0) { fxZoneGlow(con + ':' + loc + ':' + i, 900); return; }
+        }
+      }
+    }
+  } catch (e) {}
 }
 function dispatchPrompt(prompt, state) {
   if (prompt.name !== 'SELECT_PLACE' && prompt.name !== 'SELECT_DISFIELD' && prompt.name !== 'SELECT_POSITION') lastPlaceCard = null;

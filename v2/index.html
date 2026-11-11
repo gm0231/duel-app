@@ -23,6 +23,19 @@
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   button:active{transform:translateY(1px);filter:brightness(1.18);}
+  /* C-18 (fx-ui round): the press response must exist on EVERY
+     tappable surface, not only <button> — hand cards, board tiles,
+     grid cards, position choices and chips are divs, and a tap that
+     shows nothing reads as a dead app. Same language as buttons:
+     a 1px settle + a brightness lift, nothing else. */
+  .hcard:active,.gcard:active,.posbtn:active,.sortrow:active,.chip:active{transform:translateY(1px);filter:brightness(1.22);}
+  .slot:active .tile{filter:brightness(1.25);}
+  .hcard,.gcard,.posbtn,.sortrow,.chip{transition:filter .07s ease-out;}
+  /* fx-ui round: the prompt's cause link — the chain's top chip
+     answers the opening prompt with one slow gold ring (carved
+     gold, not a blink: a single expanding ring that fades). */
+  #chainbar .link.linkpulse{animation:linkpulse 1s ease-out 2;}
+  @keyframes linkpulse{0%{box-shadow:0 0 0 0 rgba(255,217,77,0);}25%{box-shadow:0 0 0 2.5px rgba(255,217,77,.9);}100%{box-shadow:0 0 0 5px rgba(255,217,77,0);}}
   .bigbtn:active,.optbtn:active{filter:brightness(1.25);}
   html,body{margin:0;padding:0;background:var(--ink);color:var(--txt);font-family:"Hiragino Sans","Noto Sans JP",sans-serif;}
   /* layout round 4 hardening: never let a webview inflate text on its own —
@@ -168,7 +181,8 @@
      line, ellipsis as backstop only. */
   #phasebtn{background:var(--gold);color:#191104;border:0;border-radius:6px;font-size:12.5px;font-weight:700;padding:0 6px;height:32px;min-width:104px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   #phasebtn:disabled{background:#4a3d22;color:#8a7c55;}
-  #menubtn,#fxbtn{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:6px;font-size:12px;padding:0 6px;height:32px;}
+  #menubtn,#fxbtn{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:6px;font-size:12px;padding:0 8px;height:36px;}
+  #fxbtn.inert{opacity:.42;filter:saturate(.5);}
   /* ---------- hand ---------- */
   #handbar{background:var(--panel);border-top:1px solid var(--gold-dim);padding:3px 4px 5px;}
   #handbar .who{font-size:10px;color:var(--txt-dim);padding:0 2px;height:11px;line-height:11px;}
@@ -241,9 +255,9 @@
   #sheetwrap[data-closing="1"] #sheet{pointer-events:none;}
   #sheetwrap.peek #sheet{transform:translateY(calc(100% - 44px));}
   #sheetwrap.peek{background:#0003;}
-  #peekbtn{position:absolute;right:10px;bottom:calc(62dvh + 8px);z-index:51;display:none;background:#241a0e;color:var(--gold);border:1px solid var(--gold-dim);border-radius:8px;font-size:12px;padding:9px 12px;cursor:pointer;}
+  #peekbtn{position:absolute;right:10px;bottom:calc(62dvh + 8px);z-index:51;display:none;background:#241a0e;color:var(--gold);border:1px solid var(--gold-dim);border-radius:8px;font-size:13px;padding:12px 16px;min-height:44px;cursor:pointer;}
   #sheetwrap.on #peekbtn{display:block;}
-  #sheetx{position:absolute;right:118px;bottom:calc(62dvh + 8px);z-index:51;display:none;width:40px;height:40px;background:#241a0e;color:var(--gold);border:1px solid var(--gold-dim);border-radius:8px;font-size:16px;cursor:pointer;}
+  #sheetx{position:absolute;right:124px;bottom:calc(62dvh + 8px);z-index:51;display:none;width:48px;height:48px;background:#241a0e;color:var(--gold);border:1px solid var(--gold-dim);border-radius:8px;font-size:17px;cursor:pointer;}
   #sheetwrap.on[data-kind="view"] #sheetx{display:block;}
   #sheetwrap.peek #sheetx{bottom:auto;top:10px;}
   #sheetwrap.peek #peekbtn{bottom:auto;top:10px;}
@@ -256,7 +270,7 @@
   #peekbar{display:none;position:absolute;left:0;right:0;bottom:0;z-index:52;background:#1d1811;border-top:2px solid var(--gold);padding:8px;flex-wrap:wrap;gap:6px;max-height:34dvh;overflow-y:auto;}
   #sheetwrap.peek #peekbar.onbar{display:flex;}
   #peekbar .bigbtn{flex:1 1 40%;}
-  #sheet .seg button{min-height:39px;}
+  #sheet .seg button{min-height:44px;}
   #midbar{position:relative;}
   #midbar.busy::after{content:'';position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);background-size:40% 100%;background-repeat:no-repeat;animation:busyslide 1.1s linear infinite;pointer-events:none;}
   @keyframes busyslide{from{background-position:-40% 0;}to{background-position:140% 0;}}
@@ -280,7 +294,7 @@
   .gcard .loc{font-size:9px;color:var(--gold);background:#000a;padding:0 3px;border-radius:2px;}
   .gcard.sel{box-shadow:0 0 0 2px var(--ok);}
   .btnrow{display:flex;gap:6px;margin-top:12px;position:sticky;bottom:0;background:#1d1811;z-index:2;padding-bottom:2px;}
-  .optbtn{display:block;width:100%;text-align:left;background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:6px;font-size:13px;padding:12px;margin:4px 0;cursor:pointer;}
+  .optbtn{display:block;width:100%;text-align:left;background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:6px;font-size:13px;padding:13px 12px;min-height:46px;margin:4px 0;cursor:pointer;}
   .optbtn.disabled{opacity:.45;cursor:default;border-style:dashed;}
   .optbtn .reason{display:block;font-size:11px;color:var(--txt-dim);margin-top:2px;}
   .posrow{display:flex;gap:8px;justify-content:center;margin:8px 0;}
@@ -331,7 +345,7 @@
   #sheet .rowreason{font-size:10px;color:#f0c08a;padding:0 8px 5px;line-height:1.5;}
   .sortrow .mv{margin-left:auto;display:flex;gap:4px;}
   .sortrow .chev{margin-left:auto;color:var(--txt-dim);font-size:14px;}
-  .sortrow button{background:var(--panel);color:var(--txt);border:1px solid var(--tile-edge);border-radius:4px;padding:9px 11px;}
+  .sortrow button{background:var(--panel);color:var(--txt);border:1px solid var(--tile-edge);border-radius:4px;padding:9px 11px;min-height:40px;min-width:44px;}
   .counterrow{display:flex;align-items:center;gap:8px;border:1px solid var(--tile-edge);border-radius:6px;padding:6px 8px;margin:4px 0;background:var(--panel2);font-size:12px;}
   .counterrow .ctl{margin-left:auto;display:flex;gap:6px;align-items:center;}
   .counterrow button{width:36px;height:36px;border-radius:18px;background:var(--panel);color:var(--txt);border:1px solid var(--gold-dim);font-size:16px;}
@@ -372,13 +386,13 @@
   .cand .fxmore{color:var(--txt-dim);text-decoration:underline dotted;text-underline-offset:2px;}
   .gcard{position:relative;}
   .gcard .stats{font-size:10px;color:var(--gold);background:#000a;padding:0 3px;border-radius:2px;margin-top:2px;}
-  .gcard .gdetail{position:absolute;top:3px;right:3px;font-size:10px;background:#000c;color:var(--gold);border:1px solid var(--gold-dim);border-radius:5px;padding:4px 7px;cursor:pointer;z-index:2;}
+  .gcard .gdetail{position:absolute;top:3px;right:3px;font-size:11px;background:#000c;color:var(--gold);border:1px solid var(--gold-dim);border-radius:5px;padding:8px 11px;min-height:34px;cursor:pointer;z-index:2;}
   .gcard .itext{font-size:10px;line-height:1.45;color:var(--txt);background:#000a;padding:2px 3px;border-radius:2px;margin-top:2px;max-height:64px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;}
   .cand .dueldismiss{display:inline-block;margin-top:5px;font-size:11px;color:#f0c08a;background:#2a1c0d;border:1px solid #a86a2a;border-radius:6px;padding:6px 10px;cursor:pointer;}
   .cand .candinfo{display:inline-block;margin-top:5px;margin-left:6px;font-size:11px;color:var(--gold);background:#171208;border:1px solid var(--gold-dim);border-radius:6px;padding:6px 10px;cursor:pointer;}
   #dock .duelsection{font-size:10px;color:var(--txt-dim);margin-top:6px;}
-  #dock .duelsection button{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:11px;padding:5px 10px;margin-left:6px;cursor:pointer;}
-  #autopass{display:none;position:absolute;left:8px;bottom:calc(var(--hh) + 33px);z-index:45;background:#4a3a10ee;color:#ffe9a8;border:1px solid var(--gold);border-radius:12px;font-size:11px;padding:5px 10px;cursor:pointer;}
+  #dock .duelsection button{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:11.5px;padding:9px 12px;min-height:38px;margin-left:6px;cursor:pointer;}
+  #autopass{display:none;position:absolute;left:8px;bottom:calc(var(--hh) + 33px);z-index:45;background:#4a3a10ee;color:#ffe9a8;border:1px solid var(--gold);border-radius:12px;font-size:12px;padding:9px 13px;min-height:38px;cursor:pointer;}
   #autopass.on{display:block;}
   #autopass.flash{background:#7a5a10;color:#fff;font-weight:700;}
   /* ---------- presentation FX layer (rounds A/B) ----------
@@ -637,7 +651,7 @@
   .tile .ctrs{position:absolute;top:1px;left:1px;background:#2a6f3a;color:#dfffe0;font-size:9px;font-weight:700;border-radius:8px;padding:0 4px;z-index:2;}
   .segrow{margin:5px 0 3px;font-size:11px;color:var(--txt-dim);letter-spacing:.18em;text-align:left;width:100%;}
   .seg{display:flex;gap:6px;justify-content:center;margin-top:4px;flex-wrap:wrap;}
-  .seg button{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:13px;padding:9px 14px;cursor:pointer;}
+  .seg button{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:13px;padding:9px 14px;min-height:44px;cursor:pointer;}
   .seg button.sel{background:#3a2a10;color:#ffe9a8;font-weight:700;border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold);}
   /* DS-04: seg sub-labels reserve two lines whether they wrap or
      not, so a row of seg buttons keeps one height. */
@@ -673,12 +687,12 @@
   #deckpage .deck .check{position:absolute;top:7px;right:7px;width:9px;height:9px;border-radius:50%;background:var(--gold);box-shadow:0 0 7px var(--gold);display:none;}
   #deckpage .deck.sel .check{display:block;}
   #deckpage .seg3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;width:100%;}
-  #deckpage .seg3 button{min-height:38px;font-size:14px;}
+  #deckpage .seg3 button{min-height:44px;font-size:14px;}
   #deckpage .settings{width:100%;margin-top:6px;border-top:1px solid #2c2110;padding-top:5px;flex:0 0 auto;}
   #deckpage .srow{display:flex;align-items:center;gap:10px;margin-bottom:4px;width:100%;}
   #deckpage .srow .sl{width:86px;flex:none;font-size:12px;color:#c9b586;text-align:left;}
   #deckpage .srow .seg{flex:1;margin-top:0;flex-wrap:nowrap;}
-  #deckpage .srow .seg button{flex:1;font-size:11.5px;padding:5px 2px;min-height:32px;line-height:1.35;}
+  #deckpage .srow .seg button{flex:1;font-size:11.5px;padding:5px 2px;min-height:40px;line-height:1.35;}
   #deckpage .srow .seg button small{display:block;font-size:9.5px;font-weight:400;color:var(--txt-dim);}
   #deckpage .srow .seg button.sel small{color:#d8bc7a;}
   .switch{position:relative;width:52px;height:30px;flex:none;background:#171008;border:1px solid #3a2c12;border-radius:15px;cursor:pointer;padding:0;}
