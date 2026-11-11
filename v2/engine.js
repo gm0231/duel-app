@@ -2415,7 +2415,13 @@ function activationScore(e, view, data, prompt) {
       // buys the (1) self-summon or the (3) bounce as well.
       if (deckIdOfList(view.myDeck, data) === 'ishizu') {
         const syn = sphinxSynergy(view, data);
-        const anySet = myMons.some(c => !c.faceUp) || monList(view, opp).some(c => !c.faceUp);
+        // The flip this buys must not be the Pod reset in disguise:
+        // if the only flippable monster is a set Pod whose reset
+        // does not pay, Taiyou would flip the Pod (the pick branch
+        // cannot decline a lone candidate) — the synergy trigger is
+        // not worth resetting our own board.
+        const anySet = myMons.some(c => !c.faceUp && (c.code !== CC.CHAOS_POD || podResetPays(view, data))) ||
+          monList(view, opp).some(c => !c.faceUp);
         if (anySet && syn.gy) return 1050;
         if (anySet && syn.field) return 1000;
       }
@@ -3692,7 +3698,7 @@ function effectYnAnswer(prompt, view, data, mem) {
         else if (mySet.some(c => c.code === CC.MEDUSA_WORM) && faceUpMons(view, opp).length) yes = true; // flip: destroy their biggest
         else if (mySet.some(c => c.code === CC.SPHINX && !isTarget(c)) && oppMaxPower(view, data) <= 2500) yes = true; // stand the 2500 up, arm (3)
         else if (deckIdOfList(view.myDeck, data) === 'ishizu' && sphinxSynergy(view, data).gy &&
-                 mySet.some(c => !isTarget(c))) yes = true; // any safe flip triggers Sphinx (1)
+                 mySet.some(c => !isTarget(c) && (c.code !== CC.CHAOS_POD || podResetPays(view, data)))) yes = true; // any safe flip triggers Sphinx (1) — but a lone Pod flip is the reset, gated as such
         if (yes) { mem.soudou2Turn = view.turnCount; return i32resp(1); }
         return i32resp(0);
       }
