@@ -3163,7 +3163,7 @@ function pickSummon(prompt, view, data) {
 // doing (the chain top, the just-summoned monster, the live attack).
 function newChainValue(e, view, data, mem, C) {
   const me = view.me, opp = view.opp;
-  const { topOpp, topCd, topThreat, chainWar, atkCell, atkDmg, myMonDies, myMonValue, newBigOpp } = C;
+  const { topOpp, topCd, topThreat, chainWar, atkCell, atkDmg, myMonDies, myMonValue, newBigOpp, isOppBattle } = C;
   const printed = fxPrinted(e.code, e.desc);
   const oppFU = faceUpMons(view, opp);
   const oppBest = oppFU.length ? Math.max(...oppFU.map(c => boardValue(c, data))) : 0;
@@ -3291,6 +3291,12 @@ function newChainValue(e, view, data, mem, C) {
       // forces it to: interposing it is pure defense, and it stands
       // fully live from our next turn). On our own turn the
       // main-phase score prices the card instead.
+      // (isOppBattle arrives via C — through round 11 this case read
+      // a bare `isOppBattle` that only exists in chainEntryValue's
+      // scope, so EVERY SELECT_CHAIN prompt containing this entry
+      // threw and the wrapper's fallback passed the whole prompt:
+      // the set Quick-Play silently disabled all chain responses.
+      // Round 12 root-cause fix.)
       if (!isOppBattle || !atkCell) return 0;
       const wall = Math.max(0, ...view.grave[me].concat(view.grave[opp])
         .map(c => { const d = cdOf(data, c); return isMonsterCd(d) ? Math.max(d.atk, d.def) : 0; }));
@@ -3560,7 +3566,7 @@ function chainEntryValue(e, view, data, mem) {
     }
     default:
       return newChainValue(e, view, data, mem,
-        { topOpp, topCd, topThreat, chainWar, atkCell, atkDmg, myMonDies, myMonValue, newBigOpp });
+        { topOpp, topCd, topThreat, chainWar, atkCell, atkDmg, myMonDies, myMonValue, newBigOpp, isOppBattle });
   }
 }
 function bestGraveAtk(view, data) {
