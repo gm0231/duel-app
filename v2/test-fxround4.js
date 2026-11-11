@@ -131,26 +131,36 @@ async function boot() {
     'FX4-9: H2 — the 172px floor stands and the 172px cap is gone (3+ candidates keep the horizontal scroll)');
 
   // ---------- H3: mid-band rows follow their line boxes ----------
+  // ROUND 5 (I1) SUPERSESSION: FX4-10/12/13/14/16 originally pinned
+  // the round-4 fittings (line-height 1.5 / 1.2 / 1.35, phasebar
+  // floor 34, LAYOUT_FIXED 215). The published-build field check
+  // showed the phase cell's squeeze (1.2 / 1.35) leaves its text
+  // taller than its line boxes — the runs overlap and the label
+  // reads half-eaten — so round 5 moved every mid-band text row to
+  // line-height:normal (the font's own line height), the phasebar
+  // floor to 39 and LAYOUT_FIXED to 220. These assertions now pin
+  // the round-5 contract; the rest of H3 (no frozen heights, floors
+  // not boxes) stands as written in round 4.
   const logline = ruleDecls(/#logline\{([^}]*)\}/);
-  ok(!!logline && !('height' in logline) && logline['line-height'] === '1.5',
-    'FX4-10: H3 — #logline has no frozen height; its line box scales with the used font size (1.5)');
+  ok(!!logline && !('height' in logline) && logline['line-height'] === 'normal',
+    'FX4-10: H3/I1 — #logline has no frozen height; its line box is the font natural line height (normal; was 1.5 in round 4)');
   const chainbar = ruleDecls(/#chainbar\{([^}]*)\}/);
   ok(!!chainbar && chainbar['min-height'] === '21px' && !('height' in chainbar),
     'FX4-11: H3 — #chainbar is a 21px floor, not a frozen 21px box');
   const prevlog = ruleDecls(/#chainbar \.prevlog\{([^}]*)\}/);
-  ok(!!prevlog && prevlog['line-height'] === '1.5', 'FX4-12: H3 — the chainbar prevlog line box scales too (1.5)');
+  ok(!!prevlog && prevlog['line-height'] === 'normal', 'FX4-12: H3/I1 — the chainbar prevlog line box is the font natural line height too (normal; was 1.5 in round 4)');
   const phasebar = ruleDecls(/#phasebar\{([^}]*)\}/);
-  ok(!!phasebar && phasebar['min-height'] === '34px' && !('height' in phasebar),
-    'FX4-13: H3 — #phasebar is a 34px floor, not a frozen 34px box');
-  ok(/const LAYOUT_FIXED = 215;/.test(clientSrc),
-    'FX4-14: H3 — the layout budget stands (default-font rendered band is unchanged at 78px; growth is fit-loop absorbed)');
+  ok(!!phasebar && phasebar['min-height'] === '39px' && !('height' in phasebar),
+    'FX4-13: H3/I1 — #phasebar is a 39px floor, not a frozen box (was a 34px floor in round 4)');
+  ok(/const LAYOUT_FIXED = 220;/.test(clientSrc),
+    'FX4-14: H3/I1 — the layout budget follows the natural phase bar (mid band 83px; was 215/78px in round 4; growth is fit-loop absorbed)');
   const link = ruleDecls(/\.link\{([^}]*)\}/);
   ok(!!link && link['line-height'] === '1.2',
     'FX4-15: H3 — the chain chips carry the fitting line-height (content fits the 21px floor at default size)');
   const plp = ruleDecls(/#phasebar \.lp\{([^}]*)\}/);
   const pwho = ruleDecls(/#phasebar \.pwho\{([^}]*)\}/);
-  ok(!!plp && plp['line-height'] === '1.35' && !!pwho && pwho['line-height'] === '1.2',
-    'FX4-16: H3 — the phase cell lines are fitted (12 + 21.6 <= 34 at default size) and the label uses .pwho');
+  ok(!!plp && plp['line-height'] === 'normal' && !!pwho && pwho['line-height'] === 'normal',
+    'FX4-16: H3/I1 — the phase cell lines use the font natural line height (normal; the round-4 squeeze 1.35/1.2 overlapped the runs) and the label uses .pwho');
   ok(/<div class="pwho">/.test(html), 'FX4-17: H3 — the phase label markup uses the fitted class');
 
   console.log(failures ? ('FAILURES: ' + failures) : 'ALL FXROUND4 CHECKS PASSED');

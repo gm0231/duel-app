@@ -5789,16 +5789,29 @@ function dlogText(e) {
 }
 function captureDLog(state) {
   const cur = state.dlog || [];
-  // Entries are unique objects and the stream is append-only (the
-  // mirror trims from the head past 600): the last captured entry
-  // is the anchor — everything after it is fresh. A batch can
-  // never outrun the cap between two renders, so the anchor is
-  // always still present.
+  // ROUND 5 (I3): the anchor is the entry VALUE, never the object.
+  // The state reaches this client through the worker transport,
+  // whose postMessage structured-clones every snapshot — entry
+  // objects are brand-new on each render, so the old anchor
+  // (cur.lastIndexOf(previous last entry)) could never match, the
+  // fallback took the WHOLE stream as fresh, and the history sheet
+  // filled with repeated copies of the same entries (field check
+  // on the published build: the sheet hit its 500-entry cap with
+  // 222 of 240 rendered rows duplicated, the turn headers cycling
+  // 1->2->3 over and over). Align like captureLog instead: the
+  // stream is append-only (the mirror trims from the head past
+  // 600, and a batch between two renders can never outrun that),
+  // so the longest suffix of the previous stream that prefixes
+  // the current one — compared by serialized value — marks the
+  // boundary; everything past it is fresh.
+  const key = (e) => JSON.stringify(e);
+  const curKeys = cur.map(key);
   let fresh;
   if (!dlogPrev.length) fresh = cur.slice();
   else {
-    const idx = cur.lastIndexOf(dlogPrev[dlogPrev.length - 1]);
-    fresh = idx >= 0 ? cur.slice(idx + 1) : cur.slice();
+    let k = Math.min(dlogPrev.length, curKeys.length);
+    while (k > 0 && dlogPrev.slice(dlogPrev.length - k).join('\n') !== curKeys.slice(0, k).join('\n')) k--;
+    fresh = cur.slice(k);
   }
   // Setup entries are stamped turn 0 by the engine (the opening
   // draws); the sheet groups them under turn 1 like the headline
@@ -5806,7 +5819,7 @@ function captureDLog(state) {
   // the ターン1 heading twice).
   for (const e of fresh) histEntries.push({ turn: Math.max(1, e.turn), tp: e.tp, ph: e.ph, k: e.k, cid: e.cid, sol: e.sol, text: dlogText(e) });
   if (histEntries.length > 500) histEntries = histEntries.slice(-500);
-  dlogPrev = cur.slice();
+  dlogPrev = curKeys;
 }
 function openLogHistory() {
   // B-10 fix (2026-11-03, user report: 履歴ボタンが押しても何も
@@ -7568,11 +7581,16 @@ $('menubtn').addEventListener('click', () => {
 // Vertical budget (px, mirrors index.html exactly — every bar has an
 // explicit height there; re-derived element by element in the layout-fix
 // round and confirmed exact):
-//   topbar 42 + opp field (pad 4 + pilebar 30 + 2 zone rows) + midbar 78
-//   (chainbar 21 reserved + logline 15 + phasebar 34 + padding/borders 8)
+//   topbar 42 + opp field (pad 4 + pilebar 30 + 2 zone rows) + midbar 83
+//   (chainbar 21 reserved + logline 15 + phasebar 39 + padding/borders 8)
 //   + my field (2 zone rows + pilebar 30 + pad 4) + handbar extras 19
-//   (who 11 + padding 8) + 4 zone-row margins 8  =  FIXED 215
+//   (who 11 + padding 8) + 4 zone-row margins 8  =  FIXED 220
 //   plus 4 × slotH + handH + previewH.
+//   (Round 5 (I1): the phasebar is 39, not 34 — its label/LP lines
+//   size from the font's natural line height (line-height:normal)
+//   instead of the round-4 squeeze below it, so the mid band is
+//   83 and FIXED is 220. The fit loop verifies against the real
+//   rendered bottom, so this constant only steers the first pass.)
 //   (V3 stage 4: pile chips grew 21->28px for tap size (B-11) and
 //   the handbar/margins gave the difference back; the strip grew
 //   22->24px (B-15). The fit loop still verifies against the real
@@ -7704,7 +7722,7 @@ $('menubtn').addEventListener('click', () => {
 // in honest Chromium at 998px, signals in agreement, fit=true —
 // and the conservative signal target of round 3 stays as defense
 // in depth for environments Chromium cannot model.
-const LAYOUT_FIXED = 215;
+const LAYOUT_FIXED = 220;
 const LAYOUT_SAFETY = 8; // px kept free below the stack, always (round 3: 6 → 8)
 let layoutInfo = null;
 function layoutParts(W) {
