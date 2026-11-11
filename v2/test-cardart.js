@@ -603,6 +603,66 @@
      crosses to the GG deck — 《テラ・フォーミング》
      (73628505, Terraforming), a real GG main-deck
      card (x2) with no individual art.
+   - The 36th delivery (2026-11-11) is 《トランザクション・
+     ロールバック》 (6351147): plain art 'rollback' (a pixelated
+     slab shedding data fragments down a beam of light into a
+     circular portal, inside neon rings) in CARD_ART — a TRAP
+     (x1 in the v14 main deck), not a keycard — PLUS the 19th
+     DECK_ART entry ('rollback-ishizu', the Egyptian variant:
+     a museum stone tablet under a scanner, the sphinx and
+     hologram panels around it, Ishizu's face with the great
+     golden eye headdress filling the lower tier). Rollback is
+     the first card to GRADUATE from STD_ART: it entered the
+     pool in the v12 round with processed standard art, and
+     that registration is retired by this delivery (the std
+     files are deleted with it; CAGG5's count drops 112 ->
+     111, and test-recipe-v12's R8/R9 pins are re-pointed).
+     Both paintings take the standard files (full width x the
+     top 1411/1536 -> 640x882; the small file is the standard
+     top-anchored square) — the variant's two-tier composition
+     survives the standing window: the tablet spans ~19-63%
+     of the big file and her face the bottom tier (the
+     headdress eye ~65-85%, her eyes ~85-93%), so the window
+     ends just under her chin. Band check, measured like the
+     others: on the plain painting the pixel slab spans
+     ~24-45% of the big file, so center top leaves the pop
+     band on the neon rings and dark sky with only the slab's
+     glowing near edge at its bottom — the subject
+     essentially absent; it takes the 22nd ART_FOCUS entry
+     ('center 30%': the whole slab seated in the pop band,
+     slab, stream and portal framed in the sheet band). The
+     variant is judged separately, like the other pairs:
+     center top leaves the pop band on the museum and sphinx
+     with both subjects below it, and her face out of the
+     sheet band entirely; it takes the 23rd ART_FOCUS entry
+     ('center 85%': the headdress eye and both her eyes
+     seated in the pop band, the tablet's carved scene and
+     her whole face framed in the sheet band; 'center 90%'
+     was measured and rejected — it pushes the tablet's
+     winged-disc rim out of the sheet band and crops the
+     headdress in the pop band). CAF1 grows to twenty-three
+     entries. Reproductions: rollback-band-{sheet,pop}-
+     {top,30,40}.jpg and rollback-ishizu-band-{sheet,pop}-
+     {top,65,85,90,100}.jpg in the cropfix folder, with
+     -before / -after aliases for the top / chosen pairs.
+   - The same publish round (2026-11-11, user rule) changes
+     how the Magic Card printing of 《死者蘇生》 (28958464)
+     resolves — no new painting: inside the CHARACTER decks
+     only, the printing REUSES the classic printing's painting
+     'sosei' (83764718, 34th delivery), registered as
+     DECK_ART.ishizu[28958464] = 'sosei' (the 20th ishizu
+     entry) and DECK_ART.gg[28958464] = 'sosei' (the FIRST
+     gg entry — DECK_ART grows a gg table for this). There is
+     no 'sosei-ishizu' painting: the classic printing resolves
+     'sosei' through CARD_ART in every deck (CA7z130), so both
+     entries name that one slug, and the 'sosei' ART_FOCUS
+     (center 40%) follows it. Everywhere else — environment
+     themes, imported decks, the player's side — the printing
+     keeps its STD_ART registration, which is NOT retired
+     (contrast Rollback above): CARD_ART gains no 28958464
+     entry. The shipped GG recipe runs no copy of the card,
+     so the gg entry is a standing rule for any gg-context
+     instance, inert until a recipe runs one.
    Method: boot the real client in jsdom (harness as test-setvis),
    paint a fabricated board through the client's own render() and
    assert the DOM contract in one synchronous eval. */
@@ -619,7 +679,7 @@ const wasmBinary = fs.readFileSync(path.join(V2, 'build', 'ocgcore.wasm'));
 let failures = 0;
 const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (!cond) failures++; };
 
-const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317, KAKAN = 14108995, CARBON = 15079028, SILKY = 55702233, HORUS = 36898537, HAKAMORI = 98715423, LUCE = 45409943, MINERVA = 30100551, CASTEL = 82633039, BAROMETT = 62967433, PLUTO = 37706769, TRILO = 21368273, HYPERION = 63101468, GENSEI = 17484499, FUKUSO = 35726888, MICHIZURE = 16435215, KYOSHIN = 67037924, GOFUU = 78625592, SOUDO = 51612489, YOGEN = 46652477, SOSEI = 83764718, HANGYAKU = 71593652;
+const MUDORA = 99937011, AGIDO = 62320425, KELBEK = 25926710, KELDO = 63542003, ZOLGA = 31525442, CARDAN = 86605515, SPHINX = 46148485, TAIYOU = 38699854, TSUKI = 14087893, CHAOSPOD = 79106360, OKA = 9350312, HANA = 62133026, MORI = 36745317, KAKAN = 14108995, CARBON = 15079028, SILKY = 55702233, HORUS = 36898537, HAKAMORI = 98715423, LUCE = 45409943, MINERVA = 30100551, CASTEL = 82633039, BAROMETT = 62967433, PLUTO = 37706769, TRILO = 21368273, HYPERION = 63101468, GENSEI = 17484499, FUKUSO = 35726888, MICHIZURE = 16435215, KYOSHIN = 67037924, GOFUU = 78625592, SOUDO = 51612489, YOGEN = 46652477, SOSEI = 83764718, HANGYAKU = 71593652, ROLLBACK = 6351147, MCSOSEI = 28958464;
 // The unlisted exemplar moved Zolga -> Sphinx (5th delivery) ->
 // Mori (after the 7th) -> Carbon (after the 13th) -> Shilkey
 // (after the 15th) -> the deck's CLASSIC 《アギド》 16135253
@@ -694,7 +754,9 @@ for (const [f, w, h] of [['card-art-mudora-s.jpg', 320, 320], ['card-art-mudora.
                          ['card-art-yogen-ishizu-s.jpg', 320, 320], ['card-art-yogen-ishizu.jpg', 640, 882],
                          ['card-art-sosei-s.jpg', 320, 320], ['card-art-sosei.jpg', 640, 882],
                          ['card-art-hangyaku-s.jpg', 320, 320], ['card-art-hangyaku.jpg', 640, 882],
-                         ['card-art-hangyaku-ishizu-s.jpg', 320, 320], ['card-art-hangyaku-ishizu.jpg', 640, 882]]) {
+                         ['card-art-hangyaku-ishizu-s.jpg', 320, 320], ['card-art-hangyaku-ishizu.jpg', 640, 882],
+                         ['card-art-rollback-s.jpg', 320, 320], ['card-art-rollback.jpg', 640, 882],
+                         ['card-art-rollback-ishizu-s.jpg', 320, 320], ['card-art-rollback-ishizu.jpg', 640, 882]]) {
   const p = path.join(V2, '..', 'assets', f);
   ok(fs.existsSync(p) && fs.statSync(p).size > 10000, 'CA0: ' + f + ' delivered (>10KB)');
 }
@@ -752,6 +814,9 @@ ok(data.decks.ishizu.main.filter(c => c === 28958464).length === 1 && !data.deck
 ok(!data.decks.gg.main.includes(SOSEI) && !data.decks.gg.extra.includes(SOSEI), 'CA0z25: the GG deck does NOT run Shisha Sosei (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
 ok(data.decks.ishizu.main.filter(c => c === HANGYAKU).length === 2, 'CA0z26: the Ishizu deck runs 2 copies of Hangyaku (35th delivery — recipe v11)');
 ok(!data.decks.gg.main.includes(HANGYAKU) && !data.decks.gg.extra.includes(HANGYAKU), 'CA0z27: the GG deck does NOT run Hangyaku (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
+ok(data.decks.ishizu.main.filter(c => c === ROLLBACK).length === 1, 'CA0z28: the Ishizu deck runs 1 copy of Rollback (36th delivery — recipe v14)');
+ok(!data.decks.gg.main.includes(ROLLBACK) && !data.decks.gg.extra.includes(ROLLBACK), 'CA0z29: the GG deck does NOT run Rollback (code-only surfaces resolve its deck membership unambiguously to Ishizu)');
+ok(!data.decks.gg.main.includes(MCSOSEI) && !data.decks.gg.extra.includes(MCSOSEI), 'CA0z30: the GG deck does NOT run the Magic Card printing of Shisha Sosei either — its DECK_ART.gg entry (CA7z146) is a standing reuse rule for any gg-context instance, inert for the shipped recipe');
 
 async function boot() {
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -1011,6 +1076,27 @@ async function boot() {
     hangyakuIshizuBig: cardArtFile(${HANGYAKU}, true, 'ishizu'),
     hangyakuIshizuInline: artInline(${HANGYAKU}, false, 'ishizu'),
     hangyakuGg: cardArtFile(${HANGYAKU}, false, 'gg'),
+    rollbackSlug: CARD_ART[${ROLLBACK}],
+    rollbackInline: artInline(${ROLLBACK}),
+    rollbackSmall: cardArtFile(${ROLLBACK}, false),
+    rollbackBig: cardArtFile(${ROLLBACK}, true),
+    rollbackDeckArt: DECK_ART.ishizu && DECK_ART.ishizu[${ROLLBACK}],
+    rollbackIshizuSmall: cardArtFile(${ROLLBACK}, false, 'ishizu'),
+    rollbackIshizuBig: cardArtFile(${ROLLBACK}, true, 'ishizu'),
+    rollbackIshizuInline: artInline(${ROLLBACK}, false, 'ishizu'),
+    rollbackGg: cardArtFile(${ROLLBACK}, false, 'gg'),
+    rollbackStd: STD_ART[${ROLLBACK}] || null,
+    mcCardArt: CARD_ART[${MCSOSEI}] || null,
+    mcStd: STD_ART[${MCSOSEI}] || null,
+    mcDeckArtIshizu: DECK_ART.ishizu && DECK_ART.ishizu[${MCSOSEI}],
+    mcDeckArtGg: DECK_ART.gg && DECK_ART.gg[${MCSOSEI}],
+    mcBase: cardArtFile(${MCSOSEI}, false),
+    mcBaseBig: cardArtFile(${MCSOSEI}, true),
+    mcIshizu: cardArtFile(${MCSOSEI}, false, 'ishizu'),
+    mcIshizuBig: cardArtFile(${MCSOSEI}, true, 'ishizu'),
+    mcGg: cardArtFile(${MCSOSEI}, false, 'gg'),
+    mcGgBig: cardArtFile(${MCSOSEI}, true, 'gg'),
+    mcOther: cardArtFile(${MCSOSEI}, false, 'superquant'),
     focusTable: ART_FOCUS,
     focusChaosBig: artCss(${CHAOSPOD}, true),
     focusChaosSmall: artCss(${CHAOSPOD}, false),
@@ -1100,6 +1186,15 @@ async function boot() {
     focusApplyHangyaku: (() => { const d = document.createElement('div'); artApply(d, ${HANGYAKU}, true); return d.style.backgroundPosition; })(),
     focusHangyakuBigIshizu: artCss(${HANGYAKU}, true, 'ishizu'),
     focusHangyakuSmallIshizu: artCss(${HANGYAKU}, false, 'ishizu'),
+    focusRollbackBig: artCss(${ROLLBACK}, true),
+    focusRollbackSmall: artCss(${ROLLBACK}, false),
+    focusApplyRollback: (() => { const d = document.createElement('div'); artApply(d, ${ROLLBACK}, true); return d.style.backgroundPosition; })(),
+    focusRollbackBigIshizu: artCss(${ROLLBACK}, true, 'ishizu'),
+    focusRollbackSmallIshizu: artCss(${ROLLBACK}, false, 'ishizu'),
+    focusMcBigIshizu: artCss(${MCSOSEI}, true, 'ishizu'),
+    focusMcSmallIshizu: artCss(${MCSOSEI}, false, 'ishizu'),
+    focusMcBigGg: artCss(${MCSOSEI}, true, 'gg'),
+    focusMcBigBase: artCss(${MCSOSEI}, true),
   }))()`);
   ok(helpers.agidoSlug === 'agido' && helpers.agidoInline.includes('card-art-agido-s.jpg') && helpers.agidoInline.includes('background-position:center top'), 'CA7b: Agido maps and stamps like Mudora');
   ok(helpers.classicAgidoSlug === 'agido' && helpers.classicAgidoInline.includes('card-art-agido-s.jpg'), 'CA7b2: user ruling 2026-11-04 — the CLASSIC Agido (16135253) aliases the same agido art');
@@ -1254,7 +1349,7 @@ async function boot() {
   ok(helpers.preloaded.includes('../assets/card-art-yogen-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-yogen-ishizu.jpg'), 'CA7z126: boot preloads the deck-scoped Yogen art too');
   ok(helpers.soseiSlug === 'sosei' && helpers.soseiInline.includes('card-art-sosei-s.jpg') && helpers.soseiInline.includes('background-position:center top'), 'CA7z127: Sosei maps and stamps like the others (34th delivery)');
   ok(helpers.soseiSmall === '../assets/card-art-sosei-s.jpg' && helpers.soseiBig === '../assets/card-art-sosei.jpg', 'CA7z128: Sosei art files resolve (small + big)');
-  ok(helpers.preloaded.includes('../assets/card-art-std-28958464-s.jpg') && helpers.preloaded.includes('../assets/card-art-std-28958464.jpg') && !helpers.preloaded.includes('../assets/card-art-sosei-s.jpg'), 'CA7z129: boot preloads the v14 revival slot — the Magic Card printing STD art warms via its Ishizu main-deck membership; the classic printing art no longer warms (out of every shipped deck since v14)');
+  ok(helpers.preloaded.includes('../assets/card-art-std-28958464-s.jpg') && helpers.preloaded.includes('../assets/card-art-std-28958464.jpg') && helpers.preloaded.includes('../assets/card-art-sosei-s.jpg') && helpers.preloaded.includes('../assets/card-art-sosei.jpg'), 'CA7z129: boot preloads the v14 revival slot BOTH ways — the Magic Card printing STD art warms as the base via its Ishizu main-deck membership, and the classic printing painting warms with it since the character-deck reuse rule (2026-11-11, CA7z146-150) made it the deck-scoped resolution; in v14\'s first publish the classic art did not warm at all (out of every shipped deck)');
   ok(helpers.soseiDeckArt === undefined && helpers.soseiIshizu === '../assets/card-art-sosei-s.jpg' && helpers.soseiGg === '../assets/card-art-sosei-s.jpg', 'CA7z130: Sosei has NO deck-scoped override — plain registration, every deck context keeps the base art');
   ok(helpers.hangyakuSlug === 'hangyaku' && helpers.hangyakuInline.includes('card-art-hangyaku-s.jpg') && helpers.hangyakuInline.includes('background-position:center top'), 'CA7z131: Hangyaku maps and stamps like the others (35th delivery)');
   ok(helpers.hangyakuSmall === '../assets/card-art-hangyaku-s.jpg' && helpers.hangyakuBig === '../assets/card-art-hangyaku.jpg', 'CA7z132: Hangyaku art files resolve (small + big)');
@@ -1263,9 +1358,22 @@ async function boot() {
   ok(helpers.hangyakuIshizuSmall === '../assets/card-art-hangyaku-ishizu-s.jpg' && helpers.hangyakuIshizuBig === '../assets/card-art-hangyaku-ishizu.jpg' && helpers.hangyakuIshizuInline.includes('card-art-hangyaku-ishizu-s.jpg'), 'CA7z135: Ishizu context resolves Hangyaku to the Egyptian art (small + big)');
   ok(helpers.hangyakuGg === '../assets/card-art-hangyaku-s.jpg', 'CA7z136: GG context resolves Hangyaku to the plain flying-figure art');
   ok(helpers.preloaded.includes('../assets/card-art-hangyaku-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-hangyaku-ishizu.jpg'), 'CA7z137: boot preloads the deck-scoped Hangyaku art too');
+  ok(helpers.rollbackSlug === 'rollback' && helpers.rollbackInline.includes('card-art-rollback-s.jpg') && helpers.rollbackInline.includes('background-position:center top'), 'CA7z138: Rollback maps and stamps like the others (36th delivery)');
+  ok(helpers.rollbackSmall === '../assets/card-art-rollback-s.jpg' && helpers.rollbackBig === '../assets/card-art-rollback.jpg', 'CA7z139: Rollback art files resolve (small + big)');
+  ok(helpers.preloaded.includes('../assets/card-art-rollback-s.jpg') && helpers.preloaded.includes('../assets/card-art-rollback.jpg'), 'CA7z140: boot preloads Rollback too (main-deck membership warms the art from deck-select time)');
+  ok(helpers.rollbackDeckArt === 'rollback-ishizu', 'CA7z141: DECK_ART registers Rollback -> rollback-ishizu for the Ishizu deck (19th entry — the third TRAP with an override, after Bakudan and Hangyaku)');
+  ok(helpers.rollbackIshizuSmall === '../assets/card-art-rollback-ishizu-s.jpg' && helpers.rollbackIshizuBig === '../assets/card-art-rollback-ishizu.jpg' && helpers.rollbackIshizuInline.includes('card-art-rollback-ishizu-s.jpg'), 'CA7z142: Ishizu context resolves Rollback to the Egyptian art (small + big)');
+  ok(helpers.rollbackGg === '../assets/card-art-rollback-s.jpg', 'CA7z143: GG context resolves Rollback to the plain data-stream art');
+  ok(helpers.preloaded.includes('../assets/card-art-rollback-ishizu-s.jpg') && helpers.preloaded.includes('../assets/card-art-rollback-ishizu.jpg'), 'CA7z144: boot preloads the deck-scoped Rollback art too');
+  ok(helpers.rollbackStd === null && !helpers.preloaded.includes('../assets/card-art-std-6351147-s.jpg') && !helpers.preloaded.includes('../assets/card-art-std-6351147.jpg'), 'CA7z145: Rollback has GRADUATED from STD_ART — no std registration remains and no std file warms (the first STD -> CARD_ART move; it entered the pool through STD_ART in the v12 round)');
+  ok(helpers.mcDeckArtIshizu === 'sosei' && helpers.mcDeckArtGg === 'sosei', 'CA7z146: the character-deck reuse rule is registered — DECK_ART.ishizu[28958464] (20th ishizu entry) and DECK_ART.gg[28958464] (the FIRST gg entry) both name the classic printing\'s one painting, slug sosei');
+  ok(helpers.mcIshizu === '../assets/card-art-sosei-s.jpg' && helpers.mcIshizuBig === '../assets/card-art-sosei.jpg', 'CA7z147: Ishizu context resolves the Magic Card printing to the classic Shisha Sosei painting (small + big) — in an Ishizu duel the v14 revival slot shows the Reborn art');
+  ok(helpers.mcGg === '../assets/card-art-sosei-s.jpg' && helpers.mcGgBig === '../assets/card-art-sosei.jpg', 'CA7z148: GG context resolves the Magic Card printing to the same classic painting (small + big)');
+  ok(helpers.mcCardArt === null && helpers.mcStd === 'std-28958464' && helpers.mcBase === '../assets/card-art-std-28958464-s.jpg' && helpers.mcBaseBig === '../assets/card-art-std-28958464.jpg', 'CA7z149: NO CARD_ART registration for the Magic Card printing and its STD_ART registration is NOT retired (contrast Rollback, CA7z145) — context-free surfaces keep the processed standard art');
+  ok(helpers.mcOther === '../assets/card-art-std-28958464-s.jpg', 'CA7z150: a non-character deck context (superquant) also keeps the STD art — the reuse is character decks only (environment themes, imported decks and the player side unaffected)');
   // ---- focus exceptions (user ruling 2026-11-05): ART_FOCUS shifts
   // the BIG-file band position for the three measured slugs only ----
-  ok(Object.keys(helpers.focusTable).length === 21 && helpers.focusTable.hangyaku === 'center 40%' && helpers.focusTable['hangyaku-ishizu'] === 'center 30%' && helpers.focusTable.chaospod === 'center 85%' && helpers.focusTable.luce === 'center 38%' && helpers.focusTable['luce-ishizu'] === 'center 38%' && helpers.focusTable.minerva === 'center 20%' && helpers.focusTable['minerva-ishizu'] === 'center 20%' && helpers.focusTable['castel-ishizu'] === 'center 20%' && helpers.focusTable.baromett === 'center 40%' && helpers.focusTable['baromett-ishizu'] === 'center 40%' && helpers.focusTable.gensei === 'center 30%' && helpers.focusTable.fukuso === 'center 80%' && helpers.focusTable['fukuso-ishizu'] === 'center 65%' && helpers.focusTable.michizure === 'center 50%' && helpers.focusTable.kyoshin === 'center 40%' && helpers.focusTable['kyoshin-ishizu'] === 'center 40%' && helpers.focusTable.gofuu === 'center 40%' && helpers.focusTable.soudo === 'center 40%' && helpers.focusTable.yogen === 'center 40%' && helpers.focusTable['yogen-ishizu'] === 'center 30%' && helpers.focusTable.sosei === 'center 40%', 'CAF1: ART_FOCUS holds exactly the twenty-one measured exceptions (chaospod 85%, luce / luce-ishizu 38%, minerva / minerva-ishizu / castel-ishizu 20%, baromett / baromett-ishizu 40%, gensei 30%, fukuso 80%, fukuso-ishizu 65%, michizure 50%, kyoshin / kyoshin-ishizu 40%, gofuu 40%, soudo 40%, yogen 40%, yogen-ishizu 30%, sosei 40%, hangyaku 40%, hangyaku-ishizu 30%)');
+  ok(Object.keys(helpers.focusTable).length === 23 && helpers.focusTable.hangyaku === 'center 40%' && helpers.focusTable['hangyaku-ishizu'] === 'center 30%' && helpers.focusTable.chaospod === 'center 85%' && helpers.focusTable.luce === 'center 38%' && helpers.focusTable['luce-ishizu'] === 'center 38%' && helpers.focusTable.minerva === 'center 20%' && helpers.focusTable['minerva-ishizu'] === 'center 20%' && helpers.focusTable['castel-ishizu'] === 'center 20%' && helpers.focusTable.baromett === 'center 40%' && helpers.focusTable['baromett-ishizu'] === 'center 40%' && helpers.focusTable.gensei === 'center 30%' && helpers.focusTable.fukuso === 'center 80%' && helpers.focusTable['fukuso-ishizu'] === 'center 65%' && helpers.focusTable.michizure === 'center 50%' && helpers.focusTable.kyoshin === 'center 40%' && helpers.focusTable['kyoshin-ishizu'] === 'center 40%' && helpers.focusTable.gofuu === 'center 40%' && helpers.focusTable.soudo === 'center 40%' && helpers.focusTable.yogen === 'center 40%' && helpers.focusTable['yogen-ishizu'] === 'center 30%' && helpers.focusTable.sosei === 'center 40%' && helpers.focusTable.rollback === 'center 30%' && helpers.focusTable['rollback-ishizu'] === 'center 85%', 'CAF1: ART_FOCUS holds exactly the twenty-three measured exceptions (chaospod 85%, luce / luce-ishizu 38%, minerva / minerva-ishizu / castel-ishizu 20%, baromett / baromett-ishizu 40%, gensei 30%, fukuso 80%, fukuso-ishizu 65%, michizure 50%, kyoshin / kyoshin-ishizu 40%, gofuu 40%, soudo 40%, yogen 40%, yogen-ishizu 30%, sosei 40%, hangyaku 40%, hangyaku-ishizu 30%, rollback 30%, rollback-ishizu 85%)');
   ok(helpers.focusChaosBig.includes('card-art-chaospod.jpg') && helpers.focusChaosBig.includes('background-position:center 85%'), 'CAF2: Chaos Pod BIG art carries its focus position (center 85%)');
   ok(helpers.focusChaosSmall.includes('card-art-chaospod-s.jpg') && helpers.focusChaosSmall.includes('background-position:center top'), 'CAF3: Chaos Pod SMALL art keeps center top (the exception is big-file only)');
   ok(helpers.focusLuceBig.includes('card-art-luce.jpg') && helpers.focusLuceBig.includes('background-position:center 38%'), 'CAF4: Luce BIG art carries its focus position (center 38%)');
@@ -1333,6 +1441,11 @@ async function boot() {
   ok(helpers.focusHangyakuBig.includes('card-art-hangyaku.jpg') && helpers.focusHangyakuBig.includes('background-position:center 40%'), 'CAF66: Hangyaku BIG art carries its focus position (center 40% — measured 2026-11-08: the sun sits at ~10-24% of the big file, the flying figure\'s hair/head mass at ~34-52% and its torso with the red-gem sash at ~50-62%, so center top leaves the pop band on the sun and the great black wing alone — the figure itself essentially absent)');
   ok(helpers.focusHangyakuSmall.includes('card-art-hangyaku-s.jpg') && helpers.focusHangyakuSmall.includes('background-position:center top') && helpers.focusApplyHangyaku === 'center 40%', 'CAF67: Hangyaku SMALL art keeps center top (the exception is big-file only) and artApply agrees with artCss');
   ok(helpers.focusHangyakuBigIshizu.includes('card-art-hangyaku-ishizu.jpg') && helpers.focusHangyakuBigIshizu.includes('background-position:center 30%') && helpers.focusHangyakuSmallIshizu.includes('card-art-hangyaku-ishizu-s.jpg') && helpers.focusHangyakuSmallIshizu.includes('background-position:center top'), 'CAF68: Hangyaku in the Ishizu deck resolves the Egyptian art WITH its own focus entry (center 30% — measured separately on the Egyptian painting: the armored figure\'s helmeted head spans ~28-42% of the big file with chest and shoulder armor at ~40-60%, so center top leaves the pop band on the sun and clouds with only the helmet crest tips at its bottom edge; center 40% was rejected — the crest rides the pop band\'s top edge and the sun leaves the pop band); the deck-variant SMALL art keeps center top');
+  ok(helpers.focusRollbackBig.includes('card-art-rollback.jpg') && helpers.focusRollbackBig.includes('background-position:center 30%'), 'CAF69: Rollback BIG art carries its focus position (center 30% — measured 2026-11-11: the pixel slab spans ~24-45% of the big file, so center top leaves the pop band on the neon rings and dark sky with only the slab\'s glowing near edge at its bottom — the subject essentially absent)');
+  ok(helpers.focusRollbackSmall.includes('card-art-rollback-s.jpg') && helpers.focusRollbackSmall.includes('background-position:center top') && helpers.focusApplyRollback === 'center 30%', 'CAF70: Rollback SMALL art keeps center top (the exception is big-file only) and artApply agrees with artCss');
+  ok(helpers.focusRollbackBigIshizu.includes('card-art-rollback-ishizu.jpg') && helpers.focusRollbackBigIshizu.includes('background-position:center 85%') && helpers.focusRollbackSmallIshizu.includes('card-art-rollback-ishizu-s.jpg') && helpers.focusRollbackSmallIshizu.includes('background-position:center top'), 'CAF71: Rollback in the Ishizu deck resolves the Egyptian art WITH its own focus entry (center 85% — measured separately on the Egyptian painting: the tablet spans ~19-63% of the big file and Ishizu\'s face fills the bottom tier (headdress eye ~65-85%, her eyes ~85-93%), so center top leaves the pop band on the museum and sphinx with both subjects below it and her face out of the sheet band entirely; center 90% was measured and rejected — it pushes the tablet\'s winged-disc rim out of the sheet band and crops the headdress in the pop band); the deck-variant SMALL art keeps center top');
+  ok(helpers.focusMcBigIshizu.includes('card-art-sosei.jpg') && helpers.focusMcBigIshizu.includes('background-position:center 40%') && helpers.focusMcBigGg.includes('card-art-sosei.jpg') && helpers.focusMcBigGg.includes('background-position:center 40%'), 'CAF72: the Magic Card printing in a character-deck context carries the SOSEI focus (center 40%) — it resolves the sosei slug itself, so the classic painting\'s measured band exception (CAF64) follows it with no ART_FOCUS entry of its own');
+  ok(helpers.focusMcSmallIshizu.includes('card-art-sosei-s.jpg') && helpers.focusMcSmallIshizu.includes('background-position:center top') && helpers.focusMcBigBase.includes('card-art-std-28958464.jpg') && helpers.focusMcBigBase.includes('background-position:center top'), 'CAF73: the reused painting\'s SMALL art keeps center top like every small file, and the context-free (STD) resolution of the printing carries no focus at all');
   ok(helpers.kakanSlug === 'kakan' && helpers.kakanInline.includes('card-art-kakan-s.jpg') && helpers.kakanInline.includes('background-position:center top'), 'CA7aa: Kakan maps and stamps like the others (plain art = the forest painting)');
   ok(helpers.preloaded.includes('../assets/card-art-kakan-s.jpg') && helpers.preloaded.includes('../assets/card-art-kakan.jpg'), 'CA7ab: boot preloads Kakan too (same deck)');
   ok(helpers.deckArtKakan === 'kakan-ishizu', 'CA7z17: DECK_ART registers Kakan -> kakan-ishizu for the Ishizu deck (4th entry, first SPELL with an override)');
@@ -2415,7 +2528,7 @@ async function boot() {
   ok(ggHelp.res.every(r => r.small === '../assets/card-art-std-' + r.code + '-s.jpg' && r.big === '../assets/card-art-std-' + r.code + '.jpg'), 'CAGG2: cardArtFile returns the std files (small + big) for all 28');
   ok(ggHelp.res.every(r => r.inline.includes('card-art-std-' + r.code + '-s.jpg')), 'CAGG3: artInline carries the std art for all 28 (no surface falls back to the placeholder)');
   ok(GGART.every(c => ggHelp.preloaded.includes('../assets/card-art-std-' + c + '-s.jpg') && ggHelp.preloaded.includes('../assets/card-art-std-' + c + '.jpg')), 'CAGG4: selecting the GG deck preloads both std sizes (deck-select preload, no blank flash)');
-  ok(ggHelp.stdCount === 112 && ggHelp.overlap.length === 0, 'CAGG5: scoping — STD_ART holds exactly 112 codes and never shadows a user painting (no overlap with CARD_ART)');
+  ok(ggHelp.stdCount === 111 && ggHelp.overlap.length === 0, 'CAGG5: scoping — STD_ART holds exactly 111 codes (112 until the 36th delivery graduated Rollback to a user painting) and never shadows a user painting (no overlap with CARD_ART)');
   ok(ggHelp.uncovered.length === 0, 'CAGG5b: full-pool coverage — every one of the 147 pool cards now resolves some art');
   const resGG = window.eval(`
     (() => {
