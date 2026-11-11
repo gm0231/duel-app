@@ -3446,6 +3446,25 @@ function chainEntryValue(e, view, data, mem) {
       // never had: it owns a standing-monster fallback, this did not.
       if (atkCell && isExtraCd(cdOf(data, atkCell.code)) &&
           (myMonDies || atkDmg >= 800)) return 1400;
+      // Round 12 (Elfennotes autopsy): pre-emptive zeroing. The
+      // branches above price a boss just summoned, an attack in
+      // flight, or a chained monster effect — a standing Extra
+      // boss about to take its battle phase is none of those, so
+      // a set Titanocider watched Azamina (4000) attack in the
+      // seed-132767 scenes (6 offers across the opponent's MAIN1
+      // and BATTLE_START, all passed). Firing before the attacks
+      // negates it and zeroes its ATK for the whole battle phase.
+      if (view.turnPlayer === opp && /MAIN1|BATTLE/.test(view.phaseName) && !atkCell) {
+        const boss = faceUpMons(view, opp)
+          .filter(c => c.atkPos && isExtraCd(cdOf(data, c.code)) && atkOf(c, data) >= 2800)
+          .sort((a, b) => atkOf(b, data) - atkOf(a, data))[0];
+        if (boss) {
+          const myBest = Math.max(0, ...monList(view, me).map(c => battlePower(c, data)));
+          const oppAtkSum = faceUpMons(view, opp).filter(c => c.atkPos)
+            .reduce((s, c) => s + atkOf(c, data), 0);
+          if (myBest < atkOf(boss, data) && oppAtkSum >= 2000) return 1350;
+        }
+      }
       // Standing-boss fallback, level with Lost Wind's (1000): negate
       // the chained effect of a big standing Extra monster and zero it.
       if (topOpp && isMonsterCd(topCd) && isExtraCd(topCd) && topCd.atk >= 2200) return 1000;
