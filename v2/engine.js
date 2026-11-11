@@ -1225,7 +1225,7 @@ function makeBotMemory() {
     unselectStreak: {},   // termination guard for SELECT_UNSELECT_CARD
     attempts: {},         // per-turn attempt counts for IDLECMD activations/summons (anti-cancel-loop)
     pendingRemoval: null, // {code} — removal target we fired at, watched for observed immunity
-    learnedImmune: {},    // code -> true: a removal resolved and this card stayed (observed)
+    learnedImmune: {},    // code -> {destroy?, move?}: a removal of that KIND resolved and this card stayed (observed)
     hanaPicks: null,      // {turn, n}: Hana's alternating grave picks this turn (salvage, then special summon)
     revealedOpp: {},      // seq -> {code, def}: opponent monster last seen FACE-UP at that zone (public)
     knownSet: {},         // seq -> {code, def}: face-down opponent monster whose identity was revealed earlier this duel
@@ -3965,7 +3965,12 @@ function battleAnswer(prompt, view, data, mem) {
 // Static interaction table for the fixed pool (stage 6 of the CPU
 // diagnosis), plus what the bot learns by observation: a removal that
 // resolved while its target stayed on the field face-up marks that card
-// as untouchable for the rest of the duel (mem.learnedImmune).
+// as untouchable FOR THAT KIND of removal (mem.learnedImmune). The
+// kind split matters (round 13): the old blanket record let a failed
+// DESTROY (Luce (2) into the Sinful Goddess's printed destruction
+// immunity) permanently disable Castel's shuffle and Moon Book's flip
+// against the same card — neither destroys, and both are the deck's
+// real answers to exactly that boss.
 const REMOVAL_PROFILE = {
   [NC.BOTTOMLESS]: { targets: false, destroys: true },
   [CC.RAIGEKI]: { targets: false, destroys: true },
@@ -3981,7 +3986,13 @@ function removalBlocked(cell, ctxCode, view, data, mem) {
   if (!cell || !cell.faceUp || !cell.code) return false;
   const prof = REMOVAL_PROFILE[ctxCode];
   if (!prof) return false;
-  if (mem && mem.learnedImmune && mem.learnedImmune[cell.code]) return true;
+  const li = mem && mem.learnedImmune && mem.learnedImmune[cell.code];
+  if (li) {
+    // Kind-aware (round 13): a failed destroy only retires destroys; a
+    // failed flip / shuffle / bounce only retires its own kind.
+    if (prof.destroys && li.destroy) return true;
+    if (!prof.destroys && li.move) return true;
+  }
   const myCd = cdOf(data, ctxCode);
   // Great Magnus with 4+ material types ignores non-Super Quant effects.
   if (cell.code === NC.MAGNUS && (cell.materials || 0) >= 4 &&
@@ -4085,10 +4096,11 @@ function selectCardAnswer(prompt, view, data, mem) {
     else chosen = sorted.slice(0, n);
     // Stage 6: remember removal targets. If the target is still on the
     // field face-up at our next main phase, the removal did not move it
-    // and its code is recorded as (observed) untouchable.
+    // and its code is recorded as (observed) untouchable FOR THAT KIND
+    // (destroy vs move — round 13 kind split; see learnedImmune).
     if (mem && REMOVAL_PROFILE[ctxCode]) {
       const t = chosen.find(x => x.e.con === opp && (x.e.loc === LOC.MZONE || x.e.loc === LOC.SZONE));
-      if (t) mem.pendingRemoval = { code: t.e.code, seq: t.e.seq, loc: t.e.loc };
+      if (t) mem.pendingRemoval = { code: t.e.code, seq: t.e.seq, loc: t.e.loc, kind: REMOVAL_PROFILE[ctxCode].destroys ? 'destroy' : 'move' };
     }
     return cardsResp(chosen.map(x => x.i));
   };
@@ -5232,7 +5244,10 @@ function botAnswerInternal(prompt, state, data, mem) {
         const pr = mem.pendingRemoval;
         const zone = pr.loc === LOC.SZONE ? view.zones[view.opp].szone : view.zones[view.opp].mzone;
         const cellNow = zone[pr.seq];
-        if (cellNow && cellNow.code === pr.code && cellNow.faceUp) mem.learnedImmune[pr.code] = true;
+        if (cellNow && cellNow.code === pr.code && cellNow.faceUp) {
+          const li = mem.learnedImmune[pr.code] || (mem.learnedImmune[pr.code] = {});
+          li[pr.kind || 'destroy'] = true;
+        }
         mem.pendingRemoval = null;
       }
       return idleAnswer(prompt, view, data, mem);
