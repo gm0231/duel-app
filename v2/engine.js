@@ -3407,12 +3407,21 @@ function chainEntryValue(e, view, data, mem) {
       // stopping an attack that would kill us this turn (and only
       // when the burn back on us does not kill us anyway).
       if (!atkCell) return 0;
-      const big = faceUpMons(view, opp).sort((x, y) => (cdOf(data, y.code) ? cdOf(data, y.code).atk : 0) - (cdOf(data, x.code) ? cdOf(data, x.code).atk : 0))[0];
-      if (!big) return 0;
+      const targets = faceUpMons(view, opp).filter(c => c.atkPos);
+      if (!targets.length) return 0;
+      const big = targets.slice().sort((x, y) => (cdOf(data, y.code) ? cdOf(data, y.code).atk : 0) - (cdOf(data, x.code) ? cdOf(data, x.code).atk : 0))[0];
       const bigOrig = cdOf(data, big.code) ? cdOf(data, big.code).atk : 0; // burn is the ORIGINAL atk
+      // Round 12: price the burn at its actual amount — half the
+      // original ATK sum of EVERY destroyed attack-position monster
+      // (the old proxy used the biggest body alone: it refused
+      // correct single-attacker saves — a lone 2500 attacker burns
+      // 1250, survivable at 2000 LP — and underpriced multi-
+      // attacker boards). The self half lands only when our grave
+      // holds no Exchange.
+      const burn = Math.floor(targets.reduce((s, c) => { const d = cdOf(data, c.code); return s + (d ? d.atk : 0); }, 0) / 2);
       const selfBurn = !view.grave[me].includes(CC.EXCHANGE);
-      const burnSafe = !selfBurn || bigOrig < view.lp[me];
-      if (bigOrig >= view.lp[opp] && burnSafe) return 2000; // lethal burn wins the game
+      const burnSafe = !selfBurn || burn < view.lp[me];
+      if (burn >= view.lp[opp] && burnSafe) return 2000; // the burn itself is lethal for them
       if (atkCell.code === big.code && atkDmg >= view.lp[me] && burnSafe) return 1900; // stops our lethal
       return 0;
     }
@@ -3571,14 +3580,22 @@ function chainEntryValue(e, view, data, mem) {
       // deck runs two Bombs, and a set one fires the same effect
       // without the LP cost.
       if (gy.includes(CC.BLAST_HELD) && atkCell) {
-        const big = faceUpMons(view, opp).slice().sort((x, y) =>
+        const targets = faceUpMons(view, opp).filter(c => c.atkPos);
+        const big = targets.slice().sort((x, y) =>
           (cdOf(data, y.code) ? cdOf(data, y.code).atk : 0) - (cdOf(data, x.code) ? cdOf(data, x.code).atk : 0))[0];
         if (big) {
           const bigOrig = cdOf(data, big.code) ? cdOf(data, big.code).atk : 0;
+          // Round 12: actual-burn pricing as in the printed case,
+          // but the copy pays half our LP FIRST — safety is judged
+          // on the post-cost LP, and the lethal-save branch also
+          // requires pre-cost LP > 1200 (the autopsy found a copy
+          // fired at 600 pre-cost that changed nothing; the
+          // Titanocider attack-save copy above stays floor-free).
+          const burn = Math.floor(targets.reduce((s, c) => { const d = cdOf(data, c.code); return s + (d ? d.atk : 0); }, 0) / 2);
           const selfBurn = !gy.includes(CC.EXCHANGE); // same self-burn rule as the printed case
-          const burnSafe = !selfBurn || bigOrig < view.lp[me];
-          if (bigOrig >= view.lp[opp] && burnSafe) best = Math.max(best, 1900);
-          else if (atkCell.code === big.code && atkDmg >= view.lp[me] && burnSafe) best = Math.max(best, 1800);
+          const burnSafe = !selfBurn || Math.floor(view.lp[me] / 2) > burn;
+          if (burn >= view.lp[opp] && burnSafe) best = Math.max(best, 1900);
+          else if (atkCell.code === big.code && atkDmg >= view.lp[me] && burnSafe && view.lp[me] > 1200) best = Math.max(best, 1800);
         }
       }
       return best;
