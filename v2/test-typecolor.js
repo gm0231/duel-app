@@ -152,7 +152,7 @@ async function boot() {
         const t = slot && slot.querySelector('.tile .inner');
         return t ? t.className : null;
       };
-      const handNms = [...document.querySelectorAll('#hand .hcard')].map(h => ({ code: h.dataset.code, cls: (h.querySelector('.nm') || {}).className || null }));
+      const handNms = [...document.querySelectorAll('#hand .hcard')].map(h => ({ code: h.dataset.code, cls: (h.querySelector('.hband') || {}).className || null })); // layout redesign: the kind identity rides the hand band (.hband), the successor of the in-tile .nm
       setPreview(${FUSION}, null);
       const pvFusion = (document.querySelector('#preview .pv-name') || {}).className || null;
       setPreview(${SYNCHRO}, null);

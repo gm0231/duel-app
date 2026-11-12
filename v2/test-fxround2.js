@@ -115,7 +115,7 @@ async function boot() {
   const cs = (el) => window.getComputedStyle(el);
   ok(g && cs(g).gridTemplateColumns.includes('106px'), 'FXR8: F2 — grid columns are minmax(106px,1fr) (3 across at 390px), got: ' + (g ? cs(g).gridTemplateColumns : 'none'));
   ok(card && parseFloat(cs(card).minHeight) >= 150, 'FXR9: F2 — candidate tiles are at least 150px tall, got: ' + (card ? cs(card).minHeight : 'none'));
-  ok(itext && cs(itext).fontSize === '11px', 'FXR10: F2 — effect text renders at 11px, got: ' + (itext ? cs(itext).fontSize : 'none'));
+  ok(itext && cs(itext).fontSize === '12px', 'FXR10: F2 successor (round-5 I2) — effect text renders at 12px, got: ' + (itext ? cs(itext).fontSize : 'none'));
   ok(loc && cs(loc).position === 'absolute', 'FXR11: F2 — the location label is a positioned corner chip, out of the text flow, got: ' + (loc ? cs(loc).position : 'none'));
   click(doc.querySelector('[data-grid="0"]'));
   click(doc.getElementById('grid-confirm'));

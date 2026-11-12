@@ -50,10 +50,10 @@ async function playDuel(window, opts) {
     if (ap && ap.textContent.includes('自動パス')) obs.autopassChipSeen = true;
     for (const hc of qa('#hand .hcard .nm')) if (/[ぁ-んァ-ヶ一-龯]/.test(hc.textContent)) obs.jpSeen = true;
     for (const t of qa('.slot')) {
-      // live stats now render in the slot-level .slotstats strip (ATK/DEF
-      // labels, outside the card frame) instead of inside the tile
+      // live stats render in the slot-level .slotplate (two
+      // compact lines, ATK/DEF labels, outside the card frame)
       const tile = t.querySelector('.tile');
-      const nm = tile ? tile.querySelector('.nm') : null, st = t.querySelector('.slotstats');
+      const nm = tile ? tile.querySelector('.nm') : null, st = t.querySelector('.slotplate');
       if (nm && st && nameToCode[nm.textContent] != null) {
         const cd = data.cards[nameToCode[nm.textContent]];
         const m = st.textContent.match(/ATK (\d+)DEF (\d+)/);

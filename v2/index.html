@@ -8,6 +8,10 @@
   :root{
     --gold:#c9a227; --gold-dim:#8a6d1f; --ink:#0d0b08; --panel:#1b1712; --panel2:#241e16;
     --tile:#2a2318; --tile-edge:#4a3d22; --txt:#e8dcc0; --txt-dim:#a89878; --bad:#e06666; --ok:#7fc97f;
+    /* layout redesign (2026-11-12): stat-plate value colours — ATK is
+       gold-family, DEF is lapis, so the two numbers separate by hue
+       before they separate by label. */
+    --atk:#ffd970; --def:#9fd0ff;
     /* card-kind (original frame) colors — user request 2026-11-03.
        --k-* are the frame hues at full strength (accent use); the
        --k-*-d set is deepened so cream text stays readable when a
@@ -43,12 +47,32 @@
   html{-webkit-text-size-adjust:100%;text-size-adjust:100%;}
   #app{max-width:430px;margin:0 auto;min-height:100dvh;display:flex;flex-direction:column;position:relative;}
   #app>*{flex:0 0 auto;}
-  /* ---------- top bar ---------- */
-  #topbar{display:flex;align-items:center;gap:8px;height:42px;padding:4px 8px;background:linear-gradient(#241c10,#171208);border-bottom:1px solid var(--gold-dim);overflow:hidden;}
-  #topbar .who{font-size:11px;color:var(--txt-dim);}
-  #topbar .lp{font-size:17px;font-weight:700;color:var(--gold);min-width:64px;}
-  #topbar .mid{flex:1;text-align:center;font-size:12px;}
-  #topbar .piles{font-size:11px;color:var(--txt-dim);text-align:right;line-height:1.5;}
+  /* ---------- status bars (layout redesign 2026-11-12) ----------
+     The only always-on chrome besides the board and the hand: who
+     (label + deck name), the LP as the largest numeral on screen,
+     and — on the opponent's bar — the hand count. Everything else
+     that used to live in permanent bands (turn, phase, latest
+     event) moved to the slim mid band or to the floating
+     presentations. Heights are EXACT (the layout budget in
+     client.js mirrors them): 44px, 38px in the compact tier. */
+  #topbar,#mybar{display:flex;align-items:center;gap:8px;height:44px;padding:4px 8px;background:linear-gradient(#241c10,#171208);overflow:hidden;}
+  #topbar{border-bottom:1px solid var(--gold-dim);}
+  #mybar{border-top:1px solid var(--gold-dim);}
+  #app.compactui #topbar,#app.compactui #mybar{height:38px;}
+  .who-block{flex:1 1 auto;min-width:0;}
+  .who-label{font-size:10px;line-height:1.25;color:var(--txt-dim);}
+  .who-name{font-size:13px;line-height:1.3;font-weight:700;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  #app.compactui .who-name{font-size:12.5px;}
+  .lp-box{display:flex;align-items:baseline;gap:5px;flex:0 0 auto;}
+  .lp-label{font-size:10px;color:var(--txt-dim);letter-spacing:.08em;}
+  .lp-box .lp{font-size:28px;line-height:1.05;font-weight:800;color:var(--gold);font-variant-numeric:tabular-nums;}
+  #app.compactui .lp-box .lp{font-size:24px;}
+  .handchip{flex:0 0 auto;font-size:11px;color:var(--txt-dim);background:var(--panel2);border:1px solid var(--tile-edge);border-radius:9px;padding:3px 7px;white-space:nowrap;}
+  .handchip b{color:var(--txt);font-size:13px;}
+  #menubtn{flex:0 0 auto;width:38px;height:36px;background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:6px;font-size:17px;padding:0;cursor:pointer;}
+  #menubtn:disabled{opacity:.38;}
+  #fxbtn{flex:0 0 auto;height:36px;background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:6px;font-size:12px;padding:0 10px;cursor:pointer;}
+  #fxbtn.inert{opacity:.42;filter:saturate(.5);}
   /* ---------- field ---------- */
   .field{padding:2px 6px;position:relative;}
   /* redesign D (p4a): opponent-turn air. Both layers are preset
@@ -75,42 +99,74 @@
   .slot.picked{border-color:var(--ok);box-shadow:0 0 0 2px var(--ok);}
   @keyframes pulse{from{box-shadow:0 0 0 1px var(--gold);}to{box-shadow:0 0 0 3px var(--gold),0 0 14px #c9a227aa;}}
   .tile{position:absolute;top:1px;left:1px;right:1px;bottom:1px;border-radius:4px;background:#3a2f1d;display:flex;flex-direction:column;justify-content:flex-end;padding:2px;}
-  .slot.hs .tile{bottom:23px;}
-  /* layout round 4: the strip is TWO stacked lines (ATK line over DEF
-     line), never one row of two spans. The old one-row form could not
-     fit "ATK 3750"+"DEF 3400" (~83px at 9/10px) inside a 53-64px
-     strip at ANY viewport size: flex-shrink narrowed each span until
-     its text wrapped, the 28px two-line span overflowed the 15px
-     strip symmetrically, and the number line's lower half was clipped
-     by the slot's overflow:hidden — height-independent, invisible to
-     the box-bottom fit loop. Each line here is nowrap with an explicit
-     11px line-height, so a line can only ever overflow horizontally
-     (clipped inside its own line), never vertically. Widths measured
-     in Chromium: worst line "DEF 3400" = 38.3px at 8px/9px, ~35.8px
-     with the -.5px letter-spacing — inside the 36px inner width of
-     even the minimum 40px tile.
-     BU-11 correction (brushup round 2, 2026-11-03): that budget was
-     wrong twice — the -.5px letter-spacing was never actually in
-     the CSS (letter-spacing:0 stood here), and the inner width of
-     a 40px tile is 34px, not 36 (40 − 2 border − 2x2 padding).
-     Live measurement at the 40px floor showed EVERY line 3-6px
-     over (defense DEF lines worst: the defline rule below kept
-     their digits at 10px, above the smalltiles 9px). The budget
-     now stands as: -.5px tracking at every size, smalltiles
-     defline digits at the smalltiles size, and the big5 shrink
-     deepened (8px, 7.5px at the floor) — re-measured in Chromium
-     across normal / defmode / big5 / defmode+big5 strips at tile
-     40px and 47px: worst line fits with 0px to spare. */
-  .slotstats{position:absolute;left:0;right:0;bottom:0;height:24px;display:flex;flex-direction:column;justify-content:center;padding:0 2px;font-size:9px;letter-spacing:-.5px;color:var(--txt-dim);overflow:hidden;}
-  .slotstats span{display:block;white-space:nowrap;overflow:hidden;line-height:12px;}
-  .slotstats b{color:var(--txt);font-size:10px;}
-  .slotstats.big5 b,.hstats.big5 b{font-size:8px;}
-  .slotstats.big5.defmode span.defline b{font-size:8px;}
-  .smalltiles .slotstats{font-size:8px;}
-  .smalltiles .slotstats b{font-size:9px;}
-  .smalltiles .slotstats.defmode span.defline b{font-size:9px;}
-  .smalltiles .slotstats.big5 b{font-size:7.5px;}
-  .smalltiles .slotstats.big5.defmode span.defline b{font-size:7.5px;}
+  .slot.hs .tile{bottom:21px;}
+  /* layout redesign (2026-11-12): the ATK/DEF strip is now ONE
+     compact plate line — "ATK 2600 / DEF 2200" — at the slot's
+     bottom, OUTSIDE the card frame as always. One line is the
+     whole defence against the round-4 wrap/clip failure class:
+     a nowrap line with an explicit height can only ever overflow
+     horizontally, inside its own box, never vertically. ATK is
+     gold, DEF is lapis (hue separates the numbers before the
+     labels do); in defense position DEF carries the emphasis
+     and ATK dims. The plate takes 20px of the slot's 24px
+     below-image budget, so at the same slot height the monster
+     art box is TALLER than in the two-line strip era.
+     Width at the 40px floor is watched, not assumed: digit
+     sizes step down (big5, then the smalltiles tier) and the
+     fit loop's measureStripClip checks the plate's spans on
+     the horizontal axis, so an overflow is a measured failure. */
+  .slotplate{position:absolute;left:0;right:0;bottom:0;height:20px;display:flex;flex-direction:column;align-items:stretch;justify-content:center;padding:0 1px;color:var(--txt-dim);overflow:hidden;background:rgba(10,8,4,.55);border-top:1px solid rgba(74,61,34,.6);}
+  /* two stacked lines (ATK over DEF): the one-line form measured
+     wider than the tile in live play — the line ran under the
+     neighbouring slot and the digits were eaten. Each line is a
+     full-width row so the fit loop's strip-clip measure still
+     sees a horizontal overflow as a failure. */
+  .slotplate .pl-atk,.slotplate .pl-def{display:flex;width:100%;align-items:baseline;justify-content:center;gap:2px;font-size:7.5px;line-height:1.05;letter-spacing:-.5px;white-space:nowrap;overflow:hidden;}
+  .slotplate b{font-size:9px;font-weight:800;font-variant-numeric:tabular-nums;}
+  .slotplate .pl-atk b{color:var(--atk);}
+  .slotplate .pl-def b{color:var(--def);}
+  .slotplate.defmode .pl-atk{opacity:.55;}
+  .slotplate.defmode .pl-def b{font-size:10px;}
+  .slotplate.big5 b{font-size:8px;}
+  .slotplate.big5.defmode .pl-def b{font-size:9px;}
+  .smalltiles .slotplate b{font-size:8.5px;}
+  .smalltiles .slotplate.big5 b{font-size:8px;}
+  /* marks chip (layout redesign 2026-11-12): attribute icon,
+     star + level/rank, race icon — one chip, one fixed order,
+     on every surface that shows a card (board tile, hand card,
+     selection tile, detail art). It rides the tile's TOP-LEFT
+     corner like a badge pinned to the frame edge: mostly over
+     the frame and the zone ground, minimally over the art, and
+     the icons never sit on bare art — the chip's near-solid
+     stone ground is what makes 11-13px icons readable (user
+     ruling: icons may be small; readability comes from the
+     ground and the placement, not from size). The chip is a
+     child of .tile (never of the rotating .inner), so a
+     defense tile's marks stay upright. */
+  .marks{position:absolute;top:-2px;left:-2px;z-index:4;display:flex;align-items:center;gap:2px;background:rgba(10,8,4,.93);border:1px solid var(--gold-dim);border-radius:4px;padding:1px 3px;pointer-events:none;}
+  .marks img{width:12px;height:12px;image-rendering:pixelated;display:block;}
+  .marks .lv{display:flex;align-items:center;gap:1px;font-size:9.5px;font-weight:800;color:#ffe9a8;line-height:1;font-variant-numeric:tabular-nums;}
+  .marks .lv img{width:11px;height:11px;}
+  /* board tiles are the narrowest surface: the chip tightens so
+     adjacent chips keep to their slots' pitch */
+  .slot .marks{gap:1px;padding:1px 2px;}
+  .slot .marks img{width:11px;height:11px;}
+  .slot .marks .lv{font-size:9px;}
+  .slot .marks .lv img{width:10px;height:10px;}
+  /* selection grids: the chip rides INSIDE the name band,
+     ahead of the name — the floating seat collided with the
+     band whenever the effect text below grew tall and pushed
+     the band up the card. Same order, same ground. */
+  .gcard .nm{display:flex;align-items:center;gap:4px;flex-wrap:wrap;}
+  .gcard .nm .marks{position:static;flex:0 0 auto;}
+  /* the name takes its OWN line in the band: chip + name +
+     detail button on one line measured wider than a grid card
+     and the name was squeezed to nothing */
+  .gcard .nm .nmtext{flex:1 1 100%;order:3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+  .infoart .marks,.popart .marks{top:6px;left:6px;padding:2px 4px;}
+  .infoart .marks img,.popart .marks img{width:16px;height:16px;}
+  .infoart .marks .lv,.popart .marks .lv{font-size:11px;}
+  .infoart .marks .lv img,.popart .marks .lv img{width:14px;height:14px;}
   .tile .nm{font-size:clamp(8px, calc(var(--sw) * 0.17), 12px);line-height:1.15;background:#000a;padding:1px 2px;border-radius:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   /* scale .82: the rotated inner is imgH (1.22 x tile width) wide;
      unscaled it would overflow the slot by ~11% on each side and the
@@ -124,35 +180,58 @@
   .tile.actionable{box-shadow:0 0 0 2px var(--gold) inset;cursor:pointer;}
   .slot.targeted{border-color:var(--bad);box-shadow:0 0 0 2px var(--bad);}
   /* ---------- piles ---------- */
+  /* piles: ONE line per chip (label + count side by side) —
+     the bar is 28px tall (24px compact), inside the field's
+     exact budget in client.js. The hand chip left this row in
+     the redesign: the opponent's hand count lives on the top
+     status bar, and my own hand is the hand itself. */
   .pilebar{display:flex;gap:4px;justify-content:center;margin:1px 0;height:28px;}
-  .pile{position:relative;min-width:52px;height:28px;padding:0 4px;display:flex;align-items:center;justify-content:center;border:1px solid var(--tile-edge);border-radius:5px;background:var(--panel);font-size:11px;text-align:center;color:var(--txt-dim);cursor:pointer;}
-  .pile b{color:var(--txt);font-size:12px;}
+  #app.compactui .pilebar{height:24px;}
+  .pile{position:relative;flex:1 1 0;min-width:0;height:100%;padding:0 4px;display:flex;align-items:center;justify-content:center;gap:3px;border:1px solid var(--tile-edge);border-radius:5px;background:var(--panel);font-size:11px;white-space:nowrap;text-align:center;color:var(--txt-dim);cursor:pointer;}
+  .pile b{color:var(--txt);font-size:13.5px;font-variant-numeric:tabular-nums;}
   .pile.actionable{border-color:var(--gold);color:var(--txt);}
-  .pile .pact{font-size:9px;color:var(--gold);margin-left:4px;}
+  .pile .pact{font-size:9px;color:var(--gold);}
   .pile.actionable::after{content:"";position:absolute;top:2px;right:2px;width:8px;height:8px;border-radius:50%;background:var(--gold);}
-  /* ---------- mid bar ---------- */
-  #midbar{background:var(--panel);border-top:1px solid var(--tile-edge);border-bottom:1px solid var(--tile-edge);padding:3px 6px;}
-  /* the chain row's height is ALWAYS reserved (visibility toggles, never
-     display) so a chain appearing mid-duel cannot shift the board */
-  /* ROUND 4 (H3): the mid band's rows no longer freeze their heights.
-     Under a browser minimum-font-size (16px), the 10px texts render at
-     16px while height/line-height stayed frozen at 21/15px, so the
-     latest history line was permanently half-clipped. Heights now
-     follow the line boxes (min-height floors + unitless line-height);
-     at the default font size the rendered heights are UNCHANGED
-     (chainbar 21 / logline 15 / phasebar 34 = midbar 78, the layout
-     budget's accounting stands), and in enlarged-font environments
-     the band grows and the layout fit loop absorbs the difference.
-     The chain chips, the history button and the phase cell carry
-     matching explicit line-heights (see .link / #loghistbtn /
-     #phasebar .pwho/.lp) so their content fits the budgeted heights
-     at the default size instead of painting outside a frozen box. */
-  #chainbar{display:flex;visibility:hidden;gap:4px;overflow-x:auto;min-height:21px;padding:1px 0;}
+  /* ---------- mid band (layout redesign 2026-11-12) ----------
+     ONE slim row (54px; 48px compact): the minimum that must stay
+     readable at all times — whose turn + the phase (line 1), the
+     latest event (line 2), the history button and the phase
+     button at the 46px-class press floor. Everything richer is
+     presented LARGE and floating at the moment it happens (phase
+     banner / cut-ins / notices, all beat-paced), never crammed
+     into this band. The height the old 78px band and the mock's
+     108px band held went back to the board.
+     The chain bar is an opaque overlay ON this band (it reserves
+     no flow height any more): while a chain is up it covers the
+     info block and the history button; the phase button stays
+     visible beside it. Content heights are fitted INSIDE the
+     frozen band (explicit line-heights), and the fit loop's
+     strip-clip measurement watches the plates in the slots. */
+  #midbar{position:relative;display:flex;align-items:center;gap:8px;height:62px;background:var(--panel);border-top:1px solid var(--tile-edge);border-bottom:1px solid var(--tile-edge);padding:4px 6px;}
+  #app.compactui #midbar{height:62px;}
+  .mid-info{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:1px;}
+  .mid-line1{display:flex;align-items:baseline;gap:7px;white-space:nowrap;overflow:hidden;}
+  #turninfo{font-size:11.5px;line-height:1.3;color:var(--txt-dim);flex:0 0 auto;white-space:nowrap;}
+  #phaseinfo{font-size:17px;line-height:1.25;font-weight:700;color:var(--txt);white-space:nowrap;flex:0 0 auto;}
+  #app.compactui #phaseinfo{font-size:15.5px;}
+  /* redesign E (p5b): once a phase sweep has settled, the phase
+     name "sits" — gold and bold. render() only rewrites the
+     element's text, never its class list, so the seated state
+     survives re-renders until the next transition. */
+  #phaseinfo.fx-seated{color:#e6c877;font-weight:700;}
+  /* the latest event gets TWO lines: measured live, a long
+     summon line runs ~300px against the column's ~214px, so the
+     one-line form ellipsized real events horizontally. Two
+     lines at 12.5px cover ~46 glyphs — effectively every real
+     line — and the band grew by exactly the second line (the
+     preview absorbs it in the layout budget). */
+  #logline{font-size:12.5px;line-height:1.35;color:var(--txt);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer;}
+  #loghistbtn{flex:0 0 auto;height:48px;min-width:44px;font-size:12px;color:var(--gold);background:#241a0e;border:1px solid var(--gold-dim);border-radius:6px;padding:0 8px;cursor:pointer;}
+  #app.compactui #loghistbtn{height:48px;}
+  #chainbar{position:absolute;left:0;top:0;bottom:0;right:118px;display:flex;visibility:hidden;align-items:center;gap:4px;overflow-x:auto;padding:2px 6px;background:var(--panel);z-index:3;}
   #chainbar.on{visibility:visible;}
-  #chainbar.idle{visibility:visible;align-items:center;}
-  #chainbar .prevlog{flex:1;min-width:0;font-size:10px;line-height:1.5;color:var(--txt-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  #loghistbtn{flex:0 0 auto;min-height:19px;line-height:1.2;font-size:10px;color:var(--gold);background:#241a0e;border:1px solid var(--gold-dim);border-radius:5px;padding:0 9px;cursor:pointer;}
-  .loghistrow{font-size:11px;line-height:1.6;padding:3px 0;border-bottom:1px solid #2c2416;color:var(--txt);}
+  #chainbar .chainlbl{flex:0 0 auto;font-size:10px;font-weight:700;color:#59d8f2;letter-spacing:.08em;}
+  .loghistrow{font-size:12px;line-height:1.6;padding:3px 0;border-bottom:1px solid #2c2416;color:var(--txt);}
   .loghistrow .lt{color:var(--txt-dim);margin-right:6px;}
   /* log-detail round: the history sheet renders the detailed
      stream grouped by turn and chain episode. Rows below the fold
@@ -170,68 +249,55 @@
   .link.solving{border-color:#ffd94d;background:#4a3a10;color:#fff;box-shadow:0 0 10px #ffd94d99,0 0 0 2px #ffd94d;}
   .link.negated{text-decoration:line-through;opacity:.55;}
   .link .no{color:var(--gold);font-weight:700;}
-  #logline{font-size:10px;color:var(--txt-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.5;}
-  #phasebar{display:flex;align-items:center;gap:8px;min-height:34px;}
-  /* ROUND 4 (H3) fittings: explicit line-heights size the phase
-     cell's two lines (10px label + 16px LP) to 12 + 21.6 = 33.6 <= 34
-     at the default font size, so the bar renders its budgeted 34px
-     from CONTENT (the old frozen height:34px silently let the
-     natural-metrics stack — ~15 + ~24 = 39 — paint outside the box).
-     Under a minimum-font-size the label line grows (16px x 1.2) and
-     the min-height floor lets the bar follow. */
-  #phasebar .pwho{font-size:10px;color:var(--txt-dim);line-height:1.2;}
-  #phasebar .lp{font-size:16px;font-weight:700;color:var(--gold);line-height:1.35;}
-  #phaseinfo{flex:0 1 auto;min-width:72px;font-size:13px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  /* redesign E (p5b): once a phase sweep has settled, the phase
-     name "sits" in the phase bar — gold and bold. render() only
-     rewrites the element's text, never its class list, so the
-     seated state survives re-renders until the next transition
-     (fxPhaseBanner clears it) or a duel reset. */
-  #phaseinfo.fx-seated{color:#e6c877;font-weight:700;}
   /* redesign E (p5b): the sweep's settled remnant — a 1px gold
      hairline across the TOP of the mid bar, opacity 0.30. It is a
      decoration ON the bar (#midbar is position:relative), never a
      layout change: the bar's frozen height is untouched. */
-  .fx-phase-hairline{position:absolute;left:0;right:0;top:3px;height:1px;background:#c9a227;opacity:0;pointer-events:none;}
-  #menubtn,#fxbtn{flex:0 0 auto;min-height:30px;}
-  #menubtn:disabled{opacity:.38;}
-  #phasebtn{flex:1;min-width:96px;min-height:30px;}
-  /* The phase button's label never wraps: at 13px 「エンドフェイズへ」
-     broke to a second line whose 「ズへ」 was clipped by the fixed
-     32px height (design audit, reproduced at both heights). One
-     line, ellipsis as backstop only. */
-  #phasebtn{background:var(--gold);color:#191104;border:0;border-radius:6px;font-size:12.5px;font-weight:700;padding:0 6px;height:32px;min-width:104px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .fx-phase-hairline{position:absolute;left:0;right:0;top:0;height:1px;background:#c9a227;opacity:0;pointer-events:none;}
+  /* The phase button sits at the press floor (46px; 44px compact)
+     — sized by pressability, not larger (user, 2026-11-12). Its
+     label never wraps: one line, ellipsis as backstop only. */
+  #phasebtn{flex:0 1 auto;background:var(--gold);color:#191104;border:0;border-radius:6px;font-size:13.5px;font-weight:700;padding:0 10px;height:46px;min-width:104px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;}
+  #app.compactui #phasebtn{height:44px;}
   #phasebtn:disabled{background:#4a3d22;color:#8a7c55;}
-  /* ROUND 4 (H3): 34px, the phase bar's budgeted height — at 36px
-     these buttons were the row's tallest content and painted 1px
-     past the old frozen 34px box on both sides. */
-  #menubtn,#fxbtn{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:6px;font-size:12px;padding:0 8px;height:34px;}
-  #fxbtn.inert{opacity:.42;filter:saturate(.5);}
   /* ---------- hand ---------- */
-  #handbar{background:var(--panel);border-top:1px solid var(--gold-dim);padding:3px 4px 5px;}
-  #handbar .who{font-size:10px;color:var(--txt-dim);padding:0 2px;height:11px;line-height:11px;}
-  /* layout round 4: no visible scrollbar on the hand — in classic-
-     scrollbar environments the horizontal bar renders INSIDE #hand's
-     fixed height and eats the bottom ~15px of every card, which is
-     exactly the .hstats strip (observed in the parent's browser at 6
-     hand cards: stats row gone entirely, names still visible).
+  /* hand bar extras are padding only now (the "自分の手札"
+     label line is gone — the bottom status bar carries the
+     player identity, and the hand speaks for itself). */
+  #handbar{background:var(--panel);border-top:1px solid var(--gold-dim);padding:5px 4px;}
+  #app.compactui #handbar{padding:4px 4px;}
+  /* layout round 4: no visible scrollbar on the hand — in
+     classic-scrollbar environments the horizontal bar renders
+     INSIDE #hand's fixed height and eats the card's bottom.
      Scrolling itself (touch / wheel / drag) is unaffected. */
   #hand{display:flex;gap:4px;overflow-x:auto;overflow-y:hidden;height:var(--hh);scrollbar-width:none;}
   #hand::-webkit-scrollbar{display:none;}
-  /* hand card: image area on top (name overlaid at its bottom), ATK/DEF in a
-     strip BELOW the image — outside the card frame, same as board tiles */
+  /* hand card: the art fills the card except a 16px band at the
+     bottom that carries the name AND the stats on one line —
+     the two-line strip era spent 24px here; the band spends 16,
+     and the 8px difference is art height. The kind colour rides
+     the whole band (variant A), like every other name band. */
   .hcard{width:var(--hw);height:var(--hh);flex:0 0 auto;border:1px solid var(--tile-edge);border-radius:5px;background:var(--tile);position:relative;padding:0;display:flex;flex-direction:column;overflow:hidden;cursor:pointer;}
   .himg{flex:1 1 auto;position:relative;background:#3a2f1d url('../assets/card-art-placeholder-s.jpg') center/cover;}
   .hcard .cnt{position:absolute;top:1px;right:1px;font-size:9px;font-weight:700;color:#191104;background:var(--gold);border-radius:6px;padding:0 4px;z-index:2;}
   .hcard.dim{opacity:.5;filter:saturate(.6);}
   .hcard.placing{box-shadow:0 0 0 2px var(--gold);}
-  .hcard .nm{position:absolute;left:2px;right:2px;bottom:2px;font-size:10px;line-height:1.15;background:#000a;padding:1px 2px;border-radius:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  /* layout round 4: same two-line strip as .slotstats (see there) —
-     the one-row form wrapped identically and the wrapped number line
-     was clipped by .hcard's overflow:hidden at the card's bottom edge */
-  .hstats{height:24px;flex:0 0 auto;display:flex;flex-direction:column;justify-content:center;padding:0 2px;font-size:9px;letter-spacing:-.5px;color:var(--txt-dim);overflow:hidden;}
-  .hstats span{display:block;white-space:nowrap;overflow:hidden;line-height:12px;}
-  .hstats b{color:var(--txt);font-size:10px;}
+  .hband{height:16px;flex:0 0 auto;display:flex;align-items:center;gap:4px;padding:0 3px;background:rgba(10,8,4,.78);border-top:1px solid rgba(74,61,34,.6);overflow:hidden;}
+  .hband:is(.k-spell,.k-trap,.k-normal,.k-effect,.k-ritual,.k-fusion,.k-synchro,.k-xyz){background:var(--kcd);}
+  .hband .nm{flex:1 1 auto;min-width:0;font-size:10.5px;line-height:1.2;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .hband.k-synchro .nm{color:#211d14;}
+  /* hand stat plate: a monster's ATK/DEF at the art's bottom
+     edge (the board plate's seat) — name + stats shared one
+     16px line in the first redesign cut and the name was
+     squeezed out entirely at hand widths */
+  /* digits only (gold / lapis, the plate colors carry the
+     ATK/DEF meaning): the labelled form measured ~80px against
+     a ~66px hand card at 390x620 and clipped at both ends */
+  .hplate{position:absolute;left:0;right:0;bottom:0;height:13px;display:flex;align-items:center;justify-content:center;gap:2px;font-size:8.5px;letter-spacing:-.3px;color:var(--txt-dim);background:rgba(10,8,4,.66);white-space:nowrap;overflow:hidden;font-variant-numeric:tabular-nums;}
+  .hplate b{font-size:9px;font-weight:800;letter-spacing:-.8px;} .hplate .sep{opacity:.55;font-size:8px;}
+  .hplate b.a{color:var(--atk);}
+  .hplate b.d{color:var(--def);}
+  .hplate.big5 b{font-size:8px;}
   .hcard.actionable{box-shadow:0 0 0 2px var(--gold);}
   .hcard.back .himg{background:#171208 url('../assets/card-back-s.jpg') center/cover;}
   /* ---------- persistent card-detail preview (leftover space only) ---------- */
@@ -240,8 +306,9 @@
   #preview .pv-art{flex:0 0 auto;width:calc((var(--pv) - 12px) * 0.72);background:#3a2f1d url('../assets/card-art-placeholder-s.jpg') center/cover;border-radius:4px;border:1px solid var(--tile-edge);}
   #preview .pv-body{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;}
   #preview .pv-top{display:flex;gap:8px;align-items:baseline;}
-  #preview .pv-name{font-size:13px;font-weight:700;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  #preview .pv-stats{font-size:11px;color:var(--txt);white-space:nowrap;}
+  #preview .pv-name{font-size:15.5px;font-weight:700;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+  #preview .pv-stats{font-size:12px;color:var(--txt);white-space:nowrap;font-variant-numeric:tabular-nums;}
+  #preview .pv-open{flex:0 0 auto;font-size:11px;color:var(--gold);border:1px solid var(--gold-dim);border-radius:5px;padding:3px 8px;background:#241a0e;white-space:nowrap;}
   /* brushup round 2: in compact mode the stacked reason line is
      clipped by the strip's fixed height (overflow hidden), so the
      reason rides the title line instead and truncates first; the
@@ -249,11 +316,11 @@
      strip's first job) */
   #preview.compact .pv-name{flex:0 0 auto;}
   #preview.compact .pv-stats{flex:0 0 auto;}
-  #preview .pv-reason-inline{flex:1 1 auto;min-width:0;font-size:10px;color:#f0c08a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  #preview .pv-reason{font-size:10px;color:#f0c08a;line-height:1.35;}
-  .pv-meta{font-size:10px;color:var(--txt-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  #preview .pv-text{flex:1 1 auto;overflow-y:auto;font-size:11px;line-height:1.55;white-space:pre-wrap;margin-top:2px;}
-  #preview.compact{padding:2px 8px;}
+  #preview .pv-reason-inline{flex:1 1 auto;min-width:0;font-size:11px;color:#f0c08a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  #preview .pv-reason{font-size:11.5px;color:#f0c08a;line-height:1.4;}
+  .pv-meta{font-size:11px;color:var(--txt-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  #preview .pv-text{flex:1 1 auto;overflow-y:auto;font-size:11.5px;line-height:1.55;white-space:pre-wrap;margin-top:2px;}
+  #preview.compact{padding:3px 8px;}
   #preview.compact .pv-art{display:none;}
   #preview.compact .pv-text{display:none;}
   #preview.compact .pv-meta{display:none;}
@@ -264,32 +331,39 @@
      the empty right half of the dock and through the gaps around the
      candidate cards, colliding with the candidates' own text. The
      top shadow gives the dock a hard edge against the board. */
-  #dock{position:absolute;left:0;right:0;bottom:0;z-index:40;background:#171208;border-top:2px solid var(--gold);box-shadow:0 -10px 28px rgba(0,0,0,.6);padding:8px;display:none;}
-  /* fx-ui round 3 (G2): the dock is a flex column capped at
-     100dvh - 108px (top bar + opponent field + chain context stay
-     visible). Title/context/duel-section/pass row are pinned; only
-     the candidate row may scroll (vertically, inside the dock), so
-     the primary actions are always on screen — the dock used to be
-     an unbounded block and could push パス off the bottom. */
+  /* chain dock (layout redesign 2026-11-12): the mock's scene-2
+     order — heading, situation, the CAUSE card, the question is
+     the candidates themselves, then the pass with its outcome
+     stated. Candidates are full-width ROWS (not columns): name
+     at 16px, where it is + its effect under it, and the actions
+     as real buttons — 発動する (gold, 48px) and 詳細 beside it,
+     and the two 聞かない as same-grade buttons in their own row
+     (they used to be text links). The header carries the
+     盤面を見る (peek) button: the dock slides down to its header
+     strip, board taps become info taps, and no answer is made. */
+  #dock{position:absolute;left:0;right:0;bottom:0;z-index:40;background:#171208;border-top:2px solid var(--gold);box-shadow:0 -10px 28px rgba(0,0,0,.6);padding:10px;display:none;transition:transform .28s cubic-bezier(.16,1.12,.3,1);}
   #dock.on{display:flex;flex-direction:column;max-height:calc(100dvh - 108px);}
-  #dock>.ttl,#dock>.ctx,#dock>.row,#dock>.sub{flex:0 0 auto;}
+  #app.dockpeek #dock{transform:translateY(calc(100% - 49px));}
+  #app.dockpeek #midbar,#app.dockpeek #preview,#app.dockpeek #topbar{pointer-events:none;}
+  #dock>.ttl,#dock>.ctx,#dock>.cause,#dock>.row,#dock>.sub{flex:0 0 auto;}
   #dock>.duelsection{flex:0 1 auto;overflow-y:auto;max-height:110px;}
-  #dock .ttl{font-size:12px;color:var(--gold);font-weight:700;}
-  #dock .ctx{font-size:11px;color:var(--txt-dim);margin:2px 0 6px;}
-  #dock .toplink{text-decoration:underline dotted;text-underline-offset:2px;}
-  #dock .cands{display:flex;gap:6px;overflow-x:auto;overflow-y:auto;padding-bottom:4px;flex:1 1 auto;min-height:0;}
-  /* ROUND 4 (H2): candidates GROW to fill the dock's width — with 1-2
-     candidates the old fixed 172px column left the right two-thirds of
-     the dock as empty black ground. flex:1 1 0 with a 172px floor:
-     1 candidate takes the full row, 2 split it, and 3+ keep the
-     established horizontal scroll at the same 172px minimum. Wider
-     candidates also wrap less, so the dock's fixed block (pass row +
-     explanation) keeps more room at short viewports. */
-  .cand{flex:1 1 0;min-width:172px;border:1px solid var(--gold);border-radius:6px;background:var(--panel2);padding:6px 8px;font-size:11px;cursor:pointer;position:relative;}
-  .cand .loc{color:var(--txt-dim);font-size:10px;}
-  .cand .dismiss{display:inline-block;margin-top:5px;font-size:10px;color:#f0c08a;background:#2a1c0d;border:1px solid #a86a2a;border-radius:6px;padding:6px 8px;cursor:pointer;}
+  #dock .ttl{display:flex;align-items:center;gap:8px;font-size:19px;color:var(--gold);font-weight:700;}
+  #dock .dockpeekbtn{margin-left:auto;flex:0 0 auto;min-height:40px;background:#241a0e;color:var(--gold);border:1px solid var(--gold-dim);border-radius:8px;font-size:13px;padding:8px 14px;cursor:pointer;}
+  #dock .ctx{font-size:13px;line-height:1.55;color:var(--txt-dim);margin:4px 0 8px;}
+  #dock .cause{display:flex;align-items:center;gap:9px;background:var(--panel2);border:1px solid var(--tile-edge);border-radius:8px;padding:6px 8px;margin-bottom:9px;cursor:pointer;}
+  #dock .causeart{flex:0 0 auto;width:38px;height:52px;border-radius:4px;border:1px solid var(--gold-dim);background:#3a2f1d url('../assets/card-art-placeholder-s.jpg') center/cover;}
+  #dock .causename{font-size:15.5px;font-weight:700;color:var(--txt);}
+  #dock .causesub{font-size:12px;color:var(--txt-dim);}
+  #dock .cands{display:flex;flex-direction:column;gap:8px;overflow-y:auto;padding-bottom:2px;flex:1 1 auto;min-height:0;}
+  .cand{border:1px solid var(--gold);border-radius:8px;background:var(--panel2);padding:9px 10px;font-size:12px;cursor:pointer;position:relative;}
+  .cand .cname{font-size:16px;font-weight:700;color:var(--txt);line-height:1.3;}
+  .cand .loc{color:var(--txt-dim);font-size:12px;margin-top:1px;}
+  .cand .candbtns{display:flex;gap:6px;margin-top:8px;}
+  .cand .disrow{display:flex;gap:6px;margin-top:6px;}
+  .cand .disbtn{flex:1;min-height:42px;font-size:12px;color:#f0c08a;background:#2a1c0d;border:1px solid #a86a2a;border-radius:6px;padding:7px 6px;cursor:pointer;}
   .cand.dismissed{opacity:.45;border-style:dashed;}
-  #dock .row{display:flex;gap:6px;margin-top:6px;}
+  #dock .row{display:flex;gap:6px;margin-top:8px;}
+  #dock .sub{font-size:12.5px;line-height:1.55;color:var(--txt-dim);margin-top:6px;}
   .bigbtn{flex:1;background:var(--gold);color:#191104;border:0;border-radius:6px;font-size:14px;font-weight:700;padding:12px;}
   .bigbtn.sub{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);font-weight:400;}
   .bigbtn:disabled{background:#4a3d22;color:#b3a077;}
@@ -322,12 +396,12 @@
   #infopop{position:absolute;left:12px;right:12px;top:9%;z-index:55;display:none;background:#241d12;border:1px solid var(--gold);border-radius:10px;padding:12px;max-height:64%;overflow-y:auto;box-shadow:0 10px 34px #000c;}
   #infopop.on{display:block;}
   #infopop .ttl{font-size:15px;font-weight:700;color:var(--gold);}
-  #infopop .sub{font-size:11px;color:var(--txt-dim);margin:2px 0 6px;}
-  #infopop .cardtext{font-size:12px;line-height:1.65;}
-  #infopop .popart{width:100%;height:min(180px,30dvh);border-radius:8px;border:1px solid var(--gold-dim);background:#3a2f1d url('../assets/card-art-placeholder.jpg') center/cover;margin-bottom:10px;}
-  #sheet .ttl{font-size:13px;font-weight:700;color:var(--gold);}
-  #sheet .purpose{font-size:13px;font-weight:700;color:#ffe9a8;margin:3px 0 1px;}
-  #sheet .sub{font-size:11px;color:var(--txt-dim);margin:2px 0 8px;}
+  #infopop .sub{font-size:12px;color:var(--txt-dim);margin:2px 0 6px;}
+  #infopop .cardtext{font-size:12.5px;line-height:1.65;}
+  #infopop .popart{position:relative;width:100%;height:min(180px,30dvh);border-radius:8px;border:1px solid var(--gold-dim);background:#3a2f1d url('../assets/card-art-placeholder.jpg') center/cover;margin-bottom:10px;}
+  #sheet .ttl{font-size:16px;font-weight:700;color:var(--gold);}
+  #sheet .purpose{font-size:15px;font-weight:700;color:#ffe9a8;margin:4px 0 2px;}
+  #sheet .sub{font-size:12.5px;line-height:1.6;color:var(--txt-dim);margin:2px 0 8px;}
   #sheet .warn{font-size:11px;color:var(--bad);margin-bottom:6px;}
   #tray{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;}
   .chip{font-size:11px;border:1px solid var(--gold);border-radius:10px;padding:5px 8px;background:#4a3a10;cursor:pointer;}
@@ -341,7 +415,8 @@
      top-left corner (never in the text stack), and the name /
      stats / effect lines sit on near-solid stone so they read
      over any art. */
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(106px,1fr));gap:8px;}
+  /* fx-ui round 5 (I2): auto-fit, not auto-fill — with 1-2 candidates the empty phantom columns shrank the real ones to a quarter of the sheet; auto-fit collapses the empty tracks so few candidates take the full width, and 3+ keep the ~117px columns. */
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(106px,1fr));gap:8px;}
   /* fx-ui round 2 (F7): the grid's "more below" cue — a
      full-width first line inside the sticky button row, shown
      only while the sheet can still scroll (toggled from
@@ -354,9 +429,9 @@
   .gcard .loc{position:absolute;top:3px;left:3px;z-index:2;font-size:9.5px;line-height:1.5;color:var(--gold);background:rgba(4,3,1,.88);border:1px solid var(--gold-dim);border-radius:8px;padding:0 6px;}
   .gcard.sel{box-shadow:0 0 0 2px var(--ok);}
   .btnrow{display:flex;gap:6px;margin-top:12px;position:sticky;bottom:0;background:#1d1811;z-index:2;padding-bottom:2px;}
-  .optbtn{display:block;width:100%;text-align:left;background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:6px;font-size:13px;padding:13px 12px;min-height:46px;margin:4px 0;cursor:pointer;}
+  .optbtn{display:block;width:100%;text-align:left;background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:6px;font-size:14px;padding:13px 12px;min-height:48px;margin:4px 0;cursor:pointer;}
   .optbtn.disabled{opacity:.45;cursor:default;border-style:dashed;}
-  .optbtn .reason{display:block;font-size:11px;color:var(--txt-dim);margin-top:2px;}
+  .optbtn .reason{display:block;font-size:12px;color:var(--txt-dim);margin-top:2px;}
   .posrow{display:flex;gap:8px;justify-content:center;margin:8px 0;}
   .posbtn{width:74px;border:1px solid var(--tile-edge);border-radius:6px;background:var(--panel2);padding:8px 4px;text-align:center;cursor:pointer;font-size:11px;}
   .posbtn .glyph{width:34px;height:44px;margin:0 auto 4px;border-radius:3px;background:#3a2f1d url('../assets/card-art-placeholder-s.jpg') center/cover;}
@@ -390,7 +465,7 @@
      re-measured against the new band (cropfix band400-*): the new
      sheet window strictly contains the old one at every position
      and the pop window is unchanged, so all nine values stand. */
-  #sheet .infoart{width:100%;height:min(400px,60dvh);border-radius:8px;border:1px solid var(--gold-dim);background:#3a2f1d url('../assets/card-art-placeholder.jpg') center/cover;margin-bottom:10px;}
+  #sheet .infoart{position:relative;width:100%;height:min(400px,60dvh);border-radius:8px;border:1px solid var(--gold-dim);background:#3a2f1d url('../assets/card-art-placeholder.jpg') center/cover;margin-bottom:10px;}
   /* brushup round 2 (sheet-open stall): long sheet lists skip the
      layout/paint of rows below the fold until they scroll near
      (content-visibility:auto; the 'auto' intrinsic size is the
@@ -429,8 +504,8 @@
   #placehint .retry{color:#ff9a8a;font-size:11px;margin-top:2px;}
   #placehint.on{display:block;}
   /* ---------- phase 2 additions ---------- */
-  #sheet .ctx{font-size:11px;color:var(--gold);margin:2px 0 6px;}
-  #sheet .cardtext{font-size:11px;line-height:1.6;color:var(--txt);background:var(--panel2);border:1px solid var(--tile-edge);border-radius:6px;padding:7px 9px;margin-top:8px;white-space:pre-wrap;}
+  #sheet .ctx{font-size:12.5px;color:var(--gold);margin:2px 0 6px;}
+  #sheet .cardtext{font-size:12px;line-height:1.65;color:var(--txt);background:var(--panel2);border:1px solid var(--tile-edge);border-radius:6px;padding:7px 9px;margin-top:8px;white-space:pre-wrap;}
   /* the asked-about effect, pinned (which-effect identification) */
   .fxlab{font-size:10px;font-weight:700;color:var(--gold);margin-top:8px;}
   .cardtext.fxmain{border-color:var(--gold);background:#241a08;margin-top:3px;}
@@ -438,7 +513,7 @@
   details.fxfull summary{font-size:10px;color:var(--txt-dim);cursor:pointer;padding:2px 0;}
   details.fxfull .cardtext{margin-top:4px;color:var(--txt-dim);}
   #infopop .fxlab{font-size:10px;font-weight:700;color:var(--gold);margin-top:8px;}
-  .cand .fxline{font-size:10px;line-height:1.45;color:var(--gold);margin-top:2px;}
+  .cand .fxline{font-size:12.5px;line-height:1.55;color:var(--gold);margin-top:3px;}
   /* BU-28 (selection-clarity round): when a candidate's effect
      line is truncated, the guide to the full text is printed on
      the line itself (the candidate's 詳細 button floats the full
@@ -446,20 +521,22 @@
   .cand .fxmore{color:var(--txt-dim);text-decoration:underline dotted;text-underline-offset:2px;}
   .gcard{position:relative;}
   .gcard .stats{font-size:11px;color:var(--gold);background:rgba(5,4,2,.94);padding:1px 4px;border-radius:2px;margin-top:2px;}
-  .gcard .gdetail{position:absolute;top:3px;right:3px;font-size:11px;background:#000c;color:var(--gold);border:1px solid var(--gold-dim);border-radius:5px;padding:8px 11px;min-height:34px;cursor:pointer;z-index:2;}
-  .gcard .itext{font-size:11px;line-height:1.5;color:var(--txt);background:rgba(5,4,2,.94);padding:3px 4px;border-radius:2px;margin-top:2px;max-height:84px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;}
-  .cand .dueldismiss{display:inline-block;margin-top:5px;font-size:11px;color:#f0c08a;background:#2a1c0d;border:1px solid #a86a2a;border-radius:6px;padding:6px 10px;cursor:pointer;}
-  .cand .candinfo{display:inline-block;margin-top:5px;margin-left:6px;font-size:11px;color:var(--gold);background:#171208;border:1px solid var(--gold-dim);border-radius:6px;padding:6px 10px;cursor:pointer;}
+  /* the detail button rides INSIDE the name band (right end):
+     as a floating 34px button at the card's top-right it crossed
+     the stats line whenever the text below grew tall */
+  .gcard .gdetail{position:static;flex:0 0 auto;margin-left:auto;font-size:10.5px;background:#000c;color:var(--gold);border:1px solid var(--gold-dim);border-radius:5px;padding:2px 8px;min-height:20px;cursor:pointer;}
+  .gcard .itext{font-size:12px;line-height:1.55;color:var(--txt);background:rgba(5,4,2,.94);padding:3px 4px;border-radius:2px;margin-top:2px;max-height:150px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:8;-webkit-box-orient:vertical;}
+  .cand .candinfo{flex:0 0 76px;min-height:48px;font-size:13px;color:var(--gold);background:#171208;border:1px solid var(--gold-dim);border-radius:6px;padding:6px 10px;cursor:pointer;}
   /* fx-ui round 2 (F3): the chain candidate's own activation
      button — full width under the candidate text, gold plate,
      40px tall, so "how do I activate this" is never a guess. */
-  .cand .candact{display:block;width:100%;margin-top:8px;min-height:40px;background:linear-gradient(180deg,#a8842c,#7a5f18);color:#fff6da;border:1px solid var(--gold);border-radius:6px;font-size:13px;font-weight:700;letter-spacing:.14em;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.5);}
+  .cand .candact{flex:1;min-height:48px;background:linear-gradient(180deg,#a8842c,#7a5f18);color:#fff6da;border:1px solid var(--gold);border-radius:6px;font-size:14.5px;font-weight:700;letter-spacing:.14em;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.5);}
   .cand .candact:active{filter:brightness(1.3);}
-  #dock .duelsection{font-size:10px;color:var(--txt-dim);margin-top:6px;}
-  #dock .duelsection button{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:11.5px;padding:9px 12px;min-height:38px;margin-left:6px;cursor:pointer;}
+  #dock .duelsection{font-size:12px;color:var(--txt-dim);margin-top:8px;}
+  #dock .duelsection button{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:12.5px;padding:9px 12px;min-height:44px;margin-left:6px;cursor:pointer;}
   /* BU-32 (fx-ui round 3): in 毎回 mode the dock shows this note in
      place of the (inert) 聞かない controls. */
-  #dock .respnote{font-size:11px;line-height:1.55;color:#f0d089;background:#2a1c0d;border:1px solid #8a6a20;border-radius:8px;padding:7px 9px;}
+  #dock .respnote{font-size:12.5px;line-height:1.6;color:#f0d089;background:#2a1c0d;border:1px solid #8a6a20;border-radius:8px;padding:7px 9px;}
   /* fx-ui round 3 (BU-15): the auto-pass chip is IN FLOW as the top
      bar's third item. It used to float (absolute, bottom: hand +
      33px) over the preview strip / pile row and covered effect
@@ -585,7 +662,10 @@
      information, principle 4). A transient overlay in #fxlayer,
      shown ~1.6 s by fxOppNameTag; it never enters the flow, so
      the board layout cannot move under it. */
-  .fx-oppnametag{position:absolute;top:44px;left:6px;height:22px;line-height:22px;max-width:calc(100% - 12px);padding:0 10px 0 8px;border-left:3px solid #5b8dd9;background:rgba(10,18,34,.88);color:#cfe2ff;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;}
+  .fx-oppnametag{position:absolute;top:47px;left:6px;height:24px;line-height:24px;max-width:calc(100% - 12px);padding:0 10px 0 8px;border-left:3px solid #5b8dd9;background:rgba(10,18,34,.9);color:#cfe2ff;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;}
+  .fx-notice{position:absolute;left:50%;top:33%;transform:translate(-50%,-50%);z-index:8;max-width:86%;background:linear-gradient(180deg,rgba(19,14,6,.95),rgba(7,5,2,.97));border:1px solid rgba(201,162,39,.7);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.65);padding:13px 18px;text-align:center;pointer-events:none;}
+  .fx-notice .nt{font-size:18px;font-weight:800;color:#ffe9a8;line-height:1.45;letter-spacing:.02em;}
+  .fx-notice .ns{font-size:12.5px;color:var(--txt-dim);margin-top:3px;line-height:1.4;}
   /* heal float (round B): the ONLY floating number — damage is read
      off the LP counter's count-down, MD-style */
   .fx-healfloat{font-size:15px;font-weight:700;color:#8fd8ff;text-shadow:0 1px 4px #000;}
@@ -728,13 +808,11 @@
      tiles keep .back (pattern only, no ghost) — asymmetry preserved. */
   .tile.setown .inner .veil{position:absolute;inset:0;border-radius:4px;background:#171208 url('../assets/card-back-s.jpg') center/cover;animation:setbreath 4.6s ease-in-out infinite alternate;}
   @keyframes setbreath{from{opacity:.58}to{opacity:.86}}
-  .slotstats.defmode span.defline{color:#8fd8ff;}
-  .slotstats.defmode span.defline b{color:#8fd8ff;font-size:10px;}
   /* xyz material stack edges: layered inset steps at the tile corner */
   .tile.mats1{box-shadow:inset -3px -3px 0 0 #171208,inset -4.5px -4.5px 0 0 var(--gold-dim);}
   .tile.mats2{box-shadow:inset -3px -3px 0 0 #171208,inset -4.5px -4.5px 0 0 var(--gold-dim),inset -6px -6px 0 0 #171208,inset -7.5px -7.5px 0 0 var(--gold-dim);}
   .tile .ctrs{position:absolute;top:1px;left:1px;background:#2a6f3a;color:#dfffe0;font-size:9px;font-weight:700;border-radius:8px;padding:0 4px;z-index:2;}
-  .segrow{margin:5px 0 3px;font-size:11px;color:var(--txt-dim);letter-spacing:.18em;text-align:left;width:100%;}
+  .segrow{margin:5px 0 3px;font-size:11.5px;color:var(--txt-dim);letter-spacing:.18em;text-align:left;width:100%;}
   .seg{display:flex;gap:6px;justify-content:center;margin-top:4px;flex-wrap:wrap;}
   .seg button{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:13px;padding:9px 14px;min-height:44px;cursor:pointer;}
   .seg button.sel{background:#3a2a10;color:#ffe9a8;font-weight:700;border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold);}
@@ -759,14 +837,14 @@
   /* the summary never truncates: at 390 wide the full line (long
      deck names + turn choice) wraps to a second line instead of
      ellipsising the turn choice away */
-  #decksum{font-size:11.5px;color:#c9b586;text-align:center;margin:8px 0;line-height:1.5;}
+  #decksum{font-size:12px;color:#c9b586;text-align:center;margin:8px 0;line-height:1.5;}
   #deckpage .deck{position:relative;display:flex;gap:7px;align-items:center;text-align:left;background:#1d1508;border:1px solid #4a3a1c;border-radius:10px;padding:6px;min-height:52px;color:var(--txt);cursor:pointer;width:100%;flex:0 0 auto;}
   #deckpage .deck img{width:26px;height:36px;object-fit:cover;border-radius:4px;flex:none;}
   /* DS-01: a deck name never wraps — a mid-word break orphaned
      「ン」 on its own line. Same rule as card names: one line,
      ellipsis as the backstop; 12px fits both current names. */
-  #deckpage .deck .dn{display:block;font-size:12px;font-weight:700;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  #deckpage .deck .dd{display:block;font-size:10.5px;color:var(--txt-dim);line-height:1.45;margin-top:2px;}
+  #deckpage .deck .dn{display:block;font-size:13px;font-weight:700;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  #deckpage .deck .dd{display:block;font-size:11.5px;color:var(--txt-dim);line-height:1.5;margin-top:2px;}
   #deckpage .deck.sel{background:#3a2a10;border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold);}
   #deckpage .deck.sel .dn{color:#ffe9a8;}
   #deckpage .deck .check{position:absolute;top:7px;right:7px;width:9px;height:9px;border-radius:50%;background:var(--gold);box-shadow:0 0 7px var(--gold);display:none;}
@@ -829,8 +907,8 @@
   #deckmodal .deck{position:relative;display:flex;gap:7px;align-items:center;text-align:left;background:#1d1508;border:1px solid #4a3a1c;border-radius:10px;padding:6px;min-height:52px;color:var(--txt);cursor:pointer;width:100%;flex:0 0 auto;}
   #deckmodal .deck img{width:26px;height:36px;object-fit:cover;border-radius:4px;flex:none;}
   #deckmodal .deck .txt{min-width:0;flex:1 1 auto;}
-  #deckmodal .deck .dn{display:block;font-size:12px;font-weight:700;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  #deckmodal .deck .dd{display:block;font-size:10.5px;color:var(--txt-dim);line-height:1.45;margin-top:2px;}
+  #deckmodal .deck .dn{display:block;font-size:13px;font-weight:700;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  #deckmodal .deck .dd{display:block;font-size:11.5px;color:var(--txt-dim);line-height:1.5;margin-top:2px;}
   #deckmodal .deck.sel{background:#3a2a10;border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold);}
   #deckmodal .deck.sel .dn{color:#ffe9a8;}
   #deckmodal .deck .check{position:absolute;top:7px;right:7px;width:9px;height:9px;border-radius:50%;background:var(--gold);box-shadow:0 0 7px var(--gold);display:none;}
@@ -925,8 +1003,10 @@
 <body>
 <div id="app">
   <div id="topbar">
-    <div><div class="who">相手（CPU）</div><div class="lp" id="oppLp">8000</div></div>
-    <div class="mid" id="turninfo">—</div>
+    <button id="menubtn" disabled aria-label="その他のアクション">≡</button>
+    <div class="who-block"><div class="who-label">相手（CPU）</div><div class="who-name" id="oppDeckName">—</div></div>
+    <div class="lp-box"><div class="lp-label">LP</div><div class="lp" id="oppLp">8000</div></div>
+    <div class="handchip" id="oppHandChip">手札 <b id="oppHandN">0</b></div>
     <div id="autopass"></div>
   </div>
   <div id="placehint"></div>
@@ -937,15 +1017,13 @@
     <div class="zrow" id="oppMzone"></div>
   </div>
   <div id="midbar">
-    <div id="chainbar"></div>
-    <div id="logline">読み込み中…</div>
-    <div id="phasebar">
-      <div><div class="pwho">自分</div><div class="lp" id="myLp">8000</div></div>
-      <div id="phaseinfo">—</div>
-      <button id="menubtn" disabled>その他</button>
-      <button id="fxbtn">演出設定</button>
-      <button id="phasebtn" disabled>—</button>
+    <div class="mid-info">
+      <div class="mid-line1"><span id="turninfo">—</span><span id="phaseinfo">—</span></div>
+      <div id="logline">読み込み中…</div>
     </div>
+    <button id="loghistbtn">履歴</button>
+    <button id="phasebtn" disabled>—</button>
+    <div id="chainbar"></div>
   </div>
   <div class="field" id="myField">
     <div class="turndim" id="myDim" aria-hidden="true"></div>
@@ -955,8 +1033,12 @@
   </div>
   <div id="preview"></div>
   <div id="handbar">
-    <div class="who">自分の手札（<span id="handcount">0</span>）</div>
     <div id="hand"></div>
+  </div>
+  <div id="mybar">
+    <div class="who-block"><div class="who-label">自分</div><div class="who-name" id="myDeckName">—</div></div>
+    <div class="lp-box"><div class="lp-label">LP</div><div class="lp" id="myLp">8000</div></div>
+    <button id="fxbtn">♪ 演出</button>
   </div>
   <div id="fxlayer"><canvas id="fxcv"></canvas></div>
   <div id="fxcutin"><canvas id="fxcvTop"></canvas></div>

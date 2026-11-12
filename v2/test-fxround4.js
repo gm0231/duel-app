@@ -124,34 +124,47 @@ async function boot() {
   ok(doc.querySelectorAll('#dock .cand').length === 1, 'FX4-6: H2 — the 1-candidate prompt renders exactly one candidate');
   ok(await answerPass(), 'FX4-7: the chain prompt still answers normally');
 
-  // ---------- H2: candidate growth contract ----------
+  // ---------- H2 successor (layout redesign 2026-11-12) ----------
+  // Candidates are full-width ROWS in a column now: the H2 intent
+  // (no empty dock width beside a candidate) is structural —
+  // there is no fixed candidate width left to strand space.
+  const cands = ruleDecls(/#dock \.cands\{([^}]*)\}/);
+  ok(!!cands && cands['flex-direction'] === 'column', 'FX4-8: H2 successor — the candidate list is a column of full-width rows');
   const cand = ruleDecls(/\.cand\{([^}]*)\}/);
-  ok(!!cand && cand.flex === '1 1 0', 'FX4-8: H2 — candidates grow to fill the dock row (flex:1 1 0)');
-  ok(!!cand && cand['min-width'] === '172px' && !('max-width' in cand),
-    'FX4-9: H2 — the 172px floor stands and the 172px cap is gone (3+ candidates keep the horizontal scroll)');
+  ok(!!cand && !('min-width' in cand) && !('width' in cand),
+    'FX4-9: H2 successor — no fixed candidate width remains (a row takes the dock width by construction)');
 
   // ---------- H3: mid-band rows follow their line boxes ----------
   const logline = ruleDecls(/#logline\{([^}]*)\}/);
-  ok(!!logline && !('height' in logline) && logline['line-height'] === '1.5',
-    'FX4-10: H3 — #logline has no frozen height; its line box scales with the used font size (1.5)');
+  ok(!!logline && !('height' in logline) && logline['line-height'] === '1.35' && logline['-webkit-line-clamp'] === '2',
+    'FX4-10: H3 successor — #logline has no frozen height; it takes two fitted lines (a one-line column ellipsized real long events)');
+  // H3 successor (layout redesign): the mid band is ONE frozen
+  // 62px row BY DESIGN now — its contents are fitted inside it
+  // (explicit line-heights below), the chain bar is an opaque
+  // overlay ON the band (it reserves no flow height, so the H3
+  // failure shape — band rows painting outside a frozen box —
+  // has no rows left to paint outside), and the previous-event
+  // line was absorbed into the single latest-event line.
   const chainbar = ruleDecls(/#chainbar\{([^}]*)\}/);
-  ok(!!chainbar && chainbar['min-height'] === '21px' && !('height' in chainbar),
-    'FX4-11: H3 — #chainbar is a 21px floor, not a frozen 21px box');
-  const prevlog = ruleDecls(/#chainbar \.prevlog\{([^}]*)\}/);
-  ok(!!prevlog && prevlog['line-height'] === '1.5', 'FX4-12: H3 — the chainbar prevlog line box scales too (1.5)');
-  const phasebar = ruleDecls(/#phasebar\{([^}]*)\}/);
-  ok(!!phasebar && phasebar['min-height'] === '34px' && !('height' in phasebar),
-    'FX4-13: H3 — #phasebar is a 34px floor, not a frozen 34px box');
-  ok(/const LAYOUT_FIXED = 215;/.test(clientSrc),
-    'FX4-14: H3 — the layout budget stands (default-font rendered band is unchanged at 78px; growth is fit-loop absorbed)');
+  ok(!!chainbar && chainbar.position === 'absolute' && chainbar.visibility === 'hidden' && !('min-height' in chainbar),
+    'FX4-11: H3 successor — #chainbar is an absolute overlay on the mid band (no reserved flow height)');
+  ok(!/#chainbar \.prevlog/.test(html) && !/prevlog/.test(clientSrc),
+    'FX4-12: H3 successor — the prevlog line is gone (absorbed into the latest-event line)');
+  const midbar = ruleDecls(/#midbar\{([^}]*)\}/);
+  ok(!!midbar && midbar.height === '62px',
+    'FX4-13: H3 successor — the mid band is one fitted 62px row (two lines for the latest event; contents carry explicit line-heights)');
+  ok(/const LAYOUT_MODES = \{/.test(clientSrc) && /full: \{ fixedNoPv: 232/.test(clientSrc) && /compact: \{ fixedNoPv: 210/.test(clientSrc),
+    'FX4-14: H3 successor — the layout budget is the redesign mode table (full 232 / compact 210, + preview base)');
   const link = ruleDecls(/\.link\{([^}]*)\}/);
   ok(!!link && link['line-height'] === '1.2',
     'FX4-15: H3 — the chain chips carry the fitting line-height (content fits the 21px floor at default size)');
-  const plp = ruleDecls(/#phasebar \.lp\{([^}]*)\}/);
-  const pwho = ruleDecls(/#phasebar \.pwho\{([^}]*)\}/);
-  ok(!!plp && plp['line-height'] === '1.35' && !!pwho && pwho['line-height'] === '1.2',
-    'FX4-16: H3 — the phase cell lines are fitted (12 + 21.6 <= 34 at default size) and the label uses .pwho');
-  ok(/<div class="pwho">/.test(html), 'FX4-17: H3 — the phase label markup uses the fitted class');
+  // the phase cell is gone: both LPs live in the status bars at
+  // the top of the text hierarchy (28px, the largest numerals).
+  const lpbox = ruleDecls(/\.lp-box \.lp\{([^}]*)\}/);
+  ok(!!lpbox && lpbox['font-size'] === '28px' && lpbox['line-height'] === '1.05',
+    'FX4-16: H3 successor — LP is a fitted 28px line in the status bars (largest numeral on screen)');
+  ok(/id="topbar"[\s\S]*id="oppLp"/.test(html) && /id="mybar"[\s\S]*id="myLp"/.test(html),
+    'FX4-17: H3 successor — oppLp sits in #topbar and myLp in #mybar');
 
   console.log(failures ? ('FAILURES: ' + failures) : 'ALL FXROUND4 CHECKS PASSED');
   process.exit(failures ? 1 : 0);

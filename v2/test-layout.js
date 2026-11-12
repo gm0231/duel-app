@@ -205,9 +205,13 @@ async function clickUntilDock(window, timeoutMs) {
   // round 4 strip contract (CSS level — jsdom cannot lay out text, so the
   // wrap-freedom of the strips is asserted as the CSS contract here and
   // verified geometrically in real Chromium; see NOTES round 4)
-  ok(/\.slotstats\{[^}]*height:24px[^}]*flex-direction:column/.test(html), 'LAY-s0: .slotstats is a 24px two-line (column) strip (B-15: 22px was the round-4 floor; the audit raised it to 24 for legibility)');
-  ok(/\.hstats\{[^}]*height:24px[^}]*flex-direction:column/.test(html), 'LAY-s1: .hstats is a 24px two-line (column) strip (B-15)');
-  ok(/\.slotstats span\{[^}]*white-space:nowrap/.test(html) && /\.hstats span\{[^}]*white-space:nowrap/.test(html), 'LAY-s2: strip lines are nowrap (a line can never wrap into the strip height again)');
+  // layout redesign (2026-11-12): the slot strip became a 20px
+  // plate (.slotplate, ATK over DEF in two fitted lines — the
+  // one-line form overflowed the tile width in live play) and
+  // the hand strip became a 16px name/stat band (.hband).
+  ok(/\.slotplate\{[^}]*height:20px/.test(html) && /\.slotplate \.pl-atk[^}]*white-space:nowrap/.test(html), 'LAY-s0: .slotplate is a 20px plate of two nowrap lines (the one-line form overflowed the tile width in live play; each line is a full-width row so the strip-clip measure still sees an overflow)');
+  ok(/\.hband\{[^}]*height:16px/.test(html), 'LAY-s1: .hband is the hand card 16px name/stat band');
+  ok(/\.slotplate b\{[^}]*font-size:9px/.test(html), 'LAY-s2: plate digits carry an explicit size (9px) inside the fitted lines');
   ok(/text-size-adjust:100%/.test(html), 'LAY-s3: text-size-adjust:100% set (no webview text inflation)');
   ok(/#hand\{[^}]*scrollbar-width:none/.test(html), 'LAY-s4: #hand scrollbar hidden (classic-scrollbar environments must not eat the strip)');
 
@@ -225,11 +229,12 @@ async function clickUntilDock(window, timeoutMs) {
     ok(L.settled === true && L.settleRectBefore === null && L.handRectBottom === null, 'LAY-a5 ' + vw + 'x' + vh + ': the round-3 settle ran inside the start sequence (settled=true) and, rects being absent in jsdom, honestly recorded null measurements');
     if (vh >= 720) ok(L.tileW >= 47 && L.slotH >= 60, 'LAY-a2 ' + vw + 'x' + vh + ': board never below the old fixed baseline 47x60 (tile ' + L.tileW + 'x' + L.slotH + ')');
     else if (vh === 660) ok(L.tileW >= 40, 'LAY-a2m ' + vw + 'x' + vh + ': B-14 funded-preview region — tiles shrink toward the 40px floor so the decided detail preview exists (tile ' + L.tileW + 'x' + L.slotH + '); the 47px baseline yields to the preview here by approved design');
-    else ok(L.tileW >= 40 && L.slotH >= 70, 'LAY-a2s ' + vw + 'x' + vh + ': short-height case — tile at/above the W floor 40 with the 24px strips (tile ' + L.tileW + 'x' + L.slotH + '); the 47px baseline is not reachable at this height once the strips carry two full lines');
-    // the hand may additionally GROW with leftover (pre-existing distribution),
-    // so its strip share is 22 + growth, bounded by the 1.3x hand cap
-    ok(L.slotH - L.imgH === 24 && L.handH - Math.round(L.handW * 1.22) >= 24 && L.handH <= Math.round((Math.round(L.handW * 1.22) + 24) * 1.3),
-      'LAY-s5 ' + vw + 'x' + vh + ': strip budgeted at 24px in slot and hand (slotH-imgH ' + (L.slotH - L.imgH) + ', handH-handImgH ' + (L.handH - Math.round(L.handW * 1.22)) + ' = 24 + hand growth, within the 1.3x cap)');
+    else ok(L.tileW >= 40 && L.slotH >= 70, 'LAY-a2s ' + vw + 'x' + vh + ': short-height case — tile at/above the W floor 40 (tile ' + L.tileW + 'x' + L.slotH + '); the 47px baseline is not reachable at this height');
+    // the hand may additionally GROW with leftover (pre-existing
+    // distribution), bounded by the 1.45x hand rule; the slot keeps
+    // its 24px below-image budget (20px plate + tile offsets)
+    ok(L.slotH - L.imgH === 24 && L.handH - Math.round(L.handW * 1.22) >= 16 && L.handH <= Math.round((Math.round(L.handW * 1.22) + 16) * 1.45),
+      'LAY-s5 ' + vw + 'x' + vh + ': plate budgeted in slot (24) and hand band at 16px + growth, within the 1.45x cap (slotH-imgH ' + (L.slotH - L.imgH) + ', handH-handImgH ' + (L.handH - Math.round(L.handW * 1.22)) + ')');
     ok(L.stripClip === null, 'LAY-s6 ' + vw + 'x' + vh + ': stripClip recorded as null in jsdom (no strip layout to measure — the field exists and stays honest)');
     ok(L.fit === 'unmeasurable' && L.fitVisible === null && L.fitSteps === 0, 'LAY-a3 ' + vw + 'x' + vh + ': rect measurement unavailable in jsdom — fit honestly reported as unmeasurable, formula stands');
     ok(L.innerHeight === vh && L.vvHeight === null && L.vvOffsetTop === 0 && L.visibleBottom === vh && Array.isArray(L.fitLog) && L.fitLog.length === 1 && L.fitLog[0].rectBottom === null, 'LAY-a4 ' + vw + 'x' + vh + ': __layout records the height signals + step log (innerHeight ' + L.innerHeight + ', clientHeight ' + L.clientHeight + ', visibleBottom ' + L.visibleBottom + ')');
