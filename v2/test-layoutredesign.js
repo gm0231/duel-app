@@ -57,15 +57,19 @@ async function main() {
   ok(!!grid && /auto-fit/.test(grid['grid-template-columns'] || '') && !/auto-fill/.test(grid['grid-template-columns'] || ''),
     'LR-I2a: I2 — the selection grid collapses unused tracks (auto-fit), so few-candidate sheets use the full width');
   const itext = ruleDecls(/\.gcard \.itext\{([^}]*)\}/);
-  ok(!!itext && itext['font-size'] === '12px' && itext['-webkit-line-clamp'] === '8' && itext['max-height'] === '150px',
-    'LR-I2b: I2 — the in-tile effect text is 12px with an 8-line budget (was 11px / 5 lines / 84px)');
+  // layout-fix J1 supersedes the clamp: full effect text in-tile,
+  // the sheet's candidate region scrolls.
+  ok(!!itext && itext['font-size'] === '12px' && !('-webkit-line-clamp' in itext) && !('max-height' in itext),
+    'LR-I2b: I2 successor (layout-fix J1) — the in-tile effect text is 12px and unclamped; the candidate region scrolls instead');
 
   // ---------- LR-1 / LR-2: the slim mid band ----------
   const midbar = ruleDecls(/#midbar\{([^}]*)\}/);
   const phaseinfo = ruleDecls(/#phaseinfo\{([^}]*)\}/);
   const logline = ruleDecls(/#logline\{([^}]*)\}/);
-  ok(!!midbar && midbar.height === '62px' && !!phaseinfo && phaseinfo['line-height'] === '1.25' && phaseinfo['font-size'] === '17px',
-    'LR-1: the mid band is one fitted 62px row; the phase name stands at 17px with a fitted line box');
+  // layout-fix J2 supersedes the frozen height with a 62px minimum
+  // (inflated system fonts grow the band; the fit loop absorbs it).
+  ok(!!midbar && midbar['min-height'] === '62px' && !('height' in midbar) && !!phaseinfo && phaseinfo['line-height'] === '1.25' && phaseinfo['font-size'] === '17px',
+    'LR-1: the mid band is one fitted 62px-minimum row; the phase name stands at 17px with a fitted line box');
   ok(!!logline && !('height' in logline) && logline['line-height'] === '1.35' && logline['-webkit-line-clamp'] === '2' && logline['font-size'] === '12.5px',
     'LR-2: the latest-event line takes two 12.5px lines with no frozen height (a long summon line measured ~300px against the one-line column and ellipsized; two lines cover ~46 glyphs)');
 

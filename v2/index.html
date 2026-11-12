@@ -207,8 +207,14 @@
      visible beside it. Content heights are fitted INSIDE the
      frozen band (explicit line-heights), and the fit loop's
      strip-clip measurement watches the plates in the slots. */
-  #midbar{position:relative;display:flex;align-items:center;gap:8px;height:62px;background:var(--panel);border-top:1px solid var(--tile-edge);border-bottom:1px solid var(--tile-edge);padding:4px 6px;}
-  #app.compactui #midbar{height:62px;}
+  /* layout-fix J2: min-height, not a frozen height — the two fitted
+     lines (phase 17px/1.25 + log 12.5px/1.35 x2 + gap + padding)
+     total ~58px at spec fonts, but under inflated system fonts the
+     old frozen 62px pushed the second line out of the band and the
+     field below painted over it. The band grows instead and the
+     visible-fit loop shrinks the board to compensate. */
+  #midbar{position:relative;display:flex;align-items:center;gap:8px;min-height:62px;background:var(--panel);border-top:1px solid var(--tile-edge);border-bottom:1px solid var(--tile-edge);padding:2px 6px;}
+  #app.compactui #midbar{min-height:62px;}
   .mid-info{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:1px;}
   .mid-line1{display:flex;align-items:baseline;gap:7px;white-space:nowrap;overflow:hidden;}
   #turninfo{font-size:11.5px;line-height:1.3;color:var(--txt-dim);flex:0 0 auto;white-space:nowrap;}
@@ -226,6 +232,7 @@
      line — and the band grew by exactly the second line (the
      preview absorbs it in the layout budget). */
   #logline{font-size:12.5px;line-height:1.35;color:var(--txt);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer;}
+  #logline .lk{white-space:nowrap;} /* layout-fix J2: a card name never breaks mid-word in the band */
   #loghistbtn{flex:0 0 auto;height:48px;min-width:44px;font-size:12px;color:var(--gold);background:#241a0e;border:1px solid var(--gold-dim);border-radius:6px;padding:0 8px;cursor:pointer;}
   #app.compactui #loghistbtn{height:48px;}
   #chainbar{position:absolute;left:0;top:0;bottom:0;right:118px;display:flex;visibility:hidden;align-items:center;gap:4px;overflow-x:auto;padding:2px 6px;background:var(--panel);z-index:3;}
@@ -368,9 +375,25 @@
   .bigbtn.sub{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);font-weight:400;}
   .bigbtn:disabled{background:#4a3d22;color:#b3a077;}
   /* ---------- sheet (modal selections) ---------- */
-  #sheetwrap{position:absolute;inset:0;z-index:50;display:none;background:#0008;}
+  /* layout-fix J1: the wrap is FIXED to the viewport and the sheet's
+     height budget comes from the conservative visible height
+     (--appvh, set from viewportHeights() in client.js) under the
+     chain dock's discipline. The old form anchored the sheet to
+     #app's layout box at 62dvh: wherever the layout viewport ran
+     taller than the visible area (in-app browser bands, tall
+     device emulation), the sheet's bottom — and its confirm /
+     cancel row — sat below the visible fold with no scroll able
+     to reach it, and the duel soft-locked on a selection. */
+  #sheetwrap{position:fixed;inset:0;z-index:50;display:none;background:#0008;}
   #sheetwrap.on{display:block;}
-  #sheet{position:absolute;left:0;right:0;bottom:0;max-height:62dvh;overflow-y:auto;background:#1d1811;border-top:2px solid var(--gold);border-radius:12px 12px 0 0;padding:12px;transition:transform .28s cubic-bezier(.16,1.12,.3,1);}
+  #sheet{position:absolute;left:0;right:0;bottom:0;max-height:min(calc(100dvh - 108px),calc(var(--appvh,100dvh) - 108px));overflow-y:auto;background:#1d1811;border-top:2px solid var(--gold);border-radius:12px 12px 0 0;padding:12px;transition:transform .28s cubic-bezier(.16,1.12,.3,1);}
+  /* layout-fix J1: selection (grid) sheets take the chain dock's
+     structure — fixed header, ONLY the candidate region scrolls,
+     and the confirm/cancel row is an in-flow flex child that is
+     always inside the sheet, never a sticky afterthought. */
+  #sheet.flexsheet{display:flex;flex-direction:column;overflow:hidden;}
+  #sheet .sheet-scroll{overflow-y:auto;min-height:0;flex:1 1 auto;}
+  #sheet.flexsheet .btnrow{position:static;flex:0 0 auto;}
   #sheetwrap[data-closing="1"] #sheet{pointer-events:none;}
   #sheetwrap.peek #sheet{transform:translateY(calc(100% - 44px));}
   #sheetwrap.peek{background:#0003;}
@@ -525,7 +548,10 @@
      as a floating 34px button at the card's top-right it crossed
      the stats line whenever the text below grew tall */
   .gcard .gdetail{position:static;flex:0 0 auto;margin-left:auto;font-size:10.5px;background:#000c;color:var(--gold);border:1px solid var(--gold-dim);border-radius:5px;padding:2px 8px;min-height:20px;cursor:pointer;}
-  .gcard .itext{font-size:12px;line-height:1.55;color:var(--txt);background:rgba(5,4,2,.94);padding:3px 4px;border-radius:2px;margin-top:2px;max-height:150px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:8;-webkit-box-orient:vertical;}
+  /* layout-fix J1: no in-tile clamp — the tile carries the FULL
+     effect text and the sheet's candidate region scrolls (the old
+     8-line clamp cut long effects off mid-body inside the sheet). */
+  .gcard .itext{font-size:12px;line-height:1.55;color:var(--txt);background:rgba(5,4,2,.94);padding:3px 4px;border-radius:2px;margin-top:2px;}
   .cand .candinfo{flex:0 0 76px;min-height:48px;font-size:13px;color:var(--gold);background:#171208;border:1px solid var(--gold-dim);border-radius:6px;padding:6px 10px;cursor:pointer;}
   /* fx-ui round 2 (F3): the chain candidate's own activation
      button — full width under the candidate text, gold plate,
@@ -807,7 +833,12 @@
      the whole composition sideways as ONE card. Opponent face-down
      tiles keep .back (pattern only, no ghost) — asymmetry preserved. */
   .tile.setown .inner .veil{position:absolute;inset:0;border-radius:4px;background:#171208 url('../assets/card-back-s.jpg') center/cover;animation:setbreath 4.6s ease-in-out infinite alternate;}
-  @keyframes setbreath{from{opacity:.58}to{opacity:.86}}
+  /* layout-fix J5: the breath range was .58-.86 — at its low end
+     the art showed at over 40% and the tile read as a face-up
+     card with a tint, not as the owner's set card ghosting
+     through its back (the decided design). The back pattern now
+     dominates at every phase (.78-.92); the ghost stays. */
+  @keyframes setbreath{from{opacity:.78}to{opacity:.92}}
   /* xyz material stack edges: layered inset steps at the tile corner */
   .tile.mats1{box-shadow:inset -3px -3px 0 0 #171208,inset -4.5px -4.5px 0 0 var(--gold-dim);}
   .tile.mats2{box-shadow:inset -3px -3px 0 0 #171208,inset -4.5px -4.5px 0 0 var(--gold-dim),inset -6px -6px 0 0 #171208,inset -7.5px -7.5px 0 0 var(--gold-dim);}
@@ -1136,6 +1167,7 @@
     <p id="resultSub" style="font-size:12px;color:var(--txt-dim);margin:0;"></p>
     <div class="resultbtns">
       <button class="startbtn" id="againbtn">同じ設定でもう1戦</button>
+      <button class="subbtn" id="reshistbtn">履歴を見る</button>
       <button class="subbtn" id="titlebtn">タイトルに戻る</button>
     </div>
   </div>
