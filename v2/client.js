@@ -6554,14 +6554,88 @@ function placeSheetBtns() {
   const pk = $('peekbtn'), sx = $('sheetx');
   if (!wrap || !sheet || !wrap.classList.contains('on')) return;
   if (wrap.classList.contains('peek')) { if (pk) pk.style.bottom = ''; if (sx) sx.style.bottom = ''; return; }
-  const b = (sheet.offsetHeight + 8) + 'px';
+  // layout-fix5 M1: the sheet can be lifted by ensureSheetFits
+  // (inline bottom) when its anchor sits below the visible area —
+  // the buttons ride on the sheet's lifted top edge, not the wrap's.
+  const lift = parseFloat(sheet.style.bottom) || 0;
+  const b = (sheet.offsetHeight + lift + 8) + 'px';
   if (pk) pk.style.bottom = b;
   if (sx) sx.style.bottom = b;
+}
+// layout-fix5 M1: post-open fit self-check for sheets. The budget
+// is re-measured at open (sheetOpen), but a WebView whose dvh /
+// layout viewport runs taller than the visible area can still leave
+// a sheet overflowing, and a flex scroller that sizes to its content
+// (the iOS flex-scroll quirk) can leave the sheet unscrollable with
+// the confirm row pushed out of reach. Verify from painted rects
+// after the entrance settles (360 ms, same point as placeSheetBtns):
+// (a) clamp the sheet into the live visible area; (b) if a scroller
+// with overflowing content cannot move, pin its height from the
+// sheet's own box. Idempotent; records the verdict in
+// sheet.dataset.fit ('ok' / 'clamped' / 'scroller-forced') for tests.
+function ensureSheetFits() {
+  try {
+    const sheet = $('sheet'); if (!sheet || !$('sheetwrap').classList.contains('on')) return;
+    const vh = viewportHeights();
+    const r = sheet.getBoundingClientRect();
+    let fit = '';
+    // (a) the sheet must end inside the live visible area. Two
+    // causes: a height budget taller than the visible area (clamp
+    // it), and an anchor below the visible bottom — the sheet is
+    // bottom-anchored to the fixed wrap, whose bottom is the layout
+    // viewport's bottom, which on a phone WebView can sit below
+    // the visible area (app chrome over the WebView). Then the
+    // sheet must also be LIFTED so its bottom meets the visible
+    // bottom; the buttons are re-placed after the lift. (The lift
+    // path cannot be exercised in Chrome — the layout viewport
+    // always equals the window there — so it is recorded here and
+    // confirmed by real-play re-verification, not by the rig.)
+    if (r.bottom > vh.visibleBottom + 1) {
+      const excess = r.bottom - vh.visibleBottom;
+      sheet.style.maxHeight = Math.max(120, vh.visibleBottom - 108) + 'px';
+      sheet.style.bottom = excess + 'px';
+      fit = 'clamped';
+      try { placeSheetBtns(); } catch (e) {}
+    }
+    // (b) a scroller with overflowing content must actually move
+    const sc = sheet.querySelector('.sheet-scroll');
+    if (sc && sc.scrollHeight > sc.clientHeight + 1) {
+      const before = sc.scrollTop;
+      sc.scrollTop = 1;
+      if (sc.scrollTop === 0) {
+        // flex sizing failed on this engine: pin the scroller's
+        // height from the sheet's own box (sheet height minus the
+        // other rows and the sheet padding).
+        let others = 0;
+        for (const ch of sheet.children) { if (ch !== sc) others += ch.offsetHeight || 0; }
+        const h = Math.max(80, sheet.clientHeight - others - 24);
+        sc.style.flex = 'none';
+        sc.style.height = h + 'px';
+        sc.scrollTop = 1;
+        fit = fit ? fit + '+scroller-forced' : 'scroller-forced';
+      }
+      if (sc.scrollTop !== 0) sc.scrollTop = before;
+    }
+    sheet.dataset.fit = fit || 'ok';
+  } catch (e) {}
 }
 function sheetOpen(html, kind) {
   sheetKind = kind || 'prompt';
   closeInfoPop();
   const wrap = $('sheetwrap'), sheet = $('sheet');
+  // layout-fix5 M1: the sheet's height budget (--appvh) was frozen
+  // at duel start (one-shot layout, no resize listener), so a
+  // visible area that shrank afterwards (app chrome) left the sheet
+  // budgeted taller than the screen — its bottom and detail buttons
+  // fell outside the visible area and the scroller could not reach
+  // them. Re-measure the conservative visible height on every open,
+  // so max-height: min(100dvh-108, appvh-108) tracks the live
+  // viewport. A stale inline clamp from a previous fit-check is
+  // cleared here and re-derived below if still needed.
+  try { document.documentElement.style.setProperty('--appvh', viewportHeights().baseH + 'px'); } catch (e) {}
+  sheet.style.maxHeight = '';
+  sheet.style.bottom = '';
+  delete sheet.dataset.fit;
   sheet.classList.remove('flexsheet'); // layout-fix J1: grid sheets re-add it after open (sheetOpen is structure-agnostic)
   const wasOpen = wrap.classList.contains('on');
   if (sheetCloseTimer) { clearTimeout(sheetCloseTimer); sheetCloseTimer = null; }
@@ -6578,6 +6652,8 @@ function sheetOpen(html, kind) {
   // (grid rows finish sizing after the entrance) — re-place once
   // it has settled, or the buttons keep the pre-settle height.
   setTimeout(placeSheetBtns, 360);
+  // layout-fix5 M1: same settle point for the fit self-check.
+  setTimeout(ensureSheetFits, 360);
   if (!wasOpen) {
     // V4-6: opening is a motion, not a cut — the sheet slides up on
     // the sheetIn curve (its overshoot IS the 4%), the scrim fades

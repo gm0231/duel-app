@@ -398,6 +398,14 @@
      and the confirm/cancel row is an in-flow flex child that is
      always inside the sheet, never a sticky afterthought. */
   #sheet.flexsheet{display:flex;flex-direction:column;overflow:hidden;}
+  /* layout-fix5 M1: the scroller keeps flex:1 1 auto AND
+     min-height:0 — basis 0 was tried and REJECTED (it collapses
+     the scroller to 0px in this content-sized sheet: the sheet's
+     height is set by its content, so a zero-basis scroller leaves
+     the container nothing to grow into; measured: clientH 0,
+     tiles unhittable). min-height:0 is the actual iOS flex-scroll
+     fix (it lets the scroller shrink below its content); a
+     scroller that still cannot move is pinned by ensureSheetFits. */
   #sheet .sheet-scroll{overflow-y:auto;min-height:0;flex:1 1 auto;}
   #sheet.flexsheet .btnrow{position:static;flex:0 0 auto;}
   #sheetwrap[data-closing="1"] #sheet{pointer-events:none;}
