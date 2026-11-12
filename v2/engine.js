@@ -446,7 +446,7 @@ class GameState {
     this.solvingLink = 0;             // chain_count currently resolving (0 = building)
     this.winner = null; this.winReason = 0;
     this.lastAttack = null;           // {attacker, target|null}
-    this.pendingMatLines = [];        // layout-fix3 K3: [{e, con, who, nm}] — material history lines whose Extra-Deck host name awaits the SPSUMMONING announcement (the material MOVEs are applied first, measured)
+    this.pendingMatLines = [];        // layout-fix4 L2: [{con, who, nm, cid, sol}] — material history lines NOT YET PUSHED, awaiting the SPSUMMONING announcement that names the true host. Never rewrite a pushed dlog entry in place (round 3 did): the client's captureDLog alignment is value-keyed on `s`, so a rewrite breaks the prefix match and the whole stream is re-added as duplicates — and any client snapshot taken between the MOVE and the announcement captures the wrong host name.
     this.lastTrigger = null;          // layout-fix J4: {kind, code, con, turn, phase} — the latest public action a chain window can be answering
     // layout-fix2 J4': kinds are 'summon' | 'attack' | 'solved' |
     // 'phase'. The J4 attach rule (same turn AND same phase)
@@ -591,7 +591,13 @@ class GameState {
     switch (t) {
       case 5: { this.winner = r.u8(); this.winReason = r.u8(); this.pushDLog({ k: 'info', s: '決着：' + this.who(this.winner) + ' の勝利' }); break; } // WIN
       case 40: { this.turnPlayer = r.u8(); this.turnCount++;
-        this.pendingMatLines = []; // layout-fix3 K3: unrewritten material lines never outlive their turn
+        // layout-fix4 L2: a pending material line whose host never
+        // announced (summon negated / procedure aborted) is flushed
+        // with the honest generic host — never silently dropped,
+        // never resolved through the mirror's extra LIST order (the
+        // round-3 failure: list order != core seq order).
+        for (const pm of this.pendingMatLines) this.pushDLog({ k: 'info', cid: pm.cid, sol: pm.sol, s: pm.who + '：' + pm.nm + ' がモンスター のエクシーズ素材になった' });
+        this.pendingMatLines = [];
         // layout-fix2 J4': a window before the turn's first phase
         // message still gets an antecedent (the turn start itself;
         // phase '' = no phase yet, the client labels it ターン開始時).
@@ -689,7 +695,7 @@ class GameState {
               const host = this._hostEntry(this.players[to.con], to);
               const hostCode = host && host.code ? host.code : 0;
               s = this.who(from.con) + '：' + nm + ' が' + (hostCode ? '《' + this.nameOf(hostCode) + '》' : 'モンスター') + ' のエクシーズ素材になった';
-              // layout-fix3 K3: a host still in the Extra Deck is
+              // layout-fix4 L2: a host still in the Extra Deck is
               // resolved by the mirror through its extra LIST order
               // at the core's seq — the two orders differ, so the
               // entry found there can be a different monster (a
@@ -697,10 +703,14 @@ class GameState {
               // ルーチェ》's). The material MOVEs are applied
               // BEFORE the host's SPSUMMONING announcement
               // (measured on the real core), so the true host is
-              // not knowable at this line yet: the line is
-              // registered as pending and the SPSUMMONING handler
-              // rewrites it with the announced code. Field hosts
-              // resolve in place — the zone is authoritative.
+              // not knowable at this line yet: the line is HELD,
+              // not pushed — the announcement pushes it with the
+              // true name (case 62). Pushing it now would let a
+              // client snapshot capture the wrong name, and the
+              // round-3 in-place rewrite then broke the client's
+              // value-keyed capture alignment (the whole stream
+              // re-added as duplicates). Field hosts resolve in
+              // place — the zone is authoritative.
               if ((to.loc & ~LOC.OVERLAY) === LOC.EXTRA) matPending = { con: to.con, who: this.who(from.con), nm };
             } else if (fromField) {
               if (to.loc === LOC.GRAVE) s = this.who(from.con) + '：' + nm + ' は' + ((reason & 0x1) ? ((reason & 0x20) ? '戦闘で破壊され、墓地へ送られた' : '効果で破壊され、墓地へ送られた') : '墓地へ送られた');
@@ -732,8 +742,14 @@ class GameState {
               else if (to.loc === LOC.REMOVED) s = this.who(from.con) + '：' + nm + ' がEXデッキから除外された';
               else if (to.loc === LOC.HAND) s = this.who(from.con) + '：' + nm + ' がEXデッキから手札に加わった';
             }
-            if (s) { const ent = { k: 'info', cid, sol, s }; this.pushDLog(ent);
-              if (matPending) this.pendingMatLines.push({ e: ent, con: matPending.con, who: matPending.who, nm: matPending.nm }); }
+            if (s) {
+              if (matPending) {
+                // layout-fix4 L2: hold the line (see the overlay
+                // branch above) — pushing a possibly-wrong host
+                // name now is exactly the round-3 defect.
+                this.pendingMatLines.push({ con: matPending.con, who: matPending.who, nm: matPending.nm, cid, sol });
+              } else this.pushDLog({ k: 'info', cid, sol, s });
+            }
             // layout-fix J2: the mid-band latest line is fed by
             // pushLog only, and field DEPARTURES never reached it —
             // the band kept showing the activation line of the chain
@@ -926,12 +942,22 @@ class GameState {
             : this.who(li.con) + '：カードをセット' });
         } else {
           const zc = (zone[li.seq] && zone[li.seq].code) || code;
-          // layout-fix3 K3: the announced summon is the authority
+          // layout-fix4 L2: the announced summon is the authority
           // for any pending Extra-host material lines (their MOVEs
-          // were applied before this announcement) — rewrite them
-          // in place with the announced monster's name.
-          if (t === 62 && zc && this.pendingMatLines.length) {
-            for (const pm of this.pendingMatLines) if (pm.con === li.con) pm.e.s = pm.who + '：' + pm.nm + ' が《' + this.nameOf(zc) + '》 のエクシーズ素材になった';
+          // were applied before this announcement). Push them NOW,
+          // with the announced name, BEFORE the summon's own line
+          // — the stream stays append-only, so the client's
+          // value-keyed capture alignment never breaks and no
+          // snapshot can carry a wrong host. Only an Xyz
+          // announcement can own pending materials: a non-Xyz
+          // special summon interleaved between a material MOVE
+          // and its host's announcement must not claim them. A 0
+          // code (face-down summon) names no host, so nothing
+          // flushes on it either.
+          if (t === 62 && zc && this.pendingMatLines.length && this.cardData[zc] && (this.cardData[zc].type & 0x800000)) {
+            const hostName = this.nameOf(zc);
+            for (const pm of this.pendingMatLines) if (pm.con === li.con)
+              this.pushDLog({ k: 'info', cid: pm.cid, sol: pm.sol, s: pm.who + '：' + pm.nm + ' が《' + hostName + '》 のエクシーズ素材になった' });
             this.pendingMatLines = this.pendingMatLines.filter(pm => pm.con !== li.con);
           }
           // A face-down summon of the opponent's stays unnamed even

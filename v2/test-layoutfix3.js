@@ -77,9 +77,17 @@ const name = (c) => data.names[c];
   ok(!/#logline\{[^}]*line-clamp/.test(html) && clientSrc.includes('function fitLogline(ll)') &&
      clientSrc.includes('fitLogline(ll);') && clientSrc.includes('lastBandH') && clientSrc.includes('layoutFit(false); } catch (e) {}'),
     'LF3-K2a: no line-clamp on #logline; fitLogline runs on every band draw and band growth re-enters layoutFit');
-  ok(engineSrc.includes('this.pendingMatLines.push({ e: ent, con: matPending.con, who: matPending.who, nm: matPending.nm })') &&
-     engineSrc.includes('pm.e.s = pm.who +') && engineSrc.includes('this.pendingMatLines = []; // layout-fix3 K3'),
-    'LF3-K3a: Extra-host material lines pend at MOVE time and are rewritten by the SPSUMMONING announcement (cleared per turn)');
+  // LF3-K3a SUPERSEDED by layout-fix4 L2 (see test-layoutfix4.js
+  // LF4-L2a): the round-3 contract pushed the material line at MOVE
+  // time and rewrote it in place at SPSUMMONING — the rewrite broke
+  // the client's value-keyed capture alignment (whole-stream
+  // duplicates) and snapshots between the batches captured the
+  // wrong host. The successor contract HOLDS the line and pushes it
+  // at the announcement with the true name; nothing is ever
+  // rewritten in place.
+  ok(engineSrc.includes('this.pendingMatLines.push({ con: matPending.con, who: matPending.who, nm: matPending.nm, cid, sol })') &&
+     !engineSrc.includes('pm.e.s =') && engineSrc.includes("(this.cardData[zc].type & 0x800000)"),
+    'LF3-K3a: Extra-host material lines are HELD at MOVE time and pushed at the Xyz announcement with the announced name (layout-fix4 L2 successor; no in-place rewrite)');
   ok(!clientSrc.includes('class="itext"') && html.includes('grid-auto-rows:1fr') &&
      /\.cand \.fxline\{[^}]*max-height:97px[^}]*overflow-y:auto/.test(html),
     'LF3-K4a: no inline effect text on candidate tiles; uniform grid rows; the dock effect body lives in a fixed-height scrolling region');
