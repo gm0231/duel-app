@@ -1653,13 +1653,48 @@ function nbHTML(text) {
 // name stays whole on its own line instead of breaking.
 function nbFit(container) {
   if (!container) return;
-  const w = container.clientWidth;
+  // layout-fix4 L1: compare FRACTIONAL widths (getBoundingClientRect).
+  // The integer clientWidth/offsetWidth pair called a 212.0px unit in
+  // a 211.6px line "fitting" and left a sub-pixel overflow; the
+  // rects see it and shrink the unit one step.
+  const w = container.getBoundingClientRect().width;
   if (!w) return;
   container.querySelectorAll('.nb').forEach(sp => {
     sp.style.fontSize = '';
     let fs = parseFloat(getComputedStyle(sp).fontSize) || 12.5;
-    while (sp.offsetWidth > w && fs > 9.5) { fs -= 0.5; sp.style.fontSize = fs + 'px'; }
+    while (sp.getBoundingClientRect().width > w && fs > 9.5) { fs -= 0.5; sp.style.fontSize = fs + 'px'; }
   });
+}
+// layout-fix4 L1: the band-height invariant. The band is auto-height
+// and SHOULD always contain its content — but on the published build
+// a 3-line chain display was seen with its last line half-cut at the
+// band's bottom edge (twice, real play; the Chrome rig cannot
+// reproduce it for any string variant, so the cause is in the real
+// device's rendering — a flex squeeze under a short visual viewport
+// or an iOS line-box difference). Instead of trusting auto-height,
+// ENFORCE it after every band fit: if the content is taller than
+// the box, force the floor up to the measured content height; when
+// it fits again, release the forced floor. Inert when unconstrained
+// (scrollHeight == clientHeight), so it changes nothing in the rig
+// and only ever fires when a clip is actually happening.
+function ensureBandFits() {
+  const mb = $('midbar'); if (!mb) return;
+  // Release any forced floor first, so the measurement sees the
+  // natural height; then grow only as far as the content needs.
+  // Loop to convergence: one pass can leave a 1–2px residual (the
+  // centered-overflow measurement shifts as the box grows), so
+  // re-measure and grow again until the content fits or the guard
+  // stops it. The content height is independent of the box height,
+  // so this converges in at most two passes in practice.
+  if (mb.style.minHeight) mb.style.minHeight = '';
+  let guard = 0;
+  while (mb.scrollHeight > mb.clientHeight + 1 && guard++ < 4) {
+    // border-box (the app is *{box-sizing:border-box}): the used
+    // border-box height must grow by the whole deficit, not by
+    // scrollHeight alone (that leaves the 1px top+bottom borders
+    // short — the exact half-clipped line seen in real play).
+    mb.style.minHeight = (mb.offsetHeight + (mb.scrollHeight - mb.clientHeight)) + 'px';
+  }
 }
 // layout-fix3 K2: whole-line fit for the band's event line. The
 // two-line clamp is gone (index.html), so a long line would grow
@@ -4223,16 +4258,38 @@ function fxProcessInner(evs, state) {
   for (let p = 0; p < 2; p++) {
     const notedCount = (to) => { const m = new Map(); for (const n of moveNotes) if (n.con === p && n.to === to && n.code != null) m.set(n.code, (m.get(n.code) || 0) + 1); return m; };
     const detached = changed.some(ch => { const [c0, l0] = ch.key.split(':').map(Number); return c0 === p && l0 === E.LOC.MZONE && (ch.after.mats || 0) < (ch.before.mats || 0); });
+    // layout-fix4 L3: the opponent's hand is count-only (identities
+    // hidden), so a hand departure reaching a pile has no pass of
+    // its own — this leftover loop is the only naming route. The
+    // evidence order is field (a recorded departure) -> hand (the
+    // hand shrank this batch, capped at the shrinkage minus moves
+    // already noted from the hand) -> extra (a matching Extra
+    // departure) -> overlay (only when a mats decrease was actually
+    // recorded this batch). With no evidence at all the card is
+    // COUNTED (moveleft), never guessed at — the round-3 fallback
+    // printed 'overlay' on no evidence at all, which is how an
+    // opponent's hand discard was announced as "エクシーズ素材→
+    // 墓地". Residual limit: a batch holding BOTH a detach and a
+    // hand discard to the same pile cannot tell the two cards
+    // apart by code (the mirror holds no overlay-unit codes), so
+    // the loop's arrival order decides which gets which label.
+    const handShrink = Math.max(0, (prev.handLen[p] || 0) - (cur.handLen[p] || 0));
+    const notedFromHand = () => moveNotes.filter(n => n.con === p && n.from === 'hand').length;
     const gc = notedCount('grave');
     for (const code of graveD[p].added) {
       if ((gc.get(code) || 0) > 0) { gc.set(code, gc.get(code) - 1); continue; }
       const fromField = departed.some(d => d.entry.code === code && d.key.split(':').map(Number)[0] === p);
-      noteMove(p, fromField ? 'field' : (detached ? 'overlay' : (extraD[p].removed.includes(code) ? 'extra' : 'overlay')), 'grave', code, false);
+      if (fromField) noteMove(p, 'field', 'grave', code, false);
+      else if (notedFromHand() < handShrink) noteMove(p, 'hand', 'grave', code, false);
+      else if (extraD[p].removed.includes(code)) noteMove(p, 'extra', 'grave', code, false);
+      else if (detached) noteMove(p, 'overlay', 'grave', code, false);
+      else fxRecord('moveleft', { to: 'grave', code, con: p });
     }
     const rc = notedCount('removed');
     for (const code of remD[p].added) {
       if ((rc.get(code) || 0) > 0) { rc.set(code, rc.get(code) - 1); continue; }
       if (extraD[p].removed.includes(code)) noteMove(p, 'extra', 'removed', code, false);
+      else if (notedFromHand() < handShrink) noteMove(p, 'hand', 'removed', code, false);
       else fxRecord('moveleft', { to: 'removed', code, con: p }); // counted, not silently dropped (see design record)
     }
   }
@@ -6148,6 +6205,7 @@ function pileHTML(p, con) {
 let duelState = null;
 let renderLogTxt = null; // layout-fix J2: last band line rendered (the 《》 span wrap is rebuilt only on change)
 let lastBandH = 0;       // layout-fix3 K2: last #midbar height — a change means the grown/shrunk band must be re-absorbed by layoutFit
+let lastLogW = 0;        // layout-fix4 L1: the logline's width at the last fit — the phase button's label can narrow it WITHOUT the text changing (a new prompt), and the old fit then overflows the box; a width change re-fits even when the text is unchanged
 let histFromResult = false; // layout-fix J5: the history sheet was opened from the result overlay — closing it restores the result
 // B-10: the engine mirror caps its log at 60 lines; the client
 // keeps its own turn-tagged copy so the history sheet can show
@@ -6368,31 +6426,6 @@ function render(state) {
     cb.className = '';
     cb.innerHTML = '';
   }
-  // The band's event line. layout-fix J2 wrapped 《…》 names in
-  // nowrap spans — but the engine composed band lines with BARE
-  // names, so the guard never matched and names still split
-  // mid-word (シャド／ウ), and the plain remainder split inside
-  // words too (特殊／召喚). layout-fix2 J2': the engine now
-  // composes band lines with 《》 around names, and the line is
-  // rendered as unbreakable units (nbHTML): breaks happen only
-  // between units, an over-wide unit shrinks its own type.
-  // layout-fix3 K2: the two-line clamp is GONE (it cut tails —
-  // see the CSS note); after nbFit, fitLogline shrinks the whole
-  // line until it fits two lines, and any residual third line
-  // grows the band, whose new height layoutFit then absorbs
-  // (the refit hook under the draw below).
-  { const ll = $('logline');
-    const txt = state.log.length ? state.log[state.log.length - 1] : '';
-    if (txt !== renderLogTxt) {
-      renderLogTxt = txt;
-      ll.innerHTML = nbHTML(txt);
-      nbFit(ll);
-      fitLogline(ll);
-      const mb = $('midbar');
-      const bh = mb ? mb.offsetHeight : 0;
-      if (bh && lastBandH && Math.abs(bh - lastBandH) >= 2) { try { layoutFit(false); } catch (e) {} }
-      if (bh) lastBandH = bh;
-    } }
   // phase button
   const pb = $('phasebtn');
   if (phaseAction) { pb.disabled = false; pb.textContent = phaseAction.label; }
@@ -6406,6 +6439,44 @@ function render(state) {
     pb.textContent = currentPrompt ? '選択中…' : (state.winner != null ? '—' : (state.turnPlayer !== HP ? '相手のターン' : '処理中…'));
   }
   $('midbar').classList.toggle('busy', !currentPrompt && !!duelState && state.winner == null);
+  // The band's event line — AFTER the phase button is set, so the
+  // width measured here is the width the line actually gets this
+  // render (layout-fix4 L1: the hook used to run before the button
+  // was labelled, so a label change narrowed the line a render
+  // late and the old fit overflowed the box). layout-fix J2
+  // wrapped 《…》 names in nowrap spans — but the engine composed
+  // band lines with BARE names, so the guard never matched and
+  // names still split mid-word (シャド／ウ), and the plain
+  // remainder split inside words too (特殊／召喚). layout-fix2
+  // J2': the engine now composes band lines with 《》 around
+  // names, and the line is rendered as unbreakable units
+  // (nbHTML): breaks happen only between units, an over-wide
+  // unit shrinks its own type.
+  // layout-fix3 K2: the two-line clamp is GONE (it cut tails —
+  // see the CSS note); after nbFit, fitLogline shrinks the whole
+  // line until it fits two lines, and any residual third line
+  // grows the band, whose new height layoutFit then absorbs
+  // (the refit hook under the draw below).
+  { const ll = $('logline');
+    const txt = state.log.length ? state.log[state.log.length - 1] : '';
+    const lw = ll.clientWidth;
+    // layout-fix4 L1: re-fit when the TEXT changed OR the line's
+    // WIDTH changed (a label change narrows the line without a
+    // text change — the old fit then overflows the box by the
+    // narrowed amount). ensureBandFits enforces the band-height
+    // invariant after the fit (see its note).
+    if (txt !== renderLogTxt || (lw && lw !== lastLogW)) {
+      renderLogTxt = txt;
+      ll.innerHTML = nbHTML(txt);
+      nbFit(ll);
+      fitLogline(ll);
+      ensureBandFits();
+      if (lw) lastLogW = lw;
+      const mb = $('midbar');
+      const bh = mb ? mb.offsetHeight : 0;
+      if (bh && lastBandH && Math.abs(bh - lastBandH) >= 2) { try { layoutFit(false); } catch (e) {} }
+      if (bh) lastBandH = bh;
+    } }
   // B-08: the button never appears/disappears (that reflowed the
   // whole phase bar); it is present and disabled when there is
   // nothing behind it, so every width in the bar is constant.
