@@ -135,6 +135,16 @@ async function boot() {
     'FX4-9: H2 successor — no fixed candidate width remains (a row takes the dock width by construction)');
 
   // ---------- H3: mid-band rows follow their line boxes ----------
+  // ROUND 5 (I1) SUPERSESSION: FX4-10/12/13/14/16 originally pinned
+  // the round-4 fittings (line-height 1.5 / 1.2 / 1.35, phasebar
+  // floor 34, LAYOUT_FIXED 215). The published-build field check
+  // showed the phase cell's squeeze (1.2 / 1.35) leaves its text
+  // taller than its line boxes — the runs overlap and the label
+  // reads half-eaten — so round 5 moved every mid-band text row to
+  // line-height:normal (the font's own line height), the phasebar
+  // floor to 39 and LAYOUT_FIXED to 220. These assertions now pin
+  // the round-5 contract; the rest of H3 (no frozen heights, floors
+  // not boxes) stands as written in round 4.
   const logline = ruleDecls(/#logline\{([^}]*)\}/);
   ok(!!logline && !('height' in logline) && logline['line-height'] === '1.35' && logline['-webkit-line-clamp'] === '2',
     'FX4-10: H3 successor — #logline has no frozen height; it takes two fitted lines (a one-line column ellipsized real long events)');

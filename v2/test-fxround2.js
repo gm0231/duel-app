@@ -8,8 +8,10 @@
      a chain dock arriving while a detail view was still open.
      F2 — the SELECT_CARD grid's delivered CSS contract on the real
      rendered sheet: 3-column minmax(106px) grid, tiles >= 150px,
-     effect text at 11px, and the location label as an absolutely
-     positioned corner chip (out of the name/text flow).
+     effect text at 11px (ROUND 5 / I2: the sheet grid is auto-fit
+     and the effect text is 12px — see FXR8/FXR10 notes), and the
+     location label as an absolutely positioned corner chip (out of
+     the name/text flow).
    Live geometry + screenshots: fxround2/ capture rig. */
 const fs = require('fs');
 const path = require('path');

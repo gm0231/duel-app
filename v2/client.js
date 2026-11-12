@@ -7737,6 +7737,11 @@ $('menubtn').addEventListener('click', () => {
 //   + my field (2 zone rows + pilebar 30 + pad 4) + handbar extras 19
 //   (who 11 + padding 8) + 4 zone-row margins 8  =  FIXED 215
 //   plus 4 × slotH + handH + previewH.
+//   (This is the RETIRED pre-redesign accounting, kept because
+//   legacyParts/legacyTileW below preserve that build's formula
+//   verbatim as the redesign's tile floor. Round 5's I1 fittings
+//   (phasebar 39 / FIXED 220) belonged to the same retired
+//   structure and are superseded by the redesign header below.)
 //   (V3 stage 4: pile chips grew 21->28px for tap size (B-11) and
 //   the handbar/margins gave the difference back; the strip grew
 //   22->24px (B-15). The fit loop still verifies against the real

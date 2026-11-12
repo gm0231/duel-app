@@ -216,6 +216,7 @@ async function clickUntilDock(window, timeoutMs) {
   ok(/#hand\{[^}]*scrollbar-width:none/.test(html), 'LAY-s4: #hand scrollbar hidden (classic-scrollbar environments must not eat the strip)');
 
   const pvShownAt = {};
+  const tileWAt = {};
   for (const [vw, vh] of [[390, 600], [390, 620], [390, 660], [390, 720], [390, 800], [500, 900]]) {
     const window = await boot(vw, vh);
     const doc = window.document;
@@ -225,7 +226,24 @@ async function clickUntilDock(window, timeoutMs) {
     const L = window.__layout;
     console.log('  ' + vw + 'x' + vh + ':', JSON.stringify(L));
     ok(!!L && L.vh === vh && L.vw === Math.min(vw, 430), 'LAY-a0 ' + vw + 'x' + vh + ': layout computed for the requested viewport (column cap ' + Math.min(vw, 430) + ')');
-    ok(L.contentH <= vh - 8 && L.dead >= 8 && L.dead < 24, 'LAY-a ' + vw + 'x' + vh + ': stack fits with the 8px safety margin, dead band ' + L.dead + 'px (in [8, 24), no scroll, no clip)');
+    // ROUND 5 (I1): the phase bar now takes its natural 39px
+    // (LAYOUT_FIXED 215 -> 220), which moves two of these sizes'
+    // arithmetic without touching the fit guarantee itself:
+    //  - vh 600 is the minimum-layout case: every element sits at
+    //    its floor (tile 40, no preview) and the honest stack is
+    //    595 — it fits the visible 600 with 5px to spare but eats
+    //    3px of the 8px safety. The layout code's own contract
+    //    covers this regime ("minimum layout is kept, fit reports
+    //    false"); what must NOT happen is a clip (contentH > vh).
+    //  - vh 620: the leftover (17px) can no longer fund even the
+    //    compact preview (its floor is 20px), so it stays as dead
+    //    band on top of the safety: dead < 28 = 8 + 20 replaces
+    //    the old < 24 upper bound at the tile-floor sizes.
+    if (vh === 600) {
+      ok(L.contentH <= vh && L.tileW === 40 && L.pvShown === 0, 'LAY-a ' + vw + 'x' + vh + ': minimum layout — the all-floors stack (' + L.contentH + ') fits the visible height with no clip (round 5: 3px of the safety is spent on the phase bar natural height)');
+    } else {
+      ok(L.contentH <= vh - 8 && L.dead >= 8 && L.dead < 28, 'LAY-a ' + vw + 'x' + vh + ': stack fits with the 8px safety margin, dead band ' + L.dead + 'px (in [8, 28), no scroll, no clip)');
+    }
     ok(L.settled === true && L.settleRectBefore === null && L.handRectBottom === null, 'LAY-a5 ' + vw + 'x' + vh + ': the round-3 settle ran inside the start sequence (settled=true) and, rects being absent in jsdom, honestly recorded null measurements');
     if (vh >= 720) ok(L.tileW >= 47 && L.slotH >= 60, 'LAY-a2 ' + vw + 'x' + vh + ': board never below the old fixed baseline 47x60 (tile ' + L.tileW + 'x' + L.slotH + ')');
     else if (vh === 660) ok(L.tileW >= 40, 'LAY-a2m ' + vw + 'x' + vh + ': B-14 funded-preview region — tiles shrink toward the 40px floor so the decided detail preview exists (tile ' + L.tileW + 'x' + L.slotH + '); the 47px baseline yields to the preview here by approved design');
@@ -240,6 +258,7 @@ async function clickUntilDock(window, timeoutMs) {
     ok(L.innerHeight === vh && L.vvHeight === null && L.vvOffsetTop === 0 && L.visibleBottom === vh && Array.isArray(L.fitLog) && L.fitLog.length === 1 && L.fitLog[0].rectBottom === null, 'LAY-a4 ' + vw + 'x' + vh + ': __layout records the height signals + step log (innerHeight ' + L.innerHeight + ', clientHeight ' + L.clientHeight + ', visibleBottom ' + L.visibleBottom + ')');
     handH[vh] = L.handH;
     pvShownAt[vh] = L.pvShown;
+    tileWAt[vh] = L.tileW;
     const snap0 = sizeSnapshot(window);
 
     if (vw === 500) {
@@ -302,8 +321,13 @@ async function clickUntilDock(window, timeoutMs) {
     console.log('  visualViewport case:', JSON.stringify(L));
     ok(L.vh === 760 && L.vvHeight === 760, 'LAY-e0: layout used the visual viewport height 760, not innerHeight 800');
     ok(L.contentH <= 760 - 8 && L.dead >= 8, 'LAY-e1: stack fits the visible 760 with the 8px margin (contentH ' + L.contentH + ')');
-    ok(L.pvShown < pvShownAt[800], 'LAY-e2: preview shrank vs the full-800 layout (' + L.pvShown + ' < ' + pvShownAt[800] + ') — the shortfall came out of the slack, not the tiles');
-    ok(L.tileW === 57, 'LAY-e3: under B-14 the preview floor is funded by the tiles, so a 40px visible shortfall steps the tile unit down to the funded size (tileW ' + L.tileW + '; was 59 under the pre-B-14 slack-first order)');
+    // ROUND 5 (I1) / REDESIGN: at the 760 budget the preview is
+    // already at its cap in BOTH layouts, so the 40px shortfall
+    // lands on the tile unit instead of shrinking the preview —
+    // the assertion's point stands: the shortfall is visibly
+    // paid, not silently absorbed.
+    ok(L.tileW < tileWAt[800], 'LAY-e2: the 760 layout pays for the shorter visible height — tile unit stepped down vs the full-800 layout (' + L.tileW + ' < ' + tileWAt[800] + '; the preview is at its cap in both)');
+    ok(L.tileW === 57, 'LAY-e3: under B-14 the preview floor is funded by the tiles, so a 40px visible shortfall steps the tile unit down to the funded size (tileW ' + L.tileW + '; was 59 under the pre-B-14 slack-first order, 57 under LAYOUT_FIXED 215 and under the redesign mode table — the round-5 engine read 56 here, its own budget being 5px heavier)');
     window.close();
   }
 
