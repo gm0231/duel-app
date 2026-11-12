@@ -446,6 +446,7 @@ class GameState {
     this.solvingLink = 0;             // chain_count currently resolving (0 = building)
     this.winner = null; this.winReason = 0;
     this.lastAttack = null;           // {attacker, target|null}
+    this.lastTrigger = null;          // layout-fix J4: {kind:'summon'|'attack', code, con, turn, phase} — the latest public action a chain window can be answering
     this.deckTop = [null, null];
     this.log = [];                    // recent event strings (system text only)
     this.events = [];                 // transient event queue for presentation (SE cues), drained by the client
@@ -571,8 +572,8 @@ class GameState {
       case 41: { const ph = r.u16(); this.phase = ph; this.phaseName = PHASES[ph] || ('PH' + ph); break; } // NEW_PHASE
       case 94: { const p = r.u8(); this.players[p].lp = r.i32(); break; } // LPUPDATE
       case 91: { const p = r.u8(); const amt = r.u32(); const before = this.players[p].lp; this.players[p].lp -= amt; this.pushLog(this.who(p) + 'に ' + amt + ' ダメージ'); this.pushDLog({ k: 'dmg', cid: this.chainCid(), sol: this.solvingLink, s: this.who(p) + ' に ' + amt + ' ダメージ（LP ' + before + ' → ' + this.players[p].lp + '）' }); this.pushEvent({ kind: 'damage', player: p, amount: amt }); break; } // DAMAGE
-      case 92: { const p = r.u8(); const amt = r.u32(); const before = this.players[p].lp; this.players[p].lp += amt; this.pushDLog({ k: 'info', cid: this.chainCid(), sol: this.solvingLink, s: this.who(p) + ' は ' + amt + ' 回復（LP ' + before + ' → ' + this.players[p].lp + '）' }); this.pushEvent({ kind: 'recover', player: p, amount: amt }); break; } // RECOVER
-      case 100: { const p = r.u8(); const amt = r.u32(); const before = this.players[p].lp; this.players[p].lp -= amt; this.pushDLog({ k: 'info', cid: this.chainCid(), sol: this.solvingLink, s: this.who(p) + ' はコストとして LP を ' + amt + ' 払った（LP ' + before + ' → ' + this.players[p].lp + '）' }); this.pushEvent({ kind: 'pay', player: p, amount: amt }); break; } // PAY_LPCOST (dlog from the log-detail line + redesign F: the pay event is presentation-only — it lets the client tell an LP cost apart from damage; the LP arithmetic is unchanged)
+      case 92: { const p = r.u8(); const amt = r.u32(); const before = this.players[p].lp; this.players[p].lp += amt; this.pushDLog({ k: 'info', cid: this.chainCid(), sol: this.solvingLink, s: this.who(p) + ' は ' + amt + ' 回復（LP ' + before + ' → ' + this.players[p].lp + '）' }); this.pushLog(this.who(p) + '：' + amt + ' 回復'); this.pushEvent({ kind: 'recover', player: p, amount: amt }); break; } // RECOVER (band line: layout-fix J2)
+      case 100: { const p = r.u8(); const amt = r.u32(); const before = this.players[p].lp; this.players[p].lp -= amt; this.pushDLog({ k: 'info', cid: this.chainCid(), sol: this.solvingLink, s: this.who(p) + ' はコストとして LP を ' + amt + ' 払った（LP ' + before + ' → ' + this.players[p].lp + '）' }); this.pushLog(this.who(p) + '：LP ' + amt + ' を払った'); this.pushEvent({ kind: 'pay', player: p, amount: amt }); break; } // PAY_LPCOST (dlog from the log-detail line + redesign F: the pay event is presentation-only — it lets the client tell an LP cost apart from damage; the LP arithmetic is unchanged. Band line: layout-fix J2)
       case 50: { // MOVE: code, from loc_info, to loc_info, reason
         const code = r.u32(); const from = r.locInfo(); const to = r.locInfo(); const reason = r.u32();
         if (code !== 0) { // code 0 = deck-internal reorder noise
@@ -683,6 +684,24 @@ class GameState {
               else if (to.loc === LOC.HAND) s = this.who(from.con) + '：' + nm + ' がEXデッキから手札に加わった';
             }
             if (s) this.pushDLog({ k: 'info', cid, sol, s });
+            // layout-fix J2: the mid-band latest line is fed by
+            // pushLog only, and field DEPARTURES never reached it —
+            // the band kept showing the activation line of the chain
+            // that caused them ("the chain display stayed"). Mirror
+            // the outcome line for departures from the field, under
+            // the band's own information rules: a face-down card's
+            // identity is named only once the move itself reveals
+            // it (a public pile), the owner's own cards are always
+            // known to them, and returns to the hand keep the line
+            // they already had above.
+            if (s && fromField && !(to.loc & LOC.OVERLAY) && to.loc !== LOC.HAND) {
+              const isPublic = from.con === this.humanPlayer || !(from.pos & 0xA) ||
+                to.loc === LOC.GRAVE || to.loc === LOC.REMOVED;
+              if (isPublic) this.pushLog(s);
+              else if (to.loc === LOC.DECK) this.pushLog(this.who(from.con) + '：セットカードがデッキに戻った');
+              else if (to.loc === LOC.EXTRA) this.pushLog(this.who(from.con) + '：セットカードがEXデッキに戻った');
+              else if (toField) this.pushLog(this.who(from.con) + '：セットカードのコントロールが移った');
+            }
           }
         }
         break;
@@ -818,8 +837,11 @@ class GameState {
         // the opponent's private information in form, if not in
         // fact: naming it would leak the set card).
         const known = code || (zone[seq] && zone[seq].code);
-        if (ppos !== npos && known && !(con !== this.humanPlayer && (ppos & 0xA) && (npos & 0xA)))
-          this.pushDLog({ k: 'info', cid: this.chainCid(), sol: this.solvingLink, s: this.who(con) + '：' + this.nameOf(known) + ' の表示形式が ' + posName(ppos) + ' → ' + posName(npos) });
+        if (ppos !== npos && known && !(con !== this.humanPlayer && (ppos & 0xA) && (npos & 0xA))) {
+          const s = this.who(con) + '：' + this.nameOf(known) + ' の表示形式が ' + posName(ppos) + ' → ' + posName(npos);
+          this.pushDLog({ k: 'info', cid: this.chainCid(), sol: this.solvingLink, s });
+          this.pushLog(s); // layout-fix J2: position changes reach the band too
+        }
         break;
       }
       case 54: case 60: case 62: case 64: { // SET / SUMMONING / SPSUMMONING / FLIPSUMMONING: code + loc_info
@@ -835,7 +857,7 @@ class GameState {
         else this.players[li.con].szone[li.seq] = { code, pos: li.pos };
         if (t === 54) { this.pushLog(this.who(li.con) + '：カードをセット'); this.pushEvent({ kind: 'set', code, con: li.con, loc: li.loc }); }
         if (t === 60) { this.pushLog(this.who(li.con) + '：' + this.nameOf(code) + ' を召喚'); this.pushEvent({ kind: 'summon', code, con: li.con }); }
-        if (t === 62) { this.pushLog(this.who(li.con) + '：' + this.nameOf(code) + ' を特殊召喚'); this.pushEvent({ kind: 'spsummon', code, con: li.con }); }
+        if (t === 62) this.pushEvent({ kind: 'spsummon', code, con: li.con });
         if (t === 64) this.pushEvent({ kind: 'flipsummon', code, con: li.con });
         // Detailed versions. A set card is named only for its owner
         // (the opponent's set identity is hidden information; the
@@ -857,6 +879,16 @@ class GameState {
           this.pushDLog({ k: 'info', cid: this.chainCid(), sol: this.solvingLink, s: nm
             ? this.who(li.con) + '：' + nm + ' ' + verb + '（' + posName(li.pos) + '）'
             : this.who(li.con) + '：モンスター' + verb });
+          // layout-fix J2/J4: the band line for a special / flip
+          // summon uses the same public name as the detailed line
+          // (the old line printed nameOf(0) = '#0' for a face-down
+          // special summon), flip summons reach the band at all,
+          // and the summon is remembered as the current trigger so
+          // a chain window opened on it can name what it answers
+          // (J4: prompt.trigger, attached by the driver).
+          if (t === 62) this.pushLog(nm ? this.who(li.con) + '：' + nm + ' を特殊召喚' : this.who(li.con) + '：モンスターを特殊召喚');
+          if (t === 64) this.pushLog(nm ? this.who(li.con) + '：' + nm + ' を反転召喚' : this.who(li.con) + '：モンスターを反転召喚');
+          if (t !== 54) this.lastTrigger = { kind: 'summon', code: nm ? zc : 0, con: li.con, turn: this.turnCount, phase: this.phaseName, verb: t };
         }
         break;
       }
@@ -918,8 +950,8 @@ class GameState {
         break;
       }
       case 73: { const n = r.u8(); const link = this.chain[n - 1]; if (link) link.solved = true; break; } // CHAIN_SOLVED
-      case 75: { const n = r.u8(); const link = this.chain[n - 1]; if (link) { link.negated = true; this.pushDLog({ k: 'neg', cid: this.chainSeq, link: n, con: link.con, code: link.code, desc: link.desc, loc: link.loc }); } this.pushEvent({ kind: 'negate' }); break; } // CHAIN_NEGATED
-      case 76: { const n = r.u8(); const link = this.chain[n - 1]; if (link) { link.disabled = true; this.pushDLog({ k: 'dis', cid: this.chainSeq, link: n, con: link.con, code: link.code, desc: link.desc, loc: link.loc }); } break; } // CHAIN_DISABLED
+      case 75: { const n = r.u8(); const link = this.chain[n - 1]; if (link) { link.negated = true; this.pushDLog({ k: 'neg', cid: this.chainSeq, link: n, con: link.con, code: link.code, desc: link.desc, loc: link.loc }); this.pushLog('チェーン' + n + '：' + this.nameOf(link.code) + ' の発動が無効になった'); } this.pushEvent({ kind: 'negate' }); break; } // CHAIN_NEGATED (band line: layout-fix J2)
+      case 76: { const n = r.u8(); const link = this.chain[n - 1]; if (link) { link.disabled = true; this.pushDLog({ k: 'dis', cid: this.chainSeq, link: n, con: link.con, code: link.code, desc: link.desc, loc: link.loc }); this.pushLog('チェーン' + n + '：' + this.nameOf(link.code) + ' の効果が無効になった'); } break; } // CHAIN_DISABLED (band line: layout-fix J2)
       case 74: this.chain = []; this.solvingLink = 0; break; // CHAIN_END
       case 110: { // ATTACK: attacker loc_info, target loc_info (zeroed = direct)
         const a = r.locInfo(); const tg = r.locInfo();
@@ -928,6 +960,9 @@ class GameState {
         const tz = tg.loc === LOC.MZONE ? this.players[tg.con].mzone[tg.seq] : null;
         // The log names attacker and target (W-16): a bare 「攻撃宣言」
         // left nothing searchable in the history after the fact.
+        // layout-fix J4: an attack declaration is a chain-window
+        // trigger too — remember it for prompt.trigger.
+        this.lastTrigger = { kind: 'attack', code: az ? az.code : 0, con: a.con, turn: this.turnCount, phase: this.phaseName };
         if (az && az.code) {
           const direct = tg.loc === 0 || !tz || !tz.code;
           this.pushLog(direct
@@ -5828,6 +5863,14 @@ class Duel {
           selectHints[prompt.player] = null;
           prompt.retryCount = 0;
           prompt.context = this.state.chainContext(); // source card of the asking effect (may be null)
+          // layout-fix J4: with an empty chain there is no link to
+          // answer, but the window still answers SOMETHING public —
+          // the summon or attack declaration that opened it. Attach
+          // the mirror's last trigger when it belongs to this exact
+          // timing (same turn AND phase), else null (a pure timing
+          // window: genuinely nothing to name).
+          { const lt = this.state.lastTrigger;
+            prompt.trigger = (!prompt.context && lt && lt.turn === this.state.turnCount && lt.phase === this.state.phaseName) ? lt : null; }
           prompt.rawKey = pending[0] + ':' + Array.from(pending.slice(0, 24)).join(',');
           lastPrompt = prompt;
           retryStreak = 0;

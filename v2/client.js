@@ -3538,6 +3538,9 @@ function fxStressScene() {
 }
 function fxResetFoundation() {
   fxScenes = []; fxBursts = [];
+  // layout-fix J3: scenes die WITHOUT onDone here — the notice
+  // queue must not inherit a stuck busy flag across duels.
+  try { fxNoticeQ.length = 0; fxNoticeBusy = false; } catch (e) {}
   fxStopUntilWall = 0; fxTimeMs = 0; fxLastWall = 0; fxBeatTail = 0; // beat book restarts with the FX clock
   fxAceSceneRef = null; fxFinisherSceneRef = null; fxAceRecent = null; fxKeycardSceneRef = null; // stage 3 scene refs (hosts are wiped by fxResetDuel)
   fxChainWordScene = null; fxBannerScene = null; // V4 scene refs
@@ -3666,6 +3669,12 @@ function fxProcessInner(evs, state) {
       consumedDep.add(dep.key); consumedArr.add(ar.key);
       fxSlide(dep.key, ar.key, ar.entry.code, (ar.entry.pos & E.POS_FACEUP) === 0);
       fxRecord('controlslide', { code: ar.entry.code });
+      // layout-fix J3: a control change is a board result too —
+      // announce it (named only when the card lies face-up on
+      // either side; a face-down card keeps its identity).
+      if ((dep.entry.pos & E.POS_FACEUP) !== 0 || (ar.entry.pos & E.POS_FACEUP) !== 0)
+        fxNotice('《' + cardName(ar.entry.code) + '》のコントロールが移った', 'コントロール変更');
+      else fxNotice('セットカードのコントロールが移った', 'コントロール変更');
     }
   }
   // ---- field departures: the destination is what reads (3-5)
@@ -3842,11 +3851,31 @@ function fxProcessInner(evs, state) {
     if (dest === 'grave' || dest === 'removed' || dest === 'extra') {
       const toPt = pilePt(con, dest);
       fxRecord('flight', { to: dest, code: dep.entry.code }); // intent is recorded even if a rect is momentarily unreadable; the ghost spawns when geometry exists (always, post-render)
-      // fxNotice tenancy (see the destroy loop): my face-up
-      // card banished during the opponent's turn gets the same
-      // large floating line — it left the field just as surely.
-      if (dest === 'removed' && con === HP && !faceDown && dep.entry.code != null && state.turnPlayer !== HP) {
-        fxNotice('《' + cardName(dep.entry.code) + '》が除外された', '相手のターン｜効果で除外');
+      // layout-fix J3: EVERY departure from the field to a public
+      // pile is announced large — either seat, either turn. The
+      // old gate here (my face-up card, opponent's turn, banish
+      // only) is replaced by outcome rules: a card that reaches
+      // the graveyard is public there, so destruction/sending
+      // names it even if it lay face-down; a card banished
+      // face-down or returned to hand/deck keeps its identity
+      // hidden and is announced as a set card. Destruction itself
+      // is announced in the destroy loop below, and a departure
+      // that is a summon's cost/material rides that summon's own
+      // presentation — both are excluded here to avoid doubles.
+      const mine = con === HP ? '自分の' : '相手の';
+      if (dest === 'removed') {
+        if (!faceDown && dep.entry.code != null) fxNotice(mine + '《' + cardName(dep.entry.code) + '》が除外された', '効果で除外');
+        else fxNotice(mine + 'セットカードが除外された', '効果で除外');
+      } else if (dest === 'extra') {
+        if (!faceDown && dep.entry.code != null) fxNotice(mine + '《' + cardName(dep.entry.code) + '》がEXデッキに戻った', '効果で移動');
+        else if (dep.entry.code != null) fxNotice(mine + 'セットカードがEXデッキに戻った', '効果で移動');
+      } else if (dest === 'grave' && dep.entry.code != null && isMonster(dep.entry.code) &&
+                 !evs.some(e => e.kind === 'destroy' && e.code === dep.entry.code && e.con === con) &&
+                 !evs.some(e => (e.kind === 'summon' || e.kind === 'spsummon') && e.con === con)) {
+        // monsters only: a spell/trap reaching the graveyard is
+        // the routine end of its own activation (already
+        // presented); a monster SENT there is a result.
+        fxNotice(mine + '《' + cardName(dep.entry.code) + '》が墓地へ送られた', '効果で移動');
       }
       if (dest === 'grave' && dep.entry.code != null) graveFlown[con].push(dep.entry.code); // I(1): already flown — the deck-origin pass must not fly it again
       if (fromPt && toPt) fxFly(dep.entry.code, faceDown, fromPt, toPt, fromPt.w - 2, fromPt.h - 24, undefined, undefined, deckKeyOfSeat(con));
@@ -3854,10 +3883,19 @@ function fxProcessInner(evs, state) {
     } else if (cur.handLen[con] > prev.handLen[con]) { // bounced to a hand
       const toPt = handPt(con);
       fxRecord('flight', { to: 'hand', code: dep.entry.code });
+      // layout-fix J3: a bounce is a result too (named only when
+      // the card lay face-up — a set card returns unrevealed).
+      { const mine = con === HP ? '自分の' : '相手の';
+        if (!faceDown && dep.entry.code != null) fxNotice(mine + '《' + cardName(dep.entry.code) + '》が手札に戻った', '効果で移動');
+        else fxNotice(mine + 'セットカードが手札に戻った', '効果で移動'); }
       if (fromPt && toPt) fxFly(dep.entry.code, faceDown, fromPt, toPt, fromPt.w - 2, fromPt.h - 24, undefined, undefined, deckKeyOfSeat(con));
     } else if (cur.deck[con] > prev.deck[con]) { // returned to the deck: vanishes in place
       fxVanish(dep.key, dep.entry.code, faceDown);
       fxRecord('vanish', { to: 'deck', code: dep.entry.code });
+      // layout-fix J3: a return to the deck is announced as well.
+      { const mine = con === HP ? '自分の' : '相手の';
+        if (!faceDown && dep.entry.code != null) fxNotice(mine + '《' + cardName(dep.entry.code) + '》がデッキに戻った', '効果で移動');
+        else fxNotice(mine + 'セットカードがデッキに戻った', '効果で移動'); }
       pileLand(con, 'deck');
     } else { // token / material / untracked: a quiet fade
       fxVanish(dep.key, dep.entry.code, faceDown);
@@ -3886,14 +3924,21 @@ function fxProcessInner(evs, state) {
         fxResultChip(dep.key, ev.code);
         fxRecord('resultchip', { code: ev.code, key: dep.key, battle: !!ev.battle, via: viaScene ? 'scene' : 'battle' });
       }
-      // layout redesign (user principle): on the opponent's
-      // turn, an EFFECT destruction of my face-up card is the
-      // event that used to pass unnoticed between the log and
-      // the next prompt — present it large and floating for
-      // its reading time (see fxNotice). Battle destruction
-      // keeps its own grammar (attack line + result chip).
-      if (!ev.battle && !viaScene && ev.con === HP && state.turnPlayer !== HP && dep.entry.code != null && (dep.entry.pos & E.POS_FACEUP) !== 0) {
-        fxNotice('《' + cardName(ev.code) + '》が破壊された', '相手のターン｜効果で破壊');
+      // layout redesign (user principle) + layout-fix J3: an
+      // EFFECT destruction is presented large and floating for
+      // its reading time (see fxNotice) — now for EITHER seat on
+      // EITHER turn, face-up or set: the old gate (my face-up
+      // card on the opponent's turn only) is what let a
+      // battle-phase field-spell destruction of my set-up
+      // monster pass in silence whenever the timing fell
+      // outside it. Destruction reveals the card in the
+      // graveyard, so a set card is named as what it was.
+      // Battle destruction keeps its own grammar (attack line +
+      // result chip), as before.
+      if (!ev.battle && !viaScene && dep.entry.code != null) {
+        const fd = (dep.entry.pos & E.POS_FACEUP) === 0;
+        fxNotice((ev.con === HP ? '自分の' : '相手の') + '《' + cardName(ev.code) + '》が破壊された',
+          fd ? '効果で破壊｜セットカード' : '効果で破壊');
       }
     }
   }
@@ -3920,6 +3965,15 @@ function fxProcessInner(evs, state) {
     if (ch.before.code === ch.after.code) {
       if ((ch.after.mats || 0) < (ch.before.mats || 0)) { fxPeel(ch.key); fxRecord('peel', { code: ch.after.code }); }
       else if ((ch.after.mats || 0) > (ch.before.mats || 0)) { fxZoneGlow(ch.key, 450); fxRecord('attach', { code: ch.after.code }); }
+      // layout-fix J3: my face-up monster flipped face-down on the
+      // opponent's turn (the Book of Moon class) is a result, not a
+      // detail — announce it like the other departures instead of
+      // letting the player discover a face-down card later.
+      if (con === HP && ch.after.code != null && state.turnPlayer !== HP &&
+          (ch.before.pos & E.POS_FACEUP) !== 0 && (ch.after.pos & E.POS_FACEUP) === 0) {
+        fxNotice('自分の《' + cardName(ch.after.code) + '》が裏側守備表示になった', '効果で表示変更');
+        fxRecord('flipnotice', { code: ch.after.code });
+      }
       if (ch.before.atk != null && ch.after.atk != null && (ch.before.atk !== ch.after.atk || ch.before.def !== ch.after.def)) {
         fxStripFlash(ch.key);
         fxRecord('statflash', { code: ch.after.code });
@@ -4523,10 +4577,33 @@ function fxOppNameTag(text, detail) {
 // first tenants are the events that used to pass unnoticed on
 // the opponent's turn: my face-up card destroyed or banished
 // by an effect (battle has its own grammar and is excluded).
+// layout-fix J3: notices QUEUE. The single-instance original
+// replaced whatever was showing, so two results in one resolution
+// (a destruction and a banish, a double removal) silently ate the
+// first — the exact "it was gone before I noticed" class J3 is
+// about. Each notice now gets its full reading time in turn; the
+// queue is capped at 3 waiting (a flood drops its tail, recorded).
+const fxNoticeQ = [];
+let fxNoticeBusy = false;
 function fxNotice(text, sub) {
   fxRecord('notice', { text });
+  if (fxNoticeBusy || fxNoticeQ.length) {
+    if (fxNoticeQ.length < 3) fxNoticeQ.push({ text, sub });
+    else fxRecord('noticedrop', { text });
+    fxNoticePump();
+    return;
+  }
+  fxNoticeShow(text, sub);
+}
+function fxNoticePump() {
+  if (fxNoticeBusy) return;
+  const n = fxNoticeQ.shift();
+  if (n) fxNoticeShow(n.text, n.sub);
+}
+function fxNoticeShow(text, sub) {
   const layer = fxLayerEl(); if (!layer) return;
   const old = layer.querySelector('.fx-notice'); if (old) old.remove();
+  fxNoticeBusy = true;
   const d = document.createElement('div');
   d.className = 'fx-notice';
   d.innerHTML = '<div class="nt">' + text + '</div>' + (sub ? '<div class="ns">' + sub + '</div>' : '');
@@ -4539,7 +4616,7 @@ function fxNotice(text, sub) {
       const a = t < 160 ? t / 160 : (t > hold + 130 ? Math.max(0, 1 - (t - hold - 130) / 350) : 1);
       d.style.opacity = String(a);
     },
-    onDone() { try { d.remove(); } catch (e) {} },
+    onDone() { try { d.remove(); } catch (e) {} fxNoticeBusy = false; fxNoticePump(); },
   });
 }
 function fxOppTagsFromEvents(evs, state) {
@@ -5778,8 +5855,11 @@ function tileHTML(card, con, actKey, loc) {
     (ctrTotal ? '<div class="ctrs">◉' + ctrTotal + '</div>' : '') +
     // marks chip: a child of .tile (never of the rotating
     // .inner), so a defense tile's marks stay upright; same
-    // visibility rule as the face itself.
-    (showFace && card.code != null ? marksChipHTML(card.code) : '') +
+    // visibility rule as the face itself. layout-fix J5: not in
+    // the spell/trap zone — a monster lying there as a Continuous
+    // Spell (《ラビリンス・ウォール・シャドウ》②) is not a monster
+    // while it lies there, and its monster marks misread.
+    (showFace && card.code != null && loc !== E.LOC.SZONE ? marksChipHTML(card.code) : '') +
     // the artwork lives INSIDE .inner (round B): in defense position
     // the whole inner — art + name band — rotates 90 degrees, while
     // the corner badges (.mats/.ctrs) and the stat strip stay upright.
@@ -5796,8 +5876,13 @@ function tileHTML(card, con, actKey, loc) {
 // ATK/DEF labels (user spec). Live (effect-modified) values from the core
 // query when available, printed values otherwise. Same visibility rule as
 // the tile face: face-up cards, plus the owner's own face-down cards.
-function slotStatsHTML(card, con) {
+function slotStatsHTML(card, con, loc) {
   if (!card || card.code == null) return '';
+  // layout-fix J5: no ATK/DEF plate in the spell/trap zone — a
+  // monster lying there as a Continuous Spell has no battle
+  // stats in play, and the plate made it read as a monster
+  // standing in the wrong row.
+  if (loc === E.LOC.SZONE) return '';
   const faceUp = (card.pos & E.POS_FACEUP) !== 0;
   if (!faceUp && con !== HP) return '';
   if (!isMonster(card.code)) return '';
@@ -5821,7 +5906,7 @@ function zoneRow(el, cards, con, loc) {
     const key = con + ':' + loc + ':' + seq;
     const hl = placeCtx && placeCtx.avail.has(key) ? ' hl' : '';
     const pk = placeCtx && placeCtx.chosen.has(key) ? ' picked' : '';
-    const st = card ? slotStatsHTML(card, con) : '';
+    const st = card ? slotStatsHTML(card, con, loc) : '';
     const fz = loc === E.LOC.SZONE && seq === 5;
     return '<div class="slot' + (st ? ' hs' : '') + hl + pk + (fz ? ' fzone' : '') + '" data-zone="' + key + '">' +
       // the zone number is a reference for EMPTY slots; on an
@@ -5842,6 +5927,8 @@ function pileHTML(p, con) {
     '<div class="pile' + (actRem ? ' actionable' : '') + '" data-pile="removed:' + con + '">除外 <b>' + P.removed.length + '</b>' + (actRem ? '<span class="pact">発動可</span>' : '') + '</div>';
 }
 let duelState = null;
+let renderLogTxt = null; // layout-fix J2: last band line rendered (the 《》 span wrap is rebuilt only on change)
+let histFromResult = false; // layout-fix J5: the history sheet was opened from the result overlay — closing it restores the result
 // B-10: the engine mirror caps its log at 60 lines; the client
 // keeps its own turn-tagged copy so the history sheet can show
 // what happened, with the turn it happened on.
@@ -5882,10 +5969,12 @@ function dlogFxSuffix(code, desc, loc) {
 }
 function dlogText(e) {
   const who = e.con === HP ? '自分' : '相手';
-  if (e.k === 'act') return 'リンク' + e.link + '：' + who + ' の ' + cardName(e.code) + dlogFxSuffix(e.code, e.desc, e.loc) + (e.tgt ? '（対象：' + e.tgt + '）' : '');
-  if (e.k === 'solve') return '▼ 解決：リンク' + e.link + ' ' + cardName(e.code) + dlogFxSuffix(e.code, e.desc, e.loc);
-  if (e.k === 'neg') return who + ' の ' + cardName(e.code) + dlogFxSuffix(e.code, e.desc, e.loc) + ' の発動が無効になった（リンク' + e.link + '）';
-  if (e.k === 'dis') return who + ' の ' + cardName(e.code) + dlogFxSuffix(e.code, e.desc, e.loc) + ' の効果が無効になった（リンク' + e.link + '）';
+  // layout-fix J5: the history speaks of チェーン, never リンク
+  // (the rest of the UI unified on チェーン long ago).
+  if (e.k === 'act') return 'チェーン' + e.link + '：' + who + ' の ' + cardName(e.code) + dlogFxSuffix(e.code, e.desc, e.loc) + (e.tgt ? '（対象：' + e.tgt + '）' : '');
+  if (e.k === 'solve') return '▼ 解決：チェーン' + e.link + ' ' + cardName(e.code) + dlogFxSuffix(e.code, e.desc, e.loc);
+  if (e.k === 'neg') return who + ' の ' + cardName(e.code) + dlogFxSuffix(e.code, e.desc, e.loc) + ' の発動が無効になった（チェーン' + e.link + '）';
+  if (e.k === 'dis') return who + ' の ' + cardName(e.code) + dlogFxSuffix(e.code, e.desc, e.loc) + ' の効果が無効になった（チェーン' + e.link + '）';
   return e.s || '';
 }
 function dlogKey(e) {
@@ -6059,7 +6148,23 @@ function render(state) {
     cb.className = '';
     cb.innerHTML = '';
   }
-  $('logline').textContent = state.log.length ? state.log[state.log.length - 1] : '';
+  // layout-fix J2: the band's event line. A card name (《…》) is
+  // never split mid-word across the two lines (the reported break
+  // cut シャドウ into シャ／ドウ and the tail fell off the band):
+  // names render as unbreakable spans, the surrounding text wraps
+  // around them, and a name that alone exceeds the line shrinks
+  // its own type instead of breaking. The band itself may grow
+  // past 62px under inflated system fonts (min-height, not a
+  // frozen height) and the visible-fit loop absorbs the growth.
+  { const ll = $('logline');
+    const txt = state.log.length ? state.log[state.log.length - 1] : '';
+    if (txt !== renderLogTxt) {
+      renderLogTxt = txt;
+      const esc = txt.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      ll.innerHTML = esc.replace(/《[^》]*》/g, m => '<span class="lk">' + m + '</span>');
+      const sp = ll.querySelector('.lk');
+      if (sp) { sp.style.fontSize = ''; if (sp.offsetWidth > ll.clientWidth && ll.clientWidth > 0) sp.style.fontSize = '11px'; }
+    } }
   // phase button
   const pb = $('phasebtn');
   if (phaseAction) { pb.disabled = false; pb.textContent = phaseAction.label; }
@@ -6139,10 +6244,26 @@ let sheetKind = 'prompt';
 let sheetAnimGen = 0, sheetCloseTimer = null, sheetBlockerOn = false;
 function sheetAnimCancel(el) { if (el && el.getAnimations) { try { for (const a of el.getAnimations()) a.cancel(); } catch (e) {} } }
 function sheetOpenView(html) { sheetOpen(html, 'view'); }
+// layout-fix J1: the peek / close buttons ride on the sheet's own
+// top edge. They were positioned from the old 62dvh cap in CSS;
+// the sheet's height is now content- and budget-driven, so their
+// offset is the sheet's measured height (offsetHeight is immune
+// to the entrance transform). In peek state the stylesheet moves
+// them to the top — the inline offset must then be cleared.
+function placeSheetBtns() {
+  const wrap = $('sheetwrap'), sheet = $('sheet');
+  const pk = $('peekbtn'), sx = $('sheetx');
+  if (!wrap || !sheet || !wrap.classList.contains('on')) return;
+  if (wrap.classList.contains('peek')) { if (pk) pk.style.bottom = ''; if (sx) sx.style.bottom = ''; return; }
+  const b = (sheet.offsetHeight + 8) + 'px';
+  if (pk) pk.style.bottom = b;
+  if (sx) sx.style.bottom = b;
+}
 function sheetOpen(html, kind) {
   sheetKind = kind || 'prompt';
   closeInfoPop();
   const wrap = $('sheetwrap'), sheet = $('sheet');
+  sheet.classList.remove('flexsheet'); // layout-fix J1: grid sheets re-add it after open (sheetOpen is structure-agnostic)
   const wasOpen = wrap.classList.contains('on');
   if (sheetCloseTimer) { clearTimeout(sheetCloseTimer); sheetCloseTimer = null; }
   sheetAnimGen++;
@@ -6153,6 +6274,11 @@ function sheetOpen(html, kind) {
   clearPeekBar(); // a fresh sheet resets peek (className above); its mirrors die with the old content
   wrap.dataset.kind = sheetKind;
   const pk = $('peekbtn'); if (pk) pk.textContent = '盤面を見る';
+  placeSheetBtns(); // layout-fix J1: ride the buttons on this sheet's height
+  // a freshly built sheet's height settles a few hundred ms late
+  // (grid rows finish sizing after the entrance) — re-place once
+  // it has settled, or the buttons keep the pre-settle height.
+  setTimeout(placeSheetBtns, 360);
   if (!wasOpen) {
     // V4-6: opening is a motion, not a cut — the sheet slides up on
     // the sheetIn curve (its overshoot IS the 4%), the scrim fades
@@ -6193,6 +6319,9 @@ function sheetClose() {
     wrap.removeAttribute('data-kind');
     delete wrap.dataset.closing;
     sheet.innerHTML = '';
+    // layout-fix J5: a history read from the result screen hands
+    // the screen back to the result when it closes.
+    if (histFromResult) { histFromResult = false; const r = $('result'); if (r) r.style.display = 'flex'; }
   }, 185);
 }
 // BU-22 (R-SEL-2): peeking the sheet down to look at the board
@@ -6871,19 +7000,41 @@ function uiChain(prompt, state) {
   let firstDraw = true;
   const draw = () => {
     const top = state.chain[state.chain.length - 1];
+    // layout-fix J4: the trigger is ALWAYS named when one exists.
+    // Priority: (1) prompt.context — the link actually being
+    // answered (while a chain resolves that is the SOLVING link,
+    // which is not necessarily the chain's top; the old code read
+    // only the top); (2) the chain's top link while building;
+    // (3) prompt.trigger — the summon / attack declaration that
+    // opened an empty-chain window (the driver attaches the
+    // mirror's lastTrigger, same turn+phase only). A prompt with
+    // none of the three is a pure timing window (a phase change):
+    // there is genuinely no card to name, and the line says so by
+    // keeping the plain 効果への応答.
+    const ctxLink = prompt.context && prompt.context.code ? prompt.context : null;
+    const trig = !ctxLink && !top ? prompt.trigger : null;
+    const cause = ctxLink
+      ? { code: ctxLink.code, con: ctxLink.con, label: 'チェーン' + (ctxLink.link || '') + '：《' + cardName(ctxLink.code) + '》' + (ctxLink.solving ? 'の効果（解決中）への応答' : 'への応答') }
+      : top
+        ? { code: top.code, con: top.con, label: 'チェーン' + state.chain.length + '：《' + cardName(top.code) + '》への応答' }
+        : trig
+          ? { code: trig.code || null, con: trig.con, label: trig.kind === 'attack'
+              ? '《' + (trig.code ? cardName(trig.code) : 'モンスター') + '》の攻撃宣言への応答'
+              : '《' + (trig.code ? cardName(trig.code) : 'モンスター') + '》の' + (trig.verb === 62 ? '特殊召喚' : trig.verb === 64 ? '反転召喚' : '召喚') + 'への応答' }
+          : null;
     const peeked = document.getElementById('app').classList.contains('dockpeek');
     $('dock').innerHTML =
       // layout redesign: the header carries the 盤面を見る
       // (peek) control — the dock slides down to this strip and
       // board taps become info taps until it is pressed again.
       '<div class="ttl"><span>チェーン応答</span><button class="dockpeekbtn" id="dock-peek">' + (peeked ? 'ドックに戻る' : '盤面を見る') + '</button></div>' +
-      '<div class="ctx">' + timingText(state) + '｜' + (top ? 'チェーン' + state.chain.length + ' への応答' : '効果への応答') + (prompt.forced ? '（発動必須）' : '') + tag + '</div>' +
+      '<div class="ctx">' + timingText(state) + '｜' + (cause ? cause.label : '効果への応答') + (prompt.forced ? '（発動必須）' : '') + tag + '</div>' +
       retryWarn(prompt) +
       // the CAUSE card as its own row (thumbnail + name): what
       // is being responded to is a card you can look at, not a
       // name inside a sentence. Tapping it floats its detail
       // (the data-topinfo wiring below), answering nothing.
-      (top ? '<div class="cause" data-topinfo="1"><span class="causeart"' + artInline(top.code, false, deckKeyOfSeat(top.con)) + '></span><span><span class="causename">《' + cardName(top.code) + '》</span><br><span class="causesub">' + (top.con === HP ? '自分のカード' : '相手のカード') + '｜タップで詳細</span></span></div>' : '') +
+      (cause && cause.code ? '<div class="cause" data-topinfo="1"><span class="causeart"' + artInline(cause.code, false, deckKeyOfSeat(cause.con)) + '></span><span><span class="causename">《' + cardName(cause.code) + '》</span><br><span class="causesub">' + (cause.con === HP ? '自分のカード' : '相手のカード') + '｜タップで詳細</span></span></div>' : '') +
       '<div class="cands">' + prompt.entries.map((e, i) => {
         if (!noDismiss && dismissedDuel.has(duelKey(e))) return ''; // duel-dismissed: hidden here, managed in the section below
         const disChain = dismissedChains.has(chainKey(e));
@@ -6893,7 +7044,12 @@ function uiChain(prompt, state) {
         const cfx = entryEffect(e, 'chain');
         return '<div class="cand' + (disChain ? ' dismissed' : '') + '" data-chain="' + i + '"><div class="cname">' + cardName(e.code) + '</div>' +
           '<div class="loc">' + locLabel(e) + (disChain ? '（このチェーンでは聞かない）' : '') + '</div>' +
-          (cfx && cfx.n ? '<div class="fxline">' + (cfx.act ? '発動：' : '効果' + CIRCLED_NUM[cfx.n - 1] + '：') + fxExcerpt(cfx) + (fxTruncated(cfx) ? '<span class="fxmore">（続きは「詳細」で読めます）</span>' : '') + '</div>' : '') +
+          // layout-fix J4: the candidate carries its effect's FULL
+          // body in the dock — the 28-character excerpt showed the
+          // cost clause and cut the effect itself away behind
+          // 「詳細」, so 発動/パス was judged half-blind. The dock's
+          // candidate region scrolls; the whole effect fits there.
+          (cfx && cfx.n ? '<div class="fxline">' + (cfx.act ? '発動：' : '効果' + CIRCLED_NUM[cfx.n - 1] + '：') + (cfx.body || '').replace(/\s+/g, ' ') + '</div>' : '') +
           // the actions are real buttons, one row: 発動する
           // (gold, the primary) + 詳細. A chain-dismissed
           // candidate cannot be activated (its box tap is inert
@@ -6961,7 +7117,10 @@ function uiChain(prompt, state) {
     // without answering anything.
     $('dock').querySelectorAll('[data-topinfo]').forEach(x => x.addEventListener('click', (ev) => {
       ev.stopPropagation(); playClick();
-      if (top) openInfoPop(top.code, top);
+      // layout-fix J4: the cause row opens the CAUSE card (the
+      // context link / trigger), which is not always the chain top.
+      if (cause && cause.code) openInfoPop(cause.code, cause);
+      else if (top) openInfoPop(top.code, top);
     }));
     $('dock').querySelectorAll('[data-dismiss]').forEach(x => x.addEventListener('click', (ev) => {
       ev.stopPropagation(); playClick();
@@ -7086,7 +7245,10 @@ function gridReqNote(o) {
 function gridScrollCueUpdate() {
   const cue = document.querySelector('#sheet #gridmore'); if (!cue) return;
   const sh = $('sheet'); if (!sh) return;
-  const more = sh.scrollHeight - sh.scrollTop - sh.clientHeight > 24;
+  // layout-fix J1: on a flex sheet the CANDIDATE region scrolls,
+  // not the sheet — measure whichever box actually scrolls.
+  const sc = sh.querySelector('.sheet-scroll') || sh;
+  const more = sc.scrollHeight - sc.scrollTop - sc.clientHeight > 24;
   cue.style.display = more ? '' : 'none';
 }
 function gridSheet(o) {
@@ -7102,24 +7264,37 @@ function gridSheet(o) {
     const tray = [...o.selected].map(i => '<span class="chip" data-chip="' + i + '">' + nameOf(o.cards[i]) + ' ✕</span>').join('') +
       (o.locked || []).map(c => '<span class="chip locked">' + (selCardHidden(c, o.prompt) ? hiddenCardLabel(c) : cardName(c.code)) + '（固定）</span>').join('');
     const subTxt = typeof o.sub === 'function' ? o.sub() : o.sub;
+    // layout-fix J1: draw() rebuilds the sheet per toggle — keep
+    // the candidate region's scroll position across rebuilds.
+    const prevSc = $('sheet') ? $('sheet').querySelector('.sheet-scroll') : null;
+    const keepScroll = prevSc ? prevSc.scrollTop : 0;
     sheetOpen('<div class="ttl">' + o.title + '</div>' + (o.purpose ? '<div class="purpose">' + o.purpose + '</div>' : '') + '<div class="sub" id="gsub">' + subTxt + gridReqNote(o) + '</div>' + contextLineHTML(o.prompt) + retryWarn(o.prompt) +
       // (W-24: a retry used to repeat the sub as a 「条件：」 line
       // under the warning — the same sentence twice. The shortfall
       // already lives on the disabled confirm button's label.)
       (tray ? '<div id="tray">' + tray + '</div>' : '<div id="tray"></div>') +
-      '<div class="grid">' + o.cards.map((c, i) => {
+      // layout-fix J1: the candidates live in their own scroller
+      // (the dock discipline) — header and the confirm row below
+      // are fixed flex children, always inside the sheet.
+      '<div class="sheet-scroll"><div class="grid">' + o.cards.map((c, i) => {
         const hid = hidOf(c);
         return '<div class="gcard' + (hid ? ' back' : '') + (o.selected.has(i) ? ' sel' : '') + '" data-grid="' + i + '"' + (hid ? '' : artInline(c.code, false, c.ref && c.ref.con != null ? deckKeyOfSeat(c.ref.con) : deckKeyOfSeat(HP))) + '>' +
         '<div class="loc">' + c.locLabel + '</div><div class="nm' + (hid ? '' : kindCls(c.code)) + '">' + (hid ? hiddenCardLabel(c.ref || c) : marksChipHTML(c.code) + '<span class="nmtext">' + cardName(c.code) + (c.extra ? ' ' + c.extra : '') + '</span><button class="gdetail" data-gdetail="' + i + '">詳細</button>') + '</div>' +
         (hid ? '' : (statsLine(c.code) ? '<div class="stats">' + statsLine(c.code) + '</div>' : '') +
         (hid ? '' : (o.showText && cardText(c.code) ? '<div class="itext">' + cardText(c.code) + '</div>' : ''))) + '</div>';
-      }).join('') + '</div>' +
-      // F7: the scroll cue rides INSIDE the sticky button row as
-      // a full-width first line — shown only while the sheet can
-      // still scroll (gridScrollCueUpdate), so it is always in
-      // view without ever covering the buttons or the tiles.
+      }).join('') + '</div></div>' +
+      // F7: the scroll cue rides INSIDE the button row as a
+      // full-width first line — shown only while the candidate
+      // region can still scroll (gridScrollCueUpdate), so it is
+      // always in view without ever covering buttons or tiles.
       '<div class="btnrow"><div id="gridmore" style="display:none">▼ まだ下にカードがあります</div><button class="bigbtn" id="grid-confirm" ' + (o.valid() ? '' : 'disabled') + '>' + (o.valid() ? (o.confirmLabel || '決定') : (o.needLabel ? o.needLabel() : (o.confirmLabel || '決定'))) + '</button>' +
       (o.cancelable ? '<button class="bigbtn sub" id="grid-cancel">選ばずにやめる</button>' : '') + '</div>');
+    // layout-fix J1: engage the flex structure for this sheet and
+    // wire the candidate scroller (a fresh element per draw).
+    $('sheet').classList.add('flexsheet');
+    { const sc = $('sheet').querySelector('.sheet-scroll');
+      if (sc) { sc.addEventListener('scroll', gridScrollCueUpdate, { passive: true }); if (keepScroll) sc.scrollTop = keepScroll; } }
+    placeSheetBtns();
     $('sheet').querySelectorAll('[data-grid]').forEach(g => g.addEventListener('click', (ev) => { if (ev.target.closest('[data-gdetail]')) return; playClick();
       if (o.onToggle(+g.dataset.grid) === 'max') { const gs = $('gsub'); if (gs) { const orig = gs.innerHTML; gs.textContent = 'これ以上選べません。選んだカードをタップすると外せます'; setTimeout(() => { if (gs.isConnected) gs.innerHTML = orig; }, 1500); } return; }
       draw(); }));
@@ -7130,7 +7305,7 @@ function gridSheet(o) {
     $('grid-confirm').addEventListener('click', () => { playClick(); o.onConfirm([...o.selected]); });
     const cancel = $('grid-cancel');
     if (cancel) cancel.addEventListener('click', () => { playClick(); finishPrompt(E.cancelResp()); });
-    requestAnimationFrame(gridScrollCueUpdate); // F7: size the cue to this draw
+    requestAnimationFrame(() => { gridScrollCueUpdate(); placeSheetBtns(); }); // F7: size the cue to this draw; J1: and the buttons ride the settled height
   };
   const sh0 = $('sheet');
   if (sh0 && !sh0.dataset.cueBound) { sh0.dataset.cueBound = '1'; sh0.addEventListener('scroll', gridScrollCueUpdate, { passive: true }); }
@@ -8006,6 +8181,11 @@ function viewportHeights() {
 }
 function applyLayoutVars(info) {
   const rs = document.documentElement.style;
+  // layout-fix J1: the conservative visible height, published for
+  // the sheet/dock height budgets (CSS dvh alone follows the
+  // layout viewport, which can run taller than what is visible).
+  try { rs.setProperty('--appvh', viewportHeights().baseH + 'px'); } catch (e) {}
+  try { placeSheetBtns(); } catch (e) {} // layout-fix J1: a resize re-rides the sheet buttons on the (possibly re-capped) sheet
   rs.setProperty('--sw', info.tileW + 'px');
   rs.setProperty('--sh', info.slotH + 'px');
   rs.setProperty('--hw', info.handW + 'px');
@@ -8398,6 +8578,7 @@ function wireSeg(id, apply) {
     playClick();
     const w = $('sheetwrap'); const on = w.classList.toggle('peek');
     $('peekbtn').textContent = on ? '選択に戻る' : '盤面を見る';
+    placeSheetBtns(); // layout-fix J1: peek moves the buttons to the top (CSS); un-peek restores the sheet-top offset
     syncPeekBar(); // BU-22: the answer band follows the peek state
   });
   // reflect the persisted audio preference in the switch at boot
@@ -8539,6 +8720,18 @@ function wireSeg(id, apply) {
   $('againbtn').addEventListener('click', () => {
     try { sessionStorage.setItem('v3rematch', JSON.stringify({ my: myDeckKey, op: opDeckKey, first: firstChoice })); } catch (e) {}
     location.reload();
+  });
+  // layout-fix J5: the result overlay (z 60) sits ABOVE the sheet
+  // wrap (z 50), so the mid-band history button was unreachable
+  // behind it — the result screen carries its own way in. The
+  // result hides while the history is read and returns when the
+  // sheet closes (sheetClose restores it via histFromResult).
+  $('reshistbtn').addEventListener('click', () => {
+    playClick();
+    $('result').style.display = 'none';
+    histFromResult = true;
+    openLogHistory();
+    if (!$('sheetwrap').classList.contains('on')) { histFromResult = false; $('result').style.display = 'flex'; }
   });
   $('titlebtn').addEventListener('click', () => location.reload());
   // mid-duel exit restore: 選択に戻る in the その他 menu reloads

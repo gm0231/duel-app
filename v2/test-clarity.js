@@ -185,7 +185,14 @@ async function boot() {
       uiAnswer({ name: 'SELECT_CHAIN', player: 0, forced: false, entries: [entry], retryCount: 0 }, st).then(b => { window.__clChain = b; });
       return true; })()`);
     await waitFor(() => doc.querySelector('#dock .cand .fxline'), 'CL8c: chain dock opens with the candidate effect line');
-    ok(doc.querySelector('#dock .cand .fxline').textContent.includes('続きは「詳細」で読めます'), 'CL8d: the truncated line prints its guide to the full text');
+    // layout-fix J4 (supersedes the BU-28 pin): the dock candidate
+    // line carries the effect's FULL body — the 28-char excerpt
+    // showed the cost clause and cut the effect itself away behind
+    // the guide, so 発動/パス was judged half-blind. The guide is
+    // gone; the whole body must be present in the line.
+    const fullBody = window.eval(`(() => { const e = { code: ${probe.code}, con: 0, loc: 16, seq: 0, desc: ${probe.code} * 1048576 + ${probe.idx} }; const fx = entryEffect(e, 'chain'); return fx ? fx.body : ''; })()`);
+    const fxText = doc.querySelector('#dock .cand .fxline').textContent.replace(/\s+/g, ' ');
+    ok(!!fullBody && fxText.includes(fullBody.replace(/\s+/g, ' ')) && !fxText.includes('続きは'), 'CL8d: layout-fix J4 — the dock line carries the FULL effect body (no truncation, no guide)');
     click(doc.getElementById('chain-pass'));
     await waitFor(() => window.eval('window.__clChain') !== null, 'CL8e: chain prompt still passes as before');
   }

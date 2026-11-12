@@ -148,21 +148,26 @@ async function boot() {
   const logline = ruleDecls(/#logline\{([^}]*)\}/);
   ok(!!logline && !('height' in logline) && logline['line-height'] === '1.35' && logline['-webkit-line-clamp'] === '2',
     'FX4-10: H3 successor — #logline has no frozen height; it takes two fitted lines (a one-line column ellipsized real long events)');
-  // H3 successor (layout redesign): the mid band is ONE frozen
-  // 62px row BY DESIGN now — its contents are fitted inside it
-  // (explicit line-heights below), the chain bar is an opaque
-  // overlay ON the band (it reserves no flow height, so the H3
-  // failure shape — band rows painting outside a frozen box —
-  // has no rows left to paint outside), and the previous-event
-  // line was absorbed into the single latest-event line.
+  // H3 successor (layout redesign): the mid band is ONE 62px row
+  // BY DESIGN — its contents are fitted inside it (explicit
+  // line-heights below), the chain bar is an opaque overlay ON
+  // the band (it reserves no flow height, so the H3 failure
+  // shape — band rows painting outside a frozen box — has no
+  // rows left to paint outside), and the previous-event line was
+  // absorbed into the single latest-event line.
+  // layout-fix J2: the 62px is now a FLOOR (min-height), not a
+  // freeze — the two fitted lines need ≈64px at larger system
+  // fonts, and a frozen box clipped the event line's second row.
+  // The band may grow; the visible-fit loop shrinks the board to
+  // absorb it, so rows still never paint outside the band.
   const chainbar = ruleDecls(/#chainbar\{([^}]*)\}/);
   ok(!!chainbar && chainbar.position === 'absolute' && chainbar.visibility === 'hidden' && !('min-height' in chainbar),
     'FX4-11: H3 successor — #chainbar is an absolute overlay on the mid band (no reserved flow height)');
   ok(!/#chainbar \.prevlog/.test(html) && !/prevlog/.test(clientSrc),
     'FX4-12: H3 successor — the prevlog line is gone (absorbed into the latest-event line)');
   const midbar = ruleDecls(/#midbar\{([^}]*)\}/);
-  ok(!!midbar && midbar.height === '62px',
-    'FX4-13: H3 successor — the mid band is one fitted 62px row (two lines for the latest event; contents carry explicit line-heights)');
+  ok(!!midbar && !('height' in midbar) && midbar['min-height'] === '62px',
+    'FX4-13: H3 successor + layout-fix J2 — the mid band is one fitted row with a 62px floor (min-height, never a frozen height; two lines for the latest event; contents carry explicit line-heights)');
   ok(/const LAYOUT_MODES = \{/.test(clientSrc) && /full: \{ fixedNoPv: 232/.test(clientSrc) && /compact: \{ fixedNoPv: 210/.test(clientSrc),
     'FX4-14: H3 successor — the layout budget is the redesign mode table (full 232 / compact 210, + preview base)');
   const link = ruleDecls(/\.link\{([^}]*)\}/);

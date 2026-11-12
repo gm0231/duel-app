@@ -64,14 +64,20 @@ async function main() {
   ok(!!logline && !('height' in logline) && logline['line-height'] === '1.35' && logline['-webkit-line-clamp'] === '2' && !/#chainbar \.prevlog/.test(html) && !/prevlog/.test(clientSrc),
     'FX5-2: I1 successor — the latest-event line takes two fitted lines; the prevlog line is gone (absorbed into it)');
   const midbar = ruleDecls(/#midbar\{([^}]*)\}/);
-  ok(!!midbar && midbar.height === '62px' && /const LAYOUT_MODES = \{/.test(clientSrc),
-    'FX5-3: I1 successor — the mid band is one fitted 62px row and the budget is the redesign mode table');
+  // layout-fix J2 supersedes the frozen height: the band keeps a
+  // 62px MINIMUM and may grow under inflated system fonts (the
+  // frozen 62px let the field below paint over the event line's
+  // second row); the visible-fit loop absorbs the growth.
+  ok(!!midbar && midbar['min-height'] === '62px' && !('height' in midbar) && /const LAYOUT_MODES = \{/.test(clientSrc),
+    'FX5-3: I1 successor — the mid band is one fitted 62px-minimum row and the budget is the redesign mode table');
   const grid = ruleDecls(/\.grid\{([^}]*)\}/);
   ok(!!grid && /auto-fit/.test(grid['grid-template-columns'] || '') && !/auto-fill/.test(grid['grid-template-columns'] || ''),
     'FX5-4: I2 — the selection grid collapses unused tracks (auto-fit), so few-candidate sheets use the full width');
   const itext = ruleDecls(/\.gcard \.itext\{([^}]*)\}/);
-  ok(!!itext && itext['font-size'] === '12px' && itext['-webkit-line-clamp'] === '8' && itext['max-height'] === '150px',
-    'FX5-5: I2 — the in-tile effect text is 12px with an 8-line budget (was 11px / 5 lines / 84px)');
+  // layout-fix J1 supersedes the clamp: the tile carries the FULL
+  // effect text and the sheet's candidate region scrolls.
+  ok(!!itext && itext['font-size'] === '12px' && !('-webkit-line-clamp' in itext) && !('max-height' in itext),
+    'FX5-5: I2 successor (layout-fix J1) — the in-tile effect text is 12px and unclamped; the candidate region scrolls instead');
 
   // ---------- I3: captureDLog under worker-style cloned states ----------
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
