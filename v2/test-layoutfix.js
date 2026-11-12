@@ -63,8 +63,12 @@ const ruleDecls = (re) => {
   const midbar = ruleDecls(/#midbar\{([^}]*)\}/);
   ok(!!midbar && midbar['min-height'] === '62px' && !('height' in midbar),
     'LF-J2a: the mid band has a 62px minimum and no frozen height');
-  ok(/#logline \.lk\{[^}]*white-space:nowrap/.test(html) && clientSrc.includes('class="lk"'),
-    'LF-J2b: band card names render as unbreakable .lk spans');
+  // layout-fix2 (J2'): the .lk spans only ever wrapped strings
+  // that already carried 《》 — the band's real lines were built
+  // bare, so they never matched. Superseded by nbHTML tokenisation
+  // (atomic .nb units; see test-layoutfix2.js LF2-J2'a).
+  ok(clientSrc.includes('function nbHTML(text)') && html.includes('.nb{'),
+    'LF-J2b: band lines render through nbHTML atomic units (supersedes the .lk spans, layout-fix2)');
   ok(engineSrc.includes('layout-fix J2') && engineSrc.includes('fromField && !(to.loc & LOC.OVERLAY) && to.loc !== LOC.HAND'),
     'LF-J2c: engine mirrors field departures into the band feed');
 }
@@ -87,8 +91,11 @@ const ruleDecls = (re) => {
     'LF-J4a: the dock resolves its cause from prompt.context, then the chain top, then prompt.trigger');
   ok(!clientSrc.includes("fxExcerpt(cfx) + (fxTruncated(cfx)"),
     'LF-J4b: dock candidates no longer use the 28-character excerpt');
-  ok(engineSrc.includes('prompt.trigger = (!prompt.context && lt'),
-    'LF-J4c: the driver attaches the mirror lastTrigger to empty-chain prompts (same turn+phase only)');
+  // layout-fix2 (J4'): same-turn-only attachment — the turn+phase
+  // gate starved post-resolution and phase-start windows, the most
+  // frequent nameless prompts (see test-layoutfix2.js LF2-J4'b).
+  ok(engineSrc.includes('prompt.trigger = (!prompt.context && lt') && engineSrc.includes('lt.turn === this.state.turnCount'),
+    'LF-J4c: the driver attaches the mirror lastTrigger to empty-chain prompts (same turn; layout-fix2 widened from turn+phase)');
 }
 
 // ---------- J5: details ----------
@@ -122,7 +129,9 @@ async function runDuel(M, data, seed, deckA, deckB, seen) {
         seen.emptyCtx++;
         if (prompt.trigger) {
           seen.withTrigger++;
-          if (prompt.trigger.turn !== state.turnCount || prompt.trigger.phase !== state.phaseName) seen.staleTrigger++;
+          // layout-fix2: staleness is turn-only now — a trigger
+          // from an earlier battle sub-step stays valid in DAMAGE.
+          if (prompt.trigger.turn !== state.turnCount) seen.staleTrigger++;
         }
       }
     }
@@ -162,7 +171,7 @@ async function runDuel(M, data, seed, deckA, deckB, seen) {
     '| chain prompts:', seen.chainPrompts, '| empty-context:', seen.emptyCtx, '| with trigger:', seen.withTrigger);
   ok(seen.chainPrompts > 0 && seen.emptyCtx > 0, 'LF-E6: empty-chain response windows occur and were sampled');
   ok(seen.withTrigger > 0, 'LF-E7: prompt.trigger attaches to empty-chain windows (summon/attack triggers named)');
-  ok(seen.staleTrigger === 0, 'LF-E8: no stale trigger ever attaches (turn+phase always match the prompt timing)');
+  ok(seen.staleTrigger === 0, 'LF-E8: no stale trigger ever attaches (the turn always matches; the phase may legitimately advance — layout-fix2)');
   console.log(failures ? ('\n' + failures + ' FAILURES') : '\nALL PASS');
   process.exit(failures ? 1 : 0);
 })().catch(e => { console.error('ERROR', e); process.exit(1); });
