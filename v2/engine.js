@@ -446,6 +446,7 @@ class GameState {
     this.solvingLink = 0;             // chain_count currently resolving (0 = building)
     this.winner = null; this.winReason = 0;
     this.lastAttack = null;           // {attacker, target|null}
+    this.pendingMatLines = [];        // layout-fix3 K3: [{e, con, who, nm}] — material history lines whose Extra-Deck host name awaits the SPSUMMONING announcement (the material MOVEs are applied first, measured)
     this.lastTrigger = null;          // layout-fix J4: {kind, code, con, turn, phase} — the latest public action a chain window can be answering
     // layout-fix2 J4': kinds are 'summon' | 'attack' | 'solved' |
     // 'phase'. The J4 attach rule (same turn AND same phase)
@@ -590,6 +591,7 @@ class GameState {
     switch (t) {
       case 5: { this.winner = r.u8(); this.winReason = r.u8(); this.pushDLog({ k: 'info', s: '決着：' + this.who(this.winner) + ' の勝利' }); break; } // WIN
       case 40: { this.turnPlayer = r.u8(); this.turnCount++;
+        this.pendingMatLines = []; // layout-fix3 K3: unrewritten material lines never outlive their turn
         // layout-fix2 J4': a window before the turn's first phase
         // message still gets an antecedent (the turn start itself;
         // phase '' = no phase yet, the client labels it ターン開始時).
@@ -676,6 +678,7 @@ class GameState {
             const fromField = from.loc === LOC.MZONE || from.loc === LOC.SZONE;
             const toField = to.loc === LOC.MZONE || to.loc === LOC.SZONE;
             let s = null;
+            let matPending = null; // layout-fix3 K3: set by the overlay branch for Extra-Deck hosts
             if (from.loc & LOC.OVERLAY) {
               const dst = to.loc === LOC.GRAVE ? 'が墓地へ送られた' : to.loc === LOC.HAND ? 'が手札に戻った'
                 : to.loc === LOC.REMOVED ? 'が除外された' : to.loc === LOC.DECK ? 'がデッキに戻った' : null;
@@ -684,7 +687,21 @@ class GameState {
               s = this.who(from.con) + '：' + nm + ' のコントロールが ' + this.who(to.con) + ' へ移った';
             } else if (to.loc & LOC.OVERLAY) {
               const host = this._hostEntry(this.players[to.con], to);
-              s = this.who(from.con) + '：' + nm + ' が' + (host && host.code ? '《' + this.nameOf(host.code) + '》' : 'モンスター') + ' のエクシーズ素材になった';
+              const hostCode = host && host.code ? host.code : 0;
+              s = this.who(from.con) + '：' + nm + ' が' + (hostCode ? '《' + this.nameOf(hostCode) + '》' : 'モンスター') + ' のエクシーズ素材になった';
+              // layout-fix3 K3: a host still in the Extra Deck is
+              // resolved by the mirror through its extra LIST order
+              // at the core's seq — the two orders differ, so the
+              // entry found there can be a different monster (a
+              // Castel summon's materials were logged as 《宵闇の
+              // ルーチェ》's). The material MOVEs are applied
+              // BEFORE the host's SPSUMMONING announcement
+              // (measured on the real core), so the true host is
+              // not knowable at this line yet: the line is
+              // registered as pending and the SPSUMMONING handler
+              // rewrites it with the announced code. Field hosts
+              // resolve in place — the zone is authoritative.
+              if ((to.loc & ~LOC.OVERLAY) === LOC.EXTRA) matPending = { con: to.con, who: this.who(from.con), nm };
             } else if (fromField) {
               if (to.loc === LOC.GRAVE) s = this.who(from.con) + '：' + nm + ' は' + ((reason & 0x1) ? ((reason & 0x20) ? '戦闘で破壊され、墓地へ送られた' : '効果で破壊され、墓地へ送られた') : '墓地へ送られた');
               else if (to.loc === LOC.REMOVED) s = this.who(from.con) + '：' + nm + ' は除外された';
@@ -715,7 +732,8 @@ class GameState {
               else if (to.loc === LOC.REMOVED) s = this.who(from.con) + '：' + nm + ' がEXデッキから除外された';
               else if (to.loc === LOC.HAND) s = this.who(from.con) + '：' + nm + ' がEXデッキから手札に加わった';
             }
-            if (s) this.pushDLog({ k: 'info', cid, sol, s });
+            if (s) { const ent = { k: 'info', cid, sol, s }; this.pushDLog(ent);
+              if (matPending) this.pendingMatLines.push({ e: ent, con: matPending.con, who: matPending.who, nm: matPending.nm }); }
             // layout-fix J2: the mid-band latest line is fed by
             // pushLog only, and field DEPARTURES never reached it —
             // the band kept showing the activation line of the chain
@@ -908,6 +926,14 @@ class GameState {
             : this.who(li.con) + '：カードをセット' });
         } else {
           const zc = (zone[li.seq] && zone[li.seq].code) || code;
+          // layout-fix3 K3: the announced summon is the authority
+          // for any pending Extra-host material lines (their MOVEs
+          // were applied before this announcement) — rewrite them
+          // in place with the announced monster's name.
+          if (t === 62 && zc && this.pendingMatLines.length) {
+            for (const pm of this.pendingMatLines) if (pm.con === li.con) pm.e.s = pm.who + '：' + pm.nm + ' が《' + this.nameOf(zc) + '》 のエクシーズ素材になった';
+            this.pendingMatLines = this.pendingMatLines.filter(pm => pm.con !== li.con);
+          }
           // A face-down summon of the opponent's stays unnamed even
           // when the mirror happens to know the code (the preceding
           // MOVE carried it) — hidden information is hidden.
@@ -1016,7 +1042,9 @@ class GameState {
             ? this.who(a.con) + '：' + this.nameOf(az.code) + ' が直接攻撃を宣言'
             : this.who(a.con) + '：' + this.nameOf(az.code) + ' が ' + this.nameOf(tz.code) + ' に攻撃を宣言' });
         } else { this.pushLog('攻撃宣言'); this.pushDLog({ k: 'info', s: '攻撃宣言' }); }
-        this.pushEvent({ kind: 'attack', code: az ? az.code : null, con: a.con, direct: tg.loc === 0 });
+        // layout-fix3 K5: the target's code rides the event so the
+        // floating notice can name both sides of the declaration.
+        this.pushEvent({ kind: 'attack', code: az ? az.code : null, con: a.con, direct: tg.loc === 0, target: tz ? tz.code : null });
         break;
       }
       case 31: { // CONFIRM_CARDS: shownPlayer, count u32, entries code+con+loc+seq — reveal knowledge
@@ -1399,6 +1427,23 @@ function maskEntry(e, view, ctxCode) {
 // (the MSG_RETRY path) stays pristine; masking re-applies to a copy
 // on every ask. The one legal reveal exception is shared with the
 // bot: 墓穴の道連れ shows both hands before its choices.
+// layout-fix3 K1: an Xyz monster's printed material requirement,
+// parsed from the first line of its card text (the material line,
+// e.g. 「レベル４モンスター×２」 / 「レベル４モンスター×２体以上」).
+// Returns {min, max} with max=null for 「以上」 (no upper bound), or
+// null when the line does not parse — the caller then attaches
+// nothing and the sheet renders exactly as before. Verified against
+// all 10 Xyz monsters in the card pool (test-layoutfix3).
+function xyzMaterialReq(code, data) {
+  const tx = data && data.texts && data.texts[code];
+  const t = (tx && tx.text) || '';
+  const first = t.split('\n')[0] || '';
+  const m = first.match(/×\s*([0-9０-９]+)\s*体?\s*(以上)?/);
+  if (!m) return null;
+  const n = parseInt(m[1].replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)), 10);
+  if (!n || n < 1) return null;
+  return { min: n, max: m[2] ? null : n };
+}
 function maskPromptForHuman(prompt, state) {
   const ctxCode = prompt.context ? prompt.context.code : 0;
   const view = { me: prompt.player };
@@ -5878,6 +5923,13 @@ class Duel {
     // is attached to that player's prompt only and never rendered
     // for the other seat.
     const selectHints = [null, null];
+    // layout-fix3 K1: the Xyz monster each seat most recently picked
+    // at a command prompt (decoded from the answer bytes below), and
+    // the turn it was picked on. The material prompts follow the
+    // pick within the same turn; the pick is superseded by the next
+    // command prompt, so a stale pick cannot dress a later,
+    // unrelated selection.
+    const xyzPick = [0, 0]; const xyzPickTurn = [-1, -1];
     while (this.stats.steps++ < maxSteps) {
       const status = ccall('poc_process', 'number', ['number'], [duel]);
       const len = ccall('poc_msg_len', 'number', [], []);
@@ -5920,6 +5972,24 @@ class Duel {
           // earlier turn is never attached (stale).
           { const lt = this.state.lastTrigger;
             prompt.trigger = (!prompt.context && lt && lt.turn === this.state.turnCount) ? lt : null; }
+          // layout-fix3 K1: an Xyz material selection (the core
+          // declares it via hint 513) whose target was picked at
+          // this turn's command prompt carries the monster's TRUE
+          // material requirement — the prompt's own min/max are
+          // per-step toggle bounds (1〜1) and understate it, which
+          // left the sheet claiming 1 card sufficed when 2 were
+          // required. Gated to the procedure summon: with a chain
+          // context the selection belongs to an effect (measured:
+          // Magnacarrier, where min/max are already the true 3〜3)
+          // and is left exactly as before.
+          if (prompt.name === 'SELECT_UNSELECT_CARD' && prompt.selectHint === 513 && !prompt.context) {
+            const pick = xyzPick[prompt.player];
+            if (pick && xyzPickTurn[prompt.player] === this.state.turnCount) {
+              const req = xyzMaterialReq(pick, this.data);
+              if (req) prompt.materialFor = { code: pick, min: req.min, max: req.max };
+            }
+          }
+          if (prompt.name === 'SELECT_IDLECMD') { xyzPick[0] = 0; xyzPick[1] = 0; } // a fresh decision point supersedes any earlier pick
           prompt.rawKey = pending[0] + ':' + Array.from(pending.slice(0, 24)).join(',');
           lastPrompt = prompt;
           retryStreak = 0;
@@ -5953,6 +6023,18 @@ class Duel {
           bytes = (opts.botAnswerer || botAnswer)(prompt, this.state, this.data, this.botMem);
         }
         if (!bytes) { this.stats.stopReason = 'answerer returned nothing for ' + prompt.name; break; }
+        // layout-fix3 K1: decode a command-prompt special-summon
+        // pick (answer type 1) so the material selection that
+        // follows can be labelled with the picked monster and its
+        // true material requirement. Only Xyz picks are recorded.
+        if (prompt.name === 'SELECT_IDLECMD' && bytes.length >= 4) {
+          const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getInt32(0, true) >>> 0;
+          if ((v & 0xffff) === 1) {
+            const e = prompt.spsummon[v >>> 16];
+            const cd = e && this.data.cards[e.code];
+            if (cd && (cd.type & 0x800000)) { xyzPick[prompt.player] = e.code; xyzPickTurn[prompt.player] = this.state.turnCount; }
+          }
+        }
         respond(bytes);
         // BU-12 (brushup round 3): one task boundary between the
         // answer and the next poc_process(). The core call that
@@ -6094,7 +6176,7 @@ const Engine = { MSG, SELECT_TYPES, PHASES, LOC, POS, POS_FACEUP, POS_ATTACK, PO
   ATTRIBUTES, RACES, Reader, splitMessages, i32resp, cancelResp, cardsResp, cmdResp, placeResp,
   counterResp, sortResp, unselectToggleResp, u64resp, parsePrompt, parseHint, sumSelectionValid, isDeclarable,
   shuffledCopy, randBelow,
-  GameState, botAnswer, makeBotMemory, botView, maskPromptForHuman, Duel };
+  GameState, botAnswer, makeBotMemory, botView, maskPromptForHuman, Duel, xyzMaterialReq };
 // Diagnostic-only surface for the tuning harnesses (test-cpu-tune*.js):
 // the policy's internal scorers, exposed read-only so a trace can name
 // the exact gate/score that declined an offered play. Not used by the

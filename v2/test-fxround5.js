@@ -61,8 +61,8 @@ async function main() {
   ok(!!lpbox && lpbox['font-size'] === '28px' && lpbox['line-height'] === '1.05',
     'FX5-1: I1 successor — the LP is a fitted 28px line in the status bars (the largest numeral on screen)');
   const logline = ruleDecls(/#logline\{([^}]*)\}/);
-  ok(!!logline && !('height' in logline) && logline['line-height'] === '1.35' && logline['-webkit-line-clamp'] === '2' && !/#chainbar \.prevlog/.test(html) && !/prevlog/.test(clientSrc),
-    'FX5-2: I1 successor — the latest-event line takes two fitted lines; the prevlog line is gone (absorbed into it)');
+  ok(!!logline && !('height' in logline) && logline['line-height'] === '1.35' && !('-webkit-line-clamp' in logline) && /function fitLogline/.test(clientSrc) && !/#chainbar \.prevlog/.test(html) && !/prevlog/.test(clientSrc),
+    'FX5-2: I1 successor (layout-fix3 K2) — the latest-event line is fitted IN FULL by fitLogline with no line clamp (the clamp cut event tails); the prevlog line is gone (absorbed into it)');
   const midbar = ruleDecls(/#midbar\{([^}]*)\}/);
   // layout-fix J2 supersedes the frozen height: the band keeps a
   // 62px MINIMUM and may grow under inflated system fonts (the
@@ -74,10 +74,14 @@ async function main() {
   ok(!!grid && /auto-fit/.test(grid['grid-template-columns'] || '') && !/auto-fill/.test(grid['grid-template-columns'] || ''),
     'FX5-4: I2 — the selection grid collapses unused tracks (auto-fit), so few-candidate sheets use the full width');
   const itext = ruleDecls(/\.gcard \.itext\{([^}]*)\}/);
-  // layout-fix J1 supersedes the clamp: the tile carries the FULL
-  // effect text and the sheet's candidate region scrolls.
-  ok(!!itext && itext['font-size'] === '12px' && !('-webkit-line-clamp' in itext) && !('max-height' in itext),
-    'FX5-5: I2 successor (layout-fix J1) — the in-tile effect text is 12px and unclamped; the candidate region scrolls instead');
+  // layout-fix3 K4 supersedes J1 (user decision 2026-11-12): the
+  // full-text-in-tile design was rejected in real play ("a wall
+  // of text") — tiles are compact and uniform with NO effect
+  // text, the full text lives in the detail modal, and the dock
+  // candidate keeps its text in a fixed-height scrolling region.
+  // The retired rule may only survive as display:none.
+  ok(!!itext && itext['display'] === 'none',
+    'FX5-5: I2 successor (layout-fix3 K4) — the in-tile effect text is RETIRED (display:none); candidate tiles carry no effect text');
 
   // ---------- I3: captureDLog under worker-style cloned states ----------
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
