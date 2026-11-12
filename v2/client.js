@@ -1603,6 +1603,55 @@ function fxLiveStatsAt(key, code) {
   const d = cardData(code);
   return { atk: d ? d.atk : 0, def: d ? d.def : 0 };
 }
+// layout-fix2 J2': render a status sentence as a row of
+// UNBREAKABLE units. Card names arrive as 《…》 (the engine's
+// band feed is composed that way since this round; dock and
+// context lines always used 《》/「」), quotations are atomic,
+// and the plain text between them may only break after ：、｜。
+// or at a space (the space leads the next unit) — never inside
+// a word, so the シャド／ウ and 特殊／召喚 splits of the band
+// and the dock context line cannot occur. A unit too wide for
+// its line box is shrunk by the caller's fixup, never broken.
+function nbHTML(text) {
+  const esc = String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const units = [];
+  let cur = '';
+  const push = () => {
+    if (!cur) return;
+    if (/^[、：｜。 ]+$/.test(cur) && units.length) units[units.length - 1] += cur; // a dangling delimiter run rides the previous unit
+    else units.push(cur);
+    cur = '';
+  };
+  for (let i = 0; i < esc.length; i++) {
+    const ch = esc[i];
+    if (ch === '《' || ch === '「') {
+      push();
+      const close = ch === '《' ? '》' : '」';
+      const j = esc.indexOf(close, i);
+      const end = j < 0 ? esc.length : j + 1;
+      units.push(esc.slice(i, end));
+      i = end - 1;
+      continue;
+    }
+    if (ch === ' ') { push(); cur = ' '; continue; }
+    cur += ch;
+    if (ch === '：' || ch === '、' || ch === '｜' || ch === '。') push();
+  }
+  push();
+  return units.map(u => '<span class="nb">' + u + '</span>').join('');
+}
+// Shrink any unit wider than its line box, stepwise, so a long
+// name stays whole on its own line instead of breaking.
+function nbFit(container) {
+  if (!container) return;
+  const w = container.clientWidth;
+  if (!w) return;
+  container.querySelectorAll('.nb').forEach(sp => {
+    sp.style.fontSize = '';
+    let fs = parseFloat(getComputedStyle(sp).fontSize) || 12.5;
+    while (sp.offsetWidth > w && fs > 9.5) { fs -= 0.5; sp.style.fontSize = fs + 'px'; }
+  });
+}
 // Source context of a prompt (Phase 2 item 1): the chain link whose effect is
 // asking. Attached by the engine driver from the core's CHAINING stream.
 function contextLineHTML(prompt) {
@@ -1612,7 +1661,7 @@ function contextLineHTML(prompt) {
   // (same wording everywhere a context line appears).
   const fx = resolveEffect(ctx.code, ctx.desc);
   const what = fx && fx.n ? '」の効果' + CIRCLED_NUM[fx.n - 1] : '」の効果';
-  return '<div class="ctx">「' + cardName(ctx.code) + what + 'による確認（' + locLabel(ctx) + '）</div>';
+  return '<div class="ctx">' + nbHTML('「' + cardName(ctx.code) + what + 'による確認（' + locLabel(ctx) + '）') + '</div>';
 }
 function contextText(prompt) {
   const ctx = prompt && prompt.context;
@@ -6148,22 +6197,24 @@ function render(state) {
     cb.className = '';
     cb.innerHTML = '';
   }
-  // layout-fix J2: the band's event line. A card name (《…》) is
-  // never split mid-word across the two lines (the reported break
-  // cut シャドウ into シャ／ドウ and the tail fell off the band):
-  // names render as unbreakable spans, the surrounding text wraps
-  // around them, and a name that alone exceeds the line shrinks
-  // its own type instead of breaking. The band itself may grow
-  // past 62px under inflated system fonts (min-height, not a
-  // frozen height) and the visible-fit loop absorbs the growth.
+  // The band's event line. layout-fix J2 wrapped 《…》 names in
+  // nowrap spans — but the engine composed band lines with BARE
+  // names, so the guard never matched and names still split
+  // mid-word (シャド／ウ), and the plain remainder split inside
+  // words too (特殊／召喚). layout-fix2 J2': the engine now
+  // composes band lines with 《》 around names, and the line is
+  // rendered as unbreakable units (nbHTML): breaks happen only
+  // between units, an over-wide unit shrinks its own type, and
+  // the two-line clamp ellipsises the tail as the last resort.
+  // The band may grow past 62px under inflated system fonts
+  // (min-height, not a frozen height) and the visible-fit loop
+  // absorbs the growth.
   { const ll = $('logline');
     const txt = state.log.length ? state.log[state.log.length - 1] : '';
     if (txt !== renderLogTxt) {
       renderLogTxt = txt;
-      const esc = txt.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      ll.innerHTML = esc.replace(/《[^》]*》/g, m => '<span class="lk">' + m + '</span>');
-      const sp = ll.querySelector('.lk');
-      if (sp) { sp.style.fontSize = ''; if (sp.offsetWidth > ll.clientWidth && ll.clientWidth > 0) sp.style.fontSize = '11px'; }
+      ll.innerHTML = nbHTML(txt);
+      nbFit(ll);
     } }
   // phase button
   const pb = $('phasebtn');
@@ -7013,6 +7064,12 @@ function uiChain(prompt, state) {
     // keeping the plain 効果への応答.
     const ctxLink = prompt.context && prompt.context.code ? prompt.context : null;
     const trig = !ctxLink && !top ? prompt.trigger : null;
+    // layout-fix2 J4': the trigger vocabulary grew — a window can
+    // now name the resolution it follows (kind 'solved') or the
+    // phase it opened in (kind 'phase'), not only a summon or an
+    // attack. With the driver's turn-scoped attach, a same-turn
+    // window always has one of the four; the bare 効果への応答
+    // remains only for a window with no antecedent at all.
     const cause = ctxLink
       ? { code: ctxLink.code, con: ctxLink.con, label: 'チェーン' + (ctxLink.link || '') + '：《' + cardName(ctxLink.code) + '》' + (ctxLink.solving ? 'の効果（解決中）への応答' : 'への応答') }
       : top
@@ -7020,7 +7077,11 @@ function uiChain(prompt, state) {
         : trig
           ? { code: trig.code || null, con: trig.con, label: trig.kind === 'attack'
               ? '《' + (trig.code ? cardName(trig.code) : 'モンスター') + '》の攻撃宣言への応答'
-              : '《' + (trig.code ? cardName(trig.code) : 'モンスター') + '》の' + (trig.verb === 62 ? '特殊召喚' : trig.verb === 64 ? '反転召喚' : '召喚') + 'への応答' }
+              : trig.kind === 'solved'
+                ? '《' + (trig.code ? cardName(trig.code) : 'モンスター') + '》の効果解決の後'
+                : trig.kind === 'phase'
+                  ? (trig.phase ? phaseJaContext(trig.phase) + '開始時' : 'ターン開始時')
+                  : '《' + (trig.code ? cardName(trig.code) : 'モンスター') + '》の' + (trig.verb === 62 ? '特殊召喚' : trig.verb === 64 ? '反転召喚' : '召喚') + 'への応答' }
           : null;
     const peeked = document.getElementById('app').classList.contains('dockpeek');
     $('dock').innerHTML =
@@ -7028,7 +7089,10 @@ function uiChain(prompt, state) {
       // (peek) control — the dock slides down to this strip and
       // board taps become info taps until it is pressed again.
       '<div class="ttl"><span>チェーン応答</span><button class="dockpeekbtn" id="dock-peek">' + (peeked ? 'ドックに戻る' : '盤面を見る') + '</button></div>' +
-      '<div class="ctx">' + timingText(state) + '｜' + (cause ? cause.label : '効果への応答') + (prompt.forced ? '（発動必須）' : '') + tag + '</div>' +
+      // layout-fix2 J2': the context line wraps by unbreakable
+      // units too — a long cause name split mid-word here
+      // (シャド／ウ) exactly like the band did.
+      '<div class="ctx">' + nbHTML(timingText(state) + '｜' + (cause ? cause.label : '効果への応答') + (prompt.forced ? '（発動必須）' : '') + tag) + '</div>' +
       retryWarn(prompt) +
       // the CAUSE card as its own row (thumbnail + name): what
       // is being responded to is a card you can look at, not a
@@ -7452,6 +7516,21 @@ function uiUnselect(prompt, state) {
   let hint = '';
   if (prompt.finishable && selCount > 0 && selCount < prompt.min) hint = 'あと' + (prompt.min - selCount) + '枚選ぶと決定できます。';
   if (prompt.finishable && selCount > 0) hint += 'やめる場合は選択をすべて外してください。';
+  // layout-fix2 J1': a NON-finishable prompt has no 決定 button
+  // by the core's own protocol — toggling is the only input and
+  // the parent process completes on its own once it has enough
+  // cards (a -1 answer is rejected in this state). The pool's
+  // instance is the Xyz material selection: measured on the real
+  // core, every material prompt arrives finishable=false (the
+  // second one also cancelable=false, with min already met) —
+  // and the sheet rendered NEITHER button and no guidance for
+  // that state, so the footer stood empty and the summon looked
+  // stalled in real play. State the way forward, and the way
+  // back, on the sheet itself.
+  if (!prompt.finishable) {
+    hint = 'この選択に決定ボタンはありません。カードをタップして選ぶと、必要な枚数がそろった時点でそのまま進みます。';
+    if (selCount > 0 && !prompt.cancelable) hint += 'やめる場合は選択をすべて外してください。';
+  }
   // BU-23: same derived mandatory/optional note as the grid
   // sheet — a truthful cancel exit says so, no cancel at all
   // says 必須, and the middle case (cancel exists but a live
@@ -7469,7 +7548,11 @@ function uiUnselect(prompt, state) {
     }).join('') + '</div>' +
     '<div class="btnrow">' +
     (prompt.finishable && selCount >= prompt.min ? '<button class="bigbtn" id="unselect-finish">決定</button>' : '') +
-    (cancelTruthful ? '<button class="bigbtn sub" id="unselect-cancel">選ばずにやめる</button>' : '') + '</div>');
+    (cancelTruthful ? '<button class="bigbtn sub" id="unselect-cancel">選ばずにやめる</button>' : '') +
+    // layout-fix2 J1': never leave the footer an empty strip —
+    // when neither button exists (non-finishable, mid-selection)
+    // the row itself carries the instruction.
+    (!(prompt.finishable && selCount >= prompt.min) && !cancelTruthful ? '<div class="btnnote">タップで選ぶと進みます</div>' : '') + '</div>');
   $('sheet').querySelectorAll('[data-unselect]').forEach(g => g.addEventListener('click', (ev) => { if (ev.target.closest('[data-uinfo]')) return; playClick(); finishPrompt(E.unselectToggleResp(+g.dataset.unselect)); }));
   $('sheet').querySelectorAll('[data-uinfo]').forEach(b => b.addEventListener('click', (ev) => { ev.stopPropagation(); playClick(); const x = combined[+b.dataset.uinfo]; openInfoPop(x.c.code, x.c); }));
   const fin = $('unselect-finish'); if (fin) fin.addEventListener('click', () => { playClick(); finishPrompt(E.cancelResp()); });
@@ -7567,6 +7650,11 @@ window.__purpose = { infer: inferSelectPurpose, phaseCtx: phaseJaContext, hintTe
 // Test surface: render the SELECT_UNSELECT_CARD sheet for a synthetic
 // prompt so its button states can be asserted without a live duel.
 window.__unselect = { open: (prompt) => uiUnselect(prompt, null) };
+// Test surface (layout-fix2): render the chain dock for a captured
+// prompt + state snapshot, so the context line's wrapping and the
+// J4' trigger labels can be asserted in a real browser without
+// waiting for a live duel to deal the exact timing.
+window.__chain = { open: (prompt, state) => uiChain(prompt, state) };
 // Test surface: render the SELECT_CARD grid sheet for a synthetic
 // prompt (same seam as __unselect), for test-facedown-select.js.
 window.__select = { open: (prompt) => uiSelectCards(prompt, null) };

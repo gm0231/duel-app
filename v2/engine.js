@@ -446,7 +446,19 @@ class GameState {
     this.solvingLink = 0;             // chain_count currently resolving (0 = building)
     this.winner = null; this.winReason = 0;
     this.lastAttack = null;           // {attacker, target|null}
-    this.lastTrigger = null;          // layout-fix J4: {kind:'summon'|'attack', code, con, turn, phase} — the latest public action a chain window can be answering
+    this.lastTrigger = null;          // layout-fix J4: {kind, code, con, turn, phase} — the latest public action a chain window can be answering
+    // layout-fix2 J4': kinds are 'summon' | 'attack' | 'solved' |
+    // 'phase'. The J4 attach rule (same turn AND same phase)
+    // starved the most frequent windows: one that opens after a
+    // chain resolved, or at a fresh phase, named nothing at all
+    // and read as a context-free 「効果への応答」. Recording the
+    // last SOLVED link and the phase start as triggers too, and
+    // attaching the latest action OF THE TURN, means every
+    // same-turn window names its antecedent — a summon, an attack,
+    // a resolution, or at worst the phase it opened in. Battle
+    // sub-steps (BATTLE_STEP / DAMAGE / DAMAGE_CAL / BATTLE) do
+    // NOT record a phase trigger: a window there is answering
+    // the attack, not the sub-phase.
     this.deckTop = [null, null];
     this.log = [];                    // recent event strings (system text only)
     this.events = [];                 // transient event queue for presentation (SE cues), drained by the client
@@ -456,6 +468,15 @@ class GameState {
   nameOf(code) { return this.names[code] || ('#' + code); }
   who(p) { return p === this.humanPlayer ? '自分' : '相手'; }
   pushLog(s) { this.log.push(s); if (this.log.length > 60) this.log.shift(); }
+  // layout-fix2 J2': band lines (pushLog) wrap card names in 《》
+  // so the client can treat each name as one unbreakable unit.
+  // The previous round's client-side protection keyed on 《…》
+  // but the band feed was composed with BARE names, so the guard
+  // never matched and names still split mid-word in the band
+  // (シャド／ウ). Detailed-history strings (pushDLog) keep their
+  // bare names — only the band copies are wrapped, at the exact
+  // composition points where the name is interpolated.
+  bn(name) { return '《' + name + '》'; }
   pushEvent(e) { this.events.push(e); if (this.events.length > 300) this.events.splice(0, this.events.length - 300); }
   // Detailed history (log-detail round, 2026-11-03 — user: the log
   // only carried headlines; effects, processing and outcomes were
@@ -568,8 +589,19 @@ class GameState {
     const t = msg[0]; const r = new Reader(msg, 1);
     switch (t) {
       case 5: { this.winner = r.u8(); this.winReason = r.u8(); this.pushDLog({ k: 'info', s: '決着：' + this.who(this.winner) + ' の勝利' }); break; } // WIN
-      case 40: this.turnPlayer = r.u8(); this.turnCount++; break; // NEW_TURN
-      case 41: { const ph = r.u16(); this.phase = ph; this.phaseName = PHASES[ph] || ('PH' + ph); break; } // NEW_PHASE
+      case 40: { this.turnPlayer = r.u8(); this.turnCount++;
+        // layout-fix2 J4': a window before the turn's first phase
+        // message still gets an antecedent (the turn start itself;
+        // phase '' = no phase yet, the client labels it ターン開始時).
+        this.lastTrigger = { kind: 'phase', code: 0, con: this.turnPlayer, turn: this.turnCount, phase: '' };
+        break; } // NEW_TURN
+      case 41: { const ph = r.u16(); this.phase = ph; this.phaseName = PHASES[ph] || ('PH' + ph);
+        // layout-fix2 J4': phase starts are chain-window
+        // antecedents (see the lastTrigger note) — major phases
+        // only; battle sub-steps keep the attack / summon trigger.
+        if (ph === 1 || ph === 2 || ph === 4 || ph === 8 || ph === 256 || ph === 512)
+          this.lastTrigger = { kind: 'phase', code: 0, con: this.turnPlayer, turn: this.turnCount, phase: this.phaseName };
+        break; } // NEW_PHASE
       case 94: { const p = r.u8(); this.players[p].lp = r.i32(); break; } // LPUPDATE
       case 91: { const p = r.u8(); const amt = r.u32(); const before = this.players[p].lp; this.players[p].lp -= amt; this.pushLog(this.who(p) + 'に ' + amt + ' ダメージ'); this.pushDLog({ k: 'dmg', cid: this.chainCid(), sol: this.solvingLink, s: this.who(p) + ' に ' + amt + ' ダメージ（LP ' + before + ' → ' + this.players[p].lp + '）' }); this.pushEvent({ kind: 'damage', player: p, amount: amt }); break; } // DAMAGE
       case 92: { const p = r.u8(); const amt = r.u32(); const before = this.players[p].lp; this.players[p].lp += amt; this.pushDLog({ k: 'info', cid: this.chainCid(), sol: this.solvingLink, s: this.who(p) + ' は ' + amt + ' 回復（LP ' + before + ' → ' + this.players[p].lp + '）' }); this.pushLog(this.who(p) + '：' + amt + ' 回復'); this.pushEvent({ kind: 'recover', player: p, amount: amt }); break; } // RECOVER (band line: layout-fix J2)
@@ -622,12 +654,12 @@ class GameState {
               : to.loc === LOC.REMOVED ? '手札から除外した'
               : to.loc === LOC.DECK ? '手札からデッキに戻した'
               : to.loc === LOC.EXTRA ? '手札からEXデッキに戻した' : '手札から移動した';
-            this.pushLog(this.who(from.con) + '：' + nm + ' を' + dest);
+            this.pushLog(this.who(from.con) + '：' + this.bn(nm) + ' を' + dest);
           }
           if (to.loc === LOC.HAND && from.loc !== LOC.HAND) {
             const src = from.loc === LOC.GRAVE ? '墓地から' : from.loc === LOC.REMOVED ? '除外されている'
               : from.loc === LOC.DECK ? 'デッキから' : (from.loc === LOC.MZONE || from.loc === LOC.SZONE) ? 'フィールドから' : '';
-            this.pushLog(this.who(to.con) + '：' + nm + ' を' + src + '手札に加えた');
+            this.pushLog(this.who(to.con) + '：' + this.bn(nm) + ' を' + src + '手札に加えた');
           }
           if (to.loc === LOC.GRAVE && (reason & 0x1) && (from.loc === LOC.MZONE || from.loc === LOC.SZONE))
             this.pushEvent({ kind: 'destroy', code, con: from.con, fromLoc: from.loc, battle: !!(reason & 0x20) });
@@ -697,7 +729,10 @@ class GameState {
             if (s && fromField && !(to.loc & LOC.OVERLAY) && to.loc !== LOC.HAND) {
               const isPublic = from.con === this.humanPlayer || !(from.pos & 0xA) ||
                 to.loc === LOC.GRAVE || to.loc === LOC.REMOVED;
-              if (isPublic) this.pushLog(s);
+              // layout-fix2 J2': the band copy wraps the subject
+              // name in 《》 (the dlog string above keeps it bare);
+              // nm is the first name occurrence in every format here.
+              if (isPublic) this.pushLog(nm && s.includes(nm) ? s.replace(nm, this.bn(nm)) : s);
               else if (to.loc === LOC.DECK) this.pushLog(this.who(from.con) + '：セットカードがデッキに戻った');
               else if (to.loc === LOC.EXTRA) this.pushLog(this.who(from.con) + '：セットカードがEXデッキに戻った');
               else if (toField) this.pushLog(this.who(from.con) + '：セットカードのコントロールが移った');
@@ -840,7 +875,9 @@ class GameState {
         if (ppos !== npos && known && !(con !== this.humanPlayer && (ppos & 0xA) && (npos & 0xA))) {
           const s = this.who(con) + '：' + this.nameOf(known) + ' の表示形式が ' + posName(ppos) + ' → ' + posName(npos);
           this.pushDLog({ k: 'info', cid: this.chainCid(), sol: this.solvingLink, s });
-          this.pushLog(s); // layout-fix J2: position changes reach the band too
+          // layout-fix J2: position changes reach the band too.
+          // layout-fix2 J2': the band copy wraps the name in 《》.
+          this.pushLog(this.who(con) + '：' + this.bn(this.nameOf(known)) + ' の表示形式が ' + posName(ppos) + ' → ' + posName(npos));
         }
         break;
       }
@@ -856,7 +893,7 @@ class GameState {
         else if (li.loc === LOC.MZONE) this.players[li.con].mzone[li.seq] = { code, pos: li.pos, materials: 0 };
         else this.players[li.con].szone[li.seq] = { code, pos: li.pos };
         if (t === 54) { this.pushLog(this.who(li.con) + '：カードをセット'); this.pushEvent({ kind: 'set', code, con: li.con, loc: li.loc }); }
-        if (t === 60) { this.pushLog(this.who(li.con) + '：' + this.nameOf(code) + ' を召喚'); this.pushEvent({ kind: 'summon', code, con: li.con }); }
+        if (t === 60) { this.pushLog(this.who(li.con) + '：' + this.bn(this.nameOf(code)) + ' を召喚'); this.pushEvent({ kind: 'summon', code, con: li.con }); }
         if (t === 62) this.pushEvent({ kind: 'spsummon', code, con: li.con });
         if (t === 64) this.pushEvent({ kind: 'flipsummon', code, con: li.con });
         // Detailed versions. A set card is named only for its owner
@@ -886,8 +923,8 @@ class GameState {
           // and the summon is remembered as the current trigger so
           // a chain window opened on it can name what it answers
           // (J4: prompt.trigger, attached by the driver).
-          if (t === 62) this.pushLog(nm ? this.who(li.con) + '：' + nm + ' を特殊召喚' : this.who(li.con) + '：モンスターを特殊召喚');
-          if (t === 64) this.pushLog(nm ? this.who(li.con) + '：' + nm + ' を反転召喚' : this.who(li.con) + '：モンスターを反転召喚');
+          if (t === 62) this.pushLog(nm ? this.who(li.con) + '：' + this.bn(nm) + ' を特殊召喚' : this.who(li.con) + '：モンスターを特殊召喚');
+          if (t === 64) this.pushLog(nm ? this.who(li.con) + '：' + this.bn(nm) + ' を反転召喚' : this.who(li.con) + '：モンスターを反転召喚');
           if (t !== 54) this.lastTrigger = { kind: 'summon', code: nm ? zc : 0, con: li.con, turn: this.turnCount, phase: this.phaseName, verb: t };
         }
         break;
@@ -913,7 +950,7 @@ class GameState {
         if (!this.chain.length) this.chainSeq++;
         this.chain.push({ code, con: li.con, loc: li.loc, seq: li.seq, pos: li.pos, player: tcon,
                           tloc, tseq, desc, negated: false, disabled: false, solved: false });
-        this.pushLog('チェーン' + this.chain.length + '：' + this.nameOf(code));
+        this.pushLog('チェーン' + this.chain.length + '：' + this.bn(this.nameOf(code)));
         this.pushEvent({ kind: 'activate', code, con: li.con, loc: li.loc });
         // Detailed: the activation line of the episode. The wire's
         // target fields name the ACTIVATING card itself when the
@@ -949,9 +986,16 @@ class GameState {
         if (link) this.pushDLog({ k: 'solve', cid: this.chainSeq, link: this.solvingLink, con: link.con, code: link.code, desc: link.desc, loc: link.loc });
         break;
       }
-      case 73: { const n = r.u8(); const link = this.chain[n - 1]; if (link) link.solved = true; break; } // CHAIN_SOLVED
-      case 75: { const n = r.u8(); const link = this.chain[n - 1]; if (link) { link.negated = true; this.pushDLog({ k: 'neg', cid: this.chainSeq, link: n, con: link.con, code: link.code, desc: link.desc, loc: link.loc }); this.pushLog('チェーン' + n + '：' + this.nameOf(link.code) + ' の発動が無効になった'); } this.pushEvent({ kind: 'negate' }); break; } // CHAIN_NEGATED (band line: layout-fix J2)
-      case 76: { const n = r.u8(); const link = this.chain[n - 1]; if (link) { link.disabled = true; this.pushDLog({ k: 'dis', cid: this.chainSeq, link: n, con: link.con, code: link.code, desc: link.desc, loc: link.loc }); this.pushLog('チェーン' + n + '：' + this.nameOf(link.code) + ' の効果が無効になった'); } break; } // CHAIN_DISABLED (band line: layout-fix J2)
+      case 73: { const n = r.u8(); const link = this.chain[n - 1]; if (link) { link.solved = true;
+        // layout-fix2 J4': a window that opens right after a link
+        // resolved answers THAT resolution — remember it as the
+        // current trigger (the solving link itself is carried by
+        // prompt.context while the chain is still up; this covers
+        // the window after CHAIN_END clears the context).
+        this.lastTrigger = { kind: 'solved', code: link.code, con: link.con, turn: this.turnCount, phase: this.phaseName };
+      } break; } // CHAIN_SOLVED
+      case 75: { const n = r.u8(); const link = this.chain[n - 1]; if (link) { link.negated = true; this.pushDLog({ k: 'neg', cid: this.chainSeq, link: n, con: link.con, code: link.code, desc: link.desc, loc: link.loc }); this.pushLog('チェーン' + n + '：' + this.bn(this.nameOf(link.code)) + ' の発動が無効になった'); } this.pushEvent({ kind: 'negate' }); break; } // CHAIN_NEGATED (band line: layout-fix J2)
+      case 76: { const n = r.u8(); const link = this.chain[n - 1]; if (link) { link.disabled = true; this.pushDLog({ k: 'dis', cid: this.chainSeq, link: n, con: link.con, code: link.code, desc: link.desc, loc: link.loc }); this.pushLog('チェーン' + n + '：' + this.bn(this.nameOf(link.code)) + ' の効果が無効になった'); } break; } // CHAIN_DISABLED (band line: layout-fix J2)
       case 74: this.chain = []; this.solvingLink = 0; break; // CHAIN_END
       case 110: { // ATTACK: attacker loc_info, target loc_info (zeroed = direct)
         const a = r.locInfo(); const tg = r.locInfo();
@@ -966,8 +1010,8 @@ class GameState {
         if (az && az.code) {
           const direct = tg.loc === 0 || !tz || !tz.code;
           this.pushLog(direct
-            ? this.who(a.con) + '：' + this.nameOf(az.code) + ' が直接攻撃'
-            : this.who(a.con) + '：' + this.nameOf(az.code) + ' が ' + this.nameOf(tz.code) + ' を攻撃');
+            ? this.who(a.con) + '：' + this.bn(this.nameOf(az.code)) + ' が直接攻撃'
+            : this.who(a.con) + '：' + this.bn(this.nameOf(az.code)) + ' が ' + this.bn(this.nameOf(tz.code)) + ' を攻撃');
           this.pushDLog({ k: 'info', s: direct
             ? this.who(a.con) + '：' + this.nameOf(az.code) + ' が直接攻撃を宣言'
             : this.who(a.con) + '：' + this.nameOf(az.code) + ' が ' + this.nameOf(tz.code) + ' に攻撃を宣言' });
@@ -999,7 +1043,7 @@ class GameState {
           this.pushEvent({ kind: 'confirm', shown, cards: confirmed });
           if (shown === this.humanPlayer) {
             const names = confirmed.filter(c => c.code).map(c => this.nameOf(c.code));
-            if (names.length) this.pushLog('確認：' + names.join('、'));
+            if (names.length) this.pushLog('確認：' + names.map(n => this.bn(n)).join('、'));
             // Detailed: whose cards, from where. Deck groups are
             // listed top-first (seq descending — the same order the
             // confirmation sheet presents).
@@ -5865,12 +5909,17 @@ class Duel {
           prompt.context = this.state.chainContext(); // source card of the asking effect (may be null)
           // layout-fix J4: with an empty chain there is no link to
           // answer, but the window still answers SOMETHING public —
-          // the summon or attack declaration that opened it. Attach
-          // the mirror's last trigger when it belongs to this exact
-          // timing (same turn AND phase), else null (a pure timing
-          // window: genuinely nothing to name).
+          // the summon or attack declaration that opened it.
+          // layout-fix2 J4': the mirror now also records solved
+          // links and phase starts as triggers, so the latest
+          // action OF THIS TURN is always a truthful antecedent —
+          // attach on turn equality alone. The old same-phase
+          // condition dropped exactly the frequent windows (after
+          // a resolution, at a new phase) and left them reading as
+          // a context-free 「効果への応答」. A trigger from an
+          // earlier turn is never attached (stale).
           { const lt = this.state.lastTrigger;
-            prompt.trigger = (!prompt.context && lt && lt.turn === this.state.turnCount && lt.phase === this.state.phaseName) ? lt : null; }
+            prompt.trigger = (!prompt.context && lt && lt.turn === this.state.turnCount) ? lt : null; }
           prompt.rawKey = pending[0] + ':' + Array.from(pending.slice(0, 24)).join(',');
           lastPrompt = prompt;
           retryStreak = 0;
