@@ -225,13 +225,17 @@
      element's text, never its class list, so the seated state
      survives re-renders until the next transition. */
   #phaseinfo.fx-seated{color:#e6c877;font-weight:700;}
-  /* the latest event gets TWO lines: measured live, a long
-     summon line runs ~300px against the column's ~214px, so the
-     one-line form ellipsized real events horizontally. Two
-     lines at 12.5px cover ~46 glyphs — effectively every real
-     line — and the band grew by exactly the second line (the
-     preview absorbs it in the layout budget). */
-  #logline{font-size:12.5px;line-height:1.35;color:var(--txt);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer;}
+  /* the latest event gets as many lines as it needs:
+     layout-fix3 K2 — the old two-line clamp (-webkit-line-clamp)
+     silently cut the TAIL of long lines (「…を特殊召喚」 lost its
+     喚， 「…はEXデッキに戻った」 lost its た, breaks hid behind
+     an ellipsis), and the rectangular measurements could not see
+     it because a clamped-away span has no box. There is NO clamp
+     now: the renderer first shrinks the whole line's type until
+     it fits two lines (fitLogline), and if it still needs a
+     third line the band grows and layoutFit absorbs it. The
+     result (verb ending, destination) is never sacrificed. */
+  #logline{font-size:12.5px;line-height:1.35;color:var(--txt);cursor:pointer;}
   #logline .lk{white-space:nowrap;} /* layout-fix J2: a card name never breaks mid-word in the band */
   .nb{white-space:nowrap;} /* layout-fix2 J2': unbreakable units (nbHTML) — band, dock and sheet context lines break only between units */
   #sheet .btnnote{flex:1 1 auto;text-align:center;font-size:12.5px;color:var(--txt-dim);padding:10px 4px;} /* layout-fix2 J1': the unselect footer when no button exists */
@@ -441,7 +445,8 @@
      stats / effect lines sit on near-solid stone so they read
      over any art. */
   /* fx-ui round 5 (I2): auto-fit, not auto-fill — with 1-2 candidates the empty phantom columns shrank the real ones to a quarter of the sheet; auto-fit collapses the empty tracks so few candidates take the full width, and 3+ keep the ~117px columns. */
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(106px,1fr));gap:8px;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(106px,1fr));gap:8px;grid-auto-rows:1fr;}
+  .gcard{height:100%;box-sizing:border-box;}
   /* fx-ui round 2 (F7): the grid's "more below" cue — a
      full-width first line inside the sticky button row, shown
      only while the sheet can still scroll (toggled from
@@ -538,7 +543,13 @@
   details.fxfull summary{font-size:10px;color:var(--txt-dim);cursor:pointer;padding:2px 0;}
   details.fxfull .cardtext{margin-top:4px;color:var(--txt-dim);}
   #infopop .fxlab{font-size:10px;font-weight:700;color:var(--gold);margin-top:8px;}
-  .cand .fxline{font-size:12.5px;line-height:1.55;color:var(--gold);margin-top:3px;}
+  /* layout-fix3 K4: the dock candidate's effect text lives in a
+     fixed-height region with its own scroll — the full body is
+     always reachable there (never truncated, never "continued in
+     the details"), and the candidate box stays one comparable
+     size however long the effect runs. 詳細 still opens the
+     modal for the whole card. */
+  .cand .fxline{font-size:12.5px;line-height:1.55;color:var(--gold);margin-top:3px;max-height:97px;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-right:2px;}
   /* BU-28 (selection-clarity round): when a candidate's effect
      line is truncated, the guide to the full text is printed on
      the line itself (the candidate's 詳細 button floats the full
@@ -550,10 +561,10 @@
      as a floating 34px button at the card's top-right it crossed
      the stats line whenever the text below grew tall */
   .gcard .gdetail{position:static;flex:0 0 auto;margin-left:auto;font-size:10.5px;background:#000c;color:var(--gold);border:1px solid var(--gold-dim);border-radius:5px;padding:2px 8px;min-height:20px;cursor:pointer;}
-  /* layout-fix J1: no in-tile clamp — the tile carries the FULL
-     effect text and the sheet's candidate region scrolls (the old
-     8-line clamp cut long effects off mid-body inside the sheet). */
-  .gcard .itext{font-size:12px;line-height:1.55;color:var(--txt);background:rgba(5,4,2,.94);padding:3px 4px;border-radius:2px;margin-top:2px;}
+  /* layout-fix J1 -> layout-fix3 K4: the .itext rule is retired —
+     candidate tiles no longer carry effect text at all (the rule
+     stays defined only so any stale markup renders inert). */
+  .gcard .itext{display:none;}
   .cand .candinfo{flex:0 0 76px;min-height:48px;font-size:13px;color:var(--gold);background:#171208;border:1px solid var(--gold-dim);border-radius:6px;padding:6px 10px;cursor:pointer;}
   /* fx-ui round 2 (F3): the chain candidate's own activation
      button — full width under the candidate text, gold plate,
@@ -1114,6 +1125,12 @@
         <div class="srow"><div class="sl">召喚カットイン</div>
           <div class="seg" id="seg-cutin">
             <button data-v="on" class="sel">出す</button>
+            <button data-v="off">出さない</button>
+          </div>
+        </div>
+        <div class="srow"><div class="sl">出来事の通知</div>
+          <div class="seg" id="seg-notice">
+            <button data-v="on" class="sel">出す<small>カードの移動・攻撃などを浮かせ表示</small></button>
             <button data-v="off">出さない</button>
           </div>
         </div>

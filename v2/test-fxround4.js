@@ -146,8 +146,8 @@ async function boot() {
   // the round-5 contract; the rest of H3 (no frozen heights, floors
   // not boxes) stands as written in round 4.
   const logline = ruleDecls(/#logline\{([^}]*)\}/);
-  ok(!!logline && !('height' in logline) && logline['line-height'] === '1.35' && logline['-webkit-line-clamp'] === '2',
-    'FX4-10: H3 successor — #logline has no frozen height; it takes two fitted lines (a one-line column ellipsized real long events)');
+  ok(!!logline && !('height' in logline) && logline['line-height'] === '1.35' && !('-webkit-line-clamp' in logline) && /function fitLogline/.test(clientSrc),
+    'FX4-10: H3 successor (layout-fix3 K2) — #logline has no frozen height and NO line clamp (the 2-line clamp structurally cut event tails: a clamped-away line generates no box, so round-2 rect measurement could not see the loss); the full text is fitted by fitLogline (shrink the font, then let the band grow)');
   // H3 successor (layout redesign): the mid band is ONE 62px row
   // BY DESIGN — its contents are fitted inside it (explicit
   // line-heights below), the chain bar is an opaque overlay ON

@@ -1638,7 +1638,16 @@ function nbHTML(text) {
     if (ch === '：' || ch === '、' || ch === '｜' || ch === '。') push();
   }
   push();
-  return units.map(u => '<span class="nb">' + u + '</span>').join('');
+  // layout-fix3 K2 (second form, found by the completeness
+  // measurement): adjacent inline spans with nothing between
+  // them are GLUED — the browser has no break opportunity
+  // between units, so a multi-unit line (an attack naming two
+  // monsters) ran in one overflowing line past the column and
+  // the viewport edge, while round 2's containment checks only
+  // ever measured the vertical axis. A <wbr> between units is a
+  // zero-width break opportunity: units still never split, but
+  // the line can wrap between them.
+  return units.map(u => '<span class="nb">' + u + '</span>').join('<wbr>');
 }
 // Shrink any unit wider than its line box, stepwise, so a long
 // name stays whole on its own line instead of breaking.
@@ -1651,6 +1660,22 @@ function nbFit(container) {
     let fs = parseFloat(getComputedStyle(sp).fontSize) || 12.5;
     while (sp.offsetWidth > w && fs > 9.5) { fs -= 0.5; sp.style.fontSize = fs + 'px'; }
   });
+}
+// layout-fix3 K2: whole-line fit for the band's event line. The
+// two-line clamp is gone (index.html), so a long line would grow
+// the band to three lines; before letting it, shrink the WHOLE
+// line in half-point steps (floor 10px) until it fits the
+// two-line design budget. If it still needs a third line at the
+// floor, the band grows — the tail is never cut. In jsdom
+// (scrollHeight 0) this is inert.
+function fitLogline(ll) {
+  if (!ll) return;
+  ll.style.fontSize = '';
+  const cs = getComputedStyle(ll);
+  const lh = parseFloat(cs.lineHeight) || 16.9;
+  let fs = parseFloat(cs.fontSize) || 12.5;
+  let guard = 0;
+  while (ll.scrollHeight > lh * 2 + 1 && fs > 10 && guard++ < 8) { fs -= 0.5; ll.style.fontSize = fs + 'px'; }
 }
 // Source context of a prompt (Phase 2 item 1): the chain link whose effect is
 // asking. Attached by the engine driver from the core's CHAINING stream.
@@ -3706,6 +3731,22 @@ function fxProcessInner(evs, state) {
   // re-flown as if it came from the deck) is forbidden, so every
   // grave flight in this batch MUST register here.
   const graveFlown = [[], []];
+  // layout-fix3 K5: EVERY card movement gets a floating notice
+  // (user decision: "カードの移動は全部あってもいいくらい").
+  // The passes below already track each movement for its flight;
+  // they now also register it here, and one grouped emission at
+  // the end of the batch turns each (seat, from, to) set into a
+  // single notice listing every name — simultaneous moves never
+  // spam the queue one by one. Cards whose identity is hidden
+  // (a face-down field card, the opponent's hand) register as
+  // setCard / anonymous: the movement is announced, the name is
+  // not invented. Presentation-owned moves are excluded by the
+  // passes themselves: summons/sets/activations (callout /
+  // showcase), destroyed cards (the destroy notice), control
+  // changes (their own notice above).
+  const moveNotes = [];
+  const noteMove = (con, from, to, code, setCard) => { moveNotes.push({ con, from, to, code: code != null ? code : null, setCard: !!setCard }); };
+  const removedFlown = [[], []]; // codes that reached the removed pile from field/hand this batch (deck->removed residual accounting)
   // ---- control change: a monster leaves one field and appears on the
   // other in the same batch — it slides (supplement), never teleports
   for (const ar of arrived) {
@@ -3901,30 +3942,30 @@ function fxProcessInner(evs, state) {
       const toPt = pilePt(con, dest);
       fxRecord('flight', { to: dest, code: dep.entry.code }); // intent is recorded even if a rect is momentarily unreadable; the ghost spawns when geometry exists (always, post-render)
       // layout-fix J3: EVERY departure from the field to a public
-      // pile is announced large — either seat, either turn. The
-      // old gate here (my face-up card, opponent's turn, banish
-      // only) is replaced by outcome rules: a card that reaches
-      // the graveyard is public there, so destruction/sending
+      // pile is announced large — either seat, either turn. A card
+      // that reaches the graveyard is public there, so sending
       // names it even if it lay face-down; a card banished
       // face-down or returned to hand/deck keeps its identity
-      // hidden and is announced as a set card. Destruction itself
-      // is announced in the destroy loop below, and a departure
-      // that is a summon's cost/material rides that summon's own
-      // presentation — both are excluded here to avoid doubles.
-      const mine = con === HP ? '自分の' : '相手の';
+      // hidden and is announced as a set card. (K5 below widens
+      // the naming to every movement and groups it.)
+      // layout-fix3 K5: the J3 per-card notices here are replaced
+      // by move registrations — the grouped emission at the end
+      // of the batch names EVERY card that moved (spells/traps
+      // included; the old monsters-only grave rule and the
+      // summon-batch exclusion are gone, per the user's "all
+      // movements" decision). The one exclusion kept: a card
+      // destroyed this batch is named by the destroy notice
+      // below, not again as a grave arrival.
       if (dest === 'removed') {
-        if (!faceDown && dep.entry.code != null) fxNotice(mine + '《' + cardName(dep.entry.code) + '》が除外された', '効果で除外');
-        else fxNotice(mine + 'セットカードが除外された', '効果で除外');
+        if (dep.entry.code != null) removedFlown[con].push(dep.entry.code);
+        noteMove(con, 'field', 'removed', faceDown ? null : dep.entry.code, faceDown);
       } else if (dest === 'extra') {
-        if (!faceDown && dep.entry.code != null) fxNotice(mine + '《' + cardName(dep.entry.code) + '》がEXデッキに戻った', '効果で移動');
-        else if (dep.entry.code != null) fxNotice(mine + 'セットカードがEXデッキに戻った', '効果で移動');
-      } else if (dest === 'grave' && dep.entry.code != null && isMonster(dep.entry.code) &&
-                 !evs.some(e => e.kind === 'destroy' && e.code === dep.entry.code && e.con === con) &&
-                 !evs.some(e => (e.kind === 'summon' || e.kind === 'spsummon') && e.con === con)) {
-        // monsters only: a spell/trap reaching the graveyard is
-        // the routine end of its own activation (already
-        // presented); a monster SENT there is a result.
-        fxNotice(mine + '《' + cardName(dep.entry.code) + '》が墓地へ送られた', '効果で移動');
+        if (!faceDown && dep.entry.code != null) noteMove(con, 'field', 'extra', dep.entry.code, false);
+        else if (faceDown) noteMove(con, 'field', 'extra', null, true);
+      } else if (dest === 'grave') {
+        if (dep.entry.code != null &&
+            !evs.some(e => e.kind === 'destroy' && e.code === dep.entry.code && e.con === con))
+          noteMove(con, 'field', 'grave', dep.entry.code, false);
       }
       if (dest === 'grave' && dep.entry.code != null) graveFlown[con].push(dep.entry.code); // I(1): already flown — the deck-origin pass must not fly it again
       if (fromPt && toPt) fxFly(dep.entry.code, faceDown, fromPt, toPt, fromPt.w - 2, fromPt.h - 24, undefined, undefined, deckKeyOfSeat(con));
@@ -3932,23 +3973,23 @@ function fxProcessInner(evs, state) {
     } else if (cur.handLen[con] > prev.handLen[con]) { // bounced to a hand
       const toPt = handPt(con);
       fxRecord('flight', { to: 'hand', code: dep.entry.code });
-      // layout-fix J3: a bounce is a result too (named only when
-      // the card lay face-up — a set card returns unrevealed).
-      { const mine = con === HP ? '自分の' : '相手の';
-        if (!faceDown && dep.entry.code != null) fxNotice(mine + '《' + cardName(dep.entry.code) + '》が手札に戻った', '効果で移動');
-        else fxNotice(mine + 'セットカードが手札に戻った', '効果で移動'); }
+      // layout-fix J3 -> K5: a bounce is a movement (named only
+      // when the card lay face-up — a set card returns unrevealed).
+      noteMove(con, 'field', 'hand', faceDown ? null : dep.entry.code, faceDown);
       if (fromPt && toPt) fxFly(dep.entry.code, faceDown, fromPt, toPt, fromPt.w - 2, fromPt.h - 24, undefined, undefined, deckKeyOfSeat(con));
     } else if (cur.deck[con] > prev.deck[con]) { // returned to the deck: vanishes in place
       fxVanish(dep.key, dep.entry.code, faceDown);
       fxRecord('vanish', { to: 'deck', code: dep.entry.code });
-      // layout-fix J3: a return to the deck is announced as well.
-      { const mine = con === HP ? '自分の' : '相手の';
-        if (!faceDown && dep.entry.code != null) fxNotice(mine + '《' + cardName(dep.entry.code) + '》がデッキに戻った', '効果で移動');
-        else fxNotice(mine + 'セットカードがデッキに戻った', '効果で移動'); }
+      // layout-fix J3 -> K5: a return to the deck is a movement too.
+      noteMove(con, 'field', 'deck', faceDown ? null : dep.entry.code, faceDown);
       pileLand(con, 'deck');
     } else { // token / material / untracked: a quiet fade
       fxVanish(dep.key, dep.entry.code, faceDown);
       fxRecord('vanish', { to: 'gone', code: dep.entry.code });
+      // layout-fix3 K5: materials and tokens leave the field too —
+      // the emission labels a gone-group in a summon batch as
+      // エクシーズ素材 (see fxEmitMoveNotes).
+      if (dep.entry.code != null) noteMove(con, 'field', 'gone', faceDown ? null : dep.entry.code, faceDown);
     }
   }
   // destroy events: white flash at the zone the card occupied.
@@ -4039,7 +4080,7 @@ function fxProcessInner(evs, state) {
     else if (extraD[HP].removed.includes(code)) { fromPt = pilePt(HP, 'extra'); fromKind = 'extra'; }
     else if (cur.deck[HP] < prev.deck[HP]) { fromPt = pilePt(HP, 'deck'); fromKind = 'deck'; }
     const toPt = handPt(HP);
-    if (fromKind) fxRecord('flight', { to: 'hand', from: fromKind, code });
+    if (fromKind) { fxRecord('flight', { to: 'hand', from: fromKind, code }); noteMove(HP, fromKind, 'hand', code, false); } // K5: draws / searches / salvages are movements
     if (fromPt && toPt) fxFly(code, false, fromPt, toPt, 44, 58, undefined, undefined, deckKeyOfSeat(HP));
   }
   for (const code of myD.removed) {
@@ -4048,15 +4089,19 @@ function fxProcessInner(evs, state) {
     if (placed) continue;
     const fromRect = fxHandRects.find(r => r.code === code);
     const fromPt = fromRect || handPt(HP);
-    if (graveD[HP].added.includes(code)) { const toPt = pilePt(HP, 'grave'); fxRecord('flight', { to: 'grave', from: 'hand', code }); graveFlown[HP].push(code); if (fromPt && toPt) fxFly(code, false, fromPt, toPt, 44, 58, undefined, undefined, deckKeyOfSeat(HP)); pileLand(HP, 'grave'); }
-    else if (remD[HP].added.includes(code)) { const toPt = pilePt(HP, 'removed'); fxRecord('flight', { to: 'removed', from: 'hand', code }); if (fromPt && toPt) fxFly(code, false, fromPt, toPt, 44, 58, undefined, undefined, deckKeyOfSeat(HP)); pileLand(HP, 'removed'); }
-    else if (cur.deck[HP] > prev.deck[HP]) { if (fromRect) { const layer = fxLayerEl(); const d = fxPlaceGhost(code, false, fromRect, fromRect.w - 2, fromRect.h - 2, deckKeyOfSeat(HP)); if (d) { fxAnim(d, [{ transform: 'scale(1)', opacity: 1 }, { transform: 'scale(.55)', opacity: 0 }], { duration: 320, easing: 'ease-in' }); fxKill(d, 360); } } fxRecord('vanish', { to: 'deck', from: 'hand', code }); pileLand(HP, 'deck'); }
+    if (graveD[HP].added.includes(code)) { const toPt = pilePt(HP, 'grave'); fxRecord('flight', { to: 'grave', from: 'hand', code }); graveFlown[HP].push(code); noteMove(HP, 'hand', 'grave', code, false); if (fromPt && toPt) fxFly(code, false, fromPt, toPt, 44, 58, undefined, undefined, deckKeyOfSeat(HP)); pileLand(HP, 'grave'); }
+    else if (remD[HP].added.includes(code)) { const toPt = pilePt(HP, 'removed'); fxRecord('flight', { to: 'removed', from: 'hand', code }); removedFlown[HP].push(code); noteMove(HP, 'hand', 'removed', code, false); if (fromPt && toPt) fxFly(code, false, fromPt, toPt, 44, 58, undefined, undefined, deckKeyOfSeat(HP)); pileLand(HP, 'removed'); }
+    else if (cur.deck[HP] > prev.deck[HP]) { if (fromRect) { const layer = fxLayerEl(); const d = fxPlaceGhost(code, false, fromRect, fromRect.w - 2, fromRect.h - 2, deckKeyOfSeat(HP)); if (d) { fxAnim(d, [{ transform: 'scale(1)', opacity: 1 }, { transform: 'scale(.55)', opacity: 0 }], { duration: 320, easing: 'ease-in' }); fxKill(d, 360); } } fxRecord('vanish', { to: 'deck', from: 'hand', code }); noteMove(HP, 'hand', 'deck', code, false); pileLand(HP, 'deck'); }
   }
   // opponent hand count changes: draws fly in as card backs
   const opp = 1 - HP;
   if (cur.handLen[opp] > prev.handLen[opp] && cur.deck[opp] < prev.deck[opp]) {
     const fromPt = pilePt(opp, 'deck'), toPt = handPt(opp);
     fxRecord('flight', { to: 'opphand', from: 'deck' });
+    // K5: the opponent's draw/search is a movement too — the
+    // identity is hidden information, so it registers anonymous
+    // (the emission words it as a count, never a name).
+    for (let i = 0; i < Math.min(5, cur.handLen[opp] - prev.handLen[opp]); i++) noteMove(opp, 'deck', 'hand', null, false);
     if (fromPt && toPt) fxFly(null, true, fromPt, toPt, 40, 52);
   }
   // ---- deck -> grave (redesign I(1)): cards an effect sends
@@ -4094,9 +4139,23 @@ function fxProcessInner(evs, state) {
     for (let i = 0; i < n; i++) {
       const code = residual[i];
       fxRecord('flight', { to: 'grave', from: 'deck', code }); // from:'deck' is the deck-origin marker (same `from` convention as the hand flights)
+      noteMove(p, 'deck', 'grave', code, false); // K5: a mill names every card that fell
       if (fromPt && toPt) fxFly(code, false, fromPt, toPt, 44, 58, 430, i * 110, deckKeyOfSeat(p));
     }
     if (n > 0) pileLand(p, 'grave');
+  }
+  // layout-fix3 K5: deck -> removed (a mill/send redirected to the
+  // banish pile, e.g. under a Macro Cosmos-class effect) — the
+  // notice half of the deck-origin accounting above; no flight
+  // grammar exists for this pair, the notice is the presentation.
+  for (let p = 0; p < 2; p++) {
+    const deckDrop = prev.deck[p] - cur.deck[p];
+    if (deckDrop <= 0) continue;
+    const residual = remD[p].added.slice();
+    for (const flown of removedFlown[p]) { const i = residual.indexOf(flown); if (i >= 0) residual.splice(i, 1); }
+    if (!residual.length) continue;
+    const n = Math.min(residual.length, deckDrop);
+    for (let i = 0; i < n; i++) noteMove(p, 'deck', 'removed', residual[i], false);
   }
   // ---- public pile departures (fx-ui round): cards leaving the
   // graveyard / removed pile for the OTHER public pile or back to
@@ -4130,6 +4189,7 @@ function fxProcessInner(evs, state) {
       const toPtOther = pilePt(p, otherKind);
       for (const code of toOther) {
         fxRecord('flight', { to: otherKind, from: srcKind, code });
+        noteMove(p, srcKind, otherKind, code, false); // K5
         if (fromPt && toPtOther) fxFly(code, false, fromPt, toPtOther, 44, 58, 430, n++ * 110, deckKeyOfSeat(p));
       }
       if (toOther.length) pileLand(p, otherKind);
@@ -4138,11 +4198,54 @@ function fxProcessInner(evs, state) {
       const toPtDeck = pilePt(p, 'deck');
       for (const code of toDeck) {
         fxRecord('flight', { to: 'deck', from: srcKind, code });
+        noteMove(p, srcKind, 'deck', code, false); // K5
         if (fromPt && toPtDeck) fxFly(code, false, fromPt, toPtDeck, 44, 58, 430, n++ * 110, deckKeyOfSeat(p));
       }
       if (toDeck.length) pileLand(p, 'deck');
+      // layout-fix3 K5: what is left of the source pile's
+      // departures and matches a hand gain is a salvage (for the
+      // opponent this hook is the only naming route — their hand
+      // identities are hidden, but the card LEFT a public pile).
+      const handGain = Math.max(0, cur.handLen[p] - prev.handLen[p]);
+      if (left.length && handGain > 0) {
+        const toHand = left.splice(0, Math.min(left.length, handGain));
+        for (const code of toHand) noteMove(p, srcKind, 'hand', code, false);
+      }
     }
   }
+  // layout-fix3 K5: leftover pile arrivals no pass claimed — a
+  // detached Xyz material reaching the graveyard is the standing
+  // case (its source is the overlay, which no bag tracks), an
+  // Extra-Deck card sent straight to a pile is the other. The
+  // moved card and its destination are certain from the bags;
+  // the source label follows the evidence available (a mats
+  // decrease this batch, or a matching Extra departure).
+  for (let p = 0; p < 2; p++) {
+    const notedCount = (to) => { const m = new Map(); for (const n of moveNotes) if (n.con === p && n.to === to && n.code != null) m.set(n.code, (m.get(n.code) || 0) + 1); return m; };
+    const detached = changed.some(ch => { const [c0, l0] = ch.key.split(':').map(Number); return c0 === p && l0 === E.LOC.MZONE && (ch.after.mats || 0) < (ch.before.mats || 0); });
+    const gc = notedCount('grave');
+    for (const code of graveD[p].added) {
+      if ((gc.get(code) || 0) > 0) { gc.set(code, gc.get(code) - 1); continue; }
+      const fromField = departed.some(d => d.entry.code === code && d.key.split(':').map(Number)[0] === p);
+      noteMove(p, fromField ? 'field' : (detached ? 'overlay' : (extraD[p].removed.includes(code) ? 'extra' : 'overlay')), 'grave', code, false);
+    }
+    const rc = notedCount('removed');
+    for (const code of remD[p].added) {
+      if ((rc.get(code) || 0) > 0) { rc.set(code, rc.get(code) - 1); continue; }
+      if (extraD[p].removed.includes(code)) noteMove(p, 'extra', 'removed', code, false);
+      else fxRecord('moveleft', { to: 'removed', code, con: p }); // counted, not silently dropped (see design record)
+    }
+  }
+  // layout-fix3 K5: attack declarations are notices too — the
+  // attacker and the target (the engine event now carries both).
+  for (const ev of evs) {
+    if (ev.kind !== 'attack' || ev.code == null) continue;
+    const seat = ev.con === HP ? '' : '相手の';
+    if (ev.direct || !ev.target) fxNotice(seat + '《' + cardName(ev.code) + '》が直接攻撃', '攻撃宣言', true);
+    else fxNotice(seat + '《' + cardName(ev.code) + '》が《' + cardName(ev.target) + '》に攻撃', '攻撃宣言', true);
+  }
+  // layout-fix3 K5: the grouped movement emission for this batch.
+  fxEmitMoveNotes(moveNotes, evs);
   // ---- pile count ticks where no flight already landed
   for (let p = 0; p < 2; p++) {
     if (graveD[p].added.length || graveD[p].removed.length) pileLand(p, 'grave');
@@ -4174,12 +4277,13 @@ function fxProcessInner(evs, state) {
 // legal answers the core offers: chain 'off' answers pass (i32 -1),
 // which SELECT_CHAIN always accepts; chain 'on' merely un-hides
 // candidates the player had dismissed earlier in the duel.
-const fxSettings = { cutin: true, resp: 'auto' }; // resp: 'auto' | 'on' | 'off'
+const fxSettings = { cutin: true, resp: 'auto', notice: true }; // resp: 'auto' | 'on' | 'off'; notice: layout-fix3 K5 event notices (default ON, user decision)
 try {
   const savedFx = JSON.parse(localStorage.getItem('v2fx') || 'null');
   if (savedFx) {
     if (typeof savedFx.cutin === 'boolean') fxSettings.cutin = savedFx.cutin;
     if (savedFx.resp === 'auto' || savedFx.resp === 'on' || savedFx.resp === 'off') fxSettings.resp = savedFx.resp;
+    if (typeof savedFx.notice === 'boolean') fxSettings.notice = savedFx.notice;
   }
 } catch (e) {}
 function fxSaveSettings() { try { localStorage.setItem('v2fx', JSON.stringify(fxSettings)); } catch (e) {} }
@@ -4634,39 +4738,105 @@ function fxOppNameTag(text, detail) {
 // queue is capped at 3 waiting (a flood drops its tail, recorded).
 const fxNoticeQ = [];
 let fxNoticeBusy = false;
-function fxNotice(text, sub) {
+// layout-fix3 K5: the grouped movement emission. Registrations
+// from one processing batch are grouped by (seat, from, to) into
+// ONE notice naming every card that moved together (the user's
+// batching rule for simultaneous moves); more than four distinct
+// names collapse to the first four + a count, so one resolution
+// can never build an unreadable wall. Hidden identities arrive
+// as setCard (a face-down card: announced as セットカード) or
+// anonymous counts (the opponent's hand gains: announced as a
+// count) — a movement is always announced, a name is never
+// invented. 'gone' departures in a summon batch are materials
+// becoming overlay (the only same-batch route off the field that
+// reaches no pile), and are worded as such.
+const MOVE_ZONE_JA = { field: 'フィールド', hand: '手札', deck: 'デッキ', grave: '墓地', removed: '除外', extra: 'EXデッキ', overlay: 'エクシーズ素材', gone: 'フィールド外' };
+function fxEmitMoveNotes(notes, evs) {
+  if (!notes || !notes.length) return;
+  const summonBatch = (evs || []).some(e => e.kind === 'spsummon' || e.kind === 'summon');
+  const groups = new Map();
+  for (const n of notes) {
+    const k = n.con + '|' + n.from + '|' + n.to;
+    if (!groups.has(k)) groups.set(k, { con: n.con, from: n.from, to: n.to, names: [], sets: 0, anon: 0 });
+    const g = groups.get(k);
+    if (n.code != null) g.names.push(n.code);
+    else if (n.setCard) g.sets++;
+    else g.anon++;
+  }
+  const verb = (g) => g.to === 'grave' ? 'が墓地へ送られた'
+    : g.to === 'removed' ? 'が除外された'
+    : g.to === 'deck' ? 'がデッキに戻った'
+    : g.to === 'extra' ? 'がEXデッキに戻った'
+    : g.to === 'hand' ? (g.from === 'field' ? 'が手札に戻った' : 'が手札に加わった')
+    : g.to === 'gone' ? (summonBatch ? 'がエクシーズ素材になった' : 'がフィールドを離れた')
+    : 'が移動した';
+  for (const g of groups.values()) {
+    const seat = g.con === HP ? '自分の' : '相手の';
+    const counts = new Map();
+    for (const c of g.names) counts.set(c, (counts.get(c) || 0) + 1);
+    const parts = [...counts.entries()].map(([c, n]) => '《' + cardName(c) + '》' + (n > 1 ? '×' + n : ''));
+    if (g.sets) parts.push('セットカード' + (g.sets > 1 ? '×' + g.sets : ''));
+    let text = null;
+    if (parts.length) {
+      const shown = parts.slice(0, 4);
+      const rest = parts.length - shown.length;
+      text = seat + shown.join('') + (rest > 0 ? ' ほか' + rest + '種' : '') + verb(g);
+    } else if (g.anon) {
+      text = seat + 'カード' + (g.anon > 1 ? g.anon + '枚' : '') + verb(g);
+    }
+    if (!text) continue;
+    fxRecord('movenote', { from: g.from, to: g.to, con: g.con, text });
+    fxNotice(text, 'カードの移動｜' + (MOVE_ZONE_JA[g.from] || g.from) + '→' + (g.to === 'gone' && summonBatch ? 'エクシーズ素材' : (MOVE_ZONE_JA[g.to] || g.to)), true);
+  }
+}
+function fxNotice(text, sub, noBeat) {
+  // layout-fix3 K5: the event notices are a user setting (default
+  // ON). Off means off — nothing queues, nothing shows; the band
+  // line and the history keep recording as always.
+  if (!fxSettings.notice) { fxRecord('noticesuppressed', { text }); return; }
   fxRecord('notice', { text });
   if (fxNoticeBusy || fxNoticeQ.length) {
-    if (fxNoticeQ.length < 3) fxNoticeQ.push({ text, sub });
+    // layout-fix3 K5: the queue cap rises 3 -> 6 with the wider
+    // coverage; simultaneous moves are grouped into ONE notice by
+    // the move pass, so a batch rarely produces more than a few.
+    if (fxNoticeQ.length < 6) fxNoticeQ.push({ text, sub, noBeat: !!noBeat });
     else fxRecord('noticedrop', { text });
     fxNoticePump();
     return;
   }
-  fxNoticeShow(text, sub);
+  fxNoticeShow(text, sub, noBeat);
 }
 function fxNoticePump() {
   if (fxNoticeBusy) return;
   const n = fxNoticeQ.shift();
-  if (n) fxNoticeShow(n.text, n.sub);
+  if (n) fxNoticeShow(n.text, n.sub, n.noBeat);
 }
-function fxNoticeShow(text, sub) {
+function fxNoticeShow(text, sub, noBeat) {
   const layer = fxLayerEl(); if (!layer) return;
   const old = layer.querySelector('.fx-notice'); if (old) old.remove();
-  fxNoticeBusy = true;
-  const d = document.createElement('div');
+  fxNoticeBusy = true;  const d = document.createElement('div');
   d.className = 'fx-notice';
   d.innerHTML = '<div class="nt">' + text + '</div>' + (sub ? '<div class="ns">' + sub + '</div>' : '');
   d.style.opacity = '0';
   layer.appendChild(d);
   const hold = fxReadMs(text + (sub || ''));
-  fxAddScene({
-    kind: 'notice', dur: hold + 480, beat: hold + 200,
+  // layout-fix3 K5 (test-fx attribution): the high-frequency
+  // move/attack notices present on the notice track only — they
+  // do NOT book a beat. Booking one pushed every combat beat
+  // behind it (the LP count settled late, the finisher gate
+  // compressed), which is exactly the duel-stretching the K5
+  // decision told us to avoid; the low-frequency result notices
+  // (destroyed, control change, flip) keep their booked dwell.
+  const def = {
+    kind: 'notice', dur: hold + 480,
     render(t) {
       const a = t < 160 ? t / 160 : (t > hold + 130 ? Math.max(0, 1 - (t - hold - 130) / 350) : 1);
       d.style.opacity = String(a);
     },
     onDone() { try { d.remove(); } catch (e) {} fxNoticeBusy = false; fxNoticePump(); },
-  });
+  };
+  if (!noBeat) def.beat = hold + 200;
+  fxAddScene(def);
 }
 function fxOppTagsFromEvents(evs, state) {
   const opp = 1 - HP;
@@ -5977,6 +6147,7 @@ function pileHTML(p, con) {
 }
 let duelState = null;
 let renderLogTxt = null; // layout-fix J2: last band line rendered (the 《》 span wrap is rebuilt only on change)
+let lastBandH = 0;       // layout-fix3 K2: last #midbar height — a change means the grown/shrunk band must be re-absorbed by layoutFit
 let histFromResult = false; // layout-fix J5: the history sheet was opened from the result overlay — closing it restores the result
 // B-10: the engine mirror caps its log at 60 lines; the client
 // keeps its own turn-tagged copy so the history sheet can show
@@ -6204,17 +6375,23 @@ function render(state) {
   // words too (特殊／召喚). layout-fix2 J2': the engine now
   // composes band lines with 《》 around names, and the line is
   // rendered as unbreakable units (nbHTML): breaks happen only
-  // between units, an over-wide unit shrinks its own type, and
-  // the two-line clamp ellipsises the tail as the last resort.
-  // The band may grow past 62px under inflated system fonts
-  // (min-height, not a frozen height) and the visible-fit loop
-  // absorbs the growth.
+  // between units, an over-wide unit shrinks its own type.
+  // layout-fix3 K2: the two-line clamp is GONE (it cut tails —
+  // see the CSS note); after nbFit, fitLogline shrinks the whole
+  // line until it fits two lines, and any residual third line
+  // grows the band, whose new height layoutFit then absorbs
+  // (the refit hook under the draw below).
   { const ll = $('logline');
     const txt = state.log.length ? state.log[state.log.length - 1] : '';
     if (txt !== renderLogTxt) {
       renderLogTxt = txt;
       ll.innerHTML = nbHTML(txt);
       nbFit(ll);
+      fitLogline(ll);
+      const mb = $('midbar');
+      const bh = mb ? mb.offsetHeight : 0;
+      if (bh && lastBandH && Math.abs(bh - lastBandH) >= 2) { try { layoutFit(false); } catch (e) {} }
+      if (bh) lastBandH = bh;
     } }
   // phase button
   const pb = $('phasebtn');
@@ -6999,6 +7176,7 @@ function syncFxSegs() {
   const mark = (id, v) => { const el = $(id); if (el) el.querySelectorAll('button').forEach(b => b.classList.toggle('sel', b.dataset.v === v)); };
   mark('seg-cutin', fxSettings.cutin ? 'on' : 'off');
   mark('seg-resp', fxSettings.resp);
+  mark('seg-notice', fxSettings.notice ? 'on' : 'off'); // layout-fix3 K5
 }
 function openFxSettings() {
   if (currentPrompt) return; // during a prompt the dock/sheet carries the interaction
@@ -7008,6 +7186,9 @@ function openFxSettings() {
       '<div class="segrow">召喚カットイン</div><div class="seg" id="fxseg-cutin">' +
       '<button data-v="on"' + (fxSettings.cutin ? ' class="sel"' : '') + '>ON</button>' +
       '<button data-v="off"' + (!fxSettings.cutin ? ' class="sel"' : '') + '>OFF</button></div>' +
+      '<div class="segrow">出来事の通知（カードの移動・攻撃など）</div><div class="seg" id="fxseg-notice">' +
+      '<button data-v="on"' + (fxSettings.notice ? ' class="sel"' : '') + '>ON</button>' +
+      '<button data-v="off"' + (!fxSettings.notice ? ' class="sel"' : '') + '>OFF</button></div>' +
       '<div class="segrow">応答モード（チェーン確認）</div><div class="seg" id="fxseg-resp">' +
       '<button data-v="auto"' + (fxSettings.resp === 'auto' ? ' class="sel"' : '') + '>おまかせ</button>' +
       '<button data-v="on"' + (fxSettings.resp === 'on' ? ' class="sel"' : '') + '>毎回</button>' +
@@ -7019,6 +7200,7 @@ function openFxSettings() {
       el.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { playClick(); apply(b.dataset.v); draw(); }));
     };
     wire('fxseg-cutin', (v) => { fxSettings.cutin = v === 'on'; fxSaveSettings(); syncFxSegs(); });
+    wire('fxseg-notice', (v) => { fxSettings.notice = v === 'on'; fxSaveSettings(); syncFxSegs(); }); // layout-fix3 K5
     wire('fxseg-resp', (v) => { fxSettings.resp = v; fxSaveSettings(); syncFxSegs(); updateAutoPassChip(); });
     $('sheet-cancel').addEventListener('click', () => { playClick(); sheetClose(); });
   };
@@ -7108,11 +7290,12 @@ function uiChain(prompt, state) {
         const cfx = entryEffect(e, 'chain');
         return '<div class="cand' + (disChain ? ' dismissed' : '') + '" data-chain="' + i + '"><div class="cname">' + cardName(e.code) + '</div>' +
           '<div class="loc">' + locLabel(e) + (disChain ? '（このチェーンでは聞かない）' : '') + '</div>' +
-          // layout-fix J4: the candidate carries its effect's FULL
-          // body in the dock — the 28-character excerpt showed the
-          // cost clause and cut the effect itself away behind
-          // 「詳細」, so 発動/パス was judged half-blind. The dock's
-          // candidate region scrolls; the whole effect fits there.
+          // layout-fix J4 -> layout-fix3 K4: the candidate carries
+          // its effect's FULL body (the old 28-character excerpt
+          // cut the effect away) — but inside a fixed-height
+          // region with its own scroll (.cand .fxline), so a long
+          // effect no longer stretches the candidate into a wall
+          // of text; the whole body stays reachable right there.
           (cfx && cfx.n ? '<div class="fxline">' + (cfx.act ? '発動：' : '効果' + CIRCLED_NUM[cfx.n - 1] + '：') + (cfx.body || '').replace(/\s+/g, ' ') + '</div>' : '') +
           // the actions are real buttons, one row: 発動する
           // (gold, the primary) + 詳細. A chain-dismissed
@@ -7340,12 +7523,17 @@ function gridSheet(o) {
       // layout-fix J1: the candidates live in their own scroller
       // (the dock discipline) — header and the confirm row below
       // are fixed flex children, always inside the sheet.
+      // layout-fix3 K4 (user decision, replaces the round-1/2
+      // "full effect text inline on every candidate" policy): a
+      // candidate tile carries NO effect text — art, name, marks,
+      // stats, location and the 詳細 button only, all tiles one
+      // uniform size so candidates compare at a glance. The full
+      // text lives in the detail modal (詳細) and nowhere else.
       '<div class="sheet-scroll"><div class="grid">' + o.cards.map((c, i) => {
         const hid = hidOf(c);
         return '<div class="gcard' + (hid ? ' back' : '') + (o.selected.has(i) ? ' sel' : '') + '" data-grid="' + i + '"' + (hid ? '' : artInline(c.code, false, c.ref && c.ref.con != null ? deckKeyOfSeat(c.ref.con) : deckKeyOfSeat(HP))) + '>' +
         '<div class="loc">' + c.locLabel + '</div><div class="nm' + (hid ? '' : kindCls(c.code)) + '">' + (hid ? hiddenCardLabel(c.ref || c) : marksChipHTML(c.code) + '<span class="nmtext">' + cardName(c.code) + (c.extra ? ' ' + c.extra : '') + '</span><button class="gdetail" data-gdetail="' + i + '">詳細</button>') + '</div>' +
-        (hid ? '' : (statsLine(c.code) ? '<div class="stats">' + statsLine(c.code) + '</div>' : '') +
-        (hid ? '' : (o.showText && cardText(c.code) ? '<div class="itext">' + cardText(c.code) + '</div>' : ''))) + '</div>';
+        (hid ? '' : (statsLine(c.code) ? '<div class="stats">' + statsLine(c.code) + '</div>' : '')) + '</div>';
       }).join('') + '</div></div>' +
       // F7: the scroll cue rides INSIDE the button row as a
       // full-width first line — shown only while the candidate
@@ -7489,7 +7677,6 @@ function uiSelectCards(prompt, state) {
     cards: prompt.cards.map(c => ({ code: c.code, locLabel: locLabel(c), extra: isTrib ? '（リリース値 ' + c.releaseParam + '）' : '', ref: c })),
     selected,
     locked: [],
-    showText: true,
     cancelable: prompt.cancelable,
     valid: () => isTrib ? (sum() >= prompt.min && selected.size <= prompt.max) : (selected.size >= prompt.min && selected.size <= prompt.max),
     needLabel: () => isTrib ? '決定（合計あと' + Math.max(0, prompt.min - sum()) + '）' : isHandLimit ? '捨てる（あと' + Math.max(0, prompt.min - selected.size) + '枚）' : '決定（あと' + Math.max(0, prompt.min - selected.size) + '枚）',
@@ -7538,13 +7725,26 @@ function uiUnselect(prompt, state) {
   // out by the hint above, so it gets no tag rather than a lie.
   const purpose = selectPurposeText(prompt);
   const reqNoteU = cancelTruthful ? '（任意：選ばずにやめることもできます）' : (!prompt.cancelable ? '（必須）' : '');
-  sheetOpen('<div class="ttl">カードの選択</div>' + (purpose ? '<div class="purpose">' + purpose + '</div>' : '') + '<div class="sub">' + prompt.min + '〜' + prompt.max + ' 枚（現在 ' + selCount + ' 枚選択中）。タップで選択／解除します。' + reqNoteU + (hint ? ' ' + hint : '') + '</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
+  // layout-fix3 K1: for an Xyz material selection the driver
+  // attaches the TRUE requirement (prompt.materialFor) — the
+  // prompt's own min/max are per-step toggle bounds and read
+  // 1〜1 for a 2-material summon, which claimed one card sufficed
+  // and left the sheet looking stalled at 1 selected. The count
+  // line names the monster, the requirement and what remains.
+  // Prompts without materialFor render the count exactly as
+  // before (every other unselect use measured — fusion/synchro
+  // materials, releases, Magnacarrier's effect summon whose
+  // min/max are already the true count — is untouched).
+  const mf = prompt.materialFor;
+  const countU = mf
+    ? '《' + cardName(mf.code) + '》のエクシーズ素材 ' + (mf.max == null ? mf.min + ' 枚以上' : (mf.min === mf.max ? mf.min + ' 枚' : mf.min + '〜' + mf.max + ' 枚')) + '（現在 ' + selCount + ' 枚選択中' + (selCount < mf.min ? '、あと ' + (mf.min - selCount) + ' 枚' : '') + '）'
+    : prompt.min + '〜' + prompt.max + ' 枚（現在 ' + selCount + ' 枚選択中）';
+  sheetOpen('<div class="ttl">カードの選択</div>' + (purpose ? '<div class="purpose">' + purpose + '</div>' : '') + '<div class="sub">' + countU + '。タップで選択／解除します。' + reqNoteU + (hint ? ' ' + hint : '') + '</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
     '<div class="grid">' + combined.map((x, k) => {
       const hid = selCardHidden(x.c, prompt);
       return '<div class="gcard' + (hid ? ' back' : '') + (x.sel ? ' sel' : '') + '" data-unselect="' + x.idx + '"' + (hid ? '' : artInline(x.c.code, false, deckKeyOfSeat(x.c.con))) + '>' +
       '<div class="loc">' + locLabel(x.c) + '</div><div class="nm' + (hid ? '' : kindCls(x.c.code)) + '">' + (hid ? hiddenCardLabel(x.c) : marksChipHTML(x.c.code) + '<span class="nmtext">' + cardName(x.c.code) + '</span><button class="gdetail" data-uinfo="' + k + '">詳細</button>') + '</div>' +
-      (hid ? '' : (statsLine(x.c.code) ? '<div class="stats">' + statsLine(x.c.code) + '</div>' : '') +
-      (hid ? '' : (cardText(x.c.code) ? '<div class="itext">' + cardText(x.c.code) + '</div>' : ''))) + '</div>';
+      (hid ? '' : (statsLine(x.c.code) ? '<div class="stats">' + statsLine(x.c.code) + '</div>' : '')) + '</div>';
     }).join('') + '</div>' +
     '<div class="btnrow">' +
     (prompt.finishable && selCount >= prompt.min ? '<button class="bigbtn" id="unselect-finish">決定</button>' : '') +
@@ -7586,7 +7786,6 @@ function uiSelectSum(prompt, state) {
     cards: prompt.cards.map(c => ({ code: c.code, locLabel: locLabel(c), extra: fmt(c), ref: c })),
     selected,
     locked: prompt.must,
-    showText: true,
     cancelable: false,
     valid: () => E.sumSelectionValid(prompt, [...selected]),
     needLabel: () => {
@@ -8644,6 +8843,7 @@ function wireSeg(id, apply) {
   wireSeg('seg-first', (v) => { firstChoice = v; updateDeckSum(); });
   syncFxSegs(); // reflect any persisted round-B settings before wiring
   wireSeg('seg-cutin', (v) => { fxSettings.cutin = v === 'on'; fxSaveSettings(); });
+  wireSeg('seg-notice', (v) => { fxSettings.notice = v === 'on'; fxSaveSettings(); }); // layout-fix3 K5
   wireSeg('seg-resp', (v) => { fxSettings.resp = v; fxSaveSettings(); updateAutoPassChip(); });
   $('fxbtn').addEventListener('click', () => { playClick(); openFxSettings(); });
   // R-SEL-2: while a selection sheet is up, the board can be

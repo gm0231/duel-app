@@ -38,6 +38,7 @@ async function main() {
   catch (e) { console.log('SKIP: jsdom not resolvable (set NODE_PATH)'); return; }
   const V2 = __dirname;
   const html = fs.readFileSync(path.join(V2, 'index.html'), 'utf8');
+  const clientSrc = fs.readFileSync(path.join(V2, 'client.js'), 'utf8'); // layout-fix3 K4 pin (LR-I2b)
   const data = JSON.parse(fs.readFileSync(path.join(V2, 'data.json'), 'utf8'));
   const wasmBinary = fs.readFileSync(path.join(V2, 'build', 'ocgcore.wasm'));
 
@@ -57,10 +58,12 @@ async function main() {
   ok(!!grid && /auto-fit/.test(grid['grid-template-columns'] || '') && !/auto-fill/.test(grid['grid-template-columns'] || ''),
     'LR-I2a: I2 — the selection grid collapses unused tracks (auto-fit), so few-candidate sheets use the full width');
   const itext = ruleDecls(/\.gcard \.itext\{([^}]*)\}/);
-  // layout-fix J1 supersedes the clamp: full effect text in-tile,
-  // the sheet's candidate region scrolls.
-  ok(!!itext && itext['font-size'] === '12px' && !('-webkit-line-clamp' in itext) && !('max-height' in itext),
-    'LR-I2b: I2 successor (layout-fix J1) — the in-tile effect text is 12px and unclamped; the candidate region scrolls instead');
+  // layout-fix J1 superseded the clamp with full in-tile text;
+  // layout-fix3 K4 (user decision) retires the in-tile text
+  // entirely: the rule survives only as display:none so stale
+  // markup renders inert, and candidates carry no effect text.
+  ok(!!itext && itext['display'] === 'none' && !clientSrc.includes('class="itext"'),
+    'LR-I2b: I2 successor (layout-fix3 K4) — candidate tiles carry NO effect text; the retired .itext rule is display:none');
 
   // ---------- LR-1 / LR-2: the slim mid band ----------
   const midbar = ruleDecls(/#midbar\{([^}]*)\}/);
@@ -70,8 +73,13 @@ async function main() {
   // (inflated system fonts grow the band; the fit loop absorbs it).
   ok(!!midbar && midbar['min-height'] === '62px' && !('height' in midbar) && !!phaseinfo && phaseinfo['line-height'] === '1.25' && phaseinfo['font-size'] === '17px',
     'LR-1: the mid band is one fitted 62px-minimum row; the phase name stands at 17px with a fitted line box');
-  ok(!!logline && !('height' in logline) && logline['line-height'] === '1.35' && logline['-webkit-line-clamp'] === '2' && logline['font-size'] === '12.5px',
-    'LR-2: the latest-event line takes two 12.5px lines with no frozen height (a long summon line measured ~300px against the one-line column and ellipsized; two lines cover ~46 glyphs)');
+  // layout-fix3 K2 supersedes the two-line clamp: it silently
+  // cut the TAIL of long lines (verb endings, destinations) in
+  // real play. No clamp at all now — fitLogline shrinks the
+  // whole line to the two-line budget and the band grows (and
+  // is re-absorbed) if a line still needs a third.
+  ok(!!logline && !('height' in logline) && logline['line-height'] === '1.35' && !('-webkit-line-clamp' in logline) && logline['font-size'] === '12.5px',
+    'LR-2: the latest-event line is 12.5px with NO line clamp (layout-fix3 K2 — the tail is never cut)');
 
   // ---------- boot ----------
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
