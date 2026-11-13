@@ -8,14 +8,17 @@
    and pins the numeral where it actually lives:
      R*: every dmgnum the engine produces in a real duel floats a
          matching .fx3-dmgnum (right text/tier) — battle and
-         effect branches alike, whichever seat is hit — and each
-         branch visibly renders at least one red numeral at
-         opacity >= 0.5. (Not every single numeral can be required
-         to render: a battle numeral is scheduled at its attack
-         scene's beat-booked impact, and a faster second damage
-         to the same seat supersedes the count scene before the
-         first numeral's appearance time — by design. Those are
-         logged, not failed.)
+         effect branches alike, whichever seat is hit — and EVERY
+         numeral visibly renders red at opacity >= 0.5. (BU-77
+         round 2: the numeral floats on its own scene, decoupled
+         from the count scene, so a faster second damage to the
+         same seat can no longer supersede it before it appears —
+         a battle numeral scheduled at its attack scene's
+         beat-booked impact used to die at opacity ~0 that way
+         (real browser: 1 of 6, maxOp 0.025). The only remaining
+         excuse is a duel-boundary clear: a numeral created in
+         the last ~2.7 s before the duel ends is wiped by the
+         next duel's reset. Those are logged, not failed.)
      L*: a LETHAL drop floats NO numeral (the finisher owns the
          lethal blow), whether the winner arrives in the same batch
          or trails in a later batch (FXB4b/c form).
@@ -175,20 +178,14 @@ function fakeState(mut) {
   ok(effectSeen, 'DMGN-R3: a real duel produced effect damage (dmgnum battle:false)');
   ok(dmgRecords.length > 0, 'DMGN-R4: real duels produced damage at all (' + dmgRecords.length + ' dmgnum records)');
   // Every dmgnum record must have a matching numeral (1:1, in
-  // creation order per text). Whether a numeral VISIBLY renders
-  // depends on the beat book: a battle numeral is scheduled to
-  // appear at its attack scene's impact (t0+280), and the attack
-  // scene's t0 is beat-booked — in a busy battle phase the book
-  // runs ahead, so the numeral's appearance time can be ~1 s FX
-  // after the damage batch. If the next damage to the same seat
-  // lands first, the count scene is superseded (by design — the
-  // counter shows the latest value) and the not-yet-shown numeral
-  // is removed at opacity 0. That is a product property, not a
-  // render defect: the pin is that each branch DOES visibly
-  // render in real duels (opacity >= 0.5, red), and that no
-  // numeral goes missing (R6). A numeral that lived its full life
-  // without ramping shows up in the log below as neither visible
-  // nor superseded-early.
+  // creation order per text) AND every numeral must visibly render
+  // (opacity >= 0.5, red). BU-77 round 2: the numeral floats on
+  // its own scene, decoupled from the count scene, so a faster
+  // second damage to the same seat can no longer supersede it
+  // before its appearance time — superseded-early is now a
+  // failure (R7), not an excuse. A numeral that lived its full
+  // life without ramping shows up in the log below as neither
+  // visible nor superseded-early.
   const dmgNums = seen.filter(s => s.cls.includes('fx3-dmgnum'));
   const pool = new Map(); // text -> queue of numerals, creation order
   for (const s of dmgNums) { if (!pool.has(s.text)) pool.set(s.text, []); pool.get(s.text).push(s); }
@@ -215,6 +212,8 @@ function fakeState(mut) {
   ok(visibleBattle > 0, 'DMGN-R5a: a battle-branch numeral visibly rendered red in a real duel (' + visibleBattle + ' of ' + dmgRecords.filter(r => r.battle).length + ')');
   ok(visibleEffect > 0, 'DMGN-R5b: an effect-branch numeral visibly rendered red in a real duel (' + visibleEffect + ' of ' + dmgRecords.filter(r => !r.battle).length + ')');
   console.log('  R5 summary: visible ' + nVisible + '/' + dmgRecords.length + ', superseded-early ' + nEarly + ', boundary-clear ' + nBoundary);
+  ok(nEarly === 0, 'DMGN-R7: no numeral is superseded before appearing (decoupled lifecycle — ' + nEarly + ' superseded-early)');
+  ok(nVisible + nBoundary === dmgRecords.length, 'DMGN-R8: every numeral either visibly rendered or was cleared at a duel boundary (visible ' + nVisible + ' + boundary ' + nBoundary + ' of ' + dmgRecords.length + ')');
   ok(dmgNums.length === dmgRecords.length, 'DMGN-R6: numeral count equals dmgnum record count (no stray numerals, none missing: ' + dmgNums.length + ' vs ' + dmgRecords.length + ')');
 
   // The synthetic parts run in a FRESH boot: the real duels leave

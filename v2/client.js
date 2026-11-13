@@ -4510,6 +4510,49 @@ function fxRenderHealNum(numEl, nt) {
 // (opts.num is passed only when the LP loop decided a numeral is
 // presented: never for an LP cost — that stays the gold chip —
 // and never while a finisher owns the seat).
+// BU-77 round 2 (2026-11-14): the numeral is NO LONGER a
+// passenger of the count scene — it floats on its own scene
+// (fxFloatNum, below). A count scene is superseded by the next LP
+// change to the same seat, and its cleanup used to delete the
+// numeral with it: a battle numeral scheduled at its attack
+// scene's beat-booked impact (up to ~1.6 s FX after the damage
+// batch) was routinely deleted at opacity ~0 before it ever
+// appeared — reproduced in a real browser: 1 of 6 battle numerals
+// (maxOp 0.025, never red), killed 1 ms before its appearance
+// time by the next damage. The numeral now lives its own life:
+// it appears at its scheduled time and is removed only by its own
+// expiry (a duel reset wipes the whole layer, so it never survives
+// into the next duel). The count scene keeps only the counter.
+function fxFloatNum(con, num, numDelay) {
+  const plate = fxLpPlate(con);
+  const layer = fxLayerEl(), r = plate ? fxRel(plate) : null;
+  if (!layer || !r) return;
+  const tier = fxDmgTier(num.amount);
+  const numEl = document.createElement('div');
+  numEl.className = 'fx ' + (num.heal ? 'fx3-healnum' : 'fx3-dmgnum') + ' fx3-num--t' + tier;
+  numEl.textContent = (num.heal ? '+' : '−') + num.amount;
+  numEl.style.fontSize = FX_NUM_SIZE[tier] + 'px';
+  // BU-72 anchor (prototype-measured, both seats the same):
+  // the numeral's RIGHT edge at the plate's right edge minus
+  // 100px, its vertical centre on the plate's centre — it
+  // stands in the empty field left of the LP digits, never on
+  // the digits and never on the deck name (capped at 118px).
+  numEl.style.left = (r.x + r.w - 100) + 'px';
+  numEl.style.top = (r.y + r.h / 2) + 'px';
+  numEl.style.opacity = '0';
+  layer.appendChild(numEl);
+  const numLife = num.heal ? 900 : (tier === 3 ? 720 : 620);
+  const sc = fxAddScene({
+    kind: num.heal ? 'healnum' : 'dmgnum', dur: numDelay + numLife,
+    render(t) {
+      const nt = t - numDelay;
+      if (num.heal) fxRenderHealNum(numEl, nt);
+      else fxRenderDmgNum(numEl, plate, tier, nt);
+    },
+    onDone() { numEl.remove(); if (plate) plate.style.transform = ''; },
+  });
+  sc.cleanup = () => { numEl.remove(); if (plate) plate.style.transform = ''; };
+}
 function fxLpCount(con, to, startAtFx, opts) {
   const el = fxLpEl(con); if (!el) return;
   // V3 stage 3: while a finisher scene owns this seat's counter
@@ -4534,31 +4577,13 @@ function fxLpCount(con, to, startAtFx, opts) {
   const num = opts && opts.num ? opts.num : null;
   const numDelay = Math.max(0, ((opts && opts.numAtFx != null) ? opts.numAtFx : fxTimeMs) - fxTimeMs);
   const isDmg = to < start;
-  const plate = fxLpPlate(con);
-  let numEl = null, tier = 0;
-  if (num && num.amount > 0) {
-    const layer = fxLayerEl(), r = plate ? fxRel(plate) : null;
-    if (layer && r) {
-      tier = fxDmgTier(num.amount);
-      numEl = document.createElement('div');
-      numEl.className = 'fx ' + (num.heal ? 'fx3-healnum' : 'fx3-dmgnum') + ' fx3-num--t' + tier;
-      numEl.textContent = (num.heal ? '+' : '−') + num.amount;
-      numEl.style.fontSize = FX_NUM_SIZE[tier] + 'px';
-      // BU-72 anchor (prototype-measured, both seats the same):
-      // the numeral's RIGHT edge at the plate's right edge minus
-      // 100px, its vertical centre on the plate's centre — it
-      // stands in the empty field left of the LP digits, never on
-      // the digits and never on the deck name (capped at 118px).
-      numEl.style.left = (r.x + r.w - 100) + 'px';
-      numEl.style.top = (r.y + r.h / 2) + 'px';
-      numEl.style.opacity = '0';
-      layer.appendChild(numEl);
-    }
-  }
-  const numLife = numEl ? (num.heal ? 900 : (tier === 3 ? 720 : 620)) : 0;
+  // BU-77 round 2: the numeral floats on its own scene now — the
+  // count scene no longer owns it (see fxFloatNum), so a
+  // superseding LP change cannot delete it before it appears.
+  if (num && num.amount > 0) fxFloatNum(con, num, numDelay);
   let flashed = false;
   const sc = fxAddScene({
-    kind: 'lpcount', dur: Math.max(delay + 620, numEl ? numDelay + numLife : 0),
+    kind: 'lpcount', dur: delay + 620,
     render(t) {
       const tt = t - delay;
       if (tt < 0) { fxLpShown[con] = start; el.textContent = start; } // F1: unconditional — in the delay window the DOM must hold the start value on EVERY frame, so no path (a stray render, a superseding batch) can flash the final value first
@@ -4572,21 +4597,14 @@ function fxLpCount(con, to, startAtFx, opts) {
         const v = Math.round(start + (to - start) * FXE.outCubic(u));
         if (v !== fxLpShown[con]) { fxLpShown[con] = v; el.textContent = v; }
       }
-      if (numEl) {
-        const nt = t - numDelay;
-        if (num.heal) fxRenderHealNum(numEl, nt);
-        else fxRenderDmgNum(numEl, plate, tier, nt);
-      }
     },
     onDone() {
       fxLpShown[con] = to; el.textContent = to;
       el.classList.remove('lpflash', 'lpflash-heal');
-      if (numEl) numEl.remove();
-      if (plate) plate.style.transform = '';
       if (fxLpScenes[con] === sc) fxLpScenes[con] = null;
     },
   });
-  sc.cleanup = () => { if (numEl) numEl.remove(); if (plate) plate.style.transform = ''; el.classList.remove('lpflash', 'lpflash-heal'); };
+  sc.cleanup = () => { el.classList.remove('lpflash', 'lpflash-heal'); };
   fxLpScenes[con] = sc;
 }
 // BU-72: fxHealFloat is abolished — the heal numeral now rides
@@ -6261,6 +6279,10 @@ function fxResetRoundB() {
   for (let p = 0; p < 2; p++) {
     if (fxLpScenes[p]) { const s = fxLpScenes[p]; s.dead = true; if (s.cleanup) s.cleanup(); fxLpScenes[p] = null; }
     fxLpShown[p] = null;
+    // BU-77 round 2: the numeral owns the plate micro-shake now,
+    // and a duel reset wipes its scene without cleanup — a shake
+    // frozen mid-flight must not survive onto the next duel.
+    const pl = fxLpPlate(p); if (pl) pl.style.transform = '';
   }
 }
 // Test surface (same spirit as window.__layout / window.__bgm). process/snap
