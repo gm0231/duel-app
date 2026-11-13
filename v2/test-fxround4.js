@@ -146,8 +146,8 @@ async function boot() {
   // the round-5 contract; the rest of H3 (no frozen heights, floors
   // not boxes) stands as written in round 4.
   const logline = ruleDecls(/#logline\{([^}]*)\}/);
-  ok(!!logline && !('height' in logline) && logline['line-height'] === '1.35' && !('-webkit-line-clamp' in logline) && /function fitLogline/.test(clientSrc),
-    'FX4-10: H3 successor (layout-fix3 K2) — #logline has no frozen height and NO line clamp (the 2-line clamp structurally cut event tails: a clamped-away line generates no box, so round-2 rect measurement could not see the loss); the full text is fitted by fitLogline (shrink the font, then let the band grow)');
+  ok(!!logline && !('height' in logline) && logline['line-height'] === '1.25' && !('-webkit-line-clamp' in logline) && !/function fitLogline/.test(clientSrc),
+    'FX4-10: H3 successor (BU-73, ex layout-fix3 K2) — #logline has no frozen height and NO line clamp (the 2-line clamp structurally cut event tails: a clamped-away line generates no box, so round-2 rect measurement could not see the loss); the whole-line shrink (fitLogline) is ABOLISHED — the line stands at full type and a residual third line grows the header, which layoutFit re-absorbs');
   // H3 successor (layout redesign): the mid band is ONE 62px row
   // BY DESIGN — its contents are fitted inside it (explicit
   // line-heights below), the chain bar is an opaque overlay ON
@@ -162,24 +162,29 @@ async function boot() {
   // absorb it, so rows still never paint outside the band.
   const chainbar = ruleDecls(/#chainbar\{([^}]*)\}/);
   ok(!!chainbar && chainbar.position === 'absolute' && chainbar.visibility === 'hidden' && !('min-height' in chainbar),
-    'FX4-11: H3 successor — #chainbar is an absolute overlay on the mid band (no reserved flow height)');
+    'FX4-11: H3 successor — #chainbar is an absolute overlay on the header (no reserved flow height)');
   ok(!/#chainbar \.prevlog/.test(html) && !/prevlog/.test(clientSrc),
     'FX4-12: H3 successor — the prevlog line is gone (absorbed into the latest-event line)');
-  const midbar = ruleDecls(/#midbar\{([^}]*)\}/);
-  ok(!!midbar && !('height' in midbar) && midbar['min-height'] === '62px',
-    'FX4-13: H3 successor + layout-fix J2 — the mid band is one fitted row with a 62px floor (min-height, never a frozen height; two lines for the latest event; contents carry explicit line-heights)');
-  ok(/const LAYOUT_MODES = \{/.test(clientSrc) && /full: \{ fixedNoPv: 232/.test(clientSrc) && /compact: \{ fixedNoPv: 210/.test(clientSrc),
-    'FX4-14: H3 successor — the layout budget is the redesign mode table (full 232 / compact 210, + preview base)');
+  // BU-73 successor: the mid band is gone entirely — its two rows
+  // became the header (81px by construction: 46px button row +
+  // the event line's two lines at full type; no height property
+  // of its own), and the LPs moved between the fields (see
+  // FX4-16/17).
+  const header = ruleDecls(/#header\{([^}]*)\}/);
+  ok(!!header && !('height' in header) && !('min-height' in header),
+    'FX4-13: H3 successor (BU-73) — the header carries the old band\'s role at 81px by construction (never a frozen height; two lines for the latest event at full type)');
+  ok(/const LAYOUT_MODES = \{/.test(clientSrc) && /full: \{ fixedNoPv: 224/.test(clientSrc) && /compact: \{ fixedNoPv: 206/.test(clientSrc),
+    'FX4-14: H3 successor (BU-73) — the layout budget is the mode table (full 224 / compact 206, + preview base)');
   const link = ruleDecls(/\.link\{([^}]*)\}/);
   ok(!!link && link['line-height'] === '1.2',
     'FX4-15: H3 — the chain chips carry the fitting line-height (content fits the 21px floor at default size)');
-  // the phase cell is gone: both LPs live in the status bars at
-  // the top of the text hierarchy (28px, the largest numerals).
-  const lpbox = ruleDecls(/\.lp-box \.lp\{([^}]*)\}/);
-  ok(!!lpbox && lpbox['font-size'] === '28px' && lpbox['line-height'] === '1.05',
-    'FX4-16: H3 successor — LP is a fitted 28px line in the status bars (largest numeral on screen)');
-  ok(/id="topbar"[\s\S]*id="oppLp"/.test(html) && /id="mybar"[\s\S]*id="myLp"/.test(html),
-    'FX4-17: H3 successor — oppLp sits in #topbar and myLp in #mybar');
+  // BU-73: both LPs live on the central band's plates (compact
+  // 24px / full 28px numerals — the plates are one text line).
+  const lpplate = ruleDecls(/\.lpplate \.lp\{([^}]*)\}/);
+  ok(!!lpplate && lpplate['font-size'] === '28px' && lpplate['line-height'] === '1',
+    'FX4-16: H3 successor (BU-73) — the LP numeral is a fitted 28px line (line-height 1) on the band plates (full tier)');
+  ok(/id="lpband"[\s\S]*id="oppLp"[\s\S]*id="myLp"/.test(html),
+    'FX4-17: H3 successor (BU-73) — both LPs sit in #lpband, the opponent\'s plate above mine');
 
   console.log(failures ? ('FAILURES: ' + failures) : 'ALL FXROUND4 CHECKS PASSED');
   process.exit(failures ? 1 : 0);

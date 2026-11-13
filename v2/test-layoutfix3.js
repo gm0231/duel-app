@@ -74,9 +74,9 @@ const name = (c) => data.names[c];
     'LF3-K1a: the driver attaches materialFor only to context-free hint-513 unselect prompts, from the decoded spsummon pick');
   ok(clientSrc.includes('const mf = prompt.materialFor;') && clientSrc.includes('のエクシーズ素材 ') && clientSrc.includes("'、あと ' + (mf.min - selCount) + ' 枚'"),
     'LF3-K1b: the unselect sheet renders the material requirement + remainder when materialFor is attached');
-  ok(!/#logline\{[^}]*line-clamp/.test(html) && clientSrc.includes('function fitLogline(ll)') &&
-     clientSrc.includes('fitLogline(ll);') && clientSrc.includes('lastBandH') && clientSrc.includes('layoutFit(false); } catch (e) {}'),
-    'LF3-K2a: no line-clamp on #logline; fitLogline runs on every band draw and band growth re-enters layoutFit');
+  ok(!/#logline\{[^}]*line-clamp/.test(html) && !clientSrc.includes('function fitLogline') &&
+     clientSrc.includes('lastBandH') && clientSrc.includes('layoutFit(false); } catch (e) {}'),
+    'LF3-K2a: BU-73 successor — no line-clamp on #logline and the whole-line shrink (fitLogline) is abolished; header growth re-enters layoutFit');
   // LF3-K3a SUPERSEDED by layout-fix4 L2 (see test-layoutfix4.js
   // LF4-L2a): the round-3 contract pushed the material line at MOVE
   // time and rewrote it in place at SPSUMMONING — the rewrite broke
