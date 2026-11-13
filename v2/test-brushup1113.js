@@ -78,8 +78,13 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     'B61a: the phase button never shrinks and reserves the longest label width (136px)');
   ok(/#phaseinfo\{[^}]*flex:0 1 auto[^}]*min-width:0[^}]*text-overflow:ellipsis/.test(html),
     'B61b: the phase readout ellipsises cleanly under residual pressure (no mid-glyph hard clip)');
-  ok(/\.tile\.setown \.nm\{position:relative;z-index:2;\}/.test(html),
-    'PLATEa: the name band of the owner\'s set cards is lifted above the veil (user decision 2026-11-13: plates stay)');
+  // contract revised by fix round 2026-11-13 #2 (BU-65): the
+  // band no longer sits inside .inner at all — it is a direct
+  // child of the tile, upright and full-width, above the veil
+  // by construction (the in-inner seat both hid it under the
+  // veil and rotated it sideways on defense sets).
+  ok(/\.tile\.setown > \.nm\{position:absolute;left:1px;right:1px;bottom:1px;z-index:2;\}/.test(html),
+    'PLATEa: the name band of the owner\'s set cards is a tile-level plate above the veil (user decision 2026-11-13: plates stay)');
   ok(/\.tile\.setown \.inner \.veil\{position:absolute;inset:0;[^}]*setbreath/.test(html),
     'PLATEb: the veil itself is untouched (2026-11-03 design)');
   const olh = clientSrc.slice(clientSrc.indexOf('function openLogHistory()'));

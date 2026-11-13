@@ -675,7 +675,13 @@ function updateDeckSum() {
   const rec = SAVED_DECKS[myDeckKey];
   if (rec && !rec.poolOk && rec.unsupported && rec.unsupported.length)
     txt += ' ／ 未対応：' + rec.unsupported.join('、');
-  el.textContent = txt;
+  // BU-67: the summary used to be one plain text node, so the
+  // line broke wherever the glyphs landed — including inside
+  // 先攻 (measured: 先 on one line, 攻 on the next). Render it
+  // with the band's unbreakable-unit treatment (nbHTML): the
+  // text content is identical, the break opportunities now sit
+  // only between units.
+  el.innerHTML = nbHTML(txt);
   refreshStartGate();
   renderDeckCurrents();
 }
@@ -794,6 +800,22 @@ function closeDeckCat() {
 function quitToDeckSelection() {
   try { sessionStorage.setItem('v3todeck', JSON.stringify({ my: myDeckKey, op: opDeckKey, first: firstChoice })); } catch (e) {}
   location.reload();
+}
+// BU-63: the exit above is IRREVERSIBLE for the duel in progress
+// — no result screen, no history, the match simply ceases — and
+// the menu's bottom button sits where a sheet's cancel usually
+// sits, so a single mis-tap ended a duel outright (the parent's
+// verification lost a whole match this way, twice). The menu now
+// routes through one confirmation sheet first. Ending stays a
+// deliberate two-step act; going back is the sheet's ordinary
+// close (button, × or backdrop), which never ends the duel.
+function askQuitToDeckSelection() {
+  sheetOpenView('<div class="ttl">対局を終了しますか？</div>' +
+    '<div class="sub">対局を終了してデッキ選択に戻ります。この対局の記録は残りません。</div>' +
+    '<div class="btnrow"><button class="bigbtn" id="quit-confirm">終了する</button>' +
+    '<button class="bigbtn sub" id="quit-cancel">対局に戻る</button></div>');
+  $('quit-confirm').addEventListener('click', () => { playClick(); quitToDeckSelection(); });
+  $('quit-cancel').addEventListener('click', () => { playClick(); sheetClose(); });
 }
 // the modal lists never carry a scroll offset over from a
 // previous view: a leftover horizontal offset once left the deck
@@ -6178,8 +6200,21 @@ function tileHTML(card, con, actKey, loc) {
     // tile reads as two overlapping cards (user report 2026-11-03).
     '<div class="inner"><div class="art"' + (showFace && card.code != null ? artInline(card.code, false, deckKeyOfSeat(con)) : '') + '></div>' +
     (ownSet ? '<div class="veil"></div>' : '') +
-    (nm ? '<div class="nm' + kindCls(card.code) + '">' + nm + '</div>' : '') +
-    '</div></div>';
+    // BU-65: the owner's set card keeps its name INSIDE .inner
+    // only when the inner does not rotate. In defense position
+    // the inner turns 90 degrees, so the band turned with it and
+    // its usable length collapsed to the tile's HEIGHT run
+    // (measured 26.2px painted on a 36px tile, 5-6 glyphs max) —
+    // the set card read as a narrow vertical strip, not as the
+    // name plate a face-up tile carries. Set cards therefore
+    // render the band as a direct child of the tile, upright,
+    // spanning the tile's full width exactly like the face-up
+    // band (same font, same ellipsis rule — the tile width is
+    // the budget). The veil stays inside .inner, untouched.
+    (ownSet ? '' : (nm ? '<div class="nm' + kindCls(card.code) + '">' + nm + '</div>' : '')) +
+    '</div>' +
+    (ownSet && nm ? '<div class="nm' + kindCls(card.code) + '">' + nm + '</div>' : '') +
+    '</div>';
 }
 // ATK/DEF strip rendered at the SLOT level — outside the card frame, with
 // ATK/DEF labels (user spec). Live (effect-modified) values from the core
@@ -7185,6 +7220,34 @@ function openActionSheet(key) {
   }));
   $('sheet-cancel').addEventListener('click', () => { playClick(); sheetClose(); });
 }
+// BU-64: what remains in MY deck, derived only from what the
+// owner can legitimately know mid-duel: the starting list minus
+// every own card whose code is visible outside the deck (hand,
+// own field, own graveyard, own face-up removals). The result is
+// a multiset DIFFERENCE, so it is exact exactly when its size
+// agrees with the core's deckCount; cards the mirror cannot see
+// (own cards riding as Xyz materials, face-down banished cards,
+// own cards on the opponent's side) break that agreement, and
+// the sheet then says the count only — an honest partial answer
+// instead of a fabricated list. Opponent decks never enter here:
+// their contents are hidden information.
+function ownDeckRemainder(con) {
+  const list = deckListOf(seatDeckKeys[con]);
+  const state = duelState; if (!list || !state) return null;
+  const P = state.players[con];
+  const rest = new Map();
+  for (const code of list.main) rest.set(code, (rest.get(code) || 0) + 1);
+  const take = (code) => { if (code == null) return; const n = rest.get(code) || 0; if (n > 0) rest.set(code, n - 1); };
+  for (const c of P.hand) take(c && c.code);
+  for (const c of P.mzone) if (c) take(c.code);
+  for (const c of P.szone) if (c) take(c.code);
+  for (const c of P.grave) take(c);
+  for (const c of P.removed) take(c);
+  const rows = [];
+  for (const [code, n] of rest) for (let i = 0; i < n; i++) rows.push(code);
+  rows.sort((a, b) => a - b);
+  return { rows, deckCount: P.deckCount, exact: rows.length === P.deckCount };
+}
 function openPileSheet(kind, con) {
   const state = duelState; if (!state) return;
   const P = state.players[con];
@@ -7227,7 +7290,28 @@ function openPileSheet(kind, con) {
       return row;
     }).join('') : '<div class="sub">EXデッキは空です（0枚）</div>') : '<div class="sub">相手のEXデッキは見られません（残り ' + P.extra.length + ' 枚）</div>';
   } else if (kind === 'deck') {
-    body = '<div class="sub">残り ' + P.deckCount + ' 枚' + (state.deckTop[con] ? '<br>一番上（公開中）：' + cardName(state.deckTop[con]) : '') + '</div>';
+    // BU-64: the deck sheet used to print the count and nothing
+    // else — the rows simply did not exist, so "check what is
+    // left" (a routine mid-duel decision) was impossible here
+    // even though the card-selection sheets render rows fine.
+    // Own deck: the derivable remainder (see ownDeckRemainder)
+    // renders as rows in draw order unknown — hence （順不同）;
+    // when the count disagrees the list stays hidden behind an
+    // explicit note instead of quietly lying.
+    const top = state.deckTop[con] ? '<br>一番上（公開中）：' + cardName(state.deckTop[con]) : '';
+    if (con === HP) {
+      const rem = ownDeckRemainder(con);
+      if (rem && rem.exact) {
+        body = '<div class="sub">残り ' + P.deckCount + ' 枚（順不同）' + top + '</div>' +
+          (rem.rows.length ? rem.rows.map(c =>
+            '<div class="sortrow" data-info="' + c + '"><span class="pthumb"' + artInline(c, false, deckKeyOfSeat(con)) + '></span>' + cardName(c) + '<span class="chev">›</span></div>').join('')
+            : '<div class="sub">デッキは空です</div>');
+      } else {
+        body = '<div class="sub">残り ' + P.deckCount + ' 枚' + top + '<br>内訳を確認できないカードがあります（エクシーズ素材・裏側で除外されたカードなど）</div>';
+      }
+    } else {
+      body = '<div class="sub">残り ' + P.deckCount + ' 枚' + top + '</div>';
+    }
   } else if (kind === 'hand') {
     body = '<div class="sub">' + P.hand.length + ' 枚</div>';
   }
@@ -7722,7 +7806,7 @@ function gridSheet(o) {
       '<div class="sheet-scroll"><div class="grid">' + o.cards.map((c, i) => {
         const hid = hidOf(c);
         return '<div class="gcard' + (hid ? ' back' : '') + (o.selected.has(i) ? ' sel' : '') + '" data-grid="' + i + '"' + (hid ? '' : artInline(c.code, false, c.ref && c.ref.con != null ? deckKeyOfSeat(c.ref.con) : deckKeyOfSeat(HP))) + '>' +
-        '<div class="loc">' + c.locLabel + '</div><div class="nm' + (hid ? '' : kindCls(c.code)) + '">' + (hid ? hiddenCardLabel(c.ref || c) : marksChipHTML(c.code) + '<span class="nmtext">' + cardName(c.code) + (c.extra ? ' ' + c.extra : '') + '</span><button class="gdetail" data-gdetail="' + i + '">詳細</button>') + '</div>' +
+        '<div class="loc">' + c.locLabel + '</div>' + (hid ? '' : marksChipHTML(c.code)) + '<div class="nm' + (hid ? '' : kindCls(c.code)) + '">' + (hid ? hiddenCardLabel(c.ref || c) : '<span class="nmtext">' + cardName(c.code) + (c.extra ? ' ' + c.extra : '') + '</span><button class="gdetail" data-gdetail="' + i + '">詳細</button>') + '</div>' +
         (hid ? '' : (statsLine(c.code) ? '<div class="stats">' + statsLine(c.code) + '</div>' : '')) + '</div>';
       }).join('') + '</div></div>' +
       // F7: the scroll cue rides INSIDE the button row as a
@@ -7933,7 +8017,7 @@ function uiUnselect(prompt, state) {
     '<div class="grid">' + combined.map((x, k) => {
       const hid = selCardHidden(x.c, prompt);
       return '<div class="gcard' + (hid ? ' back' : '') + (x.sel ? ' sel' : '') + '" data-unselect="' + x.idx + '"' + (hid ? '' : artInline(x.c.code, false, deckKeyOfSeat(x.c.con))) + '>' +
-      '<div class="loc">' + locLabel(x.c) + '</div><div class="nm' + (hid ? '' : kindCls(x.c.code)) + '">' + (hid ? hiddenCardLabel(x.c) : marksChipHTML(x.c.code) + '<span class="nmtext">' + cardName(x.c.code) + '</span><button class="gdetail" data-uinfo="' + k + '">詳細</button>') + '</div>' +
+      '<div class="loc">' + locLabel(x.c) + '</div>' + (hid ? '' : marksChipHTML(x.c.code)) + '<div class="nm' + (hid ? '' : kindCls(x.c.code)) + '">' + (hid ? hiddenCardLabel(x.c) : '<span class="nmtext">' + cardName(x.c.code) + '</span><button class="gdetail" data-uinfo="' + k + '">詳細</button>') + '</div>' +
       (hid ? '' : (statsLine(x.c.code) ? '<div class="stats">' + statsLine(x.c.code) + '</div>' : '')) + '</div>';
     }).join('') + '</div>' +
     '<div class="btnrow">' +
@@ -8224,7 +8308,7 @@ function uiAnnounceCard(prompt, state) {
   const draw = () => {
     sheetOpen('<div class="ttl">カードの宣言</div>' + contextLineHTML(prompt) +
       '<div class="sub">宣言するカードをタップで選び、「宣言する」を押してください。（必須）' + (announceDupNote(pool) ? ' ' + announceDupNote(pool) : '') + '</div>' + retryWarn(prompt) +
-      '<div class="grid">' + pool.map(code => '<div class="gcard' + (chosen === code ? ' sel' : '') + '" data-code="' + code + '"' + artInline(code, false, deckKeyOfCode(code)) + '><div class="nm' + kindCls(code) + '">' + marksChipHTML(code) + '<span class="nmtext">' + cardName(code) + '</span><button class="gdetail" data-acinfo="' + code + '">詳細</button></div></div>').join('') + '</div>' +
+      '<div class="grid">' + pool.map(code => '<div class="gcard' + (chosen === code ? ' sel' : '') + '" data-code="' + code + '"' + artInline(code, false, deckKeyOfCode(code)) + '>' + marksChipHTML(code) + '<div class="nm' + kindCls(code) + '">' + '<span class="nmtext">' + cardName(code) + '</span><button class="gdetail" data-acinfo="' + code + '">詳細</button></div></div>').join('') + '</div>' +
       '<div class="btnrow"><button class="bigbtn" id="announce-ok" ' + (chosen == null ? 'disabled' : '') + '>' + (chosen == null ? '宣言する' : '《' + cardName(chosen) + '》を宣言する') + '</button></div>');
     $('sheet').querySelectorAll('[data-code]').forEach(g => g.addEventListener('click', (ev) => {
       if (ev.target.closest('[data-acinfo]')) return;
@@ -8372,7 +8456,7 @@ $('menubtn').addEventListener('click', () => {
     // Merely closing the sheet stays available on the sheet's ×.
     '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">選択に戻る</button></div>');
   $('sheet').querySelectorAll('[data-menu]').forEach(b => b.addEventListener('click', () => { playClick(); finishPrompt(menuActions[+b.dataset.menu].bytes); }));
-  $('sheet-cancel').addEventListener('click', () => { playClick(); quitToDeckSelection(); });
+  $('sheet-cancel').addEventListener('click', () => { playClick(); askQuitToDeckSelection(); });
 });
 // ---------------------------------------------------------------- layout
 // User decision (2026-11-02): "fit the board to the screen; if space
@@ -8928,7 +9012,7 @@ function renderPreview() {
   const sig = previewState.code + '|' + stats + '|' + (card ? card.pos : '') + '|' + (card ? (card.materials || 0) : '') + '|' + (previewState.reason || '') + '|' + (compact ? 'c' : '') + '|' + (previewState.deckKey || '');
   if (sig === previewState.sig) return; // no DOM churn on unrelated re-renders
   previewState.sig = sig;
-  el.innerHTML = '<div class="pv-art"' + artInline(previewState.code, false, previewState.deckKey) + '></div><div class="pv-body">' +
+  el.innerHTML = '<div class="pv-art"' + artInline(previewState.code, false, previewState.deckKey) + '>' + marksChipHTML(previewState.code) + '</div><div class="pv-body">' +
     '<div class="pv-top"><span class="pv-name' + kindCls(previewState.code) + '">' + cardName(previewState.code) + '</span>' +
     (stats ? '<span class="pv-stats">' + stats + '</span>' : '') +
     (compact && previewState.reason ? '<span class="pv-reason-inline">' + previewState.reason + '</span>' : '') +
@@ -8963,6 +9047,23 @@ function wireSeg(id, apply) {
   // retry button lives on the deck page).
   $('deckpage').style.display = 'none';
   updateDeckSum();
+  // BU-63: a mid-duel exit reload lands here with 'v3todeck'
+  // stashed, but the landing itself (bottom of this block) runs
+  // only after data.json has loaded — until then the title
+  // overlay stood on screen with its 「読み込み中…」 line, an
+  // unexplained veil over the deck page the user had already
+  // asked for (parent verification: the page's top controls
+  // stayed untappable "for a while" after returning). Lift the
+  // veil up front: the deck page's frame is pure DOM and shows
+  // immediately; the stash is NOT consumed here — the boot-end
+  // restore still applies the stashed selections and flips the
+  // same pages, so the two never disagree.
+  try {
+    if (sessionStorage.getItem('v3todeck')) {
+      $('start').style.display = 'none';
+      $('deckpage').style.display = 'flex';
+    }
+  } catch (e) {}
   renderSavedDecks();
   $('todeck').addEventListener('click', () => { playClick(); $('start').style.display = 'none'; $('deckpage').style.display = 'flex'; });
   $('deckback').addEventListener('click', () => { playClick(); $('deckpage').style.display = 'none'; $('start').style.display = 'flex'; });
