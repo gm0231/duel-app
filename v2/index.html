@@ -47,6 +47,22 @@
   html{-webkit-text-size-adjust:100%;text-size-adjust:100%;}
   #app{max-width:430px;margin:0 auto;min-height:100dvh;display:flex;flex-direction:column;position:relative;}
   #app>*{flex:0 0 auto;}
+  /* BU-69 (fix round 2026-11-13 #4): outside a duel the duel view
+     does not exist. The sections below are display:none from the
+     static markup on (the class ships in the HTML, so no script —
+     inline or external — has to run first), and client.js removes
+     the class at the one moment a duel starts. Rounds #2/#3 lifted
+     the title veil earlier and earlier, but the duel view stayed
+     RENDERED underneath the full-screen pages the whole time, and
+     the pages' surface was translucent (#0d0b08f5): on the
+     throttled rig the frozen board (LP 8000, hand counts, the
+     読み込み中… log line) bled through the deck page and read as
+     a lingering veil with the duel still on it (parent
+     re-verification on d81dee8, and cap-fix1113d before-shots).
+     With the sections unrendered there is nothing to bleed, and
+     .overlay is fully opaque now (below), so no composited
+     remnant can survive either. */
+  #app.preduel>#topbar,#app.preduel>#placehint,#app.preduel>#oppField,#app.preduel>#midbar,#app.preduel>#myField,#app.preduel>#preview,#app.preduel>#handbar,#app.preduel>#mybar,#app.preduel>#fxlayer,#app.preduel>#fxcutin{display:none;}
   /* ---------- status bars (layout redesign 2026-11-12) ----------
      The only always-on chrome besides the board and the hand: who
      (label + deck name), the LP as the largest numeral on screen,
@@ -551,7 +567,7 @@
   .counterrow .ctl{margin-left:auto;display:flex;gap:6px;align-items:center;}
   .counterrow button{width:36px;height:36px;border-radius:18px;background:var(--panel);color:var(--txt);border:1px solid var(--gold-dim);font-size:16px;}
   /* ---------- overlays ---------- */
-  .overlay{position:absolute;inset:0;z-index:60;background:#0d0b08f5;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:20px;text-align:center;}
+  .overlay{position:absolute;inset:0;z-index:60;background:#0d0b08;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:20px;text-align:center;}
   .overlay h1{font-size:22px;color:var(--gold);margin:0;}
   .overlay p{font-size:13px;color:var(--txt-dim);line-height:1.7;margin:0;}
   .overlay .startbtn{background:var(--gold);color:#191104;border:0;border-radius:8px;font-size:17px;font-weight:700;padding:14px 34px;}
@@ -987,8 +1003,12 @@
      lists scroll inside the modal panel — no page ever scrolls. */
   #start .rulesline{font-size:11px;color:var(--txt-dim);margin:0;}
   #deckpage .deck .chg{flex:none;margin-left:auto;font-size:11px;color:var(--gold);border:1px solid var(--gold-dim);border-radius:7px;padding:4px 9px;background:var(--panel2);}
-  /* #deckcat overrides .overlay's translucent background (#0d0b08f5,
-     ~96% opaque) with a fully opaque one. The category page is the
+  /* #deckcat overrides .overlay's background with its own fully
+     opaque one. When this was written .overlay was translucent
+     (#0d0b08f5, ~96% opaque); since BU-69 round #4 (2026-11-13)
+     .overlay itself is opaque too, so this line is now redundant
+     but harmless — it stays as the record of why this page needed
+     it first. The category page is the
      one full-screen page whose children change between visits (the
      imported button is removed on the opponent side); with a
      translucent surface the real device's compositor could keep a
@@ -1105,7 +1125,7 @@
 </style>
 </head>
 <body>
-<div id="app">
+<div id="app" class="preduel">
   <div id="topbar">
     <button id="menubtn" disabled aria-label="その他のアクション">≡</button>
     <div class="who-block"><div class="who-label">相手（CPU）</div><div class="who-name" id="oppDeckName">—</div></div>
@@ -1268,7 +1288,39 @@
 // quitToDeckSelection) into #decksum. client.js consumes the
 // same stash in its boot prefix and re-renders everything for
 // real; the two agree because both read the one stash.
+//
+// Round #4 (2026-11-13): the landing is now FULLY self-contained.
+// The parent's re-verification of #3 found the deck page up and
+// correct yet the screen still dark with the duel view ghosting
+// through it — the duel sections stayed rendered under the
+// translucent overlay surface for the whole boot (measured on
+// the throttled rig too: LP digits bleeding through the deck
+// page). The structural half of the cure is in the CSS: #app
+// ships with class "preduel", which keeps the duel sections
+// display:none until a duel actually starts, and .overlay is
+// opaque. This script re-asserts the class (belt and braces —
+// the markup already carries it) and additionally wires the
+// title screen's own navigation HERE: デッキを選ぶ / タイトルへ
+// answer at parse time, before the external chain has executed,
+// so a drawn title screen is never a dead screen while the rest
+// of the load finishes behind the (opaque, non-duel) pages. The
+// remaining load state lives only where it belongs — the
+// #loadmsg line and the start button's label — never as a
+// full-screen cover. client.js registers the same two flips
+// when it boots; both handlers set the same end state.
 try {
+  var __app = document.getElementById('app');
+  if (__app) __app.classList.add('preduel');
+  var __toDeck = document.getElementById('todeck');
+  if (__toDeck) __toDeck.addEventListener('click', function () {
+    document.getElementById('start').style.display = 'none';
+    document.getElementById('deckpage').style.display = 'flex';
+  });
+  var __deckBack = document.getElementById('deckback');
+  if (__deckBack) __deckBack.addEventListener('click', function () {
+    document.getElementById('deckpage').style.display = 'none';
+    document.getElementById('start').style.display = 'flex';
+  });
   var __td = sessionStorage.getItem('v3todeck');
   if (__td) {
     var __cfg = JSON.parse(__td);
