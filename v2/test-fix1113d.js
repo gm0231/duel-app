@@ -55,13 +55,13 @@ let failures = 0;
 const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (!cond) failures++; };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-const SECTIONS = ['topbar', 'placehint', 'oppField', 'midbar', 'myField', 'preview', 'handbar', 'mybar', 'fxlayer', 'fxcutin'];
+const SECTIONS = ['header', 'placehint', 'oppField', 'lpband', 'myField', 'preview', 'handbar', 'fxlayer', 'fxcutin']; // BU-73: header + lpband replaced topbar/midbar/mybar
 
 // ---------------------------------------------------------------- S: source pins
 {
   ok(/<div id="app" class="preduel">/.test(html), 'S1: #app ships with class "preduel" in the static markup');
   const rule = html.match(/#app\.preduel[^{]*\{display:none;?\}/);
-  ok(!!rule && SECTIONS.every(id => rule[0].includes('#' + id)), 'S2: the preduel rule hides all ten duel sections');
+  ok(!!rule && SECTIONS.every(id => rule[0].includes('#' + id)), 'S2: the preduel rule hides all nine duel sections');
   const overlayRule = html.match(/\.overlay\{[^}]*\}/);
   ok(!!overlayRule && /background:#0d0b08;/.test(overlayRule[0]) && !/0d0b08f5/.test(overlayRule[0]),
     'S3: .overlay is fully opaque (#0d0b08, no alpha)');

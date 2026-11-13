@@ -60,9 +60,9 @@ const ruleDecls = (re) => {
 
 // ---------- J2: band shape ----------
 {
-  const midbar = ruleDecls(/#midbar\{([^}]*)\}/);
-  ok(!!midbar && midbar['min-height'] === '62px' && !('height' in midbar),
-    'LF-J2a: the mid band has a 62px minimum and no frozen height');
+  const header = ruleDecls(/#header\{([^}]*)\}/);
+  ok(!!header && !('min-height' in header) && !('height' in header),
+    'LF-J2a: BU-73 — the header (the old mid band\'s seat) has no frozen height and no forced floor; its height is its contents (46px button row + the event line), grown by inflated fonts and absorbed by the fit loop');
   // layout-fix2 (J2'): the .lk spans only ever wrapped strings
   // that already carried 《》 — the band's real lines were built
   // bare, so they never matched. Superseded by nbHTML tokenisation

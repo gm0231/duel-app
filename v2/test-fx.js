@@ -242,10 +242,12 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     ok(doc.getElementById('oppLp').textContent === '5000', 'FXB2c: the LP counter counted down to the exact state value (got ' + doc.getElementById('oppLp').textContent + ')');
     ok(fx.lpShown(1) === 5000, 'FXB2d: __fx.lpShown tracks the settled counter');
 
-    // heal: counts up + floats the only floating number in the grammar
+    // heal: counts up + floats the green numeral (BU-72 inverse
+    // grammar — the abolished fxHealFloat's seat inside fxLpCount)
     st = fakeState(s => { s.players[0].mzone[0] = mon(NORMAL); s.players[1].lp = 5600; });
     recs = step(st, [{ kind: 'recover', player: 1, amount: 600 }]);
-    ok(has(recs, 'healfloat', r => r.amount === 600), 'FXB3: a heal floats a blue number at the counter');
+    ok(has(recs, 'healnum', r => r.amount === 600 && r.player === 1 && r.tier === 2), 'FXB3: BU-72 — a heal records a healnum and floats the green numeral at the counter');
+    ok(!!doc.querySelector('.fx3-healnum') && doc.querySelector('.fx3-healnum').textContent === '+600', 'FXB3b: BU-72 — the heal numeral node reads +600 in the fx3-healnum grammar');
 
     // finisher: the duel-ending attack washes the whole screen
     st = fakeState(s => { s.players[0].mzone[0] = mon(NORMAL); s.players[1].lp = 0; s.winner = 0; });
@@ -491,9 +493,13 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     step(st, [{ kind: 'attack', code: NORMAL, con: 0, direct: true }, { kind: 'damage', player: 1, amount: 900 }]);
     ok(oppLpEl.textContent === '8000', 'FXA1: F1 — the counter is pinned to the start value the moment the LP scene is created (got ' + oppLpEl.textContent + ')');
     const lpScene = fx.scenes().find(s => s.kind === 'lpcount');
-    ok(!!lpScene && lpScene.dur >= 1000, 'FXA1b: F1 — the count keeps its attack+400ms scheduling (lpcount dur=' + (lpScene ? lpScene.dur : 'none') + ', want 1020)');
+    // BU-72 supersedes the attack+400ms count start: the count now
+    // starts 60ms after impact (attack+340) and the numeral lands
+    // at impact (attack+280, life 620) — scene dur = max(340+620,
+    // 280+620) = 960.
+    ok(!!lpScene && lpScene.dur === 960, 'FXA1b: BU-72 — the battle count starts at impact+60ms (lpcount dur=' + (lpScene ? lpScene.dur : 'none') + ', want 960)');
     const oppNum = doc.querySelector('.fx3-dmgnum');
-    ok(!!oppNum && oppNum.classList.contains('fx3-dmgnum--down'), 'FXA2: F2 — the opponent damage number is generated with the downward variant (class=' + (oppNum ? oppNum.className : 'none') + ')');
+    ok(!!oppNum && oppNum.classList.contains('fx3-num--t2') && !oppNum.classList.contains('fx3-dmgnum--down'), 'FXA2: BU-72 — the damage number is the unified plate-anchored numeral, tier 2 for 900, with NO up/down variant (class=' + (oppNum ? oppNum.className : 'none') + ')');
     ok(!!oppNum && oppNum.textContent === '−900', 'FXA2b: F2 — the opponent damage number reads −900');
     // sample the DOM while the scene drives: hold at 8000 through
     // the delay, then a monotonic decrease to exactly 7100 — any
@@ -511,10 +517,8 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     ok(samples[samples.length - 1] === 7100 && fx.lpShown(1) === 7100, 'FXA3c: F1 — the count settles exactly on the state value 7100');
 
     // --- F2 contrast: the F1 pin applies to my counter too. The
-    // direction half is superseded by fx-ui round 2 (F6a): damage
-    // to ME uses the downward variant as well — above my plate
-    // sits only the mid-bar log line, and the upward number
-    // landed on that text (measured on the published build).
+    // direction half is superseded by BU-72: both seats use the
+    // same plate-anchored numeral (no direction variants at all).
     fx.reset();
     st = fakeState(s => { s.log = []; s.players[1].mzone[0] = mon(NORMAL2); });
     render(st); step(st);
@@ -523,7 +527,7 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     render(st); step(st, [{ kind: 'attack', code: NORMAL2, con: 1, direct: true }, { kind: 'damage', player: 0, amount: 900 }]);
     ok(myLpEl.textContent === '8000', 'FXA4: F1 — my counter is pinned to the start value at scene creation too (got ' + myLpEl.textContent + ')');
     const myNum = doc.querySelector('.fx3-dmgnum');
-    ok(!!myNum && myNum.classList.contains('fx3-dmgnum--down'), 'FXA4b: fx-ui round 2 (F6a) — my damage number uses the downward variant too (class=' + (myNum ? myNum.className : 'none') + ')');
+    ok(!!myNum && myNum.classList.contains('fx3-num--t2') && !myNum.classList.contains('fx3-dmgnum--down'), 'FXA4b: BU-72 — my damage number is the same unified numeral (tier 2, no direction variant) (class=' + (myNum ? myNum.className : 'none') + ')');
     await new Promise(r => setTimeout(r, 1300));
     ok(myLpEl.textContent === '7100' && fx.lpShown(0) === 7100, 'FXA4c: my LP count settles exactly on 7100 (got ' + myLpEl.textContent + ')');
 
@@ -728,45 +732,47 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     ok(paySamples.every((v, i) => i === 0 || v <= paySamples[i - 1]), 'FXF1f: the pay count is monotonic non-increasing (distinct: ' + paySamples.filter((v, i) => i === 0 || v !== paySamples[i - 1]).join('>') + ')');
     ok(paySamples[paySamples.length - 1] === 6500 && fx.lpShown(0) === 6500, 'FXF1g: the pay count settles exactly on 6500');
 
-    // --- F-damage: effect damage to the opponent -> red chip with
-    // the downward (anti-clip) variant, NO battle damage number
+    // --- F-damage: effect damage to the opponent -> BU-72 unified
+    // grammar: the same damage numeral as battle (dmgnum record),
+    // NO chip of any kind
     base();
     st = fakeState(s => { s.log = []; s.players[1].lp = 7100; });
     render(st);
     recs = step(st, [{ kind: 'damage', player: 1, amount: 900 }]);
-    ok(has(recs, 'lpchip', r => r.chip === 'damage' && r.player === 1 && r.amount === 900 && r.down === true), 'FXF2: effect damage records a damage chip (opponent = downward variant)');
-    const dmgChip = doc.querySelector('.fx3-lpchip--damage');
-    ok(!!dmgChip && dmgChip.textContent === '−900' && dmgChip.classList.contains('fx3-lpchip--down') && dmgChip.dataset.direction === 'down', 'FXF2b: the effect-damage chip node reads −900 and carries the downward variant (class=' + (dmgChip ? dmgChip.className : 'none') + ')');
-    ok(!doc.querySelector('.fx3-dmgnum'), 'FXF2c: effect damage spawns NO battle damage number');
+    ok(has(recs, 'dmgnum', r => r.player === 1 && r.amount === 900 && r.tier === 2 && r.battle === false) && !recs.some(r => r.kind === 'lpchip'), 'FXF2: BU-72 — effect damage records a dmgnum (not a chip) (got ' + JSON.stringify(recs.filter(r => r.kind === 'dmgnum' || r.kind === 'lpchip')) + ')');
+    const dmgNumF = doc.querySelector('.fx3-dmgnum');
+    ok(!!dmgNumF && dmgNumF.textContent === '−900' && dmgNumF.classList.contains('fx3-num--t2'), 'FXF2b: BU-72 — the effect-damage numeral node reads −900 at tier 2 (class=' + (dmgNumF ? dmgNumF.className : 'none') + ')');
+    ok(!!dmgNumF, 'FXF2c: BU-72 supersedes the chip-only rule — effect damage DOES spawn the unified damage number, the same grammar as battle');
 
-    // --- F-heal (mine): + chip in gold; the float node IS the chip
+    // --- F-heal (mine): BU-72 inverse grammar — the green numeral
+    // rides the count scene; seat colour-coding is abolished
     base();
     st = fakeState(s => { s.log = []; s.players[0].lp = 8600; });
     render(st);
     recs = step(st, [{ kind: 'recover', player: 0, amount: 600 }]);
-    ok(has(recs, 'lpchip', r => r.chip === 'heal' && r.player === 0 && r.amount === 600 && r.signed === 600 && r.variant === 'mine'), 'FXF3: my heal records a heal chip with the mine (gold) variant');
-    ok(has(recs, 'healfloat', r => r.amount === 600), 'FXF3b: the legacy healfloat record still fires for a heal');
-    const myHeal = doc.querySelector('.fx-healfloat');
-    ok(!!myHeal && myHeal.textContent === '+600' && myHeal.classList.contains('fx3-lpchip--heal') && myHeal.classList.contains('fx3-lpchip--mine') && myHeal.classList.contains('fx-healfloat--down') && myHeal.dataset.direction === 'down', 'FXF3c: fx-ui round 2 (F6a) — my heal node is the +600 gold chip on the downward float (above my plate sits only the log line; class=' + (myHeal ? myHeal.className : 'none') + ')');
+    ok(has(recs, 'healnum', r => r.player === 0 && r.amount === 600 && r.tier === 2), 'FXF3: BU-72 — my heal records a healnum (got ' + JSON.stringify(recs.filter(r => r.kind === 'healnum')) + ')');
+    ok(!has(recs, 'healfloat') && !recs.some(r => r.kind === 'lpchip'), 'FXF3b: BU-72 — the abolished healfloat / lpchip-heal records do NOT fire for a heal');
+    const myHeal = doc.querySelector('.fx3-healnum');
+    ok(!!myHeal && myHeal.textContent === '+600' && myHeal.classList.contains('fx3-num--t2'), 'FXF3c: BU-72 — my heal node is the green +600 numeral at tier 2 (class=' + (myHeal ? myHeal.className : 'none') + ')');
 
-    // --- F-heal (opponent): + chip in lapis-white, and the float
-    // becomes the DOWNWARD variant (audit F2 remainder)
+    // --- F-heal (opponent): the SAME green grammar — colour
+    // carries meaning only, never the seat
     base();
     st = fakeState(s => { s.log = []; s.players[1].lp = 8600; });
     render(st);
     recs = step(st, [{ kind: 'recover', player: 1, amount: 600 }]);
-    ok(has(recs, 'lpchip', r => r.chip === 'heal' && r.player === 1 && r.variant === 'opp' && r.down === true), 'FXF4: opponent heal records a heal chip with the opp (lapis-white) variant, downward');
-    const oppHeal = doc.querySelector('.fx-healfloat');
-    ok(!!oppHeal && oppHeal.textContent === '+600' && oppHeal.classList.contains('fx-healfloat--down') && oppHeal.classList.contains('fx3-lpchip--opp') && oppHeal.dataset.direction === 'down', 'FXF4b: the opponent heal float node is the downward lapis chip variant (class=' + (oppHeal ? oppHeal.className : 'none') + ', direction=' + (oppHeal ? oppHeal.dataset.direction : 'none') + ')');
+    ok(has(recs, 'healnum', r => r.player === 1 && r.amount === 600 && r.tier === 2), 'FXF4: BU-72 — opponent heal records the same healnum grammar (no seat variant)');
+    const oppHeal = doc.querySelector('.fx3-healnum');
+    ok(!!oppHeal && oppHeal.textContent === '+600' && oppHeal.classList.contains('fx3-num--t2') && oppHeal.classList.contains('fx3-healnum'), 'FXF4b: BU-72 — the opponent heal node is the same green numeral (class=' + (oppHeal ? oppHeal.className : 'none') + ')');
 
-    // --- F-mixed: pay + effect damage in ONE batch -> one chip per
-    // kind, summing to the net loss
+    // --- F-mixed: pay + effect damage in ONE batch -> the gold pay
+    // chip AND the damage numeral, summing to the net loss
     base();
     st = fakeState(s => { s.log = []; s.players[0].lp = 6000; });
     render(st);
     recs = step(st, [{ kind: 'pay', player: 0, amount: 1500 }, { kind: 'damage', player: 0, amount: 500 }]);
-    ok(has(recs, 'lpchip', r => r.chip === 'pay' && r.amount === 1500) && has(recs, 'lpchip', r => r.chip === 'damage' && r.amount === 500), 'FXF5: a mixed pay+damage batch records one chip per kind (got ' + JSON.stringify(recs.filter(r => r.kind === 'lpchip')) + ')');
-    ok(doc.querySelectorAll('.fx3-lpchip').length === 2, 'FXF5b: the mixed batch shows exactly two chip nodes (got ' + doc.querySelectorAll('.fx3-lpchip').length + ')');
+    ok(has(recs, 'lpchip', r => r.chip === 'pay' && r.amount === 1500) && has(recs, 'dmgnum', r => r.amount === 500 && r.tier === 2 && r.battle === false), 'FXF5: BU-72 — a mixed pay+damage batch records the pay chip AND a dmgnum (got ' + JSON.stringify(recs.filter(r => r.kind === 'lpchip' || r.kind === 'dmgnum')) + ')');
+    ok(doc.querySelectorAll('.fx3-lpchip').length === 1 && doc.querySelectorAll('.fx3-dmgnum').length === 1, 'FXF5b: BU-72 — the mixed batch shows exactly one chip node and one damage numeral (got ' + doc.querySelectorAll('.fx3-lpchip').length + ' chips, ' + doc.querySelectorAll('.fx3-dmgnum').length + ' numerals)');
 
     // --- F-suppression: an attack batch's battle damage gets NO
     // F chip at all — the battle grammar (damage number + scheduled
@@ -933,13 +939,13 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     ok(has(recs, 'phase', r => r.phase === 'battle'), 'FXI-E1: the battle transition still records the phase');
     const banner = doc.querySelector('#fxlayer .fx-phase');
     ok(!!banner && banner.textContent.includes('バトルフェイズ'), 'FXI-E2: the engraved phase name stands at board centre');
-    ok(!!doc.querySelector('#fxlayer .fx-phase-sweep'), 'FXI-E3: the sweep segment node exists over the mid bar');
-    ok(!!doc.querySelector('#midbar .fx-phase-hairline'), 'FXI-E4: the hairline node exists on the mid bar');
+    ok(!!doc.querySelector('#fxlayer .fx-phase-sweep'), 'FXI-E3: the sweep segment node exists over the header');
+    ok(!!doc.querySelector('#header .fx-phase-hairline'), 'FXI-E4: BU-73 — the hairline node exists on the header (the mid bar is gone)');
     ok(!fx.phaseSeated(), 'FXI-E5: the phase is not seated while the sweep is still running');
     const deadline = Date.now() + 5000;
     while (!fx.phaseSeated() && Date.now() < deadline) await new Promise(r => setTimeout(r, 100));
     ok(fx.phaseSeated() && $('phaseinfo').classList.contains('fx-seated'), 'FXI-E6: after settling, #phaseinfo carries the seated class');
-    const hair = doc.querySelector('#midbar .fx-phase-hairline');
+    const hair = doc.querySelector('#header .fx-phase-hairline');
     ok(!!hair && hair.style.opacity === '0.3', 'FXI-E7: the settled hairline remains at opacity 0.30');
     ok(!doc.querySelector('#fxlayer .fx-phase') && !doc.querySelector('#fxlayer .fx-phase-sweep'),
       'FXI-E8: banner and sweep are gone after settling (only the hairline + seated name remain)');

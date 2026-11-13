@@ -11,7 +11,7 @@
      all, must show the respnote instead, and the chip must label
      the settings as inert. In おまかせ ('auto') the controls and
      the standard chip text are unchanged.
-     BU-15 — the auto-pass chip is in flow inside #topbar.
+     BU-15 — the auto-pass chip is in flow (BU-73: header row 2).
      G1a/G2 — delivered-CSS contracts on index.html: the dock
      ground is fully opaque; the dock is a capped flex column
      whose candidate row is the only scrolling part.
@@ -131,7 +131,7 @@ async function boot() {
   window.eval(`(() => { dismissedDuel.delete('fx3-probe'); updateAutoPassChip(); return true; })()`);
 
   // ---------- BU-15: chip placement ----------
-  ok(chip.parentElement === doc.getElementById('topbar'), 'FX3-15: BU-15 — the chip is in flow inside #topbar');
+  ok(chip.closest('#header') === doc.getElementById('header') && chip.parentElement.classList.contains('hd-row2'), 'FX3-15: BU-15 successor (BU-73) — the chip is in flow in header row 2');
   ok(chip.style.bottom === '', 'FX3-16: BU-15 — the chip carries no inline positioning');
 
   // ---------- G1a / G2: delivered CSS contracts ----------

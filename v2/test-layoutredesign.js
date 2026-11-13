@@ -65,25 +65,28 @@ async function main() {
   ok(!!itext && itext['display'] === 'none' && !clientSrc.includes('class="itext"'),
     'LR-I2b: I2 successor (layout-fix3 K4) — candidate tiles carry NO effect text; the retired .itext rule is display:none');
 
-  // ---------- LR-1 / LR-2: the slim mid band ----------
-  const midbar = ruleDecls(/#midbar\{([^}]*)\}/);
+  // ---------- LR-1 / LR-2: the header (BU-73 successor) ----------
+  const header = ruleDecls(/#header\{([^}]*)\}/);
   const phaseinfo = ruleDecls(/#phaseinfo\{([^}]*)\}/);
   const logline = ruleDecls(/#logline\{([^}]*)\}/);
-  // layout-fix J2 supersedes the frozen height with a 62px minimum
-  // (inflated system fonts grow the band; the fit loop absorbs it).
-  // brushup round 2026-11-13 (BU-61) supersedes the 17px phase
-  // size: the phase button's longest labels are guaranteed whole
-  // (min-width 136px, never shrinks) and the readout stands at
-  // 15px so turn + phase + button all fit at 390px wide.
-  ok(!!midbar && midbar['min-height'] === '62px' && !('height' in midbar) && !!phaseinfo && phaseinfo['line-height'] === '1.25' && phaseinfo['font-size'] === '15px',
-    'LR-1: the mid band is one fitted 62px-minimum row; the phase name stands at 15px with a fitted line box (BU-61)');
-  // layout-fix3 K2 supersedes the two-line clamp: it silently
-  // cut the TAIL of long lines (verb endings, destinations) in
-  // real play. No clamp at all now — fitLogline shrinks the
-  // whole line to the two-line budget and the band grows (and
-  // is re-absorbed) if a line still needs a third.
-  ok(!!logline && !('height' in logline) && logline['line-height'] === '1.35' && !('-webkit-line-clamp' in logline) && logline['font-size'] === '12.5px',
-    'LR-2: the latest-event line is 12.5px with NO line clamp (layout-fix3 K2 — the tail is never cut)');
+  // BU-73 (2026-11-13) supersedes the mid band: its contents live
+  // in the header now. The header carries NO height or min-height
+  // of its own — its 81px is by construction (row 1 = the 46px
+  // buttons, row 2 = the event line's two fitted lines), so
+  // inflated system fonts grow it and the fit loop absorbs the
+  // growth, exactly the old band's discipline.
+  // BU-61 stands: the phase button's longest labels are
+  // guaranteed whole (min-width 136px, never shrinks) and the
+  // readout stands at 15px.
+  ok(!!header && !('height' in header) && !('min-height' in header) && !!phaseinfo && phaseinfo['line-height'] === '1.25' && phaseinfo['font-size'] === '15px',
+    'LR-1: BU-73 — the header is one fitted block (81px by construction, never frozen); the phase name stands at 15px with a fitted line box (BU-61)');
+  // layout-fix3 K2 superseded the two-line clamp (it silently
+  // cut the TAIL of long lines); BU-73 also abolishes the
+  // whole-line shrink: the line stands at full type, two lines
+  // are the standard form, and a residual third line grows the
+  // header (re-absorbed by layoutFit).
+  ok(!!logline && !('height' in logline) && logline['line-height'] === '1.25' && !('-webkit-line-clamp' in logline) && logline['font-size'] === '12.5px',
+    'LR-2: BU-73 — the latest-event line is 12.5px at full type with NO line clamp and NO shrink (the tail is never cut)');
 
   // ---------- boot ----------
   const dom = new JSDOM(html, { url: 'http://localhost/v2/', runScripts: 'dangerously', pretendToBeVisual: true });
@@ -116,8 +119,11 @@ async function main() {
     ok(r.w >= r.lw, 'LR-3a budget ' + b + ': tileW ' + r.w + ' >= legacy ' + r.lw + ' (board art never shrinks)');
     // computeLayout fills its budget (the 8px safety lives in
     // layoutFit's budget derivation, checked by test-layout):
-    // contentH meets the budget with rounding slack only.
-    ok(r.ch <= b && b - r.ch < 16, 'LR-3b budget ' + b + ': contentH ' + r.ch + ' fills the budget (slack ' + (b - r.ch) + ' < 16)');
+    // contentH meets the budget except for the sub-24px preview
+    // sink (a preview under 24px shows as 0 and its amount —
+    // at most 23px by construction — stays dead in the formula;
+    // layoutFit's measured fill loop absorbs it on device).
+    ok(r.ch <= b && b - r.ch < 24, 'LR-3b budget ' + b + ': contentH ' + r.ch + ' fills the budget (slack ' + (b - r.ch) + ' < 24, the preview-sink bound)');
   }
   ok(ev('computeLayout(390, 612).mode') === 'compact' && ev('computeLayout(390, 836).mode') === 'full',
     'LR-3c: the budget tiers switch at 700 (compact below, full above)');
@@ -144,9 +150,11 @@ async function main() {
   // ---------- status bars render ----------
   ev('(() => { const P = () => ({ mzone: [null,null,null,null,null,null,null], szone: [null,null,null,null,null,null], grave: [], removed: [], extra: [], hand: [{}], deckCount: 38, lp: 8000 }); const b = { players: [P(), P()], phaseName: "MAIN1", turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], dlog: [] }; duelState = b; render(b); return true; })()');
   ok(doc.getElementById('oppDeckName').textContent.length > 0 && doc.getElementById('myDeckName').textContent.length > 0,
-    'LR-7a: both status bars name their deck');
-  ok(doc.getElementById('oppHandN').textContent === '1', 'LR-7b: the opponent hand count rides the top bar chip');
-  ok(/^ターン\d+・自分$/.test(doc.getElementById('turninfo').textContent), 'LR-7c: the mid band states the turn count and owner compactly (the phase name is never the one ellipsized)');
+    'LR-7a: BU-73 — both LP plates name their deck');
+  ok(doc.getElementById('oppHandN').textContent === '1', 'LR-7b: BU-73 — the opponent hand count rides the header row-2 chip');
+  ok(/^ターン\d+・自分$/.test(doc.getElementById('turninfo').textContent), 'LR-7c: header row 2 states the turn count and owner compactly (the phase name is never the one ellipsized)');
+  ok(doc.getElementById('myPlate').classList.contains('turn-on') && !doc.getElementById('oppPlate').classList.contains('turn-on'),
+    'LR-7d: BU-73 — the turn player\'s LP plate carries the gold frame (turn-on)');
 
   // ---------- LR-5: dock peek + button-grade dismissals ----------
   const KELDO = 63542003, MUDORA = 99937011;

@@ -204,8 +204,9 @@ async function boot() {
   // preview strip's last line and the pile row in live play. The
   // chip is now IN FLOW as the top bar's third item: it cannot
   // overlay anything, dock open or closed. The invariant pinned
-  // here replaces the ride-above geometry: chip parent is #topbar
-  // and no inline bottom is ever set.
+  // here replaces the ride-above geometry: the chip lives in
+  // flow inside the header (BU-73: row 2) and no inline bottom
+  // is ever set.
   window.eval(`(() => {
     dismissedDuel.set('cl-probe', { code: ${MUDORA}, desc: 0 });
     updateAutoPassChip();
@@ -213,9 +214,9 @@ async function boot() {
   })()`);
   const chip = doc.getElementById('autopass');
   ok(chip.className === 'on' && chip.textContent.includes('自動パス設定中：1 件'), 'CL9a: chip shows the auto-pass state');
-  ok(chip.parentElement === doc.getElementById('topbar'), 'CL9b: chip lives in flow inside #topbar (cannot overlay board, preview or dock)');
+  ok(chip.closest('#header') === doc.getElementById('header') && chip.parentElement.classList.contains('hd-row2'), 'CL9b: BU-73 — chip lives in flow in header row 2 (cannot overlay board, preview or dock)');
   window.eval(`(() => { document.getElementById('dock').className = 'on'; updateAutoPassChip(); return true; })()`);
-  ok(chip.style.bottom === '' && chip.parentElement === doc.getElementById('topbar'), 'CL9c: dock open -> chip stays in the top bar, no inline positioning');
+  ok(chip.style.bottom === '' && chip.closest('#header') === doc.getElementById('header'), 'CL9c: dock open -> chip stays in the header, no inline positioning');
   window.eval('dockClose()');
   ok(doc.getElementById('dock').className === '' && chip.style.bottom === '', 'CL9d: dock closed -> chip unchanged (no position state to restore)');
   window.eval(`(() => { dismissedDuel.delete('cl-probe'); updateAutoPassChip(); return true; })()`);

@@ -53,23 +53,21 @@ async function main() {
   // The phase cell I1 fitted no longer exists: the redesign
   // retired the whole phasebar structure. I1's defect — text
   // taller than its line box, glyphs half-eaten — is answered
-  // structurally now: the LP stands at 28px in the status bars
-  // with a fitted line box, the mid band is one fitted 62px row
-  // whose lines carry explicit line-heights, and the latest
-  // event takes two fitted lines (it ellipsized at one).
-  const lpbox = ruleDecls(/\.lp-box \.lp\{([^}]*)\}/);
-  ok(!!lpbox && lpbox['font-size'] === '28px' && lpbox['line-height'] === '1.05',
-    'FX5-1: I1 successor — the LP is a fitted 28px line in the status bars (the largest numeral on screen)');
+  // structurally now.
+  // BU-73 successor (2026-11-13): the status bars and the mid
+  // band are gone too — the LP stands on the central band's
+  // plates (full 28px / compact 24px, fitted line), the mid
+  // band's rows became the header (81px floor), and the latest
+  // event takes two lines at full type (no clamp, no shrink).
+  const lpplate = ruleDecls(/\.lpplate \.lp\{([^}]*)\}/);
+  ok(!!lpplate && lpplate['font-size'] === '28px' && lpplate['line-height'] === '1',
+    'FX5-1: I1 successor (BU-73) — the LP is a fitted 28px line (line-height 1) on the central band plates (full tier)');
   const logline = ruleDecls(/#logline\{([^}]*)\}/);
-  ok(!!logline && !('height' in logline) && logline['line-height'] === '1.35' && !('-webkit-line-clamp' in logline) && /function fitLogline/.test(clientSrc) && !/#chainbar \.prevlog/.test(html) && !/prevlog/.test(clientSrc),
-    'FX5-2: I1 successor (layout-fix3 K2) — the latest-event line is fitted IN FULL by fitLogline with no line clamp (the clamp cut event tails); the prevlog line is gone (absorbed into it)');
-  const midbar = ruleDecls(/#midbar\{([^}]*)\}/);
-  // layout-fix J2 supersedes the frozen height: the band keeps a
-  // 62px MINIMUM and may grow under inflated system fonts (the
-  // frozen 62px let the field below paint over the event line's
-  // second row); the visible-fit loop absorbs the growth.
-  ok(!!midbar && midbar['min-height'] === '62px' && !('height' in midbar) && /const LAYOUT_MODES = \{/.test(clientSrc),
-    'FX5-3: I1 successor — the mid band is one fitted 62px-minimum row and the budget is the redesign mode table');
+  ok(!!logline && !('height' in logline) && logline['line-height'] === '1.25' && !('-webkit-line-clamp' in logline) && !/function fitLogline/.test(clientSrc) && !/#chainbar \.prevlog/.test(html) && !/prevlog/.test(clientSrc),
+    'FX5-2: I1 successor (BU-73, ex layout-fix3 K2) — the latest-event line stands IN FULL at full type with no line clamp (the clamp cut event tails) and no whole-line shrink; the prevlog line is gone (absorbed into it)');
+  const header = ruleDecls(/#header\{([^}]*)\}/);
+  ok(!!header && !('min-height' in header) && !('height' in header) && /const LAYOUT_MODES = \{/.test(clientSrc),
+    'FX5-3: I1 successor (BU-73) — the header carries the old band\'s role at 81px by construction (no height of its own) and the budget is the mode table');
   const grid = ruleDecls(/\.grid\{([^}]*)\}/);
   ok(!!grid && /auto-fit/.test(grid['grid-template-columns'] || '') && !/auto-fill/.test(grid['grid-template-columns'] || ''),
     'FX5-4: I2 — the selection grid collapses unused tracks (auto-fit), so few-candidate sheets use the full width');

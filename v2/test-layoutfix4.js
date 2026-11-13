@@ -75,11 +75,11 @@ const name = (c) => data.names[c];
 
 // ---------- source pins ----------
 {
-  ok(/#midbar\{[^}]*flex-shrink:0/.test(html) && clientSrc.includes('function ensureBandFits()') &&
+  ok(/#header\{[^}]*flex:none/.test(html) && clientSrc.includes('function ensureBandFits()') &&
      clientSrc.includes('mb.style.minHeight = (mb.offsetHeight + (mb.scrollHeight - mb.clientHeight))') &&
      clientSrc.includes('let lastLogW = 0;') && clientSrc.includes('(lw && lw !== lastLogW)') &&
      clientSrc.includes('sp.getBoundingClientRect().width > w'),
-    'LF4-L1a: the band never shrinks (flex-shrink:0); ensureBandFits grows the border-box by the measured deficit; the hook re-fits on width change; nbFit compares fractional rect widths');
+    'LF4-L1a: BU-73 — the header never shrinks (flex:none); ensureBandFits grows the border-box by the measured deficit; the hook re-fits on width change; nbFit compares fractional rect widths');
   ok(!engineSrc.includes('pm.e.s =') && engineSrc.includes('this.pendingMatLines.push({ con: matPending.con, who: matPending.who, nm: matPending.nm, cid, sol })') &&
      engineSrc.includes("this.pushDLog({ k: 'info', cid: pm.cid, sol: pm.sol, s: pm.who + '：' + pm.nm + ' が《' + hostName + '》 のエクシーズ素材になった' })") &&
      engineSrc.includes('(this.cardData[zc].type & 0x800000)') &&

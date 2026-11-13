@@ -1740,7 +1740,10 @@ function nbFit(container) {
 // (scrollHeight == clientHeight), so it changes nothing in the rig
 // and only ever fires when a clip is actually happening.
 function ensureBandFits() {
-  const mb = $('midbar'); if (!mb) return;
+  // BU-73: the band whose content must never clip is the HEADER
+  // now (its row 2 carries the event line); the invariant and the
+  // mechanism are unchanged from the mid-bar era.
+  const mb = $('header'); if (!mb) return;
   // Release any forced floor first, so the measurement sees the
   // natural height; then grow only as far as the content needs.
   // Loop to convergence: one pass can leave a 1–2px residual (the
@@ -1758,22 +1761,15 @@ function ensureBandFits() {
     mb.style.minHeight = (mb.offsetHeight + (mb.scrollHeight - mb.clientHeight)) + 'px';
   }
 }
-// layout-fix3 K2: whole-line fit for the band's event line. The
-// two-line clamp is gone (index.html), so a long line would grow
-// the band to three lines; before letting it, shrink the WHOLE
-// line in half-point steps (floor 10px) until it fits the
-// two-line design budget. If it still needs a third line at the
-// floor, the band grows — the tail is never cut. In jsdom
-// (scrollHeight 0) this is inert.
-function fitLogline(ll) {
-  if (!ll) return;
-  ll.style.fontSize = '';
-  const cs = getComputedStyle(ll);
-  const lh = parseFloat(cs.lineHeight) || 16.9;
-  let fs = parseFloat(cs.fontSize) || 12.5;
-  let guard = 0;
-  while (ll.scrollHeight > lh * 2 + 1 && fs > 10 && guard++ < 8) { fs -= 0.5; ll.style.fontSize = fs + 'px'; }
-}
+// layout-fix3 K2 -> BU-73 (2026-11-13): the whole-line shrink
+// (the old fitLogline) is ABOLISHED by the user's decision — the
+// latest event stands at its full 12.5px type, two lines are the
+// standard form, and a line that still needs a third line grows
+// the header, whose new height layoutFit then absorbs (the
+// lastBandH refit hook in render). The tail is never cut and the
+// type is never shrunk. (nbFit below stays: it only shrinks a
+// single unbreakable UNIT that is wider than the line itself —
+// a pathological long card name — never the line as a whole.)
 // Source context of a prompt (Phase 2 item 1): the chain link whose effect is
 // asking. Attached by the engine driver from the core's CHAINING stream.
 function contextLineHTML(prompt) {
@@ -1799,14 +1795,18 @@ const seCache = {}, seLast = {};
 let audioOn = true;
 try { const savedAudio = localStorage.getItem('v2audio'); if (savedAudio != null) audioOn = savedAudio === '1'; } catch (e) {}
 function saveAudioPref() { try { localStorage.setItem('v2audio', audioOn ? '1' : '0'); } catch (e) {} }
-function playSe(name) {
+function playSe(name, vol) {
   if (!audioOn || !SE_FILES.has(name)) return;
   const now = performance.now();
   if (seLast[name] && now - seLast[name] < 150) return;
   seLast[name] = now;
   try {
     let a = seCache[name];
-    if (!a) { a = new Audio('../assets/se/' + name + '.mp3'); a.volume = 0.6; seCache[name] = a; }
+    if (!a) { a = new Audio('../assets/se/' + name + '.mp3'); seCache[name] = a; }
+    // BU-72: per-call volume (default 0.6, the standing level). The
+    // small-damage tier reuses hit_big at 0.35 — there is no
+    // dedicated small-hit file and generated audio is not used.
+    a.volume = vol != null ? vol : 0.6;
     a.currentTime = 0; a.play().catch(() => {});
   } catch (e) {}
 }
@@ -2564,7 +2564,7 @@ function drainSeEvents(state) {
   // a pending battle SE whose attack scene never came (geometry
   // failure) fires now, one batch late — sound must mark the truth,
   // never be dropped and never leak into a later battle.
-  if (fxPendingBattleSe) { const p = fxPendingBattleSe; fxPendingBattleSe = null; if (p.atk) playSe(p.atk); if (p.hit) playSe(p.hit); }
+  if (fxPendingBattleSe) { const p = fxPendingBattleSe; fxPendingBattleSe = null; if (p.atk) playSe(p.atk); if (p.hit) playSe(p.hit, p.hitVol); }
   // V3 stage 2 SE sync: battle damage arriving in the SAME batch as
   // its attack is one beat — its hit SE is held for the attack
   // scene's impact cue (t=280 on the FX clock). Damage arriving in a
@@ -2581,12 +2581,17 @@ function drainSeEvents(state) {
       case 'summon': playSe('summon_circle'); break;
       case 'spsummon': playSe('summon_big'); break;
       case 'flipsummon': playSe('summon_land'); break;
-      case 'attack': { const d = ev.code != null ? cardData(ev.code) : null; if (!fxPendingBattleSe) fxPendingBattleSe = { atk: null, hit: null, at: performance.now() }; fxPendingBattleSe.atk = d ? (ATTR_SE[d.attribute] || 'atk_sword_big') : 'atk_sword_big'; break; }
+      case 'attack': { const d = ev.code != null ? cardData(ev.code) : null; if (!fxPendingBattleSe) fxPendingBattleSe = { atk: null, hit: null, hitVol: null, at: performance.now() }; fxPendingBattleSe.atk = d ? (ATTR_SE[d.attribute] || 'atk_sword_big') : 'atk_sword_big'; break; }
       case 'damage': {
-        const seName = ev.amount >= 1500 ? 'hit_critical' : ev.amount >= 500 ? 'hit_big' : null;
-        if (!seName) break;
-        if (batchAtk && ev.player === 1 - batchAtk.con) { if (!fxPendingBattleSe) fxPendingBattleSe = { atk: null, hit: null, at: performance.now() }; fxPendingBattleSe.hit = seName; }
-        else playSe(seName);
+        // BU-72: EVERY damage has a sound (the old sub-500 silence
+        // is gone — the user's "with the damage SE" is the premise).
+        // Tier by amount: T3 hit_critical, T2 hit_big, T1 hit_big
+        // played small (0.35) — no dedicated small-hit file exists.
+        const tier = ev.amount >= 1500 ? 3 : ev.amount >= 500 ? 2 : 1;
+        const seName = tier === 3 ? 'hit_critical' : 'hit_big';
+        const seVol = tier === 1 ? 0.35 : 0.6;
+        if (batchAtk && ev.player === 1 - batchAtk.con) { if (!fxPendingBattleSe) fxPendingBattleSe = { atk: null, hit: null, hitVol: null, at: performance.now() }; fxPendingBattleSe.hit = seName; fxPendingBattleSe.hitVol = seVol; }
+        else playSe(seName, seVol);
         break;
       }
       case 'destroy': playSe(ev.battle ? 'destroy_blast' : 'destroy_stone'); break;
@@ -3108,9 +3113,11 @@ function fxSynchroSceneV3(o) {
     if (g) { matGhosts.push(g); nodes.push(g); }
   }
   // the accumulation row rides just INSIDE the ring's top edge
-  // (proto p6d): anchored above the zone it lands in the midbar —
-  // only ~3px separate the midbar's bottom from the mzone's top at
-  // both app heights, so an above-zone row strikes the phase buttons.
+  // (proto p6d): anchored above the zone it lands in the chrome —
+  // only ~3px separate the band's bottom (BU-73: the LP band over
+  // my zones, the header over the opponent's) from the mzone's
+  // top at both app heights, so an above-zone row strikes the
+  // phase buttons.
   const decor = fxSynchroDecor(info, zr.cx, zr.cy - ringD / 2 + 14, { cx: zr.cx, cy: zr.cy });
   if (!decor) { for (const n of nodes) { try { n.remove(); } catch (e) {} } return null; }
   for (const n of decor.nodes) nodes.push(n);
@@ -3203,13 +3210,14 @@ function fxPhaseFamily(ph) {
 }
 let fxBannerEl = null, fxBannerScene = null, fxPhaseSweepEl = null, fxPhaseHairlineEl = null;
 // Redesign E (proto 案5): the settled remnant of a phase sweep —
-// a 1px gold hairline (opacity 0.30) that stays ON the mid bar as
-// pure decoration (the bar's layout never changes). It lives as a
-// child of #midbar, so it is NOT wiped with #fxlayer; it is
-// created lazily by the banner, re-shown at each settle, and
-// removed only by a duel reset (fxPhaseClearSeated).
+// a 1px gold hairline (opacity 0.30) that stays ON the header as
+// pure decoration (the header's layout never changes). It lives
+// as a child of #header (BU-73: the phase readout's home — it was
+// a child of the mid bar before), so it is NOT wiped with
+// #fxlayer; it is created lazily by the banner, re-shown at each
+// settle, and removed only by a duel reset (fxPhaseClearSeated).
 function fxPhaseHairline() {
-  const mb = $('midbar'); if (!mb) return null;
+  const mb = $('header'); if (!mb) return null;
   if (fxPhaseHairlineEl && fxPhaseHairlineEl.parentElement === mb) return fxPhaseHairlineEl;
   const h = document.createElement('div');
   h.className = 'fx-phase-hairline';
@@ -3242,13 +3250,13 @@ function fxPhaseBanner(fam) {
   fxBannerEl = d;
   // ---- the sweep segment: a 2px gold line (gradient + bright
   // leading tip, CSS .fx-phase-sweep) that runs left -> right
-  // across the TOP of the mid bar (prototype offset: bar top + 3px,
+  // across the TOP of the header (prototype offset: bar top + 3px,
   // so the 2px line's centre sits at +4). It is an overlay in
   // #fxlayer computed from the bar's painted rect — the bar
   // itself never moves. Travel is transform-only: the segment is
   // laid at the bar's left edge and translates from fully off the
   // left end to fully off the right end over 0-650 ms.
-  const mb = $('midbar');
+  const mb = $('header');
   const mr = mb ? fxRel(mb) : null;
   const ar = $('app') ? fxRel($('app')) : null;
   const barW = mr && mr.w > 0 ? mr.w : (ar ? ar.w : 0);
@@ -3716,7 +3724,7 @@ function fxResetFoundation() {
   fxAceSceneRef = null; fxFinisherSceneRef = null; fxAceRecent = null; fxKeycardSceneRef = null; // stage 3 scene refs (hosts are wiped by fxResetDuel)
   fxChainWordScene = null; fxBannerScene = null; // V4 scene refs
   // redesign E: the sweep's leftovers live outside #fxlayer (the
-  // hairline is a #midbar child, the seated state a #phaseinfo
+  // hairline is a #header child, the seated state a #phaseinfo
   // class) — clear them explicitly so no gold survives a reset
   fxPhaseSweepEl = null; fxPhaseClearSeated();
   try { fxChainLanded.clear(); } catch (e) {} // redesign B: landed flags never survive a duel reset
@@ -4442,13 +4450,66 @@ const fxLpShown = [null, null];   // per seat: the value the counter currently s
 const fxLpScenes = [null, null];  // per seat: active count scene (render defers to it)
 function fxLpBusy(con) { return !!fxLpScenes[con] && !fxLpScenes[con].dead; }
 function fxLpEl(con) { return con === HP ? $('myLp') : $('oppLp'); }
+function fxLpPlate(con) { return con === HP ? $('myPlate') : $('oppPlate'); }
+// BU-72: the ± numeral grammar — tiers by amount, shared by the
+// damage numeral, the heal numeral and the SE choice. Damage
+// shakes (a decaying horizontal oscillation: bigger = heavier,
+// slower, longer — never vertical, the digits stay readable) and
+// the plate itself takes a micro-shake at 0.35x the amplitude.
+function fxDmgTier(amount) { return amount >= 1500 ? 3 : amount >= 500 ? 2 : 1; }
+const FX_NUM_SIZE = { 1: 22, 2: 28, 3: 36 };
+const FX_SHAKE = { 1: { a: 3, f: 18, tau: 90, dur: 260 }, 2: { a: 5, f: 16, tau: 120, dur: 340 }, 3: { a: 8, f: 14, tau: 160, dur: 460 } };
+function fxShakeX(tier, t) {
+  const s = FX_SHAKE[tier];
+  if (t < 0 || t > s.dur) return 0;
+  return s.a * Math.sin(2 * Math.PI * s.f * t / 1000) * Math.exp(-t / s.tau);
+}
+function fxRenderDmgNum(numEl, plate, tier, nt) {
+  if (nt < 0) { numEl.style.opacity = '0'; return; }
+  const life = tier === 3 ? 720 : 620;
+  if (nt >= life) { numEl.style.opacity = '0'; if (plate) plate.style.transform = ''; return; }
+  const fadeStart = tier === 3 ? 540 : 460, fadeEnd = tier === 3 ? 700 : 600;
+  let op = Math.min(1, nt / 40);
+  if (nt > fadeStart) op = Math.min(op, Math.max(0, 1 - (nt - fadeStart) / (fadeEnd - fadeStart)));
+  numEl.style.opacity = String(Math.max(0, op));
+  const s = 1.45 - 0.45 * FXE.settle(fxSeg(nt, 0, 130));
+  const sh = fxShakeX(tier, nt);
+  numEl.style.transform = 'translate(-100%,-50%) translateX(' + sh.toFixed(2) + 'px) scale(' + s.toFixed(3) + ')';
+  if (plate) plate.style.transform = sh !== 0 ? 'translateX(' + (sh * 0.35).toFixed(2) + 'px)' : '';
+  // the white-hot ramp: white for 35 ms, #ffc9c2 to 70 ms, then red
+  const hstep = nt < 35 ? 0 : nt < 70 ? 1 : 2;
+  if (numEl._hs !== hstep) { numEl._hs = hstep; numEl.style.color = hstep === 0 ? '#ffffff' : hstep === 1 ? '#ffc9c2' : '#ff5348'; }
+}
+function fxRenderHealNum(numEl, nt) {
+  // the reversed grammar: no shake — a soft swell (0.85 -> 1.06 ->
+  // 1.0) while rising 12px over 700 ms, gone at 900 ms (about
+  // 1.4x the damage numeral's tempo).
+  if (nt < 0 || nt >= 900) { numEl.style.opacity = '0'; return; }
+  let op = Math.min(1, nt / 60);
+  if (nt > 700) op = Math.min(op, Math.max(0, 1 - (nt - 700) / 180));
+  numEl.style.opacity = String(Math.max(0, op));
+  let s;
+  if (nt < 300) s = 0.85 + 0.21 * FXE.outCubic(Math.min(1, nt / 300));
+  else s = 1.06 - 0.06 * FXE.outCubic(Math.min(1, (nt - 300) / 200));
+  const rise = -12 * FXE.outCubic(Math.min(1, nt / 700));
+  numEl.style.transform = 'translate(-100%,-50%) translateY(' + rise.toFixed(2) + 'px) scale(' + s.toFixed(3) + ')';
+  const col = nt < 60 ? '#eafff0' : '#6fe38c';
+  if (numEl._hc !== col) { numEl._hc = col; numEl.style.color = col; }
+}
 // V3 stage 2: the count runs on the shared FX clock (600 ms,
-// easeOutCubic — proposal L11), so it can be SCHEDULED: after an
-// attack the count starts at attack+400 ms, after the impact has
-// landed (cause before effect). A damage drop also carries the red
-// damage number at the LP plate (L10): an accent at the counter —
-// the counter itself stays the primary readout. A scene that is
-// superseded mid-count restarts from the value currently shown.
+// easeOutCubic — proposal L11), so it can be SCHEDULED. A scene
+// that is superseded mid-count restarts from the value currently
+// shown.
+// BU-72 (2026-11-13): the count scene also carries the ± numeral
+// (opts.num = {amount, heal}) on its own schedule (opts.numAtFx):
+// for battle damage the numeral and the SE land on the attack
+// scene's impact (t0+280) and the count follows 60 ms later —
+// sound, numeral and shock on one point, the counter chasing.
+// For effect damage and heals everything fires at the batch's
+// presentation instant. The numeral is anchored to the PLATE
+// (opts.num is passed only when the LP loop decided a numeral is
+// presented: never for an LP cost — that stays the gold chip —
+// and never while a finisher owns the seat).
 function fxLpCount(con, to, startAtFx, opts) {
   const el = fxLpEl(con); if (!el) return;
   // V3 stage 3: while a finisher scene owns this seat's counter
@@ -4470,138 +4531,78 @@ function fxLpCount(con, to, startAtFx, opts) {
   // the start value unconditionally on every frame.
   el.textContent = start;
   const delay = Math.max(0, (startAtFx != null ? startAtFx : fxTimeMs) - fxTimeMs);
+  const num = opts && opts.num ? opts.num : null;
+  const numDelay = Math.max(0, ((opts && opts.numAtFx != null) ? opts.numAtFx : fxTimeMs) - fxTimeMs);
   const isDmg = to < start;
-  // Redesign A / F2: the opponent's LP plate sits at the very top
-  // of the screen, so the upward damage number (anchored above the
-  // plate, translateY(-100%)) was clipped by the viewport. The
-  // opponent variant anchors at the plate's BOTTOM edge and drifts
-  // DOWN into the board (proto p1c: the glyph box sits at the
-  // plate's lower interior, fully on screen).
-  // fx-ui round 2 (F6a): my own plate goes down too — the only
-  // thing above it is the mid-bar log line, and the upward number
-  // landed exactly on that text (measured overlap on the
-  // published build). Both seats now share the downward grammar;
-  // the seats still differ by colour (gold mine / lapis opp).
-  const dmgDown = isDmg;
-  // Redesign F: a NON-battle LP drop (effect damage / LP cost) is
-  // presented by its own chip (fxLpChip), not by this battle damage
-  // number — the LP loop passes opts.noNum for those batches so the
-  // drop is shown exactly once, in the chip grammar. Battle drops
-  // (attack-scheduled, startAtFx set) keep the number and get NO chip.
-  let numEl = null;
-  if (isDmg && !(opts && opts.noNum)) {
-    const layer = fxLayerEl(), r = fxRel(el);
+  const plate = fxLpPlate(con);
+  let numEl = null, tier = 0;
+  if (num && num.amount > 0) {
+    const layer = fxLayerEl(), r = plate ? fxRel(plate) : null;
     if (layer && r) {
+      tier = fxDmgTier(num.amount);
       numEl = document.createElement('div');
-      numEl.className = 'fx fx3-dmgnum' + (dmgDown ? ' fx3-dmgnum--down' : '');
-      numEl.textContent = '−' + (start - to);
-      numEl.style.left = r.cx + 'px'; numEl.style.top = (dmgDown ? (r.y + r.h - 3) : (r.y - 2)) + 'px';
+      numEl.className = 'fx ' + (num.heal ? 'fx3-healnum' : 'fx3-dmgnum') + ' fx3-num--t' + tier;
+      numEl.textContent = (num.heal ? '+' : '−') + num.amount;
+      numEl.style.fontSize = FX_NUM_SIZE[tier] + 'px';
+      // BU-72 anchor (prototype-measured, both seats the same):
+      // the numeral's RIGHT edge at the plate's right edge minus
+      // 100px, its vertical centre on the plate's centre — it
+      // stands in the empty field left of the LP digits, never on
+      // the digits and never on the deck name (capped at 118px).
+      numEl.style.left = (r.x + r.w - 100) + 'px';
+      numEl.style.top = (r.y + r.h / 2) + 'px';
       numEl.style.opacity = '0';
       layer.appendChild(numEl);
     }
   }
+  const numLife = numEl ? (num.heal ? 900 : (tier === 3 ? 720 : 620)) : 0;
   let flashed = false;
   const sc = fxAddScene({
-    kind: 'lpcount', dur: delay + 620,
+    kind: 'lpcount', dur: Math.max(delay + 620, numEl ? numDelay + numLife : 0),
     render(t) {
       const tt = t - delay;
       if (tt < 0) { fxLpShown[con] = start; el.textContent = start; } // F1: unconditional — in the delay window the DOM must hold the start value on EVERY frame, so no path (a stray render, a superseding batch) can flash the final value first
       else {
-        if (isDmg && !flashed) { flashed = true; el.classList.remove('lpflash'); void el.offsetWidth; el.classList.add('lpflash'); }
+        if (!flashed) {
+          flashed = true;
+          const cls = isDmg ? 'lpflash' : 'lpflash-heal';
+          el.classList.remove('lpflash', 'lpflash-heal'); void el.offsetWidth; el.classList.add(cls);
+        }
         const u = Math.min(1, tt / 600);
         const v = Math.round(start + (to - start) * FXE.outCubic(u));
         if (v !== fxLpShown[con]) { fxLpShown[con] = v; el.textContent = v; }
       }
-      if (numEl) { // L10 window: [delay+20, delay+600] of the scene
-        const nu = fxSeg(t, delay + 20, delay + 600);
-        if (nu <= 0 || nu >= 1) { numEl.style.opacity = '0'; }
-        else {
-          const s = 1.45 - 0.45 * FXE.settle(fxSeg(t, delay + 20, delay + 150));
-          const fade = Math.min(fxSeg(t, delay + 20, delay + 60) * 2, 1, (1 - fxSeg(t, delay + 480, delay + 600)) * 1.6 + 0.15);
-          numEl.style.opacity = String(Math.max(0, Math.min(1, fade)));
-          numEl.style.transform = dmgDown
-            ? 'translate(-50%,0) translateY(' + (8 * nu) + 'px) scale(' + s.toFixed(3) + ')'
-            : 'translate(-50%,-100%) translateY(' + (-8 * nu) + 'px) scale(' + s.toFixed(3) + ')';
-        }
-        // V4: the number runs white-hot for its first 70 ms, then
-        // cools to the standard red (3 quantized steps, not a ramp)
-        const hot = t - (delay + 20);
-        const hstep = hot < 35 ? 0 : hot < 70 ? 1 : 2;
-        if (numEl._hs !== hstep) { numEl._hs = hstep; numEl.style.color = hstep === 0 ? '#ffffff' : hstep === 1 ? '#ffc9c2' : '#ff5348'; }
+      if (numEl) {
+        const nt = t - numDelay;
+        if (num.heal) fxRenderHealNum(numEl, nt);
+        else fxRenderDmgNum(numEl, plate, tier, nt);
       }
     },
     onDone() {
       fxLpShown[con] = to; el.textContent = to;
-      el.classList.remove('lpflash');
+      el.classList.remove('lpflash', 'lpflash-heal');
       if (numEl) numEl.remove();
+      if (plate) plate.style.transform = '';
       if (fxLpScenes[con] === sc) fxLpScenes[con] = null;
     },
   });
-  sc.cleanup = () => { if (numEl) numEl.remove(); el.classList.remove('lpflash'); };
+  sc.cleanup = () => { if (numEl) numEl.remove(); if (plate) plate.style.transform = ''; el.classList.remove('lpflash', 'lpflash-heal'); };
   fxLpScenes[con] = sc;
 }
-function fxHealFloat(con, amount) {
-  const el = fxLpEl(con); if (!el) return;
-  const r = fxRel(el); if (!r) return;
-  const layer = fxLayerEl(); if (!layer) return;
-  // Redesign F (audit F2 remainder): the opponent's LP plate sits at
-  // the very top of the screen, so the old float — anchored at the
-  // plate's top edge (r.y) and rising 26px — was clipped. The
-  // opponent variant follows the redesign-A damage-number rule:
-  // anchor at the plate's BOTTOM interior edge and drift DOWN into
-  // the board. fx-ui round 2 (F6a): my own plate floats down too —
-  // above it sits only the log line, and the upward float landed
-  // on that text (same collision as the damage chips).
-  // Redesign F heal grammar: this node IS the heal chip — it also
-  // carries the fx3-lpchip classes (gold for me, lapis-white for the
-  // opponent), so a heal is presented exactly once, as one node.
-  const down = true;
-  const d = document.createElement('div');
-  d.className = 'fx fx-healfloat fx3-lpchip fx3-lpchip--heal fx3-lpchip--' + (con !== HP ? 'opp' : 'mine') +
-    ' fx-healfloat--down fx3-lpchip--down';
-  d.dataset.direction = 'down';
-  d.dataset.lpKind = 'heal';
-  d.textContent = '+' + amount;
-  d.style.left = r.cx + 'px'; d.style.top = (down ? (r.y + r.h - 3) : r.y) + 'px';
-  layer.appendChild(d);
-  // same on-screen clamp as fxLpChip (see there)
-  const appW = $('app').getBoundingClientRect().width, halfW = d.offsetWidth / 2;
-  if (appW > 0 && halfW > 0) d.style.left = Math.max(halfW + 2, Math.min(r.cx, appW - halfW - 2)) + 'px';
-  // Chip lifetime: the float rises (or, downward variant, sinks)
-  // quickly, then HOLDS fully visible before fading — the same
-  // residual-light linger as the pay/damage chips, at float scale.
-  if (down) {
-    fxAnim(d, [
-      { transform: 'translate(-50%,0)', opacity: 0 },
-      { transform: 'translate(-50%,10px)', opacity: 1, offset: 0.14 },
-      { transform: 'translate(-50%,20px)', opacity: 1, offset: 0.78 },
-      { transform: 'translate(-50%,26px)', opacity: 0 },
-    ], { duration: 1800, easing: 'ease-out' });
-  } else {
-    fxAnim(d, [
-      { transform: 'translate(-50%,0)', opacity: 0 },
-      { transform: 'translate(-50%,-10px)', opacity: 1, offset: 0.14 },
-      { transform: 'translate(-50%,-20px)', opacity: 1, offset: 0.78 },
-      { transform: 'translate(-50%,-26px)', opacity: 0 },
-    ], { duration: 1800, easing: 'ease-out' });
-  }
-  fxKill(d, 1840);
-}
-// ---- Redesign F: non-battle LP chips. An LP cost (engine 'pay'
-// event, MSG_PAY_LPCOST) and effect damage (a 'damage' event with
-// no attack scene behind it) each get an engraved chip at the LP
-// plate — gold stamp for a cost (paid by choice), white-hot/red for
-// effect damage — instead of the battle damage number, so "paid"
-// and "was dealt" never read the same. The chip lingers (residual
-// light, ~2.4 s) while fxLpCount counts the counter monotonically
-// underneath it. The chip anchors at the plate's bottom
-// interior and drifts down: for the opponent that is the
-// anti-clip rule above; for my own plate it is fx-ui round 2
-// (F6a) — the upward chip landed on the mid-bar log line and
-// hid its text.
-// `stack` offsets a second chip in the same batch (pay + damage)
-// so the two chips never overlap. Animation is WAAPI
-// transform/opacity only; all glow is static CSS paint.
+// BU-72: fxHealFloat is abolished — the heal numeral now rides
+// the fxLpCount rise scene (fxRenderHealNum), one clock for the
+// count, the numeral and the SE.
+// ---- The LP-cost chip (redesign F, kept by BU-72). An LP cost
+// (engine 'pay' event, MSG_PAY_LPCOST) gets an engraved gold chip
+// at the LP plate — paid by choice — and NEVER the ± numeral
+// grammar, so "paid" and "was dealt" never read the same. The
+// chip lingers (residual light, ~2.4 s) while fxLpCount counts
+// the counter monotonically underneath it. The chip anchors at
+// the plate's bottom interior and drifts down (the redesign-A
+// anti-clip rule: downward never clips, whichever seat).
+// `stack` offsets a second chip in the same batch so chips never
+// overlap. Animation is WAAPI transform/opacity only; all glow
+// is static CSS paint.
 function fxLpChip(con, chip, amount, stack) {
   const el = fxLpEl(con); if (!el) return null;
   const r = fxRel(el); if (!r) return null;
@@ -4652,7 +4653,7 @@ let fxLastAttackScene = null; // {t0, defCon} — the LP loop schedules its coun
 // its start, hit at its t=280 impact) — with beat-booked scenes the
 // batch-arrival time is no longer the presentation time, and sound
 // must land on the picture, not on the engine's bookkeeping.
-let fxPendingBattleSe = null; // {atk, hit, at}
+let fxPendingBattleSe = null; // {atk, hit, hitVol, at}
 function fxAttackKeys(evs, state) {
   // attacker/target zone keys for each attack event in a batch
   // (shared by the scene wiring and the destroy-flash suppression)
@@ -4718,7 +4719,7 @@ function fxAttackSceneV3(o) {
   if (fxPendingBattleSe && performance.now() - fxPendingBattleSe.at < 1500) {
     const p = fxPendingBattleSe; fxPendingBattleSe = null;
     if (p.atk) atkCues.push({ at: 5, fn: () => playSe(p.atk) });
-    if (p.hit) atkCues.push({ at: 280, fn: () => playSe(p.hit) });
+    if (p.hit) atkCues.push({ at: 280, fn: () => playSe(p.hit, p.hitVol) });
   }
   const sc = fxAddScene({
     kind: 'attack', dur: 1000, winLow: [[0, 780]], t0: atkStart,
@@ -6153,7 +6154,7 @@ function fxRoundBEvents(evs, prev, cur, diff) {
   // fx-ui round: if this batch declared an attack but no attack
   // scene took its stashed SEs (geometry failure), fire them now —
   // late truth beats silence, and nothing leaks into the next battle.
-  if (fxPendingBattleSe) { const p = fxPendingBattleSe; fxPendingBattleSe = null; if (p.atk) playSe(p.atk); if (p.hit) playSe(p.hit); }
+  if (fxPendingBattleSe) { const p = fxPendingBattleSe; fxPendingBattleSe = null; if (p.atk) playSe(p.atk); if (p.hit) playSe(p.hit, p.hitVol); }
   // ---- finisher (B7): only the blow that ends the duel gets the
   // full-screen wash (attribute-tinted); the result overlay follows.
   // Keyed on the winner transition + a recent hit (see fxLastHitAt)
@@ -6177,42 +6178,39 @@ function fxRoundBEvents(evs, prev, cur, diff) {
     const link = cur.links[cur.solving - 1];
     if (link) fxChainSolveSceneV3(cur.solving, link.code, !!link.neg, deckKeyOfSeat(link.con), link.con);
   }
-  // ---- LP (B7 -> V3 stage 2 -> Redesign F): the counter counts on
-  // the FX clock; after an attack it starts at attack+400 ms (impact
-  // first, then the number — cause before effect).
-  // Redesign F classification, per seat and batch:
+  // ---- LP (B7 -> V3 stage 2 -> Redesign F -> BU-72): the counter
+  // counts on the FX clock. BU-72 classification, per seat/batch:
   //  - attack-scheduled drop (an attack scene for this seat started
-  //    <400 ms ago — the same predicate that schedules the count):
-  //    BATTLE damage. It keeps the fxLpCount damage number and gets
-  //    NO F chip (no double presentation). The finisher's drain owns
-  //    its seat the same way: no chip while a finisher scene holds
-  //    the counter, and a lethal attack drop is attack-scheduled by
-  //    construction, so the drain is never doubled either.
+  //    <400 ms ago — the predicate that schedules the count):
+  //    BATTLE damage. The numeral and the hit SE land on the
+  //    scene's impact (t0+280) and the count starts 60 ms after
+  //    the impact (t0+340) — sound, numeral and shock on one
+  //    point, the counter chasing (the old attack+400 count start
+  //    is superseded). No chip of any kind (no double presentation).
   //  - any other drop: split by the batch's events — 'pay' events
-  //    (MSG_PAY_LPCOST, engine redesign-F) are LP COSTS (gold chip),
-  //    'damage' events are EFFECT damage (red chip). A drop no event
-  //    explains (e.g. an LPUPDATE sync) falls back to effect damage.
-  //    fxLpCount's battle number is suppressed (noNum) so the drop
-  //    is shown exactly once, as chip(s); the count itself still
-  //    runs monotonically from the pinned start value.
-  //  - a rise: a heal. The heal float node IS the + chip (gold for
-  //    me, lapis-white for the opponent; see fxHealFloat).
+  //    (MSG_PAY_LPCOST) are LP COSTS (the gold chip, unchanged),
+  //    'damage' events are EFFECT damage, which now takes the SAME
+  //    numeral grammar as battle damage, presented at the batch
+  //    instant together with the count. A drop no event explains
+  //    (e.g. an LPUPDATE sync) falls back to effect damage.
+  //  - a rise: a heal — the green numeral rides the count scene
+  //    (the reversed grammar: swell + rise, no shake).
+  //  - while a finisher scene owns the seat, NO numeral and NO
+  //    chip: its drain is the presentation (guard inherited).
   for (let p = 0; p < 2; p++) {
     if (cur.lp[p] === prev.lp[p]) continue;
     if (fxLpShown[p] == null) fxLpShown[p] = prev.lp[p];
     const delta = cur.lp[p] - prev.lp[p];
-    let startAt = null;
-    if (delta < 0 && fxLastAttackScene && fxLastAttackScene.defCon === p && fxTimeMs - fxLastAttackScene.t0 < 400) startAt = fxLastAttackScene.t0 + 400;
-    const attackScheduled = startAt != null;
     const finisherOwns = !!(fxLpScenes[p] && !fxLpScenes[p].dead && fxLpScenes[p].kind === 'finisher');
-    const chipLoss = delta < 0 && !attackScheduled && !finisherOwns;
-    fxLpCount(p, cur.lp[p], startAt, chipLoss ? { noNum: true } : null);
-    fxRecord('lpchange', { player: p, from: prev.lp[p], to: cur.lp[p] });
-    if (delta > 0) {
-      fxHealFloat(p, delta);
-      fxRecord('healfloat', { player: p, amount: delta });
-      fxRecord('lpchip', { player: p, chip: 'heal', amount: delta, signed: delta, variant: p === HP ? 'mine' : 'opp', down: true });
-    } else if (chipLoss) {
+    let countStartAt = null, numAtFx = null, num = null;
+    if (delta < 0 && fxLastAttackScene && fxLastAttackScene.defCon === p && fxTimeMs - fxLastAttackScene.t0 < 400) {
+      countStartAt = fxLastAttackScene.t0 + 340;
+      numAtFx = fxLastAttackScene.t0 + 280;
+      if (!finisherOwns) {
+        num = { amount: -delta, heal: false };
+        fxRecord('dmgnum', { player: p, amount: -delta, tier: fxDmgTier(-delta), battle: true });
+      }
+    } else if (delta < 0 && !finisherOwns) {
       const loss = -delta;
       let payAmt = 0, dmgAmt = 0;
       for (const ev of evs) {
@@ -6223,17 +6221,22 @@ function fxRoundBEvents(evs, prev, cur, diff) {
       // Reconcile the event split with the actual net loss: an
       // unexplained remainder reads as effect damage; if the events
       // overshoot the net (a heal offset the same batch), trim
-      // damage first, then pay, so the chips always sum to the loss.
+      // damage first, then pay, so the presentations always sum
+      // to the loss.
       if (payAmt + dmgAmt < loss) dmgAmt += loss - (payAmt + dmgAmt);
       else if (payAmt + dmgAmt > loss) {
         let excess = payAmt + dmgAmt - loss;
         const cutD = Math.min(dmgAmt, excess); dmgAmt -= cutD; excess -= cutD;
         payAmt -= excess;
       }
-      let stack = 0;
-      if (payAmt > 0) { fxLpChip(p, 'pay', payAmt, stack++); fxRecord('lpchip', { player: p, chip: 'pay', amount: payAmt, signed: -payAmt, variant: 'pay', down: true }); }
-      if (dmgAmt > 0) { fxLpChip(p, 'damage', dmgAmt, stack++); fxRecord('lpchip', { player: p, chip: 'damage', amount: dmgAmt, signed: -dmgAmt, variant: 'damage', down: true }); }
+      if (payAmt > 0) { fxLpChip(p, 'pay', payAmt, 0); fxRecord('lpchip', { player: p, chip: 'pay', amount: payAmt, signed: -payAmt, variant: 'pay', down: true }); }
+      if (dmgAmt > 0) { num = { amount: dmgAmt, heal: false }; fxRecord('dmgnum', { player: p, amount: dmgAmt, tier: fxDmgTier(dmgAmt), battle: false }); }
+    } else if (delta > 0 && !finisherOwns) {
+      num = { amount: delta, heal: true };
+      fxRecord('healnum', { player: p, amount: delta, tier: fxDmgTier(delta) });
     }
+    fxLpCount(p, cur.lp[p], countStartAt, num ? { num, numAtFx } : null);
+    fxRecord('lpchange', { player: p, from: prev.lp[p], to: cur.lp[p] });
   }
 }
 function fxResetRoundB() {
@@ -6401,7 +6404,7 @@ function pileHTML(p, con) {
 }
 let duelState = null;
 let renderLogTxt = null; // layout-fix J2: last band line rendered (the 《》 span wrap is rebuilt only on change)
-let lastBandH = 0;       // layout-fix3 K2: last #midbar height — a change means the grown/shrunk band must be re-absorbed by layoutFit
+let lastBandH = 0;       // layout-fix3 K2: last #header height (BU-73: the header inherited the band's role) — a change means the grown/shrunk header must be re-absorbed by layoutFit
 let lastLogW = 0;        // layout-fix4 L1: the logline's width at the last fit — the phase button's label can narrow it WITHOUT the text changing (a new prompt), and the old fit then overflows the box; a width change re-fits even when the text is unchanged
 let histFromResult = false; // layout-fix J5: the history sheet was opened from the result overlay — closing it restores the result
 // B-10: the engine mirror caps its log at 60 lines; the client
@@ -6558,15 +6561,21 @@ function render(state) {
   // must not stomp it — the count lands exactly on the state value
   if (!fxLpBusy(1 - HP)) $('oppLp').textContent = op.lp;
   if (!fxLpBusy(HP)) $('myLp').textContent = me.lp;
-  // status bars (layout redesign): each side's deck name rides
-  // its own bar; the opponent's hand count is the top bar's chip.
+  // LP plates (BU-73): each side's deck name rides its own plate
+  // in the central band; the opponent's hand count is the header
+  // row-2 chip. The turn player's plate carries the gold frame
+  // (the .turn-on inset ring + gold seat label, CSS in index.html).
   $('oppDeckName').textContent = deckDisplayName(opDeckKey);
   $('myDeckName').textContent = deckDisplayName(myDeckKey);
   $('oppHandN').textContent = op.hand.length;
-  // whose-turn rides compactly (ターンN・自分／相手): the full
-  // のターン phrasing squeezed the phase name — the band's
-  // primary readout — into an ellipsis in live play. The phase
-  // button and the log line carry the turn's owner in words.
+  { const opP = $('oppPlate'), myP = $('myPlate');
+    if (opP) opP.classList.toggle('turn-on', state.turnPlayer !== HP);
+    if (myP) myP.classList.toggle('turn-on', state.turnPlayer === HP); }
+  // whose-turn rides compactly (ターンN・自分／相手) at the head
+  // of header row 2: the full のターン phrasing squeezed the phase
+  // name — the header's primary readout — into an ellipsis in
+  // live play. The phase button and the log line carry the turn's
+  // owner in words.
   $('turninfo').textContent = 'ターン' + Math.max(1, state.turnCount) + '・' + (state.turnPlayer === HP ? '自分' : '相手');
   // redesign D (p4a): opponent-turn air — render() only toggles
   // the class; the lapis rim preset inside #oppField breathes by
@@ -6574,8 +6583,9 @@ function render(state) {
   // inside #myField fades in. No layout is touched either way.
   { const appEl = $('app'); if (appEl) appEl.classList.toggle('opp-turn', state.turnPlayer !== HP && state.winner == null); }
   // B-08: the phase readout shows the phase name only — whose
-  // turn it is already lives in the topbar, and the long form
-  // wrapped into a 5-line collapse whenever a button appeared.
+  // turn it is already lives at the head of header row 2, and the
+  // long form wrapped into a 5-line collapse whenever a button
+  // appeared.
   $('phaseinfo').textContent = state.phaseName ? phaseJa(state.phaseName) : '—';
   zoneRow($('oppSzone'), [0,1,2,3,4,5].map(i => op.szone[i]), 1 - HP, E.LOC.SZONE);
   // Genesis format: no Extra Monster Zones — render main monster zones 0-4
@@ -6607,7 +6617,7 @@ function render(state) {
       (c.code != null && handCounts[c.code] > 1 ? '<div class="cnt">×' + handCounts[c.code] + '</div>' : '') +
       '<div class="himg"' + (c.code != null ? artInline(c.code, false, deckKeyOfSeat(HP)) : '') + '>' + (c.code != null ? marksChipHTML(c.code) : '') + hplate + '</div>' + band + '</div>';
   }).join('');
-  // opponent hand = backs in topbar only (count); chain bar
+  // opponent hand = backs in the header chip only (count); chain bar
   const cb = $('chainbar');
   // redesign B (p2b): prune the FX layer's landed flags against
   // THIS chain first (empty chain clears them; a different card at
@@ -6645,41 +6655,41 @@ function render(state) {
     // waiting-for-the-opponent is not waiting-for-the-engine.
     pb.textContent = currentPrompt ? '選択中…' : (state.winner != null ? '—' : (state.turnPlayer !== HP ? '相手のターン' : '処理中…'));
   }
-  $('midbar').classList.toggle('busy', !currentPrompt && !!duelState && state.winner == null);
-  // The band's event line — AFTER the phase button is set, so the
-  // width measured here is the width the line actually gets this
-  // render (layout-fix4 L1: the hook used to run before the button
-  // was labelled, so a label change narrowed the line a render
-  // late and the old fit overflowed the box). layout-fix J2
-  // wrapped 《…》 names in nowrap spans — but the engine composed
-  // band lines with BARE names, so the guard never matched and
-  // names still split mid-word (シャド／ウ), and the plain
-  // remainder split inside words too (特殊／召喚). layout-fix2
-  // J2': the engine now composes band lines with 《》 around
-  // names, and the line is rendered as unbreakable units
+  $('header').classList.toggle('busy', !currentPrompt && !!duelState && state.winner == null);
+  // The header's event line — AFTER the phase button is set, so
+  // the width measured here is the width the line actually gets
+  // this render (layout-fix4 L1: the hook used to run before the
+  // button was labelled, so a label change narrowed the line a
+  // render late and the old fit overflowed the box). layout-fix
+  // J2 wrapped 《…》 names in nowrap spans — but the engine
+  // composed band lines with BARE names, so the guard never
+  // matched and names still split mid-word (シャド／ウ), and the
+  // plain remainder split inside words too (特殊／召喚).
+  // layout-fix2 J2': the engine now composes band lines with 《》
+  // around names, and the line is rendered as unbreakable units
   // (nbHTML): breaks happen only between units, an over-wide
   // unit shrinks its own type.
-  // layout-fix3 K2: the two-line clamp is GONE (it cut tails —
-  // see the CSS note); after nbFit, fitLogline shrinks the whole
-  // line until it fits two lines, and any residual third line
-  // grows the band, whose new height layoutFit then absorbs
-  // (the refit hook under the draw below).
+  // layout-fix3 K2 -> BU-73: the two-line clamp is GONE (it cut
+  // tails — see the CSS note) and the whole-line shrink is gone
+  // too: the line stands at full type, two lines are the
+  // standard form, and any residual third line grows the header,
+  // whose new height layoutFit then absorbs (the refit hook
+  // under the draw below).
   { const ll = $('logline');
     const txt = state.log.length ? state.log[state.log.length - 1] : '';
     const lw = ll.clientWidth;
     // layout-fix4 L1: re-fit when the TEXT changed OR the line's
     // WIDTH changed (a label change narrows the line without a
     // text change — the old fit then overflows the box by the
-    // narrowed amount). ensureBandFits enforces the band-height
+    // narrowed amount). ensureBandFits enforces the header-height
     // invariant after the fit (see its note).
     if (txt !== renderLogTxt || (lw && lw !== lastLogW)) {
       renderLogTxt = txt;
       ll.innerHTML = nbHTML(txt);
       nbFit(ll);
-      fitLogline(ll);
       ensureBandFits();
       if (lw) lastLogW = lw;
-      const mb = $('midbar');
+      const mb = $('header');
       const bh = mb ? mb.offsetHeight : 0;
       if (bh && lastBandH && Math.abs(bh - lastBandH) >= 2) { try { layoutFit(false); } catch (e) {} }
       if (bh) lastBandH = bh;
@@ -6691,7 +6701,7 @@ function render(state) {
   updatePreviewFromState(state);
 }
 function phaseJa(n) {
-  // layout redesign: the mid band names the main phases in full
+  // layout redesign: the header names the main phases in full
   // (メインフェイズ 1/2) — the readout is a display, so it takes
   // the room the mock's hierarchy gives it. phaseJaContext keeps
   // its own compact names for confirmation context lines.
@@ -6716,7 +6726,7 @@ function phaseJaContext(n) {
   // destination labels, inviting a misread. The one sub-phase
   // distinction that changes what a confirmation means — a
   // damage-step timing — is named explicitly instead. The
-  // phase READOUT in the mid bar keeps the fine phaseJa names:
+  // phase READOUT in the header keeps the fine phaseJa names:
   // it is a display, not a context line, and the damage-step
   // readout is real information there (B-08 compression stands).
   if (n === 'BATTLE_START' || n === 'BATTLE_STEP' || n === 'BATTLE') return 'バトルフェイズ';
@@ -7850,9 +7860,12 @@ function uiPlace(prompt, state) {
   }
   placeCtx = { avail: new Set(zones.map(z => z.con + ':' + z.loc + ':' + z.seq)), chosen: new Map(), count: prompt.count, retry: !!prompt.retryCount, title };
   const h = $('placehint');
-  // C-26: directly under the midbar, over the top edge of the
+  // C-26: directly under the band, over the top edge of the
   // player's own field — no longer hiding the opponent's piles.
-  const mb = $('midbar'), ap = $('app');
+  // BU-73: the band in that seat is the LP band now (it sits where
+  // the mid bar sat, between the two fields), so the hint keeps
+  // its exact on-screen seat, anchored to the LP band's bottom.
+  const mb = $('lpband'), ap = $('app');
   if (mb && ap && ap.getBoundingClientRect) {
     const mbB = mb.getBoundingClientRect().bottom, apT = ap.getBoundingClientRect().top;
     if (mbB) h.style.top = Math.round(mbB - apT) + 'px';
@@ -8740,23 +8753,28 @@ $('menubtn').addEventListener('click', () => {
 // in depth for environments Chromium cannot model.
 // LAYOUT REDESIGN (2026-11-12, user-approved mock + principles):
 // the permanent chrome shrank to what must always be readable —
-// two status bars (LP largest), one slim mid band (turn/phase/
-// latest event + the phase button at its press floor), one-line
-// pile chips — and every px that freed went to the board.
+// one header (phase / latest event / history / the phase button
+// at its press floor), one slim LP band between the fields
+// (both plates, stacked), one-line pile chips — and every px
+// that freed went to the board.
 // Situation information is NOT budgeted here at all: it is
 // presented large and floating at the moment it happens (phase
 // banner, cut-ins, notices), paced by the beat book. Budgets
-// mirror index.html exactly, in two tiers by budget height:
-//   full    (vh > 700):  topbar 44 + opp field (pad 4 + piles 28)
-//     + midband 62 + my field (pad 4 + piles 28) + preview 38
-//     + handbar extras 10 + mybar 44 + zone-row margins 8 = 270
-//     (fixedNoPv 232)
-//   compact (vh <= 700): topbar 38 + opp field (pad 4 + piles 24)
-//     + midband 62 + my field (pad 4 + piles 24) + preview 28
-//     + handbar extras 8 + mybar 38 + zone-row margins 8 = 238
-//     (fixedNoPv 210)
-// The mid band is 62px in both modes: the latest-event line
-// takes two lines there (a long line ellipsized at one).
+// mirror index.html exactly, in two tiers by budget height
+// (BU-73, 2026-11-13 — the header + LP band replaced the two
+// status bars and the mid band):
+//   full    (vh > 700):  header 81 + opp field (pad 4 + piles 28)
+//     + LP band 61 + my field (pad 4 + piles 28) + preview 38
+//     + handbar extras 10 + zone-row margins 8 = 262
+//     (fixedNoPv 224)
+//   compact (vh <= 700): header 81 + opp field (pad 4 + piles 24)
+//     + LP band 53 + my field (pad 4 + piles 24) + preview 28
+//     + handbar extras 8 + zone-row margins 8 = 234
+//     (fixedNoPv 206)
+// The header is 81px in both modes: row 1 is the buttons' 46px
+// press floor (not split by tier) and row 2 is the latest-event
+// line at two lines, in full. The LP band is 53/61: two 1-line
+// plates (24 compact / 28 full) around a 1px divider.
 // Slot: width W, image height round(W×1.22), slotH = imgH + 24
 // (the 20px plate + the tile's own offsets; a monster's art box
 // is imgH + 2 — 2px TALLER than the two-line-strip era).
@@ -8767,8 +8785,8 @@ $('menubtn').addEventListener('click', () => {
 // the old formula verbatim as that floor.
 const LAYOUT_SAFETY = 8; // px kept free below the stack, always (round 3: 6 → 8)
 const LAYOUT_MODES = {
-  full: { fixedNoPv: 232, pvBase: 38 },
-  compact: { fixedNoPv: 210, pvBase: 28 },
+  full: { fixedNoPv: 224, pvBase: 38 },
+  compact: { fixedNoPv: 206, pvBase: 28 },
 };
 let layoutInfo = null;
 function layoutParts(W) {
@@ -8902,7 +8920,7 @@ function measureStackBottom() {
   const app = $('app');
   const base = app && app.offsetTop ? app.offsetTop : 0;
   let bottom = 0;
-  for (const id of ['topbar', 'oppField', 'midbar', 'myField', 'preview', 'handbar', 'mybar']) {
+  for (const id of ['header', 'oppField', 'lpband', 'myField', 'preview', 'handbar']) {
     const el = $(id);
     if (!el || !el.offsetHeight) continue; // display:none (preview off) reads 0
     const b = base + el.offsetTop + el.offsetHeight;
@@ -8920,7 +8938,7 @@ function measureStackBottom() {
 // unmeasurable rather than claim it.
 function measureStackRectBottom() {
   let bottom = 0, seen = false;
-  for (const id of ['topbar', 'oppField', 'midbar', 'myField', 'preview', 'handbar', 'mybar']) {
+  for (const id of ['header', 'oppField', 'lpband', 'myField', 'preview', 'handbar']) {
     const el = $(id);
     if (!el || !el.getBoundingClientRect) continue;
     const r = el.getBoundingClientRect();
