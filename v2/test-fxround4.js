@@ -103,7 +103,11 @@ async function boot() {
       .then(() => { window.__fx4done = true; });
     return true;
   })()`);
-  const waitDock = async () => { for (let i = 0; i < 60 && doc.getElementById('dock').className !== 'on'; i++) await tick(50); return doc.getElementById('dock').className === 'on'; };
+  const waitDock = async () => { // BU-74: the tray is the first stage — accept it to reach the dock
+    for (let i = 0; i < 60 && !doc.getElementById('chainui').classList.contains('on') && doc.getElementById('dock').className !== 'on'; i++) await tick(50);
+    const yes = doc.querySelector('#chaintray .ct-yes'); if (yes) click(yes);
+    for (let i = 0; i < 60 && doc.getElementById('dock').className !== 'on'; i++) await tick(50);
+    return doc.getElementById('dock').className === 'on'; };
   const answerPass = async () => {
     click(doc.querySelector('#dock #chain-pass'));
     for (let i = 0; i < 40 && !window.eval('window.__fx4done'); i++) await tick(50);

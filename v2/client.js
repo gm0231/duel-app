@@ -7027,8 +7027,65 @@ function peekBoardTap(x, y) {
   return false;
 }
 function dockClose() { $('dock').className = ''; $('dock').innerHTML = ''; const ap = document.getElementById('app'); if (ap) ap.classList.remove('dockpeek'); }
+// BU-74 (2026-11-13): the chain question's first stage is a badge
+// tray at the bottom right (design: fx-design-2026-11-13-
+// chainbadge). uiChain calls showChainTray INSTEAD of drawing the
+// dock; the gate decisions (uiAnswer's choke point, uiChain's
+// flash / silent-pass early returns) are untouched, so the tray
+// appears exactly where the dock used to be the first thing
+// shown. チェーンする hands over to the dock's own draw();
+// しない answers with the pass button's exact bytes through the
+// same finishPrompt path.
+let chainTrayCtx = null; // { draw } while a tray is up
+function showChainTray(prompt, cause, liveIdx, openDock) {
+  const host = $('chainui'), tray = $('chaintray');
+  if (!host || !tray) { openDock(); return; } // no tray DOM: the dock owns the question directly
+  const shown = liveIdx.slice(0, 4).map(i => prompt.entries[i]);
+  const more = liveIdx.length - shown.length;
+  const wcls = shown.length >= 4 ? ' w32' : shown.length === 3 ? ' w40' : '';
+  tray.innerHTML =
+    '<div class="ct-cause">' + (cause && cause.code ? '<span class="ct-cause-art"' + artInline(cause.code, false, deckKeyOfSeat(cause.con)) + '></span>' : '') +
+      '<span class="ct-cause-txt">' + (cause ? cause.tray : 'チェーンできます') + (prompt.forced ? '｜発動必須' : '') + '</span></div>' +
+    '<div class="ct-cards' + wcls + '">' + shown.map((e, k) =>
+      '<span class="ct-card ph' + k + '"><span class="ct-art"' + artInline(e.code, false, deckKeyOfSeat(e.con)) + '></span><span class="ct-name">' + cardName(e.code) + '</span></span>').join('') +
+      (more > 0 ? '<span class="ct-more">他' + more + '枚</span>' : '') + '</div>' +
+    '<div class="ct-badges"><button class="ct-yes">チェーンする</button>' + (prompt.forced ? '' : '<button class="ct-no">しない</button>') + '</div>';
+  host.classList.remove('peek');
+  const ap = document.getElementById('app'); if (ap) ap.classList.remove('traypeek');
+  const pk = $('ctpeek'); if (pk) pk.textContent = '盤面を見る';
+  host.classList.add('on');
+  chainTrayCtx = { draw: openDock };
+  fxRecord('chaintray', { action: 'show', count: liveIdx.length, forced: !!prompt.forced });
+  const yes = tray.querySelector('.ct-yes');
+  if (yes) yes.addEventListener('click', () => chainTrayYes());
+  const no = tray.querySelector('.ct-no');
+  if (no) no.addEventListener('click', () => chainTrayNo());
+  const ca = tray.querySelector('.ct-cause');
+  if (ca && cause && cause.code) ca.addEventListener('click', () => { playClick(); openInfoPop(cause.code, cause); });
+}
+function chainTrayYes() {
+  if (!chainTrayCtx) return;
+  const openDock = chainTrayCtx.draw;
+  playClick();
+  fxRecord('chaintray', { action: 'chain' });
+  chainTrayClose();
+  openDock();
+}
+function chainTrayNo() {
+  playClick();
+  fxRecord('chaintray', { action: 'pass' });
+  finishPrompt(E.i32resp(-1)); // exactly the dock パス button's answer, same path
+}
+function chainTrayClose() {
+  chainTrayCtx = null;
+  const host = $('chainui');
+  if (host) host.classList.remove('on', 'peek');
+  const ap = document.getElementById('app'); if (ap) ap.classList.remove('traypeek');
+  const tray = $('chaintray'); if (tray) tray.innerHTML = '';
+  const pk = $('ctpeek'); if (pk) pk.textContent = '盤面を見る';
+}
 function clearInteraction() {
-  sheetClose(); dockClose();
+  sheetClose(); dockClose(); chainTrayClose();
   cmdPromptOpen = false;
   actionMap = new Map(); phaseAction = null; menuActions = [];
   if (placeCtx) lastPlaceCard = null; // a finished placement consumes the marker
@@ -7644,40 +7701,54 @@ function uiChain(prompt, state) {
   }
   const tag = confirmTag(state); // this prompt's sequence label (see timing note)
   let firstDraw = true;
-  const draw = () => {
-    const top = state.chain[state.chain.length - 1];
-    // layout-fix J4: the trigger is ALWAYS named when one exists.
-    // Priority: (1) prompt.context — the link actually being
-    // answered (while a chain resolves that is the SOLVING link,
-    // which is not necessarily the chain's top; the old code read
-    // only the top); (2) the chain's top link while building;
-    // (3) prompt.trigger — the summon / attack declaration that
-    // opened an empty-chain window (the driver attaches the
-    // mirror's lastTrigger, same turn+phase only). A prompt with
-    // none of the three is a pure timing window (a phase change):
-    // there is genuinely no card to name, and the line says so by
-    // keeping the plain 効果への応答.
-    const ctxLink = prompt.context && prompt.context.code ? prompt.context : null;
-    const trig = !ctxLink && !top ? prompt.trigger : null;
-    // layout-fix2 J4': the trigger vocabulary grew — a window can
-    // now name the resolution it follows (kind 'solved') or the
-    // phase it opened in (kind 'phase'), not only a summon or an
-    // attack. With the driver's turn-scoped attach, a same-turn
-    // window always has one of the four; the bare 効果への応答
-    // remains only for a window with no antecedent at all.
-    const cause = ctxLink
-      ? { code: ctxLink.code, con: ctxLink.con, label: 'チェーン' + (ctxLink.link || '') + '：《' + cardName(ctxLink.code) + '》' + (ctxLink.solving ? 'の効果（解決中）への応答' : 'への応答') }
-      : top
-        ? { code: top.code, con: top.con, label: 'チェーン' + state.chain.length + '：《' + cardName(top.code) + '》への応答' }
-        : trig
-          ? { code: trig.code || null, con: trig.con, label: trig.kind === 'attack'
-              ? '《' + (trig.code ? cardName(trig.code) : 'モンスター') + '》の攻撃宣言への応答'
+  // BU-74: the cause is computed once, here — the badge tray and
+  // the dock describe the same antecedent, so each cause carries
+  // its tray wording (cause.tray) beside the dock's context label
+  // (cause.label). The computation itself is unchanged.
+  const top = state.chain[state.chain.length - 1];
+  // layout-fix J4: the trigger is ALWAYS named when one exists.
+  // Priority: (1) prompt.context — the link actually being
+  // answered (while a chain resolves that is the SOLVING link,
+  // which is not necessarily the chain's top; the old code read
+  // only the top); (2) the chain's top link while building;
+  // (3) prompt.trigger — the summon / attack declaration that
+  // opened an empty-chain window (the driver attaches the
+  // mirror's lastTrigger, same turn+phase only). A prompt with
+  // none of the three is a pure timing window (a phase change):
+  // there is genuinely no card to name, and the line says so by
+  // keeping the plain 効果への応答.
+  const ctxLink = prompt.context && prompt.context.code ? prompt.context : null;
+  const trig = !ctxLink && !top ? prompt.trigger : null;
+  // layout-fix2 J4': the trigger vocabulary grew — a window can
+  // now name the resolution it follows (kind 'solved') or the
+  // phase it opened in (kind 'phase'), not only a summon or an
+  // attack. With the driver's turn-scoped attach, a same-turn
+  // window always has one of the four; the bare 効果への応答
+  // remains only for a window with no antecedent at all.
+  const seatOf = (c) => (c.con === HP ? '自分の' : '相手の');
+  const cause = ctxLink
+    ? { code: ctxLink.code, con: ctxLink.con, label: 'チェーン' + (ctxLink.link || '') + '：《' + cardName(ctxLink.code) + '》' + (ctxLink.solving ? 'の効果（解決中）への応答' : 'への応答'),
+        tray: seatOf(ctxLink) + '<b>《' + cardName(ctxLink.code) + '》</b>' + (ctxLink.solving ? 'の効果（解決中）への応答です' : 'の発動にチェーンできます') }
+    : top
+      ? { code: top.code, con: top.con, label: 'チェーン' + state.chain.length + '：《' + cardName(top.code) + '》への応答',
+          tray: seatOf(top) + '<b>《' + cardName(top.code) + '》</b>の発動にチェーンできます' }
+      : trig
+        ? { code: trig.code || null, con: trig.con, label: trig.kind === 'attack'
+            ? '《' + (trig.code ? cardName(trig.code) : 'モンスター') + '》の攻撃宣言への応答'
+            : trig.kind === 'solved'
+              ? '《' + (trig.code ? cardName(trig.code) : 'モンスター') + '》の効果解決の後'
+              : trig.kind === 'phase'
+                ? (trig.phase ? phaseJaContext(trig.phase) + '開始時' : 'ターン開始時')
+                : '《' + (trig.code ? cardName(trig.code) : 'モンスター') + '》の' + (trig.verb === 62 ? '特殊召喚' : trig.verb === 64 ? '反転召喚' : '召喚') + 'への応答',
+            tray: trig.kind === 'attack'
+              ? '<b>《' + (trig.code ? cardName(trig.code) : 'モンスター') + '》</b>の攻撃宣言にチェーンできます'
               : trig.kind === 'solved'
-                ? '《' + (trig.code ? cardName(trig.code) : 'モンスター') + '》の効果解決の後'
+                ? '<b>《' + (trig.code ? cardName(trig.code) : 'モンスター') + '》</b>の効果解決の後にチェーンできます'
                 : trig.kind === 'phase'
-                  ? (trig.phase ? phaseJaContext(trig.phase) + '開始時' : 'ターン開始時')
-                  : '《' + (trig.code ? cardName(trig.code) : 'モンスター') + '》の' + (trig.verb === 62 ? '特殊召喚' : trig.verb === 64 ? '反転召喚' : '召喚') + 'への応答' }
-          : null;
+                  ? (trig.phase ? phaseJaContext(trig.phase) + '開始時' : 'ターン開始時') + 'にチェーンできます'
+                  : '<b>《' + (trig.code ? cardName(trig.code) : 'モンスター') + '》</b>の' + (trig.verb === 62 ? '特殊召喚' : trig.verb === 64 ? '反転召喚' : '召喚') + 'にチェーンできます' }
+        : null;
+  const draw = () => {
     const peeked = document.getElementById('app').classList.contains('dockpeek');
     $('dock').innerHTML =
       // layout redesign: the header carries the 盤面を見る
@@ -7822,7 +7893,18 @@ function uiChain(prompt, state) {
       pk.textContent = on ? 'ドックに戻る' : '盤面を見る';
     });
   };
-  draw();
+  // BU-74: the first stage is the badge tray, not the dock. The
+  // candidates that float on it are exactly the ones the dock
+  // would give a 発動する button: a duel-dismissed candidate is
+  // not rendered in the dock at all, and a chain-dismissed one
+  // renders there without the button.
+  const liveIdx = prompt.entries.map((e, i) => i).filter(i => {
+    const e = prompt.entries[i];
+    if (!noDismiss && dismissedDuel.has(duelKey(e))) return false;
+    if (dismissedChains.has(chainKey(e))) return false;
+    return true;
+  });
+  showChainTray(prompt, cause, liveIdx, draw);
 }
 // ---- place / disfield: tap the actual zones ----
 function availZones(prompt) {
@@ -8493,6 +8575,15 @@ document.addEventListener('click', (ev) => {
   // the info routing does not claim are swallowed, not passed
   // through to the controls under the dock.
   if (document.getElementById('app').classList.contains('dockpeek') && !ev.target.closest('#dock')) {
+    peekBoardTap(ev.clientX, ev.clientY);
+    return;
+  }
+  // BU-74: the same rule while the chain TRAY is peeked away —
+  // board taps are info taps, the pending question is never
+  // answered from the board, and the peek chip itself (inside
+  // #chainui) is the only way back.
+  const chainuiEl = document.getElementById('chainui');
+  if (chainuiEl && chainuiEl.classList.contains('on') && chainuiEl.classList.contains('peek') && !ev.target.closest('#chainui')) {
     peekBoardTap(ev.clientX, ev.clientY);
     return;
   }
@@ -9353,6 +9444,18 @@ function wireSeg(id, apply) {
     $('peekbtn').textContent = on ? '選択に戻る' : '盤面を見る';
     placeSheetBtns(); // layout-fix J1: peek moves the buttons to the top (CSS); un-peek restores the sheet-top offset
     syncPeekBar(); // BU-22: the answer band follows the peek state
+  });
+  // BU-74: the chain tray's peek chip — the tray retreats, the
+  // chip stays in its seat and reads 選択に戻る (the approved
+  // mock's behaviour); the state rides on #chainui + #app.traypeek
+  // (the CSS bar muting mirrors the dock peek's).
+  $('ctpeek').addEventListener('click', () => {
+    playClick();
+    const host = $('chainui'); if (!host) return;
+    const on = host.classList.toggle('peek');
+    document.getElementById('app').classList.toggle('traypeek', on);
+    $('ctpeek').textContent = on ? '選択に戻る' : '盤面を見る';
+    fxRecord('chaintray', { action: 'peek', on });
   });
   $('startbtn').addEventListener('click', async () => {
     playClick();
