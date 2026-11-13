@@ -148,6 +148,7 @@ const CHAIN_PHASE = { prompt: { name: 'SELECT_CHAIN', player: 0, forced: false,
       "LF2-C5: step B — the way out (deselect all) is stated in the guidance");
 
     window.__chain.open(JSON.parse(JSON.stringify(CHAIN_SOLVED.prompt)), JSON.parse(JSON.stringify(CHAIN_SOLVED.state)));
+    doc.querySelector('#chaintray .ct-yes').click(); // BU-74: the dock is the tray's second stage
     const ctx1 = doc.querySelector('#dock .ctx');
     ok(!!ctx1 && ctx1.textContent.includes('《迷宮に潜むシャドウ・グール》の効果解決の後'),
       "LF2-C6: a post-resolution window names what just resolved (J4' solved label, real prompt)");
@@ -155,6 +156,7 @@ const CHAIN_PHASE = { prompt: { name: 'SELECT_CHAIN', player: 0, forced: false,
     ok(nameSpans.length === 1 && nameSpans[0].textContent === '《迷宮に潜むシャドウ・グール》',
       "LF2-C7: the long name is ONE atomic .nb unit in the dock ctx (it can never split mid-name)");
     window.__chain.open(JSON.parse(JSON.stringify(CHAIN_PHASE.prompt)), JSON.parse(JSON.stringify(CHAIN_PHASE.state)));
+    doc.querySelector('#chaintray .ct-yes').click(); // BU-74: the dock is the tray's second stage
     const ctx2 = doc.querySelector('#dock .ctx');
     ok(!!ctx2 && ctx2.textContent.includes('エンド開始時'),
       "LF2-C8: a phase-start window is named as such (J4' phase label, real prompt)");

@@ -160,8 +160,12 @@ async function main() {
   const KELDO = 63542003, MUDORA = 99937011;
   ev('fxSettings.resp = "auto"');
   ev('(() => { const s = duelState; s.chain = [{ code: ' + KELDO + ', con: 1, loc: 4, seq: 0, desc: 0 }]; window.__lrdone = false; uiAnswer({ name: "SELECT_CHAIN", forced: false, entries: [{ code: ' + MUDORA + ', con: 0, loc: 8, seq: 0, desc: ' + (MUDORA * 1048576) + ' }] }, s).then(() => { window.__lrdone = true; }); return true; })()');
+  for (let i = 0; i < 60 && !doc.getElementById('chainui').classList.contains('on'); i++) await tick(50);
+  ok(doc.getElementById('chainui').classList.contains('on') && doc.getElementById('dock').className !== 'on',
+    'LR-5a: BU-74 — the chain question arrives as the badge tray first (the dock is not open yet)');
+  doc.querySelector('#chaintray .ct-yes').click();
   for (let i = 0; i < 60 && doc.getElementById('dock').className !== 'on'; i++) await tick(50);
-  ok(doc.getElementById('dock').className === 'on', 'LR-5a: the chain dock dispatched');
+  ok(doc.getElementById('dock').className === 'on', 'LR-5a2: チェーンする opens the chain dock');
   ok(!!doc.querySelector('#dock .cause .causename'), 'LR-5b: the cause card stands as its own row in the dock');
   const dis = doc.querySelector('#dock button.disbtn[data-dismiss]');
   const duelDis = doc.querySelector('#dock button.disbtn[data-dueldismiss]');

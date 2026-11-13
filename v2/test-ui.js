@@ -63,9 +63,15 @@ async function playDuel(window, opts) {
     }
     const sheetOn = $('sheetwrap').className === 'on';
     const dockOn = $('dock').className === 'on';
+    const trayOn = $('chainui') && $('chainui').classList.contains('on');
     let acted = false;
     const click = (el) => { if (el) { el.click(); acted = true; } };
-    if (sheetOn) {
+    if (trayOn) {
+      // BU-74: a chain question arrives as the badge tray first —
+      // take チェーンする so the dock stage (and its own branch
+      // below, incl. the F3 tally) runs exactly as before
+      click(q('.ct-yes', $('chaintray')));
+    } else if (sheetOn) {
       const sheet = $('sheet');
       const ttl = sheet.querySelector('.ttl');
       if (ttl && ttl.textContent.includes('カードの宣言')) {

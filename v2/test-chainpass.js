@@ -12,6 +12,11 @@
      - every candidate duel-dismissed -> decision 'flash': uiChain's
        visible auto-pass (flash + short delay) owns it;
      - >= 1 live candidate, and ALL forced prompts -> shown.
+   BU-74 note: "shown" is now a two-stage presentation — the
+   badge tray is the first stage and the dock opens from it.
+   The DECISIONS are unchanged; Part B asserts the tray (not
+   the dock) is what a show decision raises first, and that
+   accepting the tray opens the dock with its candidates.
    Part A unit-tests chainPassDecision (client.js in a stub DOM via
    vm, same technique as test-fxidentify). Part B runs real engine
    duels where the bot plays both seats' non-chain prompts and the
@@ -61,7 +66,7 @@ sandbox.window = sandbox;
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(V2, 'engine.js'), 'utf8'), sandbox, { filename: 'engine.js' });
-const trailer = '\n;globalThis.__T = { uiAnswer, chainPassDecision, chainKey, duelKey, openDismissManager,' +
+const trailer = '\n;globalThis.__T = { uiAnswer, chainPassDecision, chainKey, duelKey, openDismissManager, chainTrayYes,' +
   ' setDATA: (d) => { DATA = d; },' +
   ' setFXMAP: (m) => { FXMAP = m; },' +
   ' setDuel: (d) => { duel = d; },' +
@@ -166,12 +171,22 @@ const tick = (ms) => new Promise(r => setTimeout(r, ms));
 
   // ---- BU-04/BU-16 through the REAL uiAnswer/uiChain (stub DOM) ----
   const dockEl = els.dock || (els.dock = stubEl());
+  const trayEl = els.chaintray || (els.chaintray = stubEl());
+  // BU-74: a shown prompt arrives as the badge tray first; the
+  // dock opens only when the tray's チェーンする is taken. The
+  // stub DOM has no clickable buttons, so drive the transition
+  // by its name.
+  const openDock = async () => {
+    for (let i = 0; i < 50 && !trayEl.innerHTML; i++) await tick(10);
+    T.chainTrayYes();
+    for (let i = 0; i < 50 && dockEl.className !== 'on'; i++) await tick(10);
+  };
   const state1 = { chain: [{ code: A.code }], turnPlayer: 0, turnCount: 1, phaseName: 'MAIN1' };
   { // the duel-dismiss control names the new card+effect scope (BU-16)
-    dockEl.innerHTML = ''; dockEl.className = '';
+    dockEl.innerHTML = ''; dockEl.className = ''; trayEl.innerHTML = '';
     const p = T.uiAnswer(P(false, [A]), state1);
     p.then(() => {}, () => {});
-    for (let i = 0; i < 50 && dockEl.className !== 'on'; i++) await tick(10);
+    await openDock();
     ok(dockEl.innerHTML.includes('このデュエル中は聞かない（このカードのこの効果）'),
       'DK9: duel-dismiss button states the card+effect scope');
     ok(!dockEl.innerHTML.includes('この場所での'), 'DK10: old instance-scope wording is gone');
@@ -182,19 +197,19 @@ const tick = (ms) => new Promise(r => setTimeout(r, ms));
     // whose box tap is inert — carries none. (Click-through in a
     // real DOM is covered by test-ui's F3 probe.)
     T.setDismissed(new Set(), new Map());
-    dockEl.innerHTML = ''; dockEl.className = '';
+    dockEl.innerHTML = ''; dockEl.className = ''; trayEl.innerHTML = '';
     const p = T.uiAnswer(P(false, [A, B]), state1);
     p.then(() => {}, () => {});
-    for (let i = 0; i < 50 && dockEl.className !== 'on'; i++) await tick(10);
+    await openDock();
     const acts = [...dockEl.innerHTML.matchAll(/data-chainact="(\d+)"/g)].map(m => m[1]);
     ok(acts.length === 2 && acts[0] === '0' && acts[1] === '1' && (dockEl.innerHTML.match(/発動する/g) || []).length === 2,
       'DK15: F3 — both chain candidates carry an explicit 発動する button (got ' + JSON.stringify(acts) + ')');
     T.answerCurrent(E.i32resp(-1));
     T.setDismissed(new Set([kA]), new Map());
-    dockEl.innerHTML = ''; dockEl.className = '';
+    dockEl.innerHTML = ''; dockEl.className = ''; trayEl.innerHTML = '';
     const p2 = T.uiAnswer(P(false, [A, B]), state1);
     p2.then(() => {}, () => {});
-    for (let i = 0; i < 50 && dockEl.className !== 'on'; i++) await tick(10);
+    await openDock();
     const acts2 = [...dockEl.innerHTML.matchAll(/data-chainact="(\d+)"/g)].map(m => m[1]);
     ok(acts2.length === 1 && acts2[0] === '1', 'DK16: F3 — the chain-dismissed candidate gets no 発動する button (got ' + JSON.stringify(acts2) + ')');
     T.answerCurrent(E.i32resp(-1));
@@ -203,13 +218,13 @@ const tick = (ms) => new Promise(r => setTimeout(r, ms));
   { // a dismissed class returning from the grave (another copy, a
     // later scene) auto-passes through uiChain's flash path
     T.setDismissed(new Set(), new Map([[dA, { code: A.code, desc: A.desc, loc: A.loc }]]));
-    dockEl.innerHTML = ''; dockEl.className = '';
+    dockEl.innerHTML = ''; dockEl.className = ''; trayEl.innerHTML = '';
     const apEl = els.autopass || (els.autopass = stubEl()); apEl.textContent = '';
     let settled = false;
     const p = T.uiAnswer(P(false, [A2]), { chain: [{ code: A2.code }], turnPlayer: 0, turnCount: 2, phaseName: 'MAIN1' });
     p.then(() => { settled = true; }, () => { settled = true; });
     for (let i = 0; i < 300 && !settled; i++) await tick(10);
-    ok(settled && dockEl.className !== 'on', 'DK11: cross-location return auto-passes, no dock shown');
+    ok(settled && dockEl.className !== 'on' && trayEl.innerHTML === '', 'DK11: cross-location return auto-passes, no dock shown (BU-74: no tray either)');
     ok(apEl.textContent.includes('自動パス') && apEl.textContent.includes('剣神官ムドラ の効果①'),
       'DK12: auto-pass flash names the dismissed card+effect');
     // the manager sheet states the new scope and carries the class key
@@ -242,30 +257,42 @@ const tick = (ms) => new Promise(r => setTimeout(r, ms));
         const decision = T.chainPassDecision(prompt, state);
         stats.byDecision[decision] = (stats.byDecision[decision] || 0) + 1;
         const dock = els.dock || (els.dock = stubEl());
+        const tray = els.chaintray || (els.chaintray = stubEl());
         // The real client clears the dock after every answered
         // prompt (finishPrompt -> clearInteraction -> dockClose);
         // this harness answers via answerCurrent, bypassing that
         // cleanup, so mirror it here — otherwise a redrawn dock
         // with byte-identical HTML reads as "not drawn".
         dock.innerHTML = ''; dock.className = '';
+        tray.innerHTML = '';
         const beforeHTML = dock.innerHTML;
         const p = T.uiAnswer(prompt, state);
         let settled = false;
         p.then(() => { settled = true; }, () => { settled = true; });
         for (let i = 0; i < 30 && !settled; i++) await tick(10);
         const dockDrawn = dock.className === 'on' && dock.innerHTML !== beforeHTML;
+        // BU-74: the first stage is the badge tray — for a show
+        // decision "presented" means the tray is up and the dock
+        // is NOT (it opens only when the tray is accepted).
+        const trayDrawn = tray.innerHTML !== '';
         if (decision === 'pass') {
           if (!settled) stats.violations.push('seed' + cfg.seed + ': pass decision did not settle promptly');
           if (dockDrawn) stats.violations.push('seed' + cfg.seed + ': dock drawn for a pass decision');
+          if (trayDrawn) stats.violations.push('seed' + cfg.seed + ': tray drawn for a pass decision');
         } else if (decision === 'flash') {
           if (dockDrawn) stats.violations.push('seed' + cfg.seed + ': dock drawn for a flash decision');
+          if (trayDrawn) stats.violations.push('seed' + cfg.seed + ': tray drawn for a flash decision');
           for (let i = 0; i < 200 && !settled; i++) await tick(10);
           if (!settled) stats.violations.push('seed' + cfg.seed + ': flash decision never settled');
         } else { // show
-          if (!dockDrawn) stats.violations.push('seed' + cfg.seed + ': show decision but dock not drawn (n=' + prompt.entries.length + ', forced=' + prompt.forced + ')');
-          else {
-            const n = (dock.innerHTML.match(/data-chain=/g) || []).length;
-            if (n === 0) stats.violations.push('seed' + cfg.seed + ': dock drawn with zero candidate elements');
+          if (!trayDrawn) stats.violations.push('seed' + cfg.seed + ': show decision but tray not drawn (n=' + prompt.entries.length + ', forced=' + prompt.forced + ')');
+          if (dockDrawn) stats.violations.push('seed' + cfg.seed + ': show decision opened the dock before the tray stage');
+          if (trayDrawn && !dockDrawn) {
+            T.chainTrayYes(); // チェーンする: the dock stage
+            if (dock.className === 'on' && dock.innerHTML !== beforeHTML) {
+              const n = (dock.innerHTML.match(/data-chain=/g) || []).length;
+              if (n === 0) stats.violations.push('seed' + cfg.seed + ': dock drawn with zero candidate elements');
+            } else stats.violations.push('seed' + cfg.seed + ': tray accepted but the dock did not open');
           }
           if (settled) stats.violations.push('seed' + cfg.seed + ': show decision settled before an answer was given');
           // a player must pick a candidate when forced (pass is

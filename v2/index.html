@@ -391,12 +391,13 @@
      strip, board taps become info taps, and no answer is made. */
   #dock{position:absolute;left:0;right:0;bottom:0;z-index:40;background:#171208;border-top:2px solid var(--gold);box-shadow:0 -10px 28px rgba(0,0,0,.6);padding:10px;display:none;transition:transform .28s cubic-bezier(.16,1.12,.3,1);}
   #dock.on{display:flex;flex-direction:column;max-height:calc(100dvh - 108px);}
-  #app.dockpeek #dock{transform:translateY(calc(100% - 49px));}
+  #app.dockpeek #dock{transform:translateY(calc(100% - 64px));}
   #app.dockpeek #header,#app.dockpeek #preview,#app.dockpeek #lpband{pointer-events:none;}
+  #app.traypeek #header,#app.traypeek #preview,#app.traypeek #lpband{pointer-events:none;}
   #dock>.ttl,#dock>.ctx,#dock>.cause,#dock>.row,#dock>.sub{flex:0 0 auto;}
   #dock>.duelsection{flex:0 1 auto;overflow-y:auto;max-height:110px;}
   #dock .ttl{display:flex;align-items:center;gap:8px;font-size:19px;color:var(--gold);font-weight:700;}
-  #dock .dockpeekbtn{margin-left:auto;flex:0 0 auto;min-height:40px;background:#241a0e;color:var(--gold);border:1px solid var(--gold-dim);border-radius:8px;font-size:13px;padding:8px 14px;cursor:pointer;}
+  #dock .dockpeekbtn{margin-left:auto;flex:0 0 auto;min-height:52px;background:linear-gradient(#e6c877,var(--gold));color:#191104;border:1px solid #e6c877;border-radius:8px;font-size:15px;font-weight:700;padding:12px 18px;cursor:pointer;}
   #dock .ctx{font-size:13px;line-height:1.55;color:var(--txt-dim);margin:4px 0 8px;}
   #dock .cause{display:flex;align-items:center;gap:9px;background:var(--panel2);border:1px solid var(--tile-edge);border-radius:8px;padding:6px 8px;margin-bottom:9px;cursor:pointer;}
   #dock .causeart{flex:0 0 auto;width:38px;height:52px;border-radius:4px;border:1px solid var(--gold-dim);background:#3a2f1d url('../assets/card-art-placeholder-s.jpg') center/cover;}
@@ -415,6 +416,45 @@
   .bigbtn{flex:1;background:var(--gold);color:#191104;border:0;border-radius:6px;font-size:14px;font-weight:700;padding:12px;}
   .bigbtn.sub{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);font-weight:400;}
   .bigbtn:disabled{background:#4a3d22;color:#b3a077;}
+  /* ---------- chain tray (BU-74) ---------- */
+  /* The chain question's FIRST stage is this badge tray at the
+     bottom right, not the dock: the cause (the opponent card's
+     art + one line), the ACTIVATABLE candidates as small
+     floating cards, a gold チェーンする badge (it floats) and a
+     dark しない badge (it does not). チェーンする opens the
+     existing dock unchanged; しない is the dock's pass. Above
+     the tray rides the 盤面を見る chip — BU-76: every peek
+     toggle in the app is this same primary grade (52px, gold),
+     so going and returning read as the same weight of action.
+     Peeked, the tray itself retreats (visibility) and the chip
+     stays in its seat reading 選択に戻る; board taps become
+     info taps via the document delegate, exactly as for the
+     dock peek. Appearance and the float are pure CSS (no WAAPI)
+     so the FX arrival measurements are untouched. */
+  #chainui{position:absolute;right:10px;bottom:10px;width:216px;z-index:40;display:none;flex-direction:column;align-items:flex-end;gap:6px;}
+  #chainui.on{display:flex;animation:ctin .24s ease-out;}
+  @keyframes ctin{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:none;}}
+  #chainui.peek{pointer-events:none;}
+  #chainui.peek #ctpeek{pointer-events:auto;}
+  #chainui.peek #chaintray{visibility:hidden;}
+  #ctpeek{min-height:52px;background:linear-gradient(#e6c877,var(--gold));color:#191104;border:1px solid #e6c877;border-radius:8px;font-size:15px;font-weight:700;padding:12px 18px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.5);}
+  #chaintray{width:216px;background:rgba(23,18,8,.97);border:1.5px solid var(--gold);border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.65);padding:10px;}
+  .ct-cause{display:flex;gap:8px;align-items:center;margin-bottom:9px;cursor:pointer;}
+  .ct-cause-art{flex:0 0 auto;width:30px;height:42px;border-radius:3px;border:1px solid #b0483e;background:#3a2f1d center/cover;}
+  .ct-cause-txt{font-size:11.5px;line-height:1.5;color:var(--txt);}
+  .ct-cause-txt b{color:#ffb59d;}
+  .ct-cards{display:flex;gap:8px;align-items:flex-end;margin-bottom:10px;min-height:68px;}
+  .ct-card{display:flex;flex-direction:column;width:46px;animation:ctfloat 2.4s ease-in-out infinite;}
+  .ct-card.ph1{animation-delay:-.6s;} .ct-card.ph2{animation-delay:-1.2s;} .ct-card.ph3{animation-delay:-1.8s;}
+  .ct-cards.w40 .ct-card{width:40px;} .ct-cards.w32 .ct-card{width:32px;}
+  .ct-art{width:100%;height:56px;border-radius:4px;border:1px solid var(--gold);background:#3a2f1d center/cover;}
+  .ct-cards.w40 .ct-art{height:49px;} .ct-cards.w32 .ct-art{height:40px;}
+  .ct-name{font-size:9.5px;line-height:1.25;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;text-align:center;}
+  .ct-more{align-self:center;font-size:11px;color:var(--gold);border:1px solid var(--gold-dim);border-radius:999px;padding:4px 8px;white-space:nowrap;}
+  .ct-badges{display:flex;gap:6px;justify-content:flex-end;align-items:stretch;}
+  .ct-yes{min-height:52px;background:linear-gradient(#e6c877,var(--gold));color:#191104;border:1px solid #e6c877;border-radius:999px;font-size:15px;font-weight:700;padding:12px 14px;white-space:nowrap;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.5);animation:ctfloat 2.4s ease-in-out infinite;animation-delay:-.3s;}
+  .ct-no{min-height:52px;background:#241a0e;color:#cbbd97;border:1px solid var(--gold-dim);border-radius:999px;font-size:14px;padding:12px 12px;white-space:nowrap;cursor:pointer;}
+  @keyframes ctfloat{0%,100%{transform:translateY(-2.5px);}50%{transform:translateY(2.5px);}}
   /* ---------- sheet (modal selections) ---------- */
   /* layout-fix J1: the wrap is FIXED to the viewport and the sheet's
      height budget comes from the conservative visible height
@@ -446,9 +486,9 @@
   #sheetwrap[data-closing="1"] #sheet{pointer-events:none;}
   #sheetwrap.peek #sheet{transform:translateY(calc(100% - 44px));}
   #sheetwrap.peek{background:#0003;}
-  #peekbtn{position:absolute;right:10px;bottom:calc(62dvh + 8px);z-index:51;display:none;background:#241a0e;color:var(--gold);border:1px solid var(--gold-dim);border-radius:8px;font-size:13px;padding:12px 16px;min-height:44px;cursor:pointer;}
+  #peekbtn{position:absolute;right:10px;bottom:calc(62dvh + 8px);z-index:51;display:none;background:linear-gradient(#e6c877,var(--gold));color:#191104;border:1px solid #e6c877;border-radius:8px;font-size:15px;font-weight:700;padding:12px 18px;min-height:52px;cursor:pointer;}
   #sheetwrap.on #peekbtn{display:block;}
-  #sheetx{position:absolute;right:124px;bottom:calc(62dvh + 8px);z-index:51;display:none;width:48px;height:48px;background:#241a0e;color:var(--gold);border:1px solid var(--gold-dim);border-radius:8px;font-size:17px;cursor:pointer;}
+  #sheetx{position:absolute;right:130px;bottom:calc(62dvh + 8px);z-index:51;display:none;width:48px;height:48px;background:#241a0e;color:var(--gold);border:1px solid var(--gold-dim);border-radius:8px;font-size:17px;cursor:pointer;}
   #sheetwrap.on[data-kind="view"] #sheetx{display:block;}
   #sheetwrap.peek #sheetx{bottom:auto;top:10px;}
   #sheetwrap.peek #peekbtn{bottom:auto;top:10px;}
@@ -1169,6 +1209,7 @@
   <div id="fxlayer"><canvas id="fxcv"></canvas></div>
   <div id="fxcutin"><canvas id="fxcvTop"></canvas></div>
   <div id="dock"></div>
+  <div id="chainui"><button id="ctpeek">盤面を見る</button><div id="chaintray"></div></div>
   <div id="sheetwrap"><button id="sheetx" title="閉じる">×</button><button id="peekbtn">盤面を見る</button><div id="sheet"></div><div id="peekbar"></div></div>
   <div id="infopop"></div>
   <div class="overlay" id="start">
