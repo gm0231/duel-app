@@ -108,8 +108,13 @@ const ruleDecls = (re) => {
   const kf = kfAt >= 0 ? html.slice(kfAt, kfAt + 80) : '';
   ok(kf.includes('opacity:.78') && kf.includes('opacity:.92'),
     'LF-J5c: the own-set veil breathes at .78-.92 (the back dominates; the card reads as set)');
-  ok(clientSrc.includes('if (loc === E.LOC.SZONE) return \'\';') && clientSrc.includes('loc !== E.LOC.SZONE ? marksChipHTML'),
-    'LF-J5d: no ATK/DEF plate and no monster marks for a card lying in the S/T zone');
+  // brushup round 2026-11-13 (user instruction: spell/trap
+  // subtype icons) narrows the tile half of this pin: a card
+  // lying in the S/T zone still gets NO plate and NO monster
+  // marks when it is a monster; an actual spell/trap there now
+  // carries its subtype symbol chip instead of nothing.
+  ok(clientSrc.includes('if (loc === E.LOC.SZONE) return \'\';') && clientSrc.includes('loc !== E.LOC.SZONE || !isMonster(card.code)') && clientSrc.includes('function stIconFile(code)'),
+    'LF-J5d: no ATK/DEF plate and no monster marks for a card lying in the S/T zone (a real spell/trap there carries its subtype symbol — brushup 2026-11-13)');
 }
 
 // ---------- engine behaviour over real duels ----------

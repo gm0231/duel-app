@@ -1552,12 +1552,44 @@ function cardTypeLabel(code) {
 // from the ground and the consistency, never from size (user
 // ruling: icons may be small). Visibility follows the name:
 // face-up cards, plus the owner's own cards wherever their
-// face is shown. Monsters only (spells/traps have no marks).
+// face is shown. Monsters carry [attribute][star+level][race];
+// spells/traps carry their subtype symbol instead (user
+// instruction 2026-11-13 — the official card symbols: quick-play
+// bolt, continuous infinity, equip cross, field compass, ritual
+// flame, counter bent arrow; normal spells/traps have no symbol
+// on real cards either, so they get no chip).
 const ATTR_ICON = { 0x01: 'earth', 0x02: 'water', 0x04: 'fire', 0x08: 'wind', 0x10: 'light', 0x20: 'dark', 0x40: 'divine' };
+// spell/trap subtype icons (2026-11-13): derived from the SAME
+// type bits cardTypeLabel reads, so the symbol and the words can
+// never disagree. Bit priority mirrors cardTypeLabel's order.
+function stIconFile(code) {
+  const d = cardData(code); if (!d) return null;
+  const t = d.type | 0;
+  if (t & 0x2) {
+    if (t & 0x80000) return 'st-field.png';
+    if (t & 0x40000) return 'st-equip.png';
+    if (t & 0x10000) return 'st-quick.png';
+    if (t & 0x20000) return 'st-continuous.png';
+    if (t & 0x80) return 'st-ritual.png';
+    return null; // 通常魔法
+  }
+  if (t & 0x4) {
+    if (t & 0x100000) return 'st-counter.png';
+    if (t & 0x20000) return 'st-continuous.png';
+    return null; // 通常罠
+  }
+  return null;
+}
 const RACE_ICON = { 0x1: 'warrior', 0x2: 'spellcaster', 0x4: 'fairy', 0x8: 'fiend', 0x10: 'zombie', 0x20: 'machine', 0x40: 'aqua', 0x80: 'pyro', 0x100: 'rock', 0x200: 'wingedbeast', 0x400: 'plant', 0x800: 'insect', 0x1000: 'thunder', 0x2000: 'dragon', 0x4000: 'beast', 0x8000: 'beastwarrior', 0x10000: 'dinosaur', 0x20000: 'fish', 0x40000: 'seaserpent', 0x80000: 'reptile', 0x100000: 'psychic', 0x200000: 'divinebeast', 0x400000: 'creatorgod', 0x800000: 'wyrm', 0x1000000: 'cyberse', 0x2000000: 'illusion' };
 function marksChipHTML(code) {
   const d = cardData(code);
-  if (!d || !(d.type & 0x1)) return '';
+  if (!d) return '';
+  if (!(d.type & 0x1)) {
+    // spell/trap: the subtype symbol chip (same badge seat, same
+    // stone ground as the monster marks)
+    const f = stIconFile(code);
+    return f ? '<span class="marks"><img src="../assets/icons/' + f + '" alt=""></span>' : '';
+  }
   const a = ATTR_ICON[d.attribute];
   const rEnt = E.RACES.find(([b]) => BigInt(b) === BigInt(d.race));
   const r = rEnt ? RACE_ICON[rEnt[0]] : null;
@@ -1570,7 +1602,8 @@ function marksChipHTML(code) {
 function cardMetaLine(code, mats) {
   const d = cardData(code); if (!d) return '';
   const parts = [];
-  const tl = cardTypeLabel(code); if (tl) parts.push(tl);
+  const tl = cardTypeLabel(code);
+  if (tl) { const f = stIconFile(code); parts.push(f ? '<img class="sticon" src="../assets/icons/' + f + '" alt="">' + tl : tl); }
   const attr = E.ATTRIBUTES.find(([b]) => b === d.attribute); if (attr) parts.push(attr[1] + '属性');
   const race = E.RACES.find(([b]) => BigInt(b) === BigInt(d.race)); if (race && (d.type & 0x1)) parts.push(race[1] + '族');
   if (d.type & 0x1) parts.push(isXyzCode(code) ? 'ランク' + d.level : 'レベル' + d.level);
@@ -6135,7 +6168,7 @@ function tileHTML(card, con, actKey, loc) {
     // the spell/trap zone — a monster lying there as a Continuous
     // Spell (《ラビリンス・ウォール・シャドウ》②) is not a monster
     // while it lies there, and its monster marks misread.
-    (showFace && card.code != null && loc !== E.LOC.SZONE ? marksChipHTML(card.code) : '') +
+    (showFace && card.code != null && (loc !== E.LOC.SZONE || !isMonster(card.code)) ? marksChipHTML(card.code) : '') +
     // the artwork lives INSIDE .inner (round B): in defense position
     // the whole inner — art + name band — rotates 90 degrees, while
     // the corner badges (.mats/.ctrs) and the stat strip stay upright.
@@ -6302,6 +6335,16 @@ function openLogHistory() {
   // owning the screen (those prompts live there).
   if (!logHist.length && !histEntries.length) return;
   if ($('sheetwrap').classList.contains('on') || $('dock').className === 'on') return;
+  // BU-62 (brushup round 2026-11-13): EVERY entry into the history
+  // funnels through here (the result screen's button, the mid-bar
+  // history button, a tap on the log line), so the result
+  // overlay's retreat lives HERE. It used to sit only in the
+  // result button's own handler; entering from anywhere else left
+  // the result (z 60) painted over the sheet wrap (z 50) and the
+  // history opened invisibly underneath it. sheetClose restores
+  // the result via histFromResult, exactly as before.
+  const resEl = $('result');
+  if (resEl && resEl.style.display === 'flex') { resEl.style.display = 'none'; histFromResult = true; }
   let rows, sub;
   if (histEntries.length) {
     // Detailed rendering: chronological (oldest first — the sheet
@@ -9161,12 +9204,13 @@ function wireSeg(id, apply) {
   // behind it — the result screen carries its own way in. The
   // result hides while the history is read and returns when the
   // sheet closes (sheetClose restores it via histFromResult).
+  // BU-62: the hide itself moved into openLogHistory (every entry
+  // shares it now); this handler keeps only the safety restore
+  // for the case the sheet never opened.
   $('reshistbtn').addEventListener('click', () => {
     playClick();
-    $('result').style.display = 'none';
-    histFromResult = true;
     openLogHistory();
-    if (!$('sheetwrap').classList.contains('on')) { histFromResult = false; $('result').style.display = 'flex'; }
+    if (!$('sheetwrap').classList.contains('on') && histFromResult) { histFromResult = false; $('result').style.display = 'flex'; }
   });
   $('titlebtn').addEventListener('click', () => location.reload());
   // mid-duel exit restore: 選択に戻る in the その他 menu reloads

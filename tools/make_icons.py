@@ -472,6 +472,90 @@ icon('race-illusion', IVORY, [
 "............",
 "............"])
 
+# ---------------- spell/trap subtypes (gold; official symbol shapes,
+# user instruction 2026-11-13) ----------------
+# quick-play = lightning bolt; continuous = infinity loop; equip =
+# cross; field = compass rose; ritual = flame; counter = bent arrow.
+# Normal spells/traps carry no symbol on real cards -> no icon.
+icon('st-quick', GOLD, [
+"......MM....",
+".....MMM....",
+"....MMM.....",
+"...MMM......",
+"..MMMMMMMM..",
+"....MMMM....",
+"...MMM......",
+"..MMD.......",
+"..MD........",
+".MD.........",
+"............",
+"............"])
+icon('st-continuous', GOLD, [
+"............",
+"............",
+"............",
+"..MM....MM..",
+".MMMM..MMMM.",
+".MM.MMMM.MM.",
+"..MMMMMMMM..",
+".MM.MMMM.MM.",
+".MMMM..MMMM.",
+"..MM....MM..",
+"............",
+"............"])
+icon('st-equip', GOLD, [
+".....MM.....",
+".....MM.....",
+".....MM.....",
+".....MM.....",
+"..MMMMMMMM..",
+"..MMMMMMMM..",
+".....MM.....",
+".....MM.....",
+".....MM.....",
+".....MM.....",
+"............",
+"............"])
+icon('st-field', GOLD, [
+".....MM.....",
+".....MM.....",
+"..M..MM..M..",
+"...M.MM.M...",
+".....MM.....",
+".MMMMMMMMMM.",
+".....MM.....",
+"...M.MM.M...",
+"..M..MM..M..",
+".....MM.....",
+".....MM.....",
+"............"])
+icon('st-ritual', GOLD, [
+"......M.....",
+".....MM.....",
+".....MM.M...",
+"....MMMMM...",
+"....MMMMM...",
+"...MMMMMM...",
+"...MMDDMM...",
+"..MMDDDMM...",
+"..MMMMMMMM..",
+"...MMMMMM...",
+"....MMMM....",
+"............"])
+icon('st-counter', GOLD, [
+"............",
+".MM.........",
+"MMMMM.......",
+"MMMMMMMMM...",
+"MMMMM..MM...",
+".MM....MM...",
+".......MM...",
+".......MM...",
+".......MM...",
+".......MM...",
+"............",
+"............"])
+
 def main():
     for name, (pal, rows) in ICONS.items():
         img = Image.new('RGBA', (12, 12), (0, 0, 0, 0))
