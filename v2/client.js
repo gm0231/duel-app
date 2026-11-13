@@ -9052,7 +9052,15 @@ function wireSeg(id, apply) {
   // deck-select page navigation (pure DOM — wired before the data
   // load so the pages can be walked even on the failure path, whose
   // retry button lives on the deck page).
-  $('deckpage').style.display = 'none';
+  // BU-69 round #4: the inline script in index.html may already
+  // have put the deck page up — the stash landing, or the user
+  // tapping デッキを選ぶ before this file executed (the title
+  // screen's navigation is wired at parse time there). Hiding it
+  // here would undo that and leave NO screen up (the title is
+  // already hidden by the same act) until the boot end, which
+  // only re-shows the deck page for the stash path. Reset only
+  // the not-yet-shown case.
+  if ($('deckpage').style.display !== 'flex') $('deckpage').style.display = 'none';
   // BU-69: the mid-duel exit restore is applied HERE, in the
   // synchronous prefix — not at the bottom of this block. The
   // measured return path (CPU-throttled rig, test-fix1113c)
@@ -9266,6 +9274,12 @@ function wireSeg(id, apply) {
     setBgmScene('normal', true);
     $('start').style.display = 'none';
     $('deckpage').style.display = 'none';
+    // BU-69 round #4: the duel view exists only while a duel
+    // runs — #app ships with class "preduel" (duel sections
+    // display:none), and starting a duel is the one moment it is
+    // lifted. Every entry into a duel passes through this
+    // handler (the rematch boot clicks this same button).
+    $('app').classList.remove('preduel');
     $('logline').textContent = '対戦を準備中…';
     duel = await createClientDuel(DATA, {
       seed: (Date.now() % 100000) + 1,
