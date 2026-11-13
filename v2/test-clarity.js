@@ -184,6 +184,8 @@ async function boot() {
       const st = { players: [{}, {}], phaseName: 'MAIN1', turnCount: 1, chain: [{ code: ${KELDO}, con: 1, loc: 4, seq: 0, desc: 0 }], turnPlayer: 1, log: [] };
       uiAnswer({ name: 'SELECT_CHAIN', player: 0, forced: false, entries: [entry], retryCount: 0 }, st).then(b => { window.__clChain = b; });
       return true; })()`);
+    await waitFor(() => doc.getElementById('chainui').classList.contains('on'), 'CL8c0: BU-74 — the badge tray is the first stage');
+    click(doc.querySelector('#chaintray .ct-yes'));
     await waitFor(() => doc.querySelector('#dock .cand .fxline'), 'CL8c: chain dock opens with the candidate effect line');
     // layout-fix J4 (supersedes the BU-28 pin): the dock candidate
     // line carries the effect's FULL body — the 28-char excerpt

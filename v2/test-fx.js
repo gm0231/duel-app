@@ -76,9 +76,15 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     if ($('result').style.display === 'flex') { obs.resultTitle = $('resultTitle').textContent; return obs; }
     const sheetOn = $('sheetwrap').className === 'on';
     const dockOn = $('dock').className === 'on';
+    const trayOn = $('chainui') && $('chainui').classList.contains('on');
     let acted = false;
     const click = (el) => { if (el) { el.click(); acted = true; } };
-    if (sheetOn) {
+    if (trayOn) {
+      // BU-74: a chain question arrives as the badge tray first —
+      // take チェーンする so the dock stage (and its pass branch
+      // below) runs exactly as before
+      click(q('.ct-yes', $('chaintray')));
+    } else if (sheetOn) {
       const sheet = $('sheet');
       const inc = q('[data-inc]', sheet);
       const counterOk = q('#counter-confirm', sheet);

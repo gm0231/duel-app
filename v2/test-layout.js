@@ -152,9 +152,14 @@ async function clickUntilDock(window, timeoutMs) {
     if ($('result').style.display === 'flex') return 'result';
     if ($('dock').className === 'on') return 'dock';
     const sheetOn = $('sheetwrap').className === 'on';
+    const trayOn = $('chainui') && $('chainui').classList.contains('on');
     let acted = false;
     const click = (el) => { if (el) { el.click(); acted = true; } };
-    if (sheetOn) {
+    if (trayOn) {
+      // BU-74: a chain question arrives as the badge tray first —
+      // take チェーンする so the dock this loop waits for opens
+      click(q('.ct-yes', $('chaintray')));
+    } else if (sheetOn) {
       const sheet = $('sheet');
       const inc = q('[data-inc]', sheet);
       const counterOk = q('#counter-confirm', sheet);

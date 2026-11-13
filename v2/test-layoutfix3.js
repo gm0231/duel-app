@@ -349,6 +349,7 @@ function scriptedHuman(TARGET, capture) {
           context: null, trigger: { kind: 'phase', code: 0, con: 0, turn: 1, phase: 'MAIN1' }, retryCount: 0 };
         const chainState = { players: [{}, {}], chain: [{ code: 63542003, con: 1, loc: 4, seq: 0, desc: 0 }], turnCount: 1, turnPlayer: 1, phaseName: 'MAIN1', log: [] };
         window.__chain.open(chainFx, chainState);
+        doc.querySelector('#chaintray .ct-yes').click(); // BU-74: the dock is the tray's second stage
         const fx = doc.querySelector('#dock .cand .fxline');
         ok(!!fx, 'LF3-K4i: the dock candidate renders its effect line');
         if (fx) {

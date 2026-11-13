@@ -85,15 +85,15 @@ async function boot() {
     uiAnswer({ name: 'SELECT_CHAIN', forced: false, entries: [e] }, duelState).then(() => { window.__fxr1 = true; });
     return true;
   })()`);
-  for (let i = 0; i < 60 && doc.getElementById('dock').className !== 'on'; i++) await tick(50);
-  ok(doc.getElementById('dock').className === 'on', 'FXR2: the chain dock dispatched and is shown');
+  for (let i = 0; i < 60 && !doc.getElementById('chainui').classList.contains('on'); i++) await tick(50);
+  ok(doc.getElementById('chainui').classList.contains('on'), 'FXR2: the chain question dispatched and is shown (BU-74: the badge tray is the first stage)');
   // sheetClose keeps class 'on' during its 185ms exit motion by
   // design; the defect was the view STAYING. Poll for the landed
   // end state: wrap closed, kind attribute gone, content cleared.
   for (let i = 0; i < 30 && sw.className === 'on'; i++) await tick(50);
   ok(!(sw.className === 'on' && sw.dataset.kind === 'view') && doc.getElementById('sheet').innerHTML === '',
-    'FXR3: F4 — the detail view is closed by the prompt dispatch (no stale panel behind/above the dock)');
-  click(doc.querySelector('#dock #chain-pass'));
+    'FXR3: F4 — the detail view is closed by the prompt dispatch (no stale panel behind/above the tray)');
+  click(doc.querySelector('#chaintray .ct-no'));
   for (let i = 0; i < 40 && !window.eval('window.__fxr1'); i++) await tick(50);
   ok(window.eval('window.__fxr1') === true, 'FXR4: the chain prompt still answers normally after the view cleanup');
 
