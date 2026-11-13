@@ -7,8 +7,11 @@
    Contract under test:
    - In a live duel, the その他 menu (menubtn) opens the
      その他のアクション sheet whose bottom button is 選択に戻る.
-   - Pressing it stashes the current selections in sessionStorage
-     ('v3todeck', the A-06 reload-exit pattern) and reloads.
+   - Pressing it (BU-63: after one confirmation sheet — the
+     exit is irreversible for the duel and the button sits in
+     the sheet's cancel seat) stashes the current selections in
+     sessionStorage ('v3todeck', the A-06 reload-exit pattern)
+     and reloads.
    - A boot that finds 'v3todeck' lands on the deck-selection
      page (NOT the title screen), with the stashed selections
      applied (own deck / opponent deck / first-second, the
@@ -87,10 +90,27 @@ async function boot(stash) {
       const cancel = doc.getElementById('sheet-cancel');
       ok(!!cancel && cancel.textContent === '選択に戻る', 'QD5: the sheet carries the 選択に戻る button');
       cancel.click();
+      // BU-63: the exit is irreversible for the duel in progress,
+      // so the button no longer fires it directly — a
+      // confirmation sheet stands in between, and nothing is
+      // stashed until the user confirms there.
+      const confirmBtn = doc.getElementById('quit-confirm');
+      const backBtn = doc.getElementById('quit-cancel');
+      ok(!!confirmBtn && !!backBtn && doc.getElementById('sheet').textContent.includes('対局を終了しますか？'),
+        'QD6a: 選択に戻る opens the exit confirmation (終了する／対局に戻る), it does not leave yet');
+      let stashEarly = null;
+      try { stashEarly = window.sessionStorage.getItem('v3todeck'); } catch (e) {}
+      ok(stashEarly === null, 'QD6b: nothing is stashed before the confirmation');
+      backBtn.click();
+      await sleep(600); // sheetClose lands after its 180ms motion
+      ok(doc.getElementById('sheetwrap').className !== 'on', 'QD6c: 対局に戻る closes the sheet and the duel continues');
+      doc.getElementById('menubtn').click();
+      doc.getElementById('sheet-cancel').click();
+      doc.getElementById('quit-confirm').click();
       let stash = null;
       try { stash = JSON.parse(window.sessionStorage.getItem('v3todeck') || 'null'); } catch (e) {}
       ok(!!stash && stash.my === 'superquant' && stash.op === 'ishizu' && stash.first === 'first',
-        'QD6: 選択に戻る stashes the current selections for the reload exit (got ' + JSON.stringify(stash) + ')');
+        'QD6: confirming with 終了する stashes the current selections for the reload exit (got ' + JSON.stringify(stash) + ')');
     }
     window.close();
   }

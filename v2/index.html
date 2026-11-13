@@ -153,14 +153,17 @@
   .slot .marks img{width:11px;height:11px;}
   .slot .marks .lv{font-size:9px;}
   .slot .marks .lv img{width:10px;height:10px;}
-  /* selection grids: the chip rides INSIDE the name band,
-     ahead of the name — the floating seat collided with the
-     band whenever the effect text below grew tall and pushed
-     the band up the card. Same order, same ground. */
+  /* selection grids: the chip USED to ride inside the name band
+     (the floating seat collided with the band back when tiles
+     carried effect text inline; that premise died with the
+     layout-fix3 K4 uniform tiles). BU-66: the chip now takes
+     the SAME top-left seat as on the board / hand / detail
+     surfaces, and the location label stacks under it — one
+     system on every surface. */
   .gcard .nm{display:flex;align-items:center;gap:4px;flex-wrap:wrap;}
-  .gcard .nm .marks{position:static;flex:0 0 auto;}
-  /* the name takes its OWN line in the band: chip + name +
-     detail button on one line measured wider than a grid card
+  .gcard > .marks{top:3px;left:3px;z-index:3;}
+  /* the name takes its OWN line in the band: name + detail
+     button on one line measured wider than a grid card
      and the name was squeezed to nothing */
   .gcard .nm .nmtext{flex:1 1 100%;order:3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
   .infoart .marks,.popart .marks{top:6px;left:6px;padding:2px 4px;}
@@ -328,7 +331,17 @@
   /* ---------- persistent card-detail preview (leftover space only) ---------- */
   #preview{display:none;height:var(--pv);border-top:1px solid var(--gold-dim);background:var(--panel);padding:6px 8px;gap:8px;overflow:hidden;cursor:pointer;}
   #preview.on{display:flex;}
-  #preview .pv-art{flex:0 0 auto;width:calc((var(--pv) - 12px) * 0.72);background:#3a2f1d url('../assets/card-art-placeholder-s.jpg') center/cover;border-radius:4px;border:1px solid var(--tile-edge);}
+  #preview .pv-art{position:relative;flex:0 0 auto;width:calc((var(--pv) - 12px) * 0.72);background:#3a2f1d url('../assets/card-art-placeholder-s.jpg') center/cover;border-radius:4px;border:1px solid var(--tile-edge);}
+  /* BU-66: the preview strip's thumbnail carries the same marks
+     chip as the detail surface it opens into — top-left seat,
+     tightened to the thumbnail. The compact strip's thumbnail
+     collapses to ~0 width (measured), so the chip has no seat
+     there and stays off rather than painting over the text. */
+  #preview .pv-art .marks{top:2px;left:2px;padding:1px 2px;gap:1px;}
+  #preview .pv-art .marks img{width:11px;height:11px;}
+  #preview .pv-art .marks .lv{font-size:9px;}
+  #preview .pv-art .marks .lv img{width:10px;height:10px;}
+  #preview.compact .pv-art .marks{display:none;}
   #preview .pv-body{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;}
   #preview .pv-top{display:flex;gap:8px;align-items:baseline;}
   #preview .pv-name{font-size:15.5px;font-weight:700;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
@@ -476,7 +489,10 @@
   .gcard{border:1px solid var(--tile-edge);border-radius:6px;background:#3a2f1d url('../assets/card-art-placeholder-s.jpg') center/cover;min-height:170px;padding:4px;display:flex;flex-direction:column;justify-content:flex-end;cursor:pointer;}
   .gcard.back{background:#171208 url('../assets/card-back-s.jpg') center/cover;}
   .gcard .nm{font-size:11.5px;background:rgba(5,4,2,.94);padding:2px 4px;border-radius:2px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .gcard .loc{position:absolute;top:3px;left:3px;z-index:2;font-size:9.5px;line-height:1.5;color:var(--gold);background:rgba(4,3,1,.88);border:1px solid var(--gold-dim);border-radius:8px;padding:0 6px;}
+  /* BU-66: the location label stacks UNDER the marks chip's
+     top-left seat (the chip is ~16px tall from top:3px), so its
+     seat is fixed whether or not the card carries a chip */
+  .gcard .loc{position:absolute;top:23px;left:3px;z-index:2;font-size:9.5px;line-height:1.5;color:var(--gold);background:rgba(4,3,1,.88);border:1px solid var(--gold-dim);border-radius:8px;padding:0 6px;}
   .gcard.sel{box-shadow:0 0 0 2px var(--ok);}
   .btnrow{display:flex;gap:6px;margin-top:12px;position:sticky;bottom:0;background:#1d1811;z-index:2;padding-bottom:2px;}
   .optbtn{display:block;width:100%;text-align:left;background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:6px;font-size:14px;padding:13px 12px;min-height:48px;margin:4px 0;cursor:pointer;}
@@ -875,12 +891,16 @@
   /* own set cards (user decision 2026-11-13): the name plate and
      the ATK/DEF plate STAY on the owner's set cards. The stat
      plate lives at slot level, outside the tile, and was never
-     covered; the name band sits INSIDE .inner, where the animated
-     veil composites over it (hit-test measured: the veil is the
-     top element at the band's centre) — so the band is lifted
-     above the veil explicitly. The veil itself is untouched
+     covered. The name band used to sit INSIDE .inner, where the
+     animated veil composited over it (hit-test measured: the
+     veil is the top element at the band's centre) and where a
+     face-down defense tile's 90-degree inner rotation turned
+     the band sideways and shrank its run to the tile's height
+     (BU-65: 26.2px painted on a 36px tile). The band is now a
+     direct child of the tile — upright, full tile width, above
+     the veil by construction. The veil itself is untouched
      (2026-11-03 design, opacity .78-.92). */
-  .tile.setown .nm{position:relative;z-index:2;}
+  .tile.setown > .nm{position:absolute;left:1px;right:1px;bottom:1px;z-index:2;}
   /* spell/trap subtype icon inside the text meta line (detail /
      info / preview surfaces): same 12px pixel glyph as the chip */
   .sticon{width:12px;height:12px;image-rendering:pixelated;vertical-align:-1px;margin-right:3px;}
