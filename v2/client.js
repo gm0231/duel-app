@@ -4132,8 +4132,30 @@ function fxProcessInner(evs, state) {
       // result chip), as before.
       if (!ev.battle && !viaScene && dep.entry.code != null) {
         const fd = (dep.entry.pos & E.POS_FACEUP) === 0;
-        fxNotice((ev.con === HP ? '自分の' : '相手の') + '《' + cardName(ev.code) + '》が破壊された',
-          fd ? '効果で破壊｜セットカード' : '効果で破壊');
+        // BU-71: when this batch's classification record for the
+        // move names a reason the generic '効果で破壊' would
+        // misstate — a negated summon is not the effect
+        // destruction of a summoned monster, and a lost-target /
+        // rule destruction is not an effect destruction either —
+        // the large notice names THAT reason. The card is in the
+        // graveyard now, so naming it stays inside the current
+        // publicity rules (this notice already names set cards).
+        const mcEv = (evs || []).find(e => e.kind === 'movecls' && e.con === ev.con && e.code === ev.code &&
+          e.from === 'field' && e.to === 'grave' && !fxMcUsed.has(e) &&
+          (e.cls === 'R1' || e.cls === 'R2' || e.cls === 'R4' || e.cls === 'R8' || e.cls === 'R9'));
+        const seatD = ev.con === HP ? '自分の' : '相手の';
+        const nmD = '《' + cardName(ev.code) + '》';
+        if (mcEv) {
+          fxMcUsed.add(mcEv);
+          if (mcEv.cls === 'R1') fxNotice(seatD + nmD + 'の召喚が無効化され、破壊された', '召喚無効で破壊');
+          else if (mcEv.cls === 'R2') fxNotice(seatD + nmD + 'の発動が無効化され、破壊された', '発動無効で破壊');
+          else if (mcEv.cls === 'R4') fxNotice(seatD + nmD + 'の効果が無効化され、破壊された', '効果無効で破壊');
+          else if (mcEv.cls === 'R8') fxNotice(seatD + nmD + 'が対象を失って破壊された', '対象を失い破壊');
+          else fxNotice(seatD + nmD + 'が破壊された', fd ? 'ルール処理で破壊｜セットカード' : 'ルール処理で破壊');
+        } else {
+          fxNotice(seatD + nmD + 'が破壊された',
+            fd ? '効果で破壊｜セットカード' : '効果で破壊');
+        }
       }
     }
   }
@@ -4871,13 +4893,112 @@ let fxNoticeBusy = false;
 // becoming overlay (the only same-batch route off the field that
 // reaches no pile), and are worded as such.
 const MOVE_ZONE_JA = { field: 'フィールド', hand: '手札', deck: 'デッキ', grave: '墓地', removed: '除外', extra: 'EXデッキ', overlay: 'エクシーズ素材', gone: 'フィールド外' };
+// BU-71: movecls records already claimed by the destroy
+// presentation in this batch (event-object identity). A destroyed
+// card's move never registers a note, so a claim can only retire
+// a record no note would have used — it exists so two same-code
+// destructions in one batch cannot borrow each other's reason.
+const fxMcUsed = new WeakSet();
+// BU-71: the floating wording for a classified group (design §6,
+// floating column). namesStr is the joined 《name》 parts; the
+// returned text names the REASON only where the engine's
+// classifier was certain — anything else falls through to the
+// destination-only verb, exactly as before.
+function fxMoveClsText(g, seat, namesStr, verb) {
+  const c = g.cls;
+  if (c === 'R6') return seat + '手札上限で' + namesStr + 'を捨てた';
+  if (c && g.redirect) {
+    const manner = { R1: 'の召喚が無効化され、破壊され', R2: 'の発動が無効化され、破壊され', R4: 'の効果が無効化され、破壊され',
+      R7: 'が破壊され', R8: 'が対象を失って破壊され', R9: 'が破壊され', R10: 'が破壊され',
+      R11: 'がシンクロ素材として送られ', R12: 'が素材として送られ', R13: 'が融合素材として送られ',
+      R14: 'がリリースされ', R15: 'がリリースされ', R16: 'が効果でリリースされ',
+      R17: 'がコストで送られ', R18: 'が効果で捨てられ', R22: 'が効果で送られ' }[c];
+    return seat + namesStr + (manner ? manner + '、代わりに除外された' : 'が代わりに除外された');
+  }
+  switch (c) {
+    case 'R1': return seat + namesStr + 'の召喚が無効化され、破壊された';
+    case 'R2': return seat + namesStr + 'の発動が無効化され、破壊された';
+    case 'R3': return seat + namesStr + 'の発動が無効化された';
+    case 'R4': return seat + namesStr + 'の効果が無効化され、破壊された';
+    case 'R5': return seat + namesStr + 'の効果が無効化された';
+    case 'R8': return seat + namesStr + 'が対象を失って破壊された';
+    case 'R9': return seat + namesStr + 'が破壊された（ルール処理）';
+    case 'R11': return seat + namesStr + 'がシンクロ素材になった';
+    case 'R12': return seat + namesStr + 'が素材として墓地へ送られた';
+    case 'R13': return seat + namesStr + (g.to === 'deck' ? 'が融合素材としてデッキに戻った' : g.to === 'extra' ? 'が融合素材としてEXデッキに戻った' : g.to === 'grave' ? 'が融合素材として墓地へ送られた' : 'が融合素材として除外された');
+    case 'R14': return seat + namesStr + 'がリリースされた';
+    case 'R15': return seat + namesStr + 'をリリースして発動';
+    case 'R16': return seat + namesStr + 'が効果でリリースされた';
+    case 'R17': return seat + namesStr + (g.to === 'grave' ? (g.discard ? 'をコストで捨てた' : 'をコストで墓地へ送った')
+      : g.to === 'removed' ? 'をコストで除外した' : g.to === 'deck' ? 'をコストでデッキに戻した'
+      : g.to === 'extra' ? 'をコストでEXデッキに戻した' : g.to === 'hand' ? 'をコストで手札に戻した' : verb);
+    case 'R18': return seat + namesStr + 'が効果で捨てられた';
+    case 'R19': return seat + namesStr + '（エクシーズ素材）を取り除いた';
+    case 'R20': return seat + namesStr + '（エクシーズ素材）が墓地へ送られた';
+    case 'R22': return seat + namesStr + (g.to === 'grave' ? 'が効果で墓地へ送られた' : g.to === 'removed' ? 'が効果で除外された' : g.to === 'deck' ? 'が効果でデッキに戻った' : g.to === 'extra' ? 'が効果でEXデッキに戻った' : verb);
+    case 'R23': return seat + namesStr + 'が一時的に除外された';
+    case 'R24': return seat + namesStr + 'が破壊され、除外された';
+    case 'HS': return seat + namesStr + 'を手札に加えた';
+    case 'HV': return seat + namesStr + 'を墓地から手札に加えた';
+    case 'HR': return seat + namesStr + 'を除外から手札に加えた';
+    case 'HB': return seat + namesStr + 'が手札に戻った';
+    case 'HX': return seat + namesStr + 'をEXデッキから手札に加えた';
+  }
+  return seat + namesStr + verb;
+}
 function fxEmitMoveNotes(notes, evs) {
   if (!notes || !notes.length) return;
   const summonBatch = (evs || []).some(e => e.kind === 'spsummon' || e.kind === 'summon');
+  // BU-71 (design §8): pair the registrations with the engine's
+  // classification records of the SAME batch, as a multiset on
+  // (con, code, from, to). A registration that pairs takes the
+  // record's class; one that does not keeps the destination-only
+  // wording — a reason is never invented on this side. Records
+  // are consumed even by a pairing that yields no wording (R21,
+  // an activated spell/trap's rule send, is history-only by
+  // design: it must still retire its record so a same-key twin
+  // cannot borrow it). Registrations without a code (a set card,
+  // an anonymous count) never pair — the publicity rules are
+  // exactly the current ones.
+  const clsQ = new Map();
+  for (const e of (evs || [])) {
+    if (e.kind !== 'movecls' || e.code == null || fxMcUsed.has(e)) continue;
+    const k = e.con + '|' + e.code + '|' + e.from + '|' + e.to;
+    if (!clsQ.has(k)) clsQ.set(k, []);
+    clsQ.get(k).push(e);
+  }
+  for (const n of notes) {
+    if (n.code == null) continue;
+    const q = clsQ.get(n.con + '|' + n.code + '|' + n.from + '|' + n.to);
+    if (q && q.length) {
+      const e = q.shift();
+      if (e.cls && e.cls !== 'R21') {
+        // A destruction from the field to the graveyard is owned
+        // by the destroy presentation in the same batch, which
+        // names the reason largely (BU-71): the grouped note for
+        // that move keeps the generic wording, so one reason is
+        // never floated twice (design §6 gives R7/R10 to the
+        // dedicated presentations outright; the same one-carrier
+        // rule is applied to R1/R2/R4/R8/R9 here). The record is
+        // still consumed. Every other route keeps its class: a
+        // negated HAND activation has no destroy presentation,
+        // and a redirected destruction lands in the banished
+        // pile, where this note is the only carrier.
+        const destroyOwned = !e.redirect && n.from === 'field' && n.to === 'grave' &&
+          (e.cls === 'R1' || e.cls === 'R2' || e.cls === 'R4' || e.cls === 'R7' ||
+           e.cls === 'R8' || e.cls === 'R9' || e.cls === 'R10');
+        if (!destroyOwned) { n.cls = e.cls; n.redirect = !!e.redirect; n.discard = !!e.discard; }
+      }
+    }
+  }
   const groups = new Map();
   for (const n of notes) {
-    const k = n.con + '|' + n.from + '|' + n.to;
-    if (!groups.has(k)) groups.set(k, { con: n.con, from: n.from, to: n.to, names: [], sets: 0, anon: 0 });
+    // BU-71: the group key gains the reason class (design §6) —
+    // simultaneous moves with different reasons are never merged
+    // under one verb. discard splits only the cost-send wording
+    // (捨てた vs 送った); it is inert for every other class.
+    const k = n.con + '|' + n.from + '|' + n.to + '|' + (n.cls || '') + '|' + (n.redirect ? 1 : 0) + '|' + (n.discard ? 1 : 0);
+    if (!groups.has(k)) groups.set(k, { con: n.con, from: n.from, to: n.to, cls: n.cls || null, redirect: !!n.redirect, discard: !!n.discard, names: [], sets: 0, anon: 0 });
     const g = groups.get(k);
     if (n.code != null) g.names.push(n.code);
     else if (n.setCard) g.sets++;
@@ -4900,12 +5021,13 @@ function fxEmitMoveNotes(notes, evs) {
     if (parts.length) {
       const shown = parts.slice(0, 4);
       const rest = parts.length - shown.length;
-      text = seat + shown.join('') + (rest > 0 ? ' ほか' + rest + '種' : '') + verb(g);
+      const namesStr = shown.join('') + (rest > 0 ? ' ほか' + rest + '種' : '');
+      text = g.cls ? fxMoveClsText(g, seat, namesStr, verb(g)) : seat + namesStr + verb(g);
     } else if (g.anon) {
       text = seat + 'カード' + (g.anon > 1 ? g.anon + '枚' : '') + verb(g);
     }
     if (!text) continue;
-    fxRecord('movenote', { from: g.from, to: g.to, con: g.con, text });
+    fxRecord('movenote', { from: g.from, to: g.to, con: g.con, cls: g.cls || null, redirect: !!g.redirect, text });
     fxNotice(text, 'カードの移動｜' + (MOVE_ZONE_JA[g.from] || g.from) + '→' + (g.to === 'gone' && summonBatch ? 'エクシーズ素材' : (MOVE_ZONE_JA[g.to] || g.to)), true);
   }
 }
