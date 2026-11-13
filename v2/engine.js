@@ -32,6 +32,112 @@ const posName = (pos) => POS_NAME[pos & 0xF] || '表示形式不明';
 const LOC = { DECK:0x01, HAND:0x02, MZONE:0x04, SZONE:0x08, GRAVE:0x10, REMOVED:0x20, EXTRA:0x40, OVERLAY:0x80 };
 const POS = { FU_ATK:0x1, FD_ATK:0x2, FU_DEF:0x4, FD_DEF:0x8 };
 const POS_FACEUP = 0x5, POS_ATTACK = 0x3, POS_DEFENSE = 0xC;
+// ---------------------------------------------------------------- move reasons (BU-71)
+// MSG_MOVE carries the core's reason bitfield — the reason each card
+// script itself declared to the core API (constant.lua is the
+// authority for the bit values). The classifier below is the design
+// record's priority table (fx-design-2026-11-13-movereason §5) as a
+// pure function of (reason, from, to, overlay-origin flag, and three
+// context flags GameState gathers at the same slot: a chain link
+// negated by MSG 75, a link disabled by MSG 76, an unconfirmed
+// summon announcement). It assigns a class ONLY where the bits and
+// context make the reason mechanically certain; any other
+// combination returns null and every surface keeps the current
+// destination-only wording — a reason is never guessed.
+// Validated against 7,925 real-core MOVEs (probe-*.json): all
+// 2,958 graveyard arrivals classify, counts per class match §5.
+const REASON = { DESTROY:0x1, RELEASE:0x2, TEMPORARY:0x4, MATERIAL:0x8, SUMMON:0x10, BATTLE:0x20,
+  EFFECT:0x40, COST:0x80, ADJUST:0x100, LOST_TARGET:0x200, RULE:0x400, SPSUMMON:0x800,
+  DISCARD:0x4000, FUSION:0x40000, SYNCHRO:0x80000, RITUAL:0x100000, XYZ:0x200000, REDIRECT:0x4000000 };
+// x: {reason, from, to (base LOC values, OVERLAY bit stripped),
+//     fromOverlay, neg, dis, pend}
+// returns {cls, redirect, discard} or null. Priority is
+// first-match, top to bottom (design §5).
+function classifyMoveReason(x) {
+  const reason = x.reason >>> 0;
+  const from = x.from, to = x.to;
+  const R = REASON;
+  const redirect = !!(reason & R.REDIRECT);
+  const discard = !!(reason & R.DISCARD);
+  const out = (cls) => ({ cls, redirect, discard });
+  // Arrivals on the field are summon/set procedure placements: the
+  // bits describe the procedure, not a departure reason.
+  if (to === LOC.MZONE || to === LOC.SZONE) return null;
+  const destroyed = !!(reason & R.DESTROY);
+  // Context classes first, destination-agnostic (steer 2026-11-13
+  // 20:25): a negated summon or a negated/disabled activation
+  // explains the move whatever pile the card lands in.
+  if (x.pend && destroyed) return out('R1');
+  if (x.neg) return out(destroyed ? 'R2' : 'R3');
+  if (x.dis) return out(destroyed ? 'R4' : 'R5');
+  if (from === LOC.HAND && to === LOC.GRAVE && (reason & 0x4500) === 0x4500) return out('R6');
+  if (destroyed) {
+    if (reason & R.BATTLE) return out('R7');
+    if (reason & R.LOST_TARGET) return out('R8');
+    if (reason & R.RULE) return out('R9');
+    if (to === LOC.REMOVED && !redirect) return out('R24');
+    return out('R10');
+  }
+  if ((reason & R.SYNCHRO) && (reason & R.MATERIAL)) return out('R11');
+  if ((reason & R.RITUAL) && (reason & R.MATERIAL)) return out('R12');
+  if ((reason & R.FUSION) && (reason & R.MATERIAL)) return out('R13');
+  // Contact-fusion procedure sends carry MATERIAL|COST and no
+  // FUSION bit (measured 0x88, 125 cases) — fusion materials all
+  // the same, but a RELEASE-carrying send is a tribute, not this.
+  if ((reason & R.MATERIAL) && (reason & R.COST) && !(reason & R.RELEASE)) return out('R13');
+  if ((reason & R.RELEASE) && (reason & R.MATERIAL) && (reason & R.SUMMON)) return out('R14');
+  if ((reason & R.RELEASE) && (reason & R.COST)) return out('R15');
+  if ((reason & R.RELEASE) && (reason & R.EFFECT)) return out('R16');
+  if (x.fromOverlay && to === LOC.GRAVE) {
+    if (reason & R.COST) return out('R19');
+    if ((reason & R.RULE) && (reason & R.LOST_TARGET)) return out('R20');
+  }
+  if (reason & R.COST) return out('R17');
+  if ((reason & R.DISCARD) && (reason & R.EFFECT)) return out('R18');
+  if (to === LOC.HAND && (reason & R.EFFECT)) {
+    if (from === LOC.DECK) return out('HS');
+    if (from === LOC.GRAVE) return out('HV');
+    if (from === LOC.REMOVED) return out('HR');
+    if (from === LOC.MZONE || from === LOC.SZONE) return out('HB');
+    if (from === LOC.EXTRA) return out('HX');
+  }
+  if ((reason & R.TEMPORARY) && (reason & R.EFFECT)) return out('R23');
+  // An activated spell/trap's rule send: RULE with no effect /
+  // cost / material / discard / temporary component (the 0x400
+  // family; negated cases were claimed by R3/R5 above).
+  if (from === LOC.SZONE && to === LOC.GRAVE && (reason & R.RULE) &&
+      !(reason & (R.EFFECT | R.COST | R.RELEASE | R.MATERIAL | R.DISCARD | R.TEMPORARY))) return out('R21');
+  if (reason & R.EFFECT) return out('R22');
+  return null;
+}
+// Client note vocabulary for a MOVE's endpoints (design §8): the
+// movecls event speaks in the same from/to words the client's
+// snapshot-diff registrations use, so the two can be paired.
+function moveFromKind(loc) {
+  if (loc & LOC.OVERLAY) return 'overlay';
+  switch (loc & ~LOC.OVERLAY) {
+    case LOC.MZONE: case LOC.SZONE: return 'field';
+    case LOC.HAND: return 'hand';
+    case LOC.DECK: return 'deck';
+    case LOC.GRAVE: return 'grave';
+    case LOC.REMOVED: return 'removed';
+    case LOC.EXTRA: return 'extra';
+    default: return 'gone';
+  }
+}
+function moveToKind(loc) {
+  // Becoming a material: the client sees the card leave for no pile.
+  if (loc & LOC.OVERLAY) return 'gone';
+  switch (loc) {
+    case LOC.MZONE: case LOC.SZONE: return 'field';
+    case LOC.HAND: return 'hand';
+    case LOC.DECK: return 'deck';
+    case LOC.GRAVE: return 'grave';
+    case LOC.REMOVED: return 'removed';
+    case LOC.EXTRA: return 'extra';
+    default: return 'gone'; // loc 0: tokens and other pile-less departures
+  }
+}
 // Duel option flags (ocgapi_constants.h) — Genesis-format restrictions on an
 // MR5 base, per the user's format decision:
 //   base set (unchanged from the verified PoC/MR5 configuration):
@@ -446,6 +552,7 @@ class GameState {
     this.solvingLink = 0;             // chain_count currently resolving (0 = building)
     this.winner = null; this.winReason = 0;
     this.lastAttack = null;           // {attacker, target|null}
+    this.pendingSummons = [];         // BU-71: [{con, loc, seq, code, kind}] — summon announcements (case 60/62/64) not yet confirmed by SUMMONED (61/63/65). If the card at that SLOT leaves while its announcement is pending, the summon was negated (R1). Matching is by slot only — never by code: a same-name re-summon at another slot must not inherit the pending state (the probe's Minerva false-match, design §4). Cleared by the confirmation, by the card's own MOVE, at CHAIN_END and at NEW_TURN.
     this.pendingMatLines = [];        // layout-fix4 L2: [{con, who, nm, cid, sol}] — material history lines NOT YET PUSHED, awaiting the SPSUMMONING announcement that names the true host. Never rewrite a pushed dlog entry in place (round 3 did): the client's captureDLog alignment is value-keyed on `s`, so a rewrite breaks the prefix match and the whole stream is re-added as duplicates — and any client snapshot taken between the MOVE and the announcement captures the wrong host name.
     this.lastTrigger = null;          // layout-fix J4: {kind, code, con, turn, phase} — the latest public action a chain window can be answering
     // layout-fix2 J4': kinds are 'summon' | 'attack' | 'solved' |
@@ -503,6 +610,90 @@ class GameState {
     if (this.dlog.length > 600) this.dlog.splice(0, this.dlog.length - 600);
   }
   chainCid() { return (this.chain.length || this.solvingLink) ? this.chainSeq : 0; }
+  // BU-71 (move reasons, design §5): chain-link flags for the card
+  // leaving a slot — a link whose activation (MSG 75) or effect
+  // (MSG 76) was negated explains that card's subsequent move.
+  // Slot match (con, loc, seq), never code match: two copies of
+  // one card are different links.
+  _linkFlagsAt(con, loc, seq) {
+    let neg = false, dis = false;
+    for (const l of this.chain) {
+      if (l.con === con && l.loc === loc && l.seq === seq) { if (l.negated) neg = true; if (l.disabled) dis = true; }
+    }
+    return { neg, dis };
+  }
+  _pendAt(con, loc, seq) {
+    return this.pendingSummons.find(p => p.con === con && p.loc === loc && p.seq === seq) || null;
+  }
+  _pendDrop(con, loc, seq) {
+    if (this.pendingSummons.length)
+      this.pendingSummons = this.pendingSummons.filter(p => !(p.con === con && p.loc === loc && p.seq === seq));
+  }
+  // Classify one MSG_MOVE (design §5). Must be read BEFORE the
+  // mirror mutates and before the pending entry at the from-slot
+  // is dropped: the context describes this move's own moment.
+  // Returns the classifyMoveReason result, with pendKind (the
+  // announcement's message type) attached for R1 wording.
+  _classifyMove(from, to, reason) {
+    const lf = this._linkFlagsAt(from.con, from.loc, from.seq);
+    const pend = this._pendAt(from.con, from.loc, from.seq);
+    const res = classifyMoveReason({ reason, from: from.loc & ~LOC.OVERLAY, to: to.loc & ~LOC.OVERLAY,
+      fromOverlay: !!(from.loc & LOC.OVERLAY), neg: lf.neg, dis: lf.dis, pend: !!pend });
+    if (res && res.cls === 'R1' && pend) res.pendKind = pend.kind;
+    return res;
+  }
+  _summonKindName(kind) { return kind === 62 ? '特殊召喚' : kind === 64 ? '反転召喚' : '召喚'; }
+  // History verb phrases (the part after the card name) for a
+  // classified move INTO the graveyard — design §6, history
+  // column. Route-independent classes only; routes with their own
+  // phrasing (deck/extra origins, cost sends) are composed by the
+  // caller. Returns null when the class has no grave phrase.
+  _clsGraveVerb(mc) {
+    switch (mc.cls) {
+      case 'R1': return ' は' + this._summonKindName(mc.pendKind) + 'が無効化され、破壊されて墓地へ送られた';
+      case 'R2': return ' の発動が無効化され、破壊されて墓地へ送られた';
+      case 'R3': return ' の発動が無効化され、墓地へ送られた（破壊はされていない）';
+      case 'R4': return ' の効果が無効化され、破壊されて墓地へ送られた';
+      case 'R5': return ' の効果が無効化され、墓地へ送られた（破壊はされていない）';
+      case 'R7': return ' は戦闘で破壊され、墓地へ送られた';
+      case 'R8': return ' は対象を失い、破壊されて墓地へ送られた';
+      case 'R9': return ' はルール処理で破壊され、墓地へ送られた';
+      case 'R10': return ' は効果で破壊され、墓地へ送られた';
+      case 'R11': return ' はシンクロ素材として墓地へ送られた';
+      case 'R12': return ' は儀式召喚の素材として墓地へ送られた';
+      case 'R14': return ' は召喚のためにリリースされ、墓地へ送られた';
+      case 'R15': return ' は発動コストとしてリリースされ、墓地へ送られた';
+      case 'R16': return ' は効果でリリースされ、墓地へ送られた';
+      case 'R21': return ' は墓地へ送られた（発動した魔法・罠）';
+      case 'R22': return ' は効果で墓地へ送られた（破壊ではない）';
+      default: return null;
+    }
+  }
+  // The REDIRECT modifier (class M): the underlying reason stands,
+  // only the destination is replaced by the banished pile —
+  // design §6. Returns null for classes with no redirect phrase.
+  _clsRedirectVerb(mc) {
+    const tail = '、墓地へは行かず除外された';
+    switch (mc.cls) {
+      case 'R1': return ' は' + this._summonKindName(mc.pendKind) + 'が無効化され、破壊され' + tail;
+      case 'R2': return ' の発動が無効化され、破壊され' + tail;
+      case 'R4': return ' の効果が無効化され、破壊され' + tail;
+      case 'R7': return ' は戦闘で破壊され' + tail;
+      case 'R8': return ' は対象を失い、破壊され' + tail;
+      case 'R9': return ' はルール処理で破壊され' + tail;
+      case 'R10': return ' は効果で破壊され' + tail;
+      case 'R11': return ' はシンクロ素材として送られ' + tail;
+      case 'R12': return ' は儀式召喚の素材として送られ' + tail;
+      case 'R13': return ' は融合素材として送られ' + tail;
+      case 'R14': return ' は召喚のためにリリースされ' + tail;
+      case 'R15': return ' は発動コストとしてリリースされ' + tail;
+      case 'R16': return ' は効果でリリースされ' + tail;
+      case 'R17': return ' はコストとして送られ' + tail;
+      case 'R18': return ' は効果で捨てられ' + tail;
+      case 'R22': return ' は効果で送られ' + tail;
+      default: return null;
+    }
+  }
   // The card whose effect is currently asking something: the link being solved,
   // else the newest chain link. Used to give every prompt a visible source.
   chainContext() {
@@ -598,6 +789,7 @@ class GameState {
         // round-3 failure: list order != core seq order).
         for (const pm of this.pendingMatLines) this.pushDLog({ k: 'info', cid: pm.cid, sol: pm.sol, s: pm.who + '：' + pm.nm + ' がモンスター のエクシーズ素材になった' });
         this.pendingMatLines = [];
+        this.pendingSummons = []; // BU-71: an announcement never survives the turn boundary
         // layout-fix2 J4': a window before the turn's first phase
         // message still gets an antecedent (the turn start itself;
         // phase '' = no phase yet, the client labels it ターン開始時).
@@ -617,6 +809,14 @@ class GameState {
       case 50: { // MOVE: code, from loc_info, to loc_info, reason
         const code = r.u32(); const from = r.locInfo(); const to = r.locInfo(); const reason = r.u32();
         if (code !== 0) { // code 0 = deck-internal reorder noise
+          // BU-71 (move reasons, design §5): classify BEFORE the
+          // mirror mutates — the context (chain links, the pending
+          // summon at the from-slot) describes this move's own
+          // moment. The pending state at the from-slot ends with
+          // this move either way (the card left it), so it is
+          // dropped right after the classification read it.
+          const mc = this._classifyMove(from, to, reason);
+          if (!(from.loc & LOC.OVERLAY)) this._pendDrop(from.con, from.loc, from.seq);
           // If the moving card is itself an Xyz host, its overlay count rides
           // on its mirror entry and must follow it to the new location: the
           // core sends no per-unit MOVEs when a host changes location (unit
@@ -686,9 +886,13 @@ class GameState {
             let s = null;
             let matPending = null; // layout-fix3 K3: set by the overlay branch for Extra-Deck hosts
             if (from.loc & LOC.OVERLAY) {
-              const dst = to.loc === LOC.GRAVE ? 'が墓地へ送られた' : to.loc === LOC.HAND ? 'が手札に戻った'
-                : to.loc === LOC.REMOVED ? 'が除外された' : to.loc === LOC.DECK ? 'がデッキに戻った' : null;
-              if (dst) s = this.who(from.con) + '：' + nm + '（エクシーズ素材）' + dst;
+              if (mc && to.loc === LOC.GRAVE && mc.cls === 'R19') s = this.who(from.con) + '：' + nm + ' はエクシーズ素材として取り除かれ、墓地へ送られた';
+              else if (mc && to.loc === LOC.GRAVE && mc.cls === 'R20') s = this.who(from.con) + '：' + nm + '（エクシーズ素材）はホストがフィールドを離れたため墓地へ送られた';
+              else {
+                const dst = to.loc === LOC.GRAVE ? 'が墓地へ送られた' : to.loc === LOC.HAND ? 'が手札に戻った'
+                  : to.loc === LOC.REMOVED ? 'が除外された' : to.loc === LOC.DECK ? 'がデッキに戻った' : null;
+                if (dst) s = this.who(from.con) + '：' + nm + '（エクシーズ素材）' + dst;
+              }
             } else if (fromField && toField && from.con !== to.con) {
               s = this.who(from.con) + '：' + nm + ' のコントロールが ' + this.who(to.con) + ' へ移った';
             } else if (to.loc & LOC.OVERLAY) {
@@ -713,34 +917,147 @@ class GameState {
               // place — the zone is authoritative.
               if ((to.loc & ~LOC.OVERLAY) === LOC.EXTRA) matPending = { con: to.con, who: this.who(from.con), nm };
             } else if (fromField) {
-              if (to.loc === LOC.GRAVE) s = this.who(from.con) + '：' + nm + ' は' + ((reason & 0x1) ? ((reason & 0x20) ? '戦闘で破壊され、墓地へ送られた' : '効果で破壊され、墓地へ送られた') : '墓地へ送られた');
-              else if (to.loc === LOC.REMOVED) s = this.who(from.con) + '：' + nm + ' は除外された';
-              else if (to.loc === LOC.HAND) s = this.who(from.con) + '：' + nm + ' は手札に戻った';
-              else if (to.loc === LOC.DECK) s = this.who(from.con) + '：' + nm + ' はデッキに戻った';
-              else if (to.loc === LOC.EXTRA) s = this.who(from.con) + '：' + nm + ' はEXデッキに戻った';
+              // BU-71: where the classifier is certain, the history
+              // names the reason (design §6); otherwise the line is
+              // exactly the previous destination-only wording.
+              if (to.loc === LOC.GRAVE) {
+                const v = mc ? this._clsGraveVerb(mc) : null;
+                if (v) s = this.who(from.con) + '：' + nm + v;
+                else if (mc && mc.cls === 'R17') s = this.who(from.con) + '：' + nm + ' をコストとして墓地へ送った';
+                else s = this.who(from.con) + '：' + nm + ' は' + ((reason & 0x1) ? ((reason & 0x20) ? '戦闘で破壊され、墓地へ送られた' : '効果で破壊され、墓地へ送られた') : '墓地へ送られた');
+              }
+              else if (to.loc === LOC.REMOVED) {
+                const rv = mc && mc.redirect ? this._clsRedirectVerb(mc) : null;
+                if (rv) s = this.who(from.con) + '：' + nm + rv;
+                else if (mc && mc.cls === 'R24') s = this.who(from.con) + '：' + nm + ' は効果で破壊され、除外された（墓地へは送られていない）';
+                else if (mc && mc.cls === 'R23') s = this.who(from.con) + '：' + nm + ' は効果で一時的に除外された';
+                else if (mc && mc.cls === 'R13') s = this.who(from.con) + '：' + nm + ' は融合素材として除外された';
+                else if (mc && mc.cls === 'R17') s = this.who(from.con) + '：' + nm + ' をコストとして除外した';
+                else if (mc && mc.cls === 'R22') s = this.who(from.con) + '：' + nm + ' は効果で除外された';
+                else s = this.who(from.con) + '：' + nm + ' は除外された';
+              }
+              else if (to.loc === LOC.HAND) {
+                if (mc && mc.cls === 'HB') s = this.who(from.con) + '：' + nm + ' は効果で手札に戻った';
+                else if (mc && mc.cls === 'R17') s = this.who(from.con) + '：' + nm + ' はコストで手札に戻った';
+                else if (mc && mc.cls === 'R3') s = this.who(from.con) + '：' + nm + ' の発動が無効化され、手札に戻った（破壊はされていない）';
+                else if (mc && mc.cls === 'R5') s = this.who(from.con) + '：' + nm + ' の効果が無効化され、手札に戻った（破壊はされていない）';
+                else s = this.who(from.con) + '：' + nm + ' は手札に戻った';
+              }
+              else if (to.loc === LOC.DECK) {
+                if (mc && mc.cls === 'R13') s = this.who(from.con) + '：' + nm + ' は融合素材としてデッキに戻った';
+                else if (mc && mc.cls === 'R17') s = this.who(from.con) + '：' + nm + ' はコストでデッキに戻った';
+                else if (mc && mc.cls === 'R22') s = this.who(from.con) + '：' + nm + ' は効果でデッキに戻った';
+                else s = this.who(from.con) + '：' + nm + ' はデッキに戻った';
+              }
+              else if (to.loc === LOC.EXTRA) {
+                if (mc && mc.cls === 'R13') s = this.who(from.con) + '：' + nm + ' は融合素材としてEXデッキに戻った';
+                else if (mc && mc.cls === 'R17') s = this.who(from.con) + '：' + nm + ' はコストでEXデッキに戻った';
+                else if (mc && mc.cls === 'R22') s = this.who(from.con) + '：' + nm + ' は効果でEXデッキに戻った';
+                else s = this.who(from.con) + '：' + nm + ' はEXデッキに戻った';
+              }
             } else if (from.loc === LOC.HAND) {
-              if (to.loc === LOC.GRAVE) s = this.who(from.con) + '：' + nm + ' を' + ((reason & 0x4000) ? '手札から捨てた' : '手札から墓地へ送った');
-              else if (to.loc === LOC.REMOVED) s = this.who(from.con) + '：' + nm + ' を手札から除外した';
-              else if (to.loc === LOC.DECK) s = this.who(from.con) + '：' + nm + ' を手札からデッキに戻した';
-              else if (to.loc === LOC.EXTRA) s = this.who(from.con) + '：' + nm + ' を手札からEXデッキに戻した';
+              if (to.loc === LOC.GRAVE) {
+                if (mc && mc.cls === 'R6') s = this.who(from.con) + '：' + nm + ' を手札上限（6枚）のため捨てた';
+                else if (mc && mc.cls === 'R2') s = this.who(from.con) + '：' + nm + ' の発動が無効化され、破壊されて墓地へ送られた（手札から発動）';
+                else if (mc && mc.cls === 'R17') s = this.who(from.con) + '：' + nm + (mc.discard ? ' を手札からコストで捨てた' : ' をコストとして墓地へ送った');
+                else if (mc && mc.cls === 'R18') s = this.who(from.con) + '：' + nm + ' は効果で手札から捨てられた';
+                else { const v = mc ? this._clsGraveVerb(mc) : null;
+                  s = v ? this.who(from.con) + '：' + nm + v
+                      : this.who(from.con) + '：' + nm + ' を' + ((reason & 0x4000) ? '手札から捨てた' : '手札から墓地へ送った'); }
+              }
+              else if (to.loc === LOC.REMOVED) {
+                if (mc && mc.cls === 'R23') s = this.who(from.con) + '：' + nm + ' は効果で一時的に除外された';
+                else if (mc && mc.cls === 'R13') s = this.who(from.con) + '：' + nm + ' は融合素材として除外された';
+                else if (mc && mc.cls === 'R17') s = this.who(from.con) + '：' + nm + ' をコストとして手札から除外した';
+                else if (mc && mc.cls === 'R22') s = this.who(from.con) + '：' + nm + ' は効果で除外された';
+                else s = this.who(from.con) + '：' + nm + ' を手札から除外した';
+              }
+              else if (to.loc === LOC.DECK) {
+                if (mc && mc.cls === 'R17') s = this.who(from.con) + '：' + nm + ' をコストで手札からデッキに戻した';
+                else if (mc && mc.cls === 'R22') s = this.who(from.con) + '：' + nm + ' は効果で手札からデッキに戻った';
+                else s = this.who(from.con) + '：' + nm + ' を手札からデッキに戻した';
+              }
+              else if (to.loc === LOC.EXTRA) {
+                if (mc && mc.cls === 'R22') s = this.who(from.con) + '：' + nm + ' は効果でEXデッキに戻った';
+                else s = this.who(from.con) + '：' + nm + ' を手札からEXデッキに戻した';
+              }
             } else if (from.loc === LOC.DECK) {
-              if (to.loc === LOC.GRAVE) s = this.who(from.con) + '：' + nm + ' がデッキから墓地へ送られた';
-              else if (to.loc === LOC.REMOVED) s = this.who(from.con) + '：' + nm + ' がデッキから除外された';
-              else if (to.loc === LOC.HAND) s = this.who(from.con) + '：' + nm + ' をデッキから手札に加えた';
-              else if (to.loc === LOC.EXTRA) s = this.who(from.con) + '：' + nm + ' がデッキからEXデッキへ送られた';
+              if (to.loc === LOC.GRAVE) {
+                if (mc && mc.cls === 'R17') s = this.who(from.con) + '：' + nm + ' がコストでデッキから墓地へ送られた';
+                else if (mc && mc.cls === 'R22') s = this.who(from.con) + '：' + nm + ' が効果でデッキから墓地へ送られた';
+                else { const v = mc ? this._clsGraveVerb(mc) : null;
+                  s = v ? this.who(from.con) + '：' + nm + v : this.who(from.con) + '：' + nm + ' がデッキから墓地へ送られた'; }
+              }
+              else if (to.loc === LOC.REMOVED) {
+                if (mc && mc.cls === 'R23') s = this.who(from.con) + '：' + nm + ' は効果で一時的に除外された';
+                else if (mc && mc.cls === 'R17') s = this.who(from.con) + '：' + nm + ' がコストでデッキから除外された';
+                else if (mc && mc.cls === 'R22') s = this.who(from.con) + '：' + nm + ' が効果でデッキから除外された';
+                else s = this.who(from.con) + '：' + nm + ' がデッキから除外された';
+              }
+              else if (to.loc === LOC.HAND) {
+                if (mc && mc.cls === 'HS') s = this.who(from.con) + '：' + nm + ' を効果でデッキから手札に加えた';
+                else s = this.who(from.con) + '：' + nm + ' をデッキから手札に加えた';
+              }
+              else if (to.loc === LOC.EXTRA) {
+                if (mc && mc.cls === 'R22') s = this.who(from.con) + '：' + nm + ' が効果でデッキからEXデッキへ送られた';
+                else s = this.who(from.con) + '：' + nm + ' がデッキからEXデッキへ送られた';
+              }
             } else if (from.loc === LOC.GRAVE) {
-              if (to.loc === LOC.HAND) s = this.who(from.con) + '：' + nm + ' を墓地から手札に加えた';
-              else if (to.loc === LOC.REMOVED) s = this.who(from.con) + '：' + nm + ' が墓地から除外された';
-              else if (to.loc === LOC.DECK) s = this.who(from.con) + '：' + nm + ' が墓地からデッキに戻った';
-              else if (to.loc === LOC.EXTRA) s = this.who(from.con) + '：' + nm + ' が墓地からEXデッキに戻った';
+              if (to.loc === LOC.HAND) {
+                if (mc && mc.cls === 'HV') s = this.who(from.con) + '：' + nm + ' を効果で墓地から手札に加えた';
+                else s = this.who(from.con) + '：' + nm + ' を墓地から手札に加えた';
+              }
+              else if (to.loc === LOC.REMOVED) {
+                if (mc && mc.cls === 'R13') s = this.who(from.con) + '：' + nm + ' は融合素材として除外された';
+                else if (mc && mc.cls === 'R12') s = this.who(from.con) + '：' + nm + ' は儀式召喚の素材として除外された';
+                else if (mc && mc.cls === 'R17') s = this.who(from.con) + '：' + nm + ' がコストで墓地から除外された';
+                else if (mc && mc.cls === 'R22') s = this.who(from.con) + '：' + nm + ' が効果で墓地から除外された';
+                else s = this.who(from.con) + '：' + nm + ' が墓地から除外された';
+              }
+              else if (to.loc === LOC.DECK) {
+                if (mc && mc.cls === 'R13') s = this.who(from.con) + '：' + nm + ' は融合素材としてデッキに戻った';
+                else if (mc && mc.cls === 'R17') s = this.who(from.con) + '：' + nm + ' がコストで墓地からデッキに戻った';
+                else if (mc && mc.cls === 'R22') s = this.who(from.con) + '：' + nm + ' が効果で墓地からデッキに戻った';
+                else s = this.who(from.con) + '：' + nm + ' が墓地からデッキに戻った';
+              }
+              else if (to.loc === LOC.EXTRA) {
+                if (mc && mc.cls === 'R13') s = this.who(from.con) + '：' + nm + ' は融合素材としてEXデッキに戻った';
+                else if (mc && mc.cls === 'R17') s = this.who(from.con) + '：' + nm + ' がコストで墓地からEXデッキに戻った';
+                else if (mc && mc.cls === 'R22') s = this.who(from.con) + '：' + nm + ' が効果で墓地からEXデッキに戻った';
+                else s = this.who(from.con) + '：' + nm + ' が墓地からEXデッキに戻った';
+              }
             } else if (from.loc === LOC.REMOVED) {
-              if (to.loc === LOC.HAND) s = this.who(from.con) + '：除外されている ' + nm + ' を手札に加えた';
-              else if (to.loc === LOC.GRAVE) s = this.who(from.con) + '：' + nm + ' が除外から墓地へ送られた';
-              else if (to.loc === LOC.DECK) s = this.who(from.con) + '：' + nm + ' が除外からデッキに戻った';
+              if (to.loc === LOC.HAND) {
+                if (mc && mc.cls === 'HR') s = this.who(from.con) + '：除外されている ' + nm + ' を効果で手札に加えた';
+                else s = this.who(from.con) + '：除外されている ' + nm + ' を手札に加えた';
+              }
+              else if (to.loc === LOC.GRAVE) {
+                if (mc && mc.cls === 'R17') s = this.who(from.con) + '：' + nm + ' がコストで除外から墓地へ送られた';
+                else if (mc && mc.cls === 'R22') s = this.who(from.con) + '：' + nm + ' が効果で除外から墓地へ送られた';
+                else s = this.who(from.con) + '：' + nm + ' が除外から墓地へ送られた';
+              }
+              else if (to.loc === LOC.DECK) {
+                if (mc && mc.cls === 'R17') s = this.who(from.con) + '：' + nm + ' がコストで除外からデッキに戻った';
+                else if (mc && mc.cls === 'R22') s = this.who(from.con) + '：' + nm + ' が効果で除外からデッキに戻った';
+                else s = this.who(from.con) + '：' + nm + ' が除外からデッキに戻った';
+              }
             } else if (from.loc === LOC.EXTRA) {
-              if (to.loc === LOC.GRAVE) s = this.who(from.con) + '：' + nm + ' がEXデッキから墓地へ送られた';
-              else if (to.loc === LOC.REMOVED) s = this.who(from.con) + '：' + nm + ' がEXデッキから除外された';
-              else if (to.loc === LOC.HAND) s = this.who(from.con) + '：' + nm + ' がEXデッキから手札に加わった';
+              if (to.loc === LOC.GRAVE) {
+                if (mc && mc.cls === 'R22') s = this.who(from.con) + '：' + nm + ' が効果でEXデッキから墓地へ送られた';
+                else if (mc && mc.cls === 'R17') s = this.who(from.con) + '：' + nm + ' がコストでEXデッキから墓地へ送られた';
+                else { const v = mc ? this._clsGraveVerb(mc) : null;
+                  s = v ? this.who(from.con) + '：' + nm + v : this.who(from.con) + '：' + nm + ' がEXデッキから墓地へ送られた'; }
+              }
+              else if (to.loc === LOC.REMOVED) {
+                if (mc && mc.cls === 'R13') s = this.who(from.con) + '：' + nm + ' は融合素材として除外された';
+                else if (mc && mc.cls === 'R17') s = this.who(from.con) + '：' + nm + ' がコストでEXデッキから除外された';
+                else if (mc && mc.cls === 'R22') s = this.who(from.con) + '：' + nm + ' が効果でEXデッキから除外された';
+                else s = this.who(from.con) + '：' + nm + ' がEXデッキから除外された';
+              }
+              else if (to.loc === LOC.HAND) {
+                if (mc && mc.cls === 'HX') s = this.who(from.con) + '：' + nm + ' が効果でEXデッキから手札に加わった';
+                else s = this.who(from.con) + '：' + nm + ' がEXデッキから手札に加わった';
+              }
             }
             if (s) {
               if (matPending) {
@@ -771,6 +1088,22 @@ class GameState {
               else if (to.loc === LOC.EXTRA) this.pushLog(this.who(from.con) + '：セットカードがEXデッキに戻った');
               else if (toField) this.pushLog(this.who(from.con) + '：セットカードのコントロールが移った');
             }
+          }
+          // BU-71: hand the classification to the client so the
+          // floating move notices can pair it with their snapshot
+          // registration of the same move (multiset on con/code/
+          // from/to, design §8). Field ARRIVALS are not emitted:
+          // no notice ever registers them (summons and sets have
+          // their own presentations), and a stale record could
+          // only be mispicked by a later departure of that card.
+          // cls is null for unclassified moves — the record still
+          // pairs, so a classified sibling move of the same card
+          // and route is never claimed by an unclassified twin.
+          {
+            const toK = moveToKind(to.loc);
+            if (toK !== 'field') this.pushEvent({ kind: 'movecls', code, con: from.con,
+              from: moveFromKind(from.loc), to: toK,
+              cls: mc ? mc.cls : null, redirect: !!(mc && mc.redirect), discard: !!(mc && mc.discard) });
           }
         }
         break;
@@ -915,6 +1248,16 @@ class GameState {
         }
         break;
       }
+      case 61: case 63: case 65: { // SUMMONED / SPSUMMONED / FLIPSUMMONED: code + loc_info
+        // BU-71: the confirmation retires the pending announcement
+        // at that slot — a later departure of that card is an
+        // ordinary move of a summoned monster, never a negation.
+        // (These messages were previously unhandled; the payload
+        // matches the announcement's, code + loc_info.)
+        r.u32(); const li = r.locInfo();
+        this._pendDrop(li.con, li.loc, li.seq);
+        break;
+      }
       case 54: case 60: case 62: case 64: { // SET / SUMMONING / SPSUMMONING / FLIPSUMMONING: code + loc_info
         // SPSUMMONING for a face-down special summon carries code 0 (the core
         // zeroes it); the monster's MOVE into the zone just before carried
@@ -923,6 +1266,15 @@ class GameState {
         // known code (position still updates).
         const code = r.u32(); const li = r.locInfo();
         const zone = li.loc === LOC.MZONE ? this.players[li.con].mzone : this.players[li.con].szone;
+        if (t === 60 || t === 62 || t === 64) {
+          // BU-71: remember the unconfirmed summon BY SLOT. If the
+          // card leaves that slot before SUMMONED (case 61/63/65),
+          // the summon was negated — case 50's classifier reads
+          // this. The code is kept for wording/debugging only;
+          // matching is (con, loc, seq).
+          this._pendDrop(li.con, li.loc, li.seq);
+          this.pendingSummons.push({ con: li.con, loc: li.loc, seq: li.seq, code: code || (zone[li.seq] && zone[li.seq].code) || 0, kind: t });
+        }
         if (zone[li.seq]) { if (code !== 0) zone[li.seq].code = code; zone[li.seq].pos = li.pos; }
         else if (li.loc === LOC.MZONE) this.players[li.con].mzone[li.seq] = { code, pos: li.pos, materials: 0 };
         else this.players[li.con].szone[li.seq] = { code, pos: li.pos };
@@ -1048,7 +1400,7 @@ class GameState {
       } break; } // CHAIN_SOLVED
       case 75: { const n = r.u8(); const link = this.chain[n - 1]; if (link) { link.negated = true; this.pushDLog({ k: 'neg', cid: this.chainSeq, link: n, con: link.con, code: link.code, desc: link.desc, loc: link.loc }); this.pushLog('チェーン' + n + '：' + this.bn(this.nameOf(link.code)) + ' の発動が無効になった'); } this.pushEvent({ kind: 'negate' }); break; } // CHAIN_NEGATED (band line: layout-fix J2)
       case 76: { const n = r.u8(); const link = this.chain[n - 1]; if (link) { link.disabled = true; this.pushDLog({ k: 'dis', cid: this.chainSeq, link: n, con: link.con, code: link.code, desc: link.desc, loc: link.loc }); this.pushLog('チェーン' + n + '：' + this.bn(this.nameOf(link.code)) + ' の効果が無効になった'); } break; } // CHAIN_DISABLED (band line: layout-fix J2)
-      case 74: this.chain = []; this.solvingLink = 0; break; // CHAIN_END
+      case 74: this.chain = []; this.solvingLink = 0; this.pendingSummons = []; break; // CHAIN_END (BU-71: pending summon announcements end with the chain episode too — design §4)
       case 110: { // ATTACK: attacker loc_info, target loc_info (zeroed = direct)
         const a = r.locInfo(); const tg = r.locInfo();
         this.lastAttack = { attacker: a, target: tg.loc === 0 ? null : tg };
@@ -6202,7 +6554,8 @@ const Engine = { MSG, SELECT_TYPES, PHASES, LOC, POS, POS_FACEUP, POS_ATTACK, PO
   ATTRIBUTES, RACES, Reader, splitMessages, i32resp, cancelResp, cardsResp, cmdResp, placeResp,
   counterResp, sortResp, unselectToggleResp, u64resp, parsePrompt, parseHint, sumSelectionValid, isDeclarable,
   shuffledCopy, randBelow,
-  GameState, botAnswer, makeBotMemory, botView, maskPromptForHuman, Duel, xyzMaterialReq };
+  GameState, botAnswer, makeBotMemory, botView, maskPromptForHuman, Duel, xyzMaterialReq,
+  REASON, classifyMoveReason, moveFromKind, moveToKind };
 // Diagnostic-only surface for the tuning harnesses (test-cpu-tune*.js):
 // the policy's internal scorers, exposed read-only so a trace can name
 // the exact gate/score that declined an offered play. Not used by the
