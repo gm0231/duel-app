@@ -213,13 +213,13 @@
      old frozen 62px pushed the second line out of the band and the
      field below painted over it. The band grows instead and the
      visible-fit loop shrinks the board to compensate. */
-  #midbar{position:relative;display:flex;align-items:center;gap:8px;min-height:62px;flex-shrink:0;background:var(--panel);border-top:1px solid var(--tile-edge);border-bottom:1px solid var(--tile-edge);padding:2px 6px;} /* layout-fix4 L1: the band never yields its height to the flex column — when the stack overflows the visible height the shrink loop eats tiles/hand/preview, never the situation line */
+  #midbar{position:relative;display:flex;align-items:center;gap:4px;min-height:62px;flex-shrink:0;background:var(--panel);border-top:1px solid var(--tile-edge);border-bottom:1px solid var(--tile-edge);padding:2px 4px;} /* layout-fix4 L1: the band never yields its height to the flex column — when the stack overflows the visible height the shrink loop eats tiles/hand/preview, never the situation line. BU-61 (2026-11-13): gap/padding slimmed to fund the phase button's guaranteed width (see #phasebtn). */
   #app.compactui #midbar{min-height:62px;}
   .mid-info{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:1px;}
-  .mid-line1{display:flex;align-items:baseline;gap:7px;white-space:nowrap;overflow:hidden;}
+  .mid-line1{display:flex;align-items:baseline;gap:4px;white-space:nowrap;overflow:hidden;}
   #turninfo{font-size:11.5px;line-height:1.3;color:var(--txt-dim);flex:0 0 auto;white-space:nowrap;}
-  #phaseinfo{font-size:17px;line-height:1.25;font-weight:700;color:var(--txt);white-space:nowrap;flex:0 0 auto;}
-  #app.compactui #phaseinfo{font-size:15.5px;}
+  #phaseinfo{font-size:15px;line-height:1.25;font-weight:700;color:var(--txt);white-space:nowrap;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;}
+  #app.compactui #phaseinfo{font-size:15px;}
   /* redesign E (p5b): once a phase sweep has settled, the phase
      name "sits" — gold and bold. render() only rewrites the
      element's text, never its class list, so the seated state
@@ -239,7 +239,7 @@
   #logline .lk{white-space:nowrap;} /* layout-fix J2: a card name never breaks mid-word in the band */
   .nb{white-space:nowrap;} /* layout-fix2 J2': unbreakable units (nbHTML) — band, dock and sheet context lines break only between units */
   #sheet .btnnote{flex:1 1 auto;text-align:center;font-size:12.5px;color:var(--txt-dim);padding:10px 4px;} /* layout-fix2 J1': the unselect footer when no button exists */
-  #loghistbtn{flex:0 0 auto;height:48px;min-width:44px;font-size:12px;color:var(--gold);background:#241a0e;border:1px solid var(--gold-dim);border-radius:6px;padding:0 8px;cursor:pointer;}
+  #loghistbtn{flex:0 0 auto;height:48px;min-width:40px;font-size:12px;color:var(--gold);background:#241a0e;border:1px solid var(--gold-dim);border-radius:6px;padding:0 6px;cursor:pointer;}
   #app.compactui #loghistbtn{height:48px;}
   #chainbar{position:absolute;left:0;top:0;bottom:0;right:118px;display:flex;visibility:hidden;align-items:center;gap:4px;overflow-x:auto;padding:2px 6px;background:var(--panel);z-index:3;}
   #chainbar.on{visibility:visible;}
@@ -270,7 +270,19 @@
   /* The phase button sits at the press floor (46px; 44px compact)
      — sized by pressability, not larger (user, 2026-11-12). Its
      label never wraps: one line, ellipsis as backstop only. */
-  #phasebtn{flex:0 1 auto;background:var(--gold);color:#191104;border:0;border-radius:6px;font-size:13.5px;font-weight:700;padding:0 10px;height:46px;min-width:104px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;}
+  /* BU-61 (brushup round 2026-11-13): the phase button is the
+     band's primary control, so its longest labels are guaranteed
+     whole — measured demand at the 13.5px face is 136px of
+     client width (メインフェイズ2へ), and the button used to flex-
+     shrink to ~124px and ellipsize to 「バトルフェイ…」. The button
+     now never shrinks and reserves 136px; the space is funded by
+     the bar's padding/gaps, the history button's slack, the
+     line-1 gap and the phase readout's size (17->15px: its
+     longest text 「メインフェイズ 1」 measures 117px there, so
+     turn + phase fit whole at 390px wide). Under residual
+     pressure (2-digit turn counts) the readout ellipsises
+     cleanly instead of being hard-clipped mid-glyph. */
+  #phasebtn{flex:0 0 auto;background:var(--gold);color:#191104;border:0;border-radius:6px;font-size:13.5px;font-weight:700;padding:0 10px;height:46px;min-width:136px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;}
   #app.compactui #phasebtn{height:44px;}
   #phasebtn:disabled{background:#4a3d22;color:#8a7c55;}
   /* ---------- hand ---------- */
@@ -860,6 +872,18 @@
      through its back (the decided design). The back pattern now
      dominates at every phase (.78-.92); the ghost stays. */
   @keyframes setbreath{from{opacity:.78}to{opacity:.92}}
+  /* own set cards (user decision 2026-11-13): the name plate and
+     the ATK/DEF plate STAY on the owner's set cards. The stat
+     plate lives at slot level, outside the tile, and was never
+     covered; the name band sits INSIDE .inner, where the animated
+     veil composites over it (hit-test measured: the veil is the
+     top element at the band's centre) — so the band is lifted
+     above the veil explicitly. The veil itself is untouched
+     (2026-11-03 design, opacity .78-.92). */
+  .tile.setown .nm{position:relative;z-index:2;}
+  /* spell/trap subtype icon inside the text meta line (detail /
+     info / preview surfaces): same 12px pixel glyph as the chip */
+  .sticon{width:12px;height:12px;image-rendering:pixelated;vertical-align:-1px;margin-right:3px;}
   /* xyz material stack edges: layered inset steps at the tile corner */
   .tile.mats1{box-shadow:inset -3px -3px 0 0 #171208,inset -4.5px -4.5px 0 0 var(--gold-dim);}
   .tile.mats2{box-shadow:inset -3px -3px 0 0 #171208,inset -4.5px -4.5px 0 0 var(--gold-dim),inset -6px -6px 0 0 #171208,inset -7.5px -7.5px 0 0 var(--gold-dim);}
@@ -881,7 +905,15 @@
   .dp-head{display:flex;align-items:center;gap:10px;width:100%;flex:0 0 auto;}
   .dp-head .dp-title{font-size:17px;font-weight:700;color:var(--gold);letter-spacing:.08em;}
   #deckback{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:12.5px;padding:9px 12px;cursor:pointer;flex:0 0 auto;}
-  .dp-main{flex:1 1 auto;min-height:0;width:100%;display:flex;flex-direction:column;margin-top:2px;}
+  /* BU-60 (brushup round 2026-11-13): the middle region must
+     also CONTAIN its sections — at a 620px height the settings
+     sections add up taller than the region once a picked deck's
+     row grows (points line), and with visible overflow they
+     painted straight into the foot, drawing the sound row over
+     the summary line. The region scrolls internally, like the
+     deck lists always did; the page frame (head + foot with the
+     summary and the start button) never moves. */
+  .dp-main{flex:1 1 auto;min-height:0;width:100%;display:flex;flex-direction:column;margin-top:2px;overflow-y:auto;overflow-x:hidden;}
   .dp-sec{display:flex;flex-direction:column;flex:0 0 auto;min-height:0;}
   .dp-sec .segrow{flex:0 0 auto;}
   #deckpage .decklist{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;flex-wrap:nowrap;gap:8px;overflow-y:auto;padding:2px;}

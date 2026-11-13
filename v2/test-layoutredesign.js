@@ -71,8 +71,12 @@ async function main() {
   const logline = ruleDecls(/#logline\{([^}]*)\}/);
   // layout-fix J2 supersedes the frozen height with a 62px minimum
   // (inflated system fonts grow the band; the fit loop absorbs it).
-  ok(!!midbar && midbar['min-height'] === '62px' && !('height' in midbar) && !!phaseinfo && phaseinfo['line-height'] === '1.25' && phaseinfo['font-size'] === '17px',
-    'LR-1: the mid band is one fitted 62px-minimum row; the phase name stands at 17px with a fitted line box');
+  // brushup round 2026-11-13 (BU-61) supersedes the 17px phase
+  // size: the phase button's longest labels are guaranteed whole
+  // (min-width 136px, never shrinks) and the readout stands at
+  // 15px so turn + phase + button all fit at 390px wide.
+  ok(!!midbar && midbar['min-height'] === '62px' && !('height' in midbar) && !!phaseinfo && phaseinfo['line-height'] === '1.25' && phaseinfo['font-size'] === '15px',
+    'LR-1: the mid band is one fitted 62px-minimum row; the phase name stands at 15px with a fitted line box (BU-61)');
   // layout-fix3 K2 supersedes the two-line clamp: it silently
   // cut the TAIL of long lines (verb endings, destinations) in
   // real play. No clamp at all now — fitLogline shrinks the
@@ -123,7 +127,13 @@ async function main() {
   ok(typeof chip === 'string' && chip.includes('assets/icons/attr-') && chip.includes('assets/icons/star.png') && chip.includes('assets/icons/race-'),
     'LR-4a: a monster\'s marks chip carries attribute + star + race icons');
   const spellChip = ev('(() => { const sp = Object.keys(DATA.cards).map(Number).find(c => (DATA.cards[c].type & 0x6) && !(DATA.cards[c].type & 1)); return marksChipHTML(sp); })()');
-  ok(spellChip === '', 'LR-4b: spells/traps carry no marks chip');
+  // brushup round 2026-11-13 supersedes the no-marks rule for
+  // spells/traps (user instruction): a spell/trap now carries its
+  // subtype symbol chip — and ONLY that, never the monster set.
+  ok(spellChip === '' || (spellChip.includes('assets/icons/st-') && !spellChip.includes('attr-') && !spellChip.includes('star.png') && !spellChip.includes('race-')),
+    'LR-4b: a spell/trap\'s chip is its subtype symbol only (none for a normal spell/trap) — never monster marks');
+  ok(ev('marksChipHTML(28958464)').includes('assets/icons/st-quick.png'),
+    'LR-4c: a quick-play spell (MC版《死者蘇生》) carries the bolt chip');
 
   // ---------- LR-6: reading time + notice ----------
   ok(ev('typeof fxNotice') === 'function' && ev('fxReadMs("あ")') < ev('fxReadMs("あ".repeat(30))'),
