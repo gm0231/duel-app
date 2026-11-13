@@ -5132,13 +5132,20 @@ function fxFinisherGateMs() {
   // that delay or the result would resurface under the wash tail.
   return Math.max(0, Math.min(3600, remain));
 }
-function fxFinisherSceneV3(attr) {
+function fxFinisherSceneV3(attr, defConArg) {
   const host = $('fxcutin'); if (!host) return;
   const la = fxLastAttackScene; if (!la || !la.aPt) return;
   const layer = fxLayerEl(); if (!layer) return;
   const app = $('app'); if (!app) return;
   const ar = fxRel(app);
-  const defCon = la.defCon;
+  // BU-77: the drained seat is the LOSER, passed by the caller
+  // (1 - winner) — never the last attack's defender. A lethal
+  // effect kill (e.g. the bomb) leaves a stale attack scene whose
+  // defender is the eventual WINNER; deriving the seat from it
+  // drained the winner's counter to zero (observed: 2500 -> 0
+  // while the loser sat at -1250). The attack scene still supplies
+  // the charge halo's position only.
+  const defCon = defConArg != null ? defConArg : la.defCon;
   const lpEl = fxLpEl(defCon);
   const lpPt = lpEl ? fxRel(lpEl) : la.tPt;
   if (!lpPt) return;
@@ -6159,7 +6166,7 @@ function fxRoundBEvents(evs, prev, cur, diff) {
   // full-screen wash (attribute-tinted); the result overlay follows.
   // Keyed on the winner transition + a recent hit (see fxLastHitAt)
   if (cur.winner != null && prev.winner == null && fxLastHitAt && performance.now() - fxLastHitAt < 5000) {
-    fxFinisherSceneV3(lastAtkAttr != null ? lastAtkAttr : fxLastHitAttr);
+    fxFinisherSceneV3(lastAtkAttr != null ? lastAtkAttr : fxLastHitAttr, 1 - cur.winner);
     fxRecord('finisher', { attr: lastAtkAttr != null ? lastAtkAttr : fxLastHitAttr });
   }
   // ---- chain (B8): newest link pops forward; solving is recorded
@@ -6197,16 +6204,23 @@ function fxRoundBEvents(evs, prev, cur, diff) {
   //    (the reversed grammar: swell + rise, no shake).
   //  - while a finisher scene owns the seat, NO numeral and NO
   //    chip: its drain is the presentation (guard inherited).
+  //  - BU-77: the same holds for a LETHAL drop whose winner has
+  //    not arrived yet (the core delivers MSG_WIN in a trailing
+  //    batch — test-fx FXB4b/c). Without this the loop creates a
+  //    numeral the trailing finisher kills ~instantly (observed
+  //    69 ms, never visible), so the lethal blow's presentation
+  //    is the finisher's drain either way the batches land.
   for (let p = 0; p < 2; p++) {
     if (cur.lp[p] === prev.lp[p]) continue;
     if (fxLpShown[p] == null) fxLpShown[p] = prev.lp[p];
     const delta = cur.lp[p] - prev.lp[p];
+    const lethal = cur.lp[p] <= 0; // this drop ends the duel: the finisher owns it
     const finisherOwns = !!(fxLpScenes[p] && !fxLpScenes[p].dead && fxLpScenes[p].kind === 'finisher');
     let countStartAt = null, numAtFx = null, num = null;
     if (delta < 0 && fxLastAttackScene && fxLastAttackScene.defCon === p && fxTimeMs - fxLastAttackScene.t0 < 400) {
       countStartAt = fxLastAttackScene.t0 + 340;
       numAtFx = fxLastAttackScene.t0 + 280;
-      if (!finisherOwns) {
+      if (!finisherOwns && !lethal) {
         num = { amount: -delta, heal: false };
         fxRecord('dmgnum', { player: p, amount: -delta, tier: fxDmgTier(-delta), battle: true });
       }
@@ -6230,7 +6244,7 @@ function fxRoundBEvents(evs, prev, cur, diff) {
         payAmt -= excess;
       }
       if (payAmt > 0) { fxLpChip(p, 'pay', payAmt, 0); fxRecord('lpchip', { player: p, chip: 'pay', amount: payAmt, signed: -payAmt, variant: 'pay', down: true }); }
-      if (dmgAmt > 0) { num = { amount: dmgAmt, heal: false }; fxRecord('dmgnum', { player: p, amount: dmgAmt, tier: fxDmgTier(dmgAmt), battle: false }); }
+      if (dmgAmt > 0 && !lethal) { num = { amount: dmgAmt, heal: false }; fxRecord('dmgnum', { player: p, amount: dmgAmt, tier: fxDmgTier(dmgAmt), battle: false }); }
     } else if (delta > 0 && !finisherOwns) {
       num = { amount: delta, heal: true };
       fxRecord('healnum', { player: p, amount: delta, tier: fxDmgTier(delta) });
