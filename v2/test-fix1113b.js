@@ -72,12 +72,18 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   ok(ask.includes("$('quit-cancel').addEventListener('click', () => { playClick(); sheetClose(); })"),
     'F63d: 対局に戻る only closes the sheet (the duel continues)');
   // F1b: the early veil lift sits BEFORE the data.json fetch in the boot IIFE
-  const liftIdx = clientSrc.indexOf("if (sessionStorage.getItem('v3todeck')) {");
+  // (BU-69 revision, fix round 2026-11-13 #3: the prefix no longer
+  // merely peeks at the stash — it consumes and APPLIES it there,
+  // so the summary is correct from the first frame; the pins now
+  // name the consume-in-prefix shape. The behavioral side is
+  // pinned by test-fix1113c R1-B1..B5 with a deferred fetch.)
+  const liftIdx = clientSrc.indexOf("const td = sessionStorage.getItem('v3todeck');");
   const fetchIdx = clientSrc.indexOf("DATA = await (await fetch('data.json')).json();");
   ok(liftIdx > 0 && fetchIdx > 0 && liftIdx < fetchIdx,
     'F63e: the boot-time veil lift reads the stash before data.json is fetched');
-  ok(clientSrc.slice(liftIdx, liftIdx + 220).includes("$('deckpage').style.display = 'flex'") &&
-     clientSrc.slice(liftIdx, liftIdx + 220).includes("$('start').style.display = 'none'"),
+  const landIdx = clientSrc.indexOf('if (todeckLanded) {');
+  ok(landIdx > liftIdx && clientSrc.slice(landIdx, landIdx + 160).includes("$('deckpage').style.display = 'flex'") &&
+     clientSrc.slice(landIdx, landIdx + 160).includes("$('start').style.display = 'none'"),
     'F63f: the lift shows the deck page frame and hides the title overlay');
   // F2: the remainder derivation + deck rows
   ok(clientSrc.includes('function ownDeckRemainder(con)'), 'F64a: ownDeckRemainder exists');

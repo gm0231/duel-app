@@ -1251,6 +1251,35 @@
     </div>
   </div>
 </div>
+<script>
+// BU-69 (fix round 2026-11-13 #3): mid-duel exit landing. The
+// quit path reloads with 'v3todeck' stashed in sessionStorage,
+// and the deck page is what the user asked to see — but every
+// external script below (the engine stack and client.js itself,
+// ~1MB of parse) and the data.json fetch stood between the
+// reload and the veil lifting, so on a loaded device the title
+// overlay with its 「読み込み中…」 line stayed up for a long
+// time and the summary then showed the DEFAULT decks until the
+// boot finished restoring (parent re-verification measured the
+// veil at ~2.5 minutes and a transient wrong opponent name).
+// This inline script runs at HTML-parse time, before any of
+// that: when the stash exists it lands on the deck page at once
+// and writes the stashed summary line (recorded verbatim by
+// quitToDeckSelection) into #decksum. client.js consumes the
+// same stash in its boot prefix and re-renders everything for
+// real; the two agree because both read the one stash.
+try {
+  var __td = sessionStorage.getItem('v3todeck');
+  if (__td) {
+    var __cfg = JSON.parse(__td);
+    if (__cfg && (__cfg.my || __cfg.op)) {
+      document.getElementById('start').style.display = 'none';
+      document.getElementById('deckpage').style.display = 'flex';
+      if (__cfg.sum) document.getElementById('decksum').textContent = __cfg.sum;
+    }
+  }
+} catch (e) {}
+</script>
 <script src="build/ocgcore.js"></script>
 <script src="engine.js"></script>
 <script src="duel-worker.js"></script>

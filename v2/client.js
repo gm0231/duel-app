@@ -798,7 +798,14 @@ function closeDeckCat() {
 // current selections, reload, and let the boot block below land
 // on the deck page with those selections kept.
 function quitToDeckSelection() {
-  try { sessionStorage.setItem('v3todeck', JSON.stringify({ my: myDeckKey, op: opDeckKey, first: firstChoice })); } catch (e) {}
+  // BU-69: the stash also carries the summary line exactly as it
+  // should read on landing, so the inline landing script in
+  // index.html can show the CORRECT selections at HTML-parse
+  // time — before any external script has loaded — instead of
+  // the boot defaults (measured: the summary transiently named
+  // the default opponent ゲート・ガーディアン after a return).
+  updateDeckSum();
+  try { sessionStorage.setItem('v3todeck', JSON.stringify({ my: myDeckKey, op: opDeckKey, first: firstChoice, sum: $('decksum').textContent })); } catch (e) {}
   location.reload();
 }
 // BU-63: the exit above is IRREVERSIBLE for the duel in progress
@@ -9046,25 +9053,67 @@ function wireSeg(id, apply) {
   // load so the pages can be walked even on the failure path, whose
   // retry button lives on the deck page).
   $('deckpage').style.display = 'none';
-  updateDeckSum();
-  // BU-63: a mid-duel exit reload lands here with 'v3todeck'
-  // stashed, but the landing itself (bottom of this block) runs
-  // only after data.json has loaded — until then the title
-  // overlay stood on screen with its 「読み込み中…」 line, an
-  // unexplained veil over the deck page the user had already
-  // asked for (parent verification: the page's top controls
-  // stayed untappable "for a while" after returning). Lift the
-  // veil up front: the deck page's frame is pure DOM and shows
-  // immediately; the stash is NOT consumed here — the boot-end
-  // restore still applies the stashed selections and flips the
-  // same pages, so the two never disagree.
+  // BU-69: the mid-duel exit restore is applied HERE, in the
+  // synchronous prefix — not at the bottom of this block. The
+  // measured return path (CPU-throttled rig, test-fix1113c)
+  // showed what the bottom placement cost: the veil (BU-63's
+  // lift) came up at script-execution time, but the summary kept
+  // showing the DEFAULT selections （相手：ゲート・ガーディアン
+  // ／ 先攻） until data.json had been fetched and parsed and
+  // every post-load wiring step had run, because the restore sat
+  // behind all of it. The restore needs no DATA at all (deck
+  // names are a static table, saved decks load at module level),
+  // so it runs before the first await: selections, the seg-first
+  // marks and the summary are correct from the first moment the
+  // deck page can be seen, and the boot-end block only re-asserts
+  // the row marks once the deck rows exist. The inline landing
+  // script in index.html covers the window before client.js
+  // itself executes.
+  let todeckCfg = null;
+  let todeckLanded = false;
   try {
-    if (sessionStorage.getItem('v3todeck')) {
-      $('start').style.display = 'none';
-      $('deckpage').style.display = 'flex';
+    const td = sessionStorage.getItem('v3todeck');
+    if (td) {
+      sessionStorage.removeItem('v3todeck');
+      todeckCfg = JSON.parse(td);
+      if (todeckCfg.my) myDeckKey = todeckCfg.my;
+      if (todeckCfg.op) opDeckKey = todeckCfg.op;
+      if (todeckCfg.first) {
+        firstChoice = todeckCfg.first;
+        const sf = $('seg-first');
+        if (sf) sf.querySelectorAll('button').forEach(x => x.classList.toggle('sel', x.dataset.v === todeckCfg.first));
+      }
+      todeckLanded = true;
     }
   } catch (e) {}
+  updateDeckSum();
+  if (todeckLanded) {
+    $('start').style.display = 'none';
+    $('deckpage').style.display = 'flex';
+  }
   renderSavedDecks();
+  if (todeckLanded && SAVED_DECKS[myDeckKey]) syncDeckSelection();
+  // BU-69: the deck page's own controls are wired in the prefix
+  // too (they need no DATA): first/second, the FX-setting segs
+  // and the sound switch answer from the moment client.js runs,
+  // not from the end of the data load.
+  wireSeg('seg-first', (v) => { firstChoice = v; updateDeckSum(); });
+  syncFxSegs(); // reflect any persisted round-B settings before wiring
+  wireSeg('seg-cutin', (v) => { fxSettings.cutin = v === 'on'; fxSaveSettings(); });
+  wireSeg('seg-notice', (v) => { fxSettings.notice = v === 'on'; fxSaveSettings(); }); // layout-fix3 K5
+  wireSeg('seg-resp', (v) => { fxSettings.resp = v; fxSaveSettings(); updateAutoPassChip(); });
+  // reflect the persisted audio preference in the switch at boot
+  $('soundbtn').classList.toggle('on', audioOn);
+  $('sndstate').textContent = audioOn ? 'オン' : 'オフ';
+  $('soundbtn').addEventListener('click', () => {
+    audioOn = !audioOn;
+    saveAudioPref();
+    // section 4: a switch shape + a state word, not a text button
+    $('soundbtn').classList.toggle('on', audioOn);
+    $('sndstate').textContent = audioOn ? 'オン' : 'オフ';
+    if (!audioOn && bgmEl) { try { bgmEl.pause(); } catch (e) {} }
+    if (audioOn) { playClick(); setBgmScene(bgmScene || 'start', true); }
+  });
   $('todeck').addEventListener('click', () => { playClick(); $('start').style.display = 'none'; $('deckpage').style.display = 'flex'; });
   $('deckback').addEventListener('click', () => { playClick(); $('deckpage').style.display = 'none'; $('start').style.display = 'flex'; });
   // deck choice flow: current-choice row -> category page -> modal
@@ -9131,11 +9180,8 @@ function wireSeg(id, apply) {
   wireDeckSeg('seg-mydeck', (v) => { selectMyDeck(v); });
   wireDeckSeg('seg-opdeck', (v) => { selectOpDeck(v); });
   renderDeckCurrents();
-  wireSeg('seg-first', (v) => { firstChoice = v; updateDeckSum(); });
-  syncFxSegs(); // reflect any persisted round-B settings before wiring
-  wireSeg('seg-cutin', (v) => { fxSettings.cutin = v === 'on'; fxSaveSettings(); });
-  wireSeg('seg-notice', (v) => { fxSettings.notice = v === 'on'; fxSaveSettings(); }); // layout-fix3 K5
-  wireSeg('seg-resp', (v) => { fxSettings.resp = v; fxSaveSettings(); updateAutoPassChip(); });
+  // BU-69: seg-first / the FX segs / the sound switch are wired
+  // in the boot prefix now (they need no DATA) — not repeated here.
   $('fxbtn').addEventListener('click', () => { playClick(); openFxSettings(); });
   // R-SEL-2: while a selection sheet is up, the board can be
   // checked without answering anything — the sheet slides down
@@ -9159,18 +9205,6 @@ function wireSeg(id, apply) {
     $('peekbtn').textContent = on ? '選択に戻る' : '盤面を見る';
     placeSheetBtns(); // layout-fix J1: peek moves the buttons to the top (CSS); un-peek restores the sheet-top offset
     syncPeekBar(); // BU-22: the answer band follows the peek state
-  });
-  // reflect the persisted audio preference in the switch at boot
-  $('soundbtn').classList.toggle('on', audioOn);
-  $('sndstate').textContent = audioOn ? 'オン' : 'オフ';
-  $('soundbtn').addEventListener('click', () => {
-    audioOn = !audioOn;
-    saveAudioPref();
-    // section 4: a switch shape + a state word, not a text button
-    $('soundbtn').classList.toggle('on', audioOn);
-    $('sndstate').textContent = audioOn ? 'オン' : 'オフ';
-    if (!audioOn && bgmEl) { try { bgmEl.pause(); } catch (e) {} }
-    if (audioOn) { playClick(); setBgmScene(bgmScene || 'start', true); }
   });
   $('startbtn').addEventListener('click', async () => {
     playClick();
@@ -9315,26 +9349,21 @@ function wireSeg(id, apply) {
   });
   $('titlebtn').addEventListener('click', () => location.reload());
   // mid-duel exit restore: 選択に戻る in the その他 menu reloads
-  // with 'v3todeck' stashed — land on the deck-selection page
-  // with the selections kept and NO duel started (the counterpart
-  // of the rematch restore below; if this fired, rematch is
-  // skipped — the two exits never legitimately coexist).
-  let todeckLanded = false;
-  try {
-    const td = sessionStorage.getItem('v3todeck');
-    if (td) {
-      sessionStorage.removeItem('v3todeck');
-      const cfg = JSON.parse(td);
-      const setSeg = (id, v) => { const el = $(id); if (!el || v == null) return; el.querySelectorAll('button').forEach(x => x.classList.toggle('sel', x.dataset.v === v)); };
-      if (cfg.my) { myDeckKey = cfg.my; setSeg('seg-mydeck', cfg.my); if (SAVED_DECKS[cfg.my]) syncDeckSelection(); }
-      if (cfg.op) { opDeckKey = cfg.op; setSeg('seg-opdeck', cfg.op); }
-      if (cfg.first) { firstChoice = cfg.first; setSeg('seg-first', cfg.first); }
-      updateDeckSum();
-      $('start').style.display = 'none';
-      $('deckpage').style.display = 'flex';
-      todeckLanded = true;
-    }
-  } catch (e) {}
+  // with 'v3todeck' stashed. BU-69: the stash was already consumed
+  // and applied in the boot prefix (selections + summary correct
+  // from the first painted frame); all that remains here is the
+  // re-assertion that needs the deck rows, which only exist after
+  // buildDeckRows: the seg marks on the built rows and a saved
+  // deck's selection sync. If this fired, rematch is skipped —
+  // the two exits never legitimately coexist.
+  if (todeckCfg) {
+    const setSeg = (id, v) => { const el = $(id); if (!el || v == null) return; el.querySelectorAll('button').forEach(x => x.classList.toggle('sel', x.dataset.v === v)); };
+    if (todeckCfg.my) { setSeg('seg-mydeck', todeckCfg.my); if (SAVED_DECKS[todeckCfg.my]) syncDeckSelection(); }
+    if (todeckCfg.op) setSeg('seg-opdeck', todeckCfg.op);
+    updateDeckSum();
+    $('start').style.display = 'none';
+    $('deckpage').style.display = 'flex';
+  }
   // A-06 rematch restore: same settings, straight back in (the VS
   // transition still plays — it is part of starting a duel).
   try {
