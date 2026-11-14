@@ -2707,10 +2707,47 @@ function settleConfirmSheet() {
   const r = confirmSheetResolve; confirmSheetResolve = null;
   if (r) r();
 }
+// BU-58: the most recent batch of cards the game itself showed
+// this player (MSG_CONFIRM_CARDS), kept after the confirm sheet
+// drains the queue — a selection prompt that follows for exactly
+// those cards may name them (see confirmRevealIdx). promptsAgo
+// counts human prompts dispatched since the batch landed; the
+// reveal is only offered to the first one.
+let lastConfirm = null;
 function queueConfirmEvents(evs) {
   for (const ev of evs || []) {
-    if (ev.kind === 'confirm' && ev.shown === HP && ev.cards && ev.cards.some(c => c.code)) pendingConfirms.push(ev);
+    if (ev.kind === 'confirm' && ev.shown === HP && ev.cards && ev.cards.some(c => c.code)) {
+      pendingConfirms.push(ev);
+      lastConfirm = { cards: ev.cards.filter(c => c.code), turn: duelState ? duelState.turnCount : null, promptsAgo: 0 };
+    }
   }
+}
+// BU-58: candidate indices that may be shown face-up because the
+// game just confirmed exactly this set to the player. ALL of:
+// same controller + location across the hidden candidates, the
+// confirmed set for that (con, loc) has the same size and the
+// same code multiset, and every candidate's seq exists in the
+// confirmed set (the name assignment rides on seq). Any doubt
+// keeps the card hidden — the reveal is never guessed.
+function confirmRevealIdx(o) {
+  const out = new Set();
+  if (!o || !o.cards || !lastConfirm || lastConfirm.promptsAgo > 1) return out;
+  if (lastConfirm.turn != null && duelState && lastConfirm.turn !== duelState.turnCount) return out;
+  const hidden = [];
+  o.cards.forEach((c, i) => { const e = c.ref || c; if (selCardHidden(e, o.prompt)) hidden.push([e, i]); });
+  if (!hidden.length) return out;
+  const con = hidden[0][0].con, loc = hidden[0][0].loc;
+  if (hidden.some(([e]) => e.con !== con || e.loc !== loc)) return out;
+  const conf = lastConfirm.cards.filter(c => c.con === con && c.loc === loc && c.code);
+  if (conf.length !== hidden.length) return out;
+  const tally = (arr) => { const m = new Map(); for (const c of arr) m.set(c.code, (m.get(c.code) || 0) + 1); return m; };
+  const a = tally(conf), b = tally(hidden.map(([e]) => e));
+  if (a.size !== b.size) return out;
+  for (const [code, n] of a) if (b.get(code) !== n) return out;
+  const confSeqs = new Set(conf.map(c => c.seq));
+  if (hidden.some(([e]) => !confSeqs.has(e.seq))) return out;
+  hidden.forEach(([, i]) => out.add(i));
+  return out;
 }
 function confirmGroupLabel(con, loc) {
   const whose = con === HP ? '自分' : '相手';
@@ -3316,9 +3353,47 @@ function fxPhaseClearSeated() { // duel reset: no seated phase, no hairline
   const pi = $('phaseinfo'); if (pi) pi.classList.remove('fx-seated');
   if (fxPhaseHairlineEl) { try { fxPhaseHairlineEl.remove(); } catch (e) {} fxPhaseHairlineEl = null; }
 }
+// BU-44: a phase banner must never paint over a decision UI or
+// the board's stat plates. Three guards, one seat:
+//  - seat: the label rides the LP band (the neutral strip between
+//    the fields), not 38% down the screen over the monster rows.
+//  - defer: if a decision UI is already open when the transition
+//    lands, the banner waits for it to close (cap ~2.6s, then it
+//    settles silently into the header readout, no banner).
+//  - cut: if a decision UI opens mid-banner, the banner settles
+//    instantly (fxPhaseBannerCut, called from the UI openers).
+let fxPhasePending = null;
+function fxDecisionUiOpen() {
+  const sw = $('sheetwrap'), dk = $('dock'), cu = $('chainui');
+  return !!((sw && sw.classList.contains('on')) || (dk && dk.className === 'on') || (cu && cu.classList.contains('on')) || placeCtx);
+}
+function fxPhaseSettleSilent() {
+  const hair = fxPhaseHairline(); if (hair) hair.style.opacity = '0.30';
+  const pi = $('phaseinfo'); if (pi) pi.classList.add('fx-seated');
+}
+function fxPhaseBannerCut() {
+  if (fxPhasePending) { try { clearInterval(fxPhasePending.timer); } catch (e) {} fxPhasePending = null; fxPhaseSettleSilent(); }
+  if (fxBannerScene && !fxBannerScene.dead) {
+    fxBannerScene.dead = true; fxBannerScene = null;
+    if (fxBannerEl) { try { fxBannerEl.remove(); } catch (e) {} fxBannerEl = null; }
+    if (fxPhaseSweepEl) { try { fxPhaseSweepEl.remove(); } catch (e) {} fxPhaseSweepEl = null; }
+    fxPhaseSettleSilent();
+  }
+}
 function fxPhaseBanner(fam) {
   const info = FX_PHASES[fam]; if (!info) return;
   const layer = fxLayerEl(); if (!layer) return;
+  if (fxDecisionUiOpen()) {
+    if (fxPhasePending) { fxPhasePending.fam = fam; fxPhasePending.since = performance.now(); return; }
+    const pend = { fam, since: performance.now(), timer: null };
+    pend.timer = setInterval(() => {
+      if (fxPhasePending !== pend) { try { clearInterval(pend.timer); } catch (e) {} return; }
+      if (!fxDecisionUiOpen()) { clearInterval(pend.timer); fxPhasePending = null; fxPhaseBanner(pend.fam); }
+      else if (performance.now() - pend.since > 2600) { clearInterval(pend.timer); fxPhasePending = null; fxPhaseSettleSilent(); }
+    }, 120);
+    fxPhasePending = pend;
+    return;
+  }
   if (fxBannerEl) { try { fxBannerEl.remove(); } catch (e) {} fxBannerEl = null; }
   if (fxBannerScene && !fxBannerScene.dead) fxBannerScene.dead = true;
   if (fxPhaseSweepEl) { try { fxPhaseSweepEl.remove(); } catch (e) {} fxPhaseSweepEl = null; }
@@ -3334,6 +3409,14 @@ function fxPhaseBanner(fam) {
   d.style.opacity = '0';
   layer.appendChild(d);
   fxBannerEl = d;
+  // BU-44 seat: centre the label on the LP band. The band's deck
+  // names are covered for the banner's 820 ms; the LP numerals
+  // ride the plates' right edge, clear of the glyphs, and the
+  // phase name seats into the header readout when it settles.
+  // No measurable band (jsdom) keeps the CSS seat.
+  const lpR = $('lpband') ? fxRel($('lpband')) : null;
+  const lpSeat = !!(lpR && lpR.h > 0);
+  if (lpSeat) d.style.top = Math.round(lpR.y + lpR.h / 2) + 'px';
   // ---- the sweep segment: a 2px gold line (gradient + bright
   // leading tip, CSS .fx-phase-sweep) that runs left -> right
   // across the TOP of the header (prototype offset: bar top + 3px,
@@ -3365,7 +3448,9 @@ function fxPhaseBanner(fam) {
       const inU = FXE.snap(fxSeg(t, 0, 160));
       const outU = FXE.inQuad(fxSeg(t, 700, 820));
       d.style.opacity = String(Math.min(inU, 1 - outU));
-      d.style.transform = 'translateY(' + ((1 - inU) * 4).toFixed(2) + 'px)';
+      d.style.transform = lpSeat
+        ? 'translateY(calc(-50% + ' + ((1 - inU) * 4).toFixed(2) + 'px))'
+        : 'translateY(' + ((1 - inU) * 4).toFixed(2) + 'px)';
       if (sweep) {
         const u = FXE.outCubic(fxSeg(t, 0, 650));
         sweep.style.transform = 'translateX(' + (-segW + travel * u).toFixed(1) + 'px)';
@@ -4923,6 +5008,15 @@ function fxAtkBanner() {
   d.className = 'fx-atkbanner';
   d.textContent = '直接攻撃';
   layer.appendChild(d);
+  // BU-54: straddle the LP band's bottom edge instead of the old
+  // top:30% full-width seat, which painted over the attacker's
+  // monster row and its ATK/DEF plates. Here the banner's glyphs
+  // sit between the fields: it touches the lower sliver of the
+  // LP band and the top edge of the far field's art — no stat
+  // plate and no LP numeral (both ride clear of the centre) is
+  // covered. No measurable band (jsdom) keeps the CSS seat.
+  const lpR = $('lpband') ? fxRel($('lpband')) : null;
+  if (lpR && lpR.h > 0) d.style.top = Math.round(lpR.y + lpR.h - 16) + 'px';
   fxAnim(d, [{ opacity: 0 }, { opacity: 1, offset: 0.2 }, { opacity: 1, offset: 0.75 }, { opacity: 0 }], { duration: 900, easing: 'ease-out' });
   fxKill(d, 940);
 }
@@ -5177,9 +5271,47 @@ function fxNoticeShow(text, sub, noBeat) {
      over the pile row (measured in the wild, bottom 94 vs
      pile top 80). */
   const hb = document.getElementById('header');
+  /* bigfix-1115 (the BU-83 tradeoff, revisited): a long notice
+     used to span the header's full width and, growing up from
+     its bottom anchor, covered the turn readout and the chips
+     for its whole dwell — the header's own information went
+     unreadable exactly while events were flying. DESIGN
+     DECISION (recorded in bigfix-1115/RECORD.md): the strip
+     keeps its bottom anchor and its full K5 text, but its
+     horizontal span is confined to the LOGLINE's column — the
+     notice temporarily replaces the latest-event line (the same
+     information channel), while the turn readout, the phase
+     name and buttons, the auto-pass chip, the opponent-hand
+     chip and the FX button stay visible. If the confined text
+     would grow past the logline's top edge, the font steps down
+     (12.5 -> 10px floor) before any of row 1 is covered; only a
+     text that still overflows at 10px may rise into row 1, and
+     even then only inside the logline's column. */
+  const lg = document.getElementById('logline');
+  let fitKey = '';
   const anchorNotice = () => {
     if (!hb) { d.style.top = '2px'; return; }
     const lr = layer.getBoundingClientRect(), hr = hb.getBoundingClientRect();
+    if (lg && lr.width) {
+      const gr = lg.getBoundingClientRect();
+      if (gr.width > 0) {
+        d.style.left = Math.max(0, Math.round(gr.left - lr.left)) + 'px';
+        d.style.right = Math.max(0, Math.round(lr.right - gr.right)) + 'px';
+        const key = Math.round(gr.width) + 'x' + Math.round(hr.height);
+        if (key !== fitKey) { // re-fit only when the seat changed (the anchor below still runs per frame)
+          fitKey = key;
+          const nt = d.querySelector('.nt'), ns = d.querySelector('.ns');
+          let fs = 12.5;
+          if (nt) nt.style.fontSize = '';
+          if (ns) ns.style.fontSize = '';
+          while (nt && d.offsetHeight > Math.max(0, hr.bottom - gr.top) && fs > 10) {
+            fs -= 0.5;
+            nt.style.fontSize = fs + 'px';
+            if (ns) ns.style.fontSize = Math.max(9, fs - 1.5) + 'px';
+          }
+        }
+      }
+    }
     d.style.top = Math.max(0, Math.round(hr.bottom - lr.top - 2 - d.offsetHeight)) + 'px';
   };
   anchorNotice();
@@ -7027,6 +7159,7 @@ function ensureSheetFits() {
 }
 function sheetOpen(html, kind) {
   sheetKind = kind || 'prompt';
+  fxPhaseBannerCut(); // BU-44: a decision UI opening settles any live phase banner
   closeInfoPop();
   const wrap = $('sheetwrap'), sheet = $('sheet');
   // layout-fix5 M1: the sheet's height budget (--appvh) was frozen
@@ -7259,6 +7392,7 @@ function showChainTray(prompt, cause, liveIdx, openDock) {
     chainTrayDefer = { timer };
     return;
   }
+  fxPhaseBannerCut(); // BU-44: the tray opening settles any live phase banner
   const shown = liveIdx.slice(0, 4).map(i => prompt.entries[i]);
   const more = liveIdx.length - shown.length;
   const wcls = shown.length >= 4 ? ' w32' : shown.length === 3 ? ' w40' : '';
@@ -7273,6 +7407,14 @@ function showChainTray(prompt, cause, liveIdx, openDock) {
   const ap = document.getElementById('app'); if (ap) ap.classList.remove('traypeek');
   const pk = $('ctpeek'); if (pk) pk.textContent = '盤面を見る';
   host.classList.add('on');
+  // BU-74 (rest): a floating card's name steps its font down
+  // (10px -> 8px floor) before it ever truncates — at the wider
+  // card most names now stand whole. jsdom measures 0 widths and
+  // the loop simply never runs there.
+  tray.querySelectorAll('.ct-name').forEach(el => {
+    let fs = 10;
+    while (el.scrollWidth > el.clientWidth + 1 && fs > 8) { fs -= 0.5; el.style.fontSize = fs + 'px'; }
+  });
   chainTrayCtx = { draw: openDock };
   fxRecord('chaintray', { action: 'show', count: liveIdx.length, forced: !!prompt.forced });
   const yes = tray.querySelector('.ct-yes');
@@ -7364,6 +7506,7 @@ function uiAnswer(prompt, state) {
     // the peeked detail stayed up behind the chain dock).
     { const sw = $('sheetwrap'); if (sw && sw.classList.contains('on') && sw.dataset.kind === 'view') sheetClose(); }
     currentPrompt = { prompt, resolve };
+    if (lastConfirm) lastConfirm.promptsAgo++; // BU-58: the reveal window is the first prompt after the batch
     syncFxBtnInert();
     // The 攻撃 action's target choice is the SELECT_CARD that
     // immediately follows it; bind the attacker to that one prompt
@@ -7984,6 +8127,7 @@ function uiChain(prompt, state) {
                   : '<b>《' + (trig.code ? cardName(trig.code) : 'モンスター') + '》</b>の' + (trig.verb === 62 ? '特殊召喚' : trig.verb === 64 ? '反転召喚' : '召喚') + 'にチェーンできます' }
         : null;
   const draw = () => {
+    fxPhaseBannerCut(); // BU-44: the dock opening settles any live phase banner
     const peeked = document.getElementById('app').classList.contains('dockpeek');
     $('dock').innerHTML =
       // layout redesign: the header carries the 盤面を見る
@@ -8000,6 +8144,17 @@ function uiChain(prompt, state) {
       // name inside a sentence. Tapping it floats its detail
       // (the data-topinfo wiring below), answering nothing.
       (cause && cause.code ? '<div class="cause" data-topinfo="1"><span class="causeart"' + artInline(cause.code, false, deckKeyOfSeat(cause.con)) + '></span><span><span class="causename">《' + cardName(cause.code) + '》</span><br><span class="causesub">' + (cause.con === HP ? '自分のカード' : '相手のカード') + '｜タップで詳細</span></span></div>' : '') +
+      // BU-24: the whole chain, listed inside the dock — with 2+
+      // links the cause row alone cannot show what is already
+      // stacked under the link being answered. The link this
+      // prompt answers is marked (cur), the one resolving is
+      // marked (solving), mirroring the header chain bar's facts.
+      (state.chain.length >= 2 ? '<div class="chainlist">' + state.chain.map((l, i) => {
+        const n = i + 1;
+        const isSolving = state.solvingLink === n;
+        const isCur = !!(ctxLink && ctxLink.link === n);
+        return '<span class="cl-chip' + (isSolving ? ' solving' : '') + (isCur ? ' cur' : '') + '">' + n + ' 《' + cardName(l.code) + '》' + (isSolving ? '（解決中）' : '') + (l.negated || l.disabled ? '（無効）' : '') + (l.solved ? ' ✓' : '') + '</span>';
+      }).join('') + '</div>' : '') +
       '<div class="cands">' + prompt.entries.map((e, i) => {
         if (!noDismiss && dismissedDuel.has(duelKey(e))) return ''; // duel-dismissed: hidden here, managed in the section below
         const disChain = dismissedChains.has(chainKey(e));
@@ -8175,6 +8330,7 @@ function renderPlaceHint() {
     (placeCtx.retry ? '<div class="retry">その場所には置けません。光っている場所から選んでください。</div>' : '');
 }
 function uiPlace(prompt, state) {
+  fxPhaseBannerCut(); // BU-44: the place hint is decision UI too
   const zones = availZones(prompt);
   let title;
   if (prompt.name === 'SELECT_PLACE') {
@@ -8268,10 +8424,14 @@ function gridSheet(o) {
   const draw = () => {
     // Hidden candidates (opponent's face-down / hand / deck cards)
     // render as the card back with a public-only label: no name, no
-    // art, no stats, no text, no detail button.
-    const hidOf = (c) => selCardHidden(c.ref || c, o.prompt);
-    const nameOf = (c) => hidOf(c) ? hiddenCardLabel(c.ref || c) : cardName(c.code);
-    const tray = [...o.selected].map(i => '<span class="chip" data-chip="' + i + '">' + nameOf(o.cards[i]) + ' ✕</span>').join('') +
+    // art, no stats, no text, no detail button. BU-58 exception:
+    // a candidate the game itself just confirmed to this player
+    // (exact set match, see confirmRevealIdx) is shown face-up —
+    // its identity is already public to the player by the rules.
+    const revealIdx = confirmRevealIdx(o);
+    const hidOf = (c, i) => selCardHidden(c.ref || c, o.prompt) && !(i != null && revealIdx.has(i));
+    const nameOf = (c, i) => hidOf(c, i) ? hiddenCardLabel(c.ref || c) : cardName(c.code);
+    const tray = [...o.selected].map(i => '<span class="chip" data-chip="' + i + '">' + nameOf(o.cards[i], i) + ' ✕</span>').join('') +
       (o.locked || []).map(c => '<span class="chip locked">' + (selCardHidden(c, o.prompt) ? hiddenCardLabel(c) : cardName(c.code)) + '（固定）</span>').join('');
     const subTxt = typeof o.sub === 'function' ? o.sub() : o.sub;
     // layout-fix J1: draw() rebuilds the sheet per toggle — keep
@@ -8293,7 +8453,7 @@ function gridSheet(o) {
       // uniform size so candidates compare at a glance. The full
       // text lives in the detail modal (詳細) and nowhere else.
       '<div class="sheet-scroll"><div class="grid">' + o.cards.map((c, i) => {
-        const hid = hidOf(c);
+        const hid = hidOf(c, i);
         return '<div class="gcard' + (hid ? ' back' : '') + (o.selected.has(i) ? ' sel' : '') + '" data-grid="' + i + '"' + (hid ? '' : artInline(c.code, false, c.ref && c.ref.con != null ? deckKeyOfSeat(c.ref.con) : deckKeyOfSeat(HP))) + '>' +
         '<div class="loc">' + c.locLabel + '</div>' + (hid ? '' : marksChipHTML(c.code)) + '<div class="nm' + (hid ? '' : kindCls(c.code)) + '">' + (hid ? hiddenCardLabel(c.ref || c) : '<span class="nmtext">' + cardName(c.code) + (c.extra ? ' ' + c.extra : '') + '</span><button class="gdetail" data-gdetail="' + i + '">詳細</button>') + '</div>' +
         (hid ? '' : (statsLine(c.code) ? '<div class="stats">' + statsLine(c.code) + '</div>' : '')) + '</div>';
@@ -8423,6 +8583,15 @@ function uiSelectCards(prompt, state) {
   const isTrib = prompt.name === 'SELECT_TRIBUTE';
   const atk = !isTrib && promptAttacker ? promptAttacker : null;
   const isHandLimit = !isTrib && !atk && inferSelectPurpose(prompt, state) === 'handlimit';
+  // BU-58: when every candidate sits in one (controller, location),
+  // the sheet names whose cards these are («相手のデッキから …») —
+  // derivable from the candidates themselves, never guessed for a
+  // mixed selection.
+  const sharedLoc = (() => {
+    if (!prompt.cards.length) return null;
+    const c0 = prompt.cards[0];
+    return prompt.cards.every(c => c.con === c0.con && c.loc === c0.loc) ? locLabel(c0) : null;
+  })();
   const selected = new Set();
   const sum = () => [...selected].reduce((a, i) => a + (prompt.cards[i].releaseParam || 0), 0);
   gridSheet({
@@ -8435,7 +8604,7 @@ function uiSelectCards(prompt, state) {
     sub: () => isTrib ? '合計 ' + prompt.min + ' 以上になるよう選んでください（現在 ' + sum() + '）'
                       : atk ? '攻撃する相手を選んでください'
                       : isHandLimit ? '手札が上限（6枚）を超えています。捨てるカードを ' + prompt.min + ' 枚選んでください（現在 ' + selected.size + ' 枚）'
-                      : prompt.min + '〜' + prompt.max + ' 枚選んでください（現在 ' + selected.size + ' 枚）',
+                      : (sharedLoc ? sharedLoc + 'から ' : '') + prompt.min + '〜' + prompt.max + ' 枚選んでください（現在 ' + selected.size + ' 枚）',
     confirmLabel: atk ? 'この相手を攻撃する' : isHandLimit ? 'このカードを捨てる' : undefined,
     cards: prompt.cards.map(c => ({ code: c.code, locLabel: locLabel(c), extra: isTrib ? '（リリース値 ' + c.releaseParam + '）' : '', ref: c })),
     selected,
@@ -8579,9 +8748,12 @@ function uiCounter(prompt, state) {
 // ---- sort ----
 function uiSort(prompt, state) {
   let order = prompt.cards.map((_, i) => i); // order[pos] = original index
+  // BU-58: same confirm-reveal as the selection grids (a sort over
+  // cards the game just showed the player names them).
+  const revealIdx = confirmRevealIdx({ cards: prompt.cards.map(c => ({ ref: c })), prompt });
   const draw = () => {
     sheetOpen('<div class="ttl">' + (prompt.name === 'SORT_CHAIN' ? 'チェーンの順番' : 'カードの順番') + '</div><div class="sub">' + (prompt.name === 'SORT_CHAIN' ? '上から順に処理される順番です。並べ替えて「この順番で決定」を押してください。' : '上から順に、次に使う順番に並べてください。') + '</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
-      order.map((ci, pos) => '<div class="sortrow"><span>' + (pos + 1) + '. ' + (selCardHidden(prompt.cards[ci], prompt) ? hiddenCardLabel(prompt.cards[ci]) : cardName(prompt.cards[ci].code)) + '</span><span class="mv">' +
+      order.map((ci, pos) => '<div class="sortrow"><span>' + (pos + 1) + '. ' + (selCardHidden(prompt.cards[ci], prompt) && !revealIdx.has(ci) ? hiddenCardLabel(prompt.cards[ci]) : cardName(prompt.cards[ci].code)) + '</span><span class="mv">' +
         '<button data-up="' + pos + '">↑</button><button data-down="' + pos + '">↓</button></span></div>').join('') +
       '<div class="btnrow"><button class="bigbtn" id="sort-ok">この順番で決定</button><button class="bigbtn sub" id="sort-keep">元の順番のままにする</button></div>');
     $('sheet').querySelectorAll('[data-up]').forEach(b => b.addEventListener('click', () => { const p = +b.dataset.up; if (p > 0) { [order[p-1], order[p]] = [order[p], order[p-1]]; } playClick(); draw(); }));
@@ -9782,6 +9954,7 @@ function wireSeg(id, apply) {
     duelNoConfirm = new Set(); // C-27 suppression restarts with the duel
     confirmTurn = -1; confirmSeq = 0; // per-turn confirmation counter restarts with the duel
     pendingConfirms = []; // unshown card confirmations restart with the duel
+    lastConfirm = null; // BU-58: so does the confirm-reveal batch
     updateAutoPassChip();
     fxResetDuel(); // FX snapshot/layers restart with the duel (stale overlays must not survive)
     bgmWantedRank = -1; bgmSeenKeys.clear(); // BGM stage ladder restarts with the duel
