@@ -808,14 +808,34 @@
   /* BU-83 (2026-11-14): the notice used to be a big band at
      top:33% — it covered the centre of the opponent's field
      (monster zone, S/T zone, the LP band's left edge) for its
-     whole dwell. It is now a slim strip riding directly under
-     the header (81px by construction in both layout modes):
-     the opponent's pile bar sits under it briefly, but the
-     monster zones and the LP band — the decision surface —
-     stay readable. Overlay only: no board height is taken. */
-  .fx-notice{position:absolute;left:50%;top:84px;transform:translateX(-50%);z-index:8;max-width:94%;background:linear-gradient(180deg,rgba(19,14,6,.95),rgba(7,5,2,.97));border:1px solid rgba(201,162,39,.7);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.6);padding:6px 12px;text-align:center;pointer-events:none;}
-  .fx-notice .nt{font-size:14px;font-weight:800;color:#ffe9a8;line-height:1.35;letter-spacing:.02em;}
-  .fx-notice .ns{font-size:11px;color:var(--txt-dim);margin-top:1px;line-height:1.3;}
+     whole dwell. First fix: a slim strip directly under the
+     header (top:84px) — but the parent's re-verification
+     (2026-11-14 evening) showed it STILL covered the
+     opponent's pile row (deck/EX/grave/removed, y 80-104) and,
+     once a move text wrapped (long grouped names + reason),
+     the top edge of the monster-zone row: measured bottoms
+     151 (short) / 189 / 208 (long) against a monster-zone top
+     of 179-206. The shrink-to-fit width (~195px) was the
+     multiplier: wrapping multiplied the height.
+     BU-83 residue fix (same day): the strip now lives INSIDE
+     the header's own band — full width (left/right 6px, so
+     wrapping is minimal), bottom-anchored 2px above the
+     header's bottom edge by fxNoticeShow (top set in JS from
+     the measured header rect and re-anchored every frame of
+     the dwell — the header is auto-height, and a one-time
+     anchor went stale when the header shrank back mid-dwell),
+     and the route label rides the SAME text
+     flow as an inline .ns span instead of a second line.
+     Worst-case grouped text (4 names + reason, ~110 chars)
+     measures 4 lines at 12.5px = inside the 77px header.
+     It can cover the header's own rows while it dwells (the
+     chain bar and the name tag already use the header as a
+     transient surface) — it can NEVER reach the pile row or
+     any zone, at any text length. Overlay only: no board
+     height is taken, tile size is untouched. */
+  .fx-notice{position:absolute;left:6px;right:6px;z-index:8;background:linear-gradient(180deg,rgba(19,14,6,.95),rgba(7,5,2,.97));border:1px solid rgba(201,162,39,.7);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.6);padding:5px 10px;pointer-events:none;}
+  .fx-notice .nt{font-size:12.5px;font-weight:800;color:#ffe9a8;line-height:1.3;letter-spacing:.02em;}
+  .fx-notice .ns{display:inline;font-size:11px;font-weight:400;color:var(--txt-dim);margin-right:7px;line-height:1.3;}
   /* Redesign F -> BU-72 (2026-11-13): the LP chip is now ONLY the
      LP-cost stamp. Effect damage and heals used to be chips too;
      the unified grammar presents them as the big ± numerals on
@@ -1225,7 +1245,7 @@
       <span id="turninfo">—</span>
       <div id="logline">読み込み中…</div>
       <div id="autopass"></div>
-      <div class="handchip" id="oppHandChip">手札 <b id="oppHandN">0</b></div>
+      <div class="handchip" id="oppHandChip">相手の手札 <b id="oppHandN">0</b></div>
       <button id="fxbtn" aria-label="演出設定">♪</button>
     </div>
     <div id="chainbar"></div>

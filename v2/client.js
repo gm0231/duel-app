@@ -5097,9 +5097,27 @@ function fxNoticeShow(text, sub, noBeat) {
   const old = layer.querySelector('.fx-notice'); if (old) old.remove();
   fxNoticeBusy = true;  const d = document.createElement('div');
   d.className = 'fx-notice';
-  d.innerHTML = '<div class="nt">' + text + '</div>' + (sub ? '<div class="ns">' + sub + '</div>' : '');
+  d.innerHTML = '<div class="nt">' + (sub ? '<span class="ns">' + sub + '</span>' : '') + text + '</div>';
   d.style.opacity = '0';
   layer.appendChild(d);
+  /* BU-83 residue (2026-11-14): bottom-anchor the strip inside
+     the header band — its bottom edge sits 2px above the
+     header's bottom edge, so however tall the wrapped text
+     makes it, it grows UP over the header and can never reach
+     the pile row or a zone (see the .fx-notice CSS note). The
+     header is auto-height (a third event line grows it to
+     ~96px), so the anchor is re-measured on EVERY frame of
+     the dwell in render() below: a one-time anchor went stale
+     when the header shrank back mid-dwell and left the strip
+     over the pile row (measured in the wild, bottom 94 vs
+     pile top 80). */
+  const hb = document.getElementById('header');
+  const anchorNotice = () => {
+    if (!hb) { d.style.top = '2px'; return; }
+    const lr = layer.getBoundingClientRect(), hr = hb.getBoundingClientRect();
+    d.style.top = Math.max(0, Math.round(hr.bottom - lr.top - 2 - d.offsetHeight)) + 'px';
+  };
+  anchorNotice();
   const hold = fxReadMs(text + (sub || ''));
   // layout-fix3 K5 (test-fx attribution): the high-frequency
   // move/attack notices present on the notice track only — they
@@ -5111,6 +5129,7 @@ function fxNoticeShow(text, sub, noBeat) {
   const def = {
     kind: 'notice', dur: hold + 480,
     render(t) {
+      anchorNotice(); // BU-83 residue: track the auto-height header every frame
       const a = t < 160 ? t / 160 : (t > hold + 130 ? Math.max(0, 1 - (t - hold - 130) / 350) : 1);
       d.style.opacity = String(a);
     },
