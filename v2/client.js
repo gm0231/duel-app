@@ -7142,7 +7142,18 @@ function ensureSheetFits() {
     // path cannot be exercised in Chrome — the layout viewport
     // always equals the window there — so it is recorded here and
     // confirmed by real-play re-verification, not by the rig.)
-    if (r.bottom > vh.visibleBottom + 1) {
+    // BU-86: a peeked sheet's bottom is SUPPOSED to sit below the visible area —
+    // the peek transform slides it down on purpose (translateY(calc(100% - 44px))).
+    // The lift below reads that off-screen bottom as a defect and lifts the sheet
+    // back up by exactly the peek distance, cancelling the peek while the peek
+    // class, peekbar and button seats all stay peeked (measured in the mirror:
+    // a peek tap inside the 360ms window after sheetOpen leaves the sheet at
+    // y=108 with transform 468 at +650ms — the 045 half-state). The 360ms timer
+    // from sheetOpen fires after a fast peek tap, so the defect bites exactly
+    // when the player peeks quickly. Skip the lift while peeked; the scroller
+    // path below still runs, and an unpeeked sheet is checked as before.
+    const peeked = $('sheetwrap').classList.contains('peek');
+    if (!peeked && r.bottom > vh.visibleBottom + 1) {
       const excess = r.bottom - vh.visibleBottom;
       sheet.style.maxHeight = Math.max(120, vh.visibleBottom - 108) + 'px';
       sheet.style.bottom = excess + 'px';
@@ -8016,6 +8027,7 @@ function chainPassDecision(prompt, state) {
 function updateAutoPassChip() {
   const el = $('autopass'); if (!el) return;
   if (Date.now() < autoPassFlashUntil) return; // flash text still showing
+  const hd = $('header'); if (hd) hd.classList.remove('apflash'); // BU-85: flash over, the log line wraps normally again
   if (dismissedDuel.size) {
     // BU-32: in 毎回 mode the dismissals are inert by design; the
     // chip must say so instead of implying suppression is active.
@@ -8029,8 +8041,13 @@ function updateAutoPassChip() {
 }
 function flashAutoPass(names) {
   const el = $('autopass'); if (!el) return;
-  el.textContent = '自動パス：' + names;
+  // BU-85: the suppressed card's name gets its own line — one line truncated it
+  // (measured: 「自動パス：帝王の烈旋」 cut to 「自動パス：帝王の」 at 103px).
+  // The name is set via textContent, never HTML.
+  el.innerHTML = '自動パス：<span class="ap-name"></span>';
+  el.querySelector('.ap-name').textContent = names;
   el.className = 'on flash';
+  const hd = $('header'); if (hd) hd.classList.add('apflash'); // BU-85: keep the log line one line while flashing
   syncChipInert(); // BU-37: same re-apply as updateAutoPassChip
   autoPassFlashUntil = Date.now() + 2600;
   setTimeout(updateAutoPassChip, 2700);

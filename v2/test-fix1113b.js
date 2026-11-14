@@ -106,8 +106,8 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   ok(!html.includes('.gcard .nm .marks{position:static'), 'F66a: the in-band chip seat rule is gone');
   ok(/\.gcard > \.marks\{top:3px;left:3px;z-index:3;\}/.test(html), 'F66b: grid chips take the top-left seat');
   ok(/\.gcard \.loc\{position:absolute;top:23px;left:3px;/.test(html), 'F66c: the location label stacks under the chip seat');
-  ok(clientSrc.includes("'</div>' + (hid ? '' : marksChipHTML(c.code)) + '<div class=\"nm'"),
-    'F66d: gridSheet places the chip as a card-level child, before the band');
+  ok(clientSrc.includes("'</div>' + (hid ? '' : marksChipHTML(ec)) + '<div class=\"nm'"),
+    'F66d: gridSheet places the chip as a card-level child, before the band (bigfix-1115: ec = the BU-58 effective code, c.code unless revealed)');
   ok(clientSrc.includes("'</div>' + (hid ? '' : marksChipHTML(x.c.code)) + '<div class=\"nm'"),
     'F66e: the unselect grid does the same');
   ok(clientSrc.includes("artInline(code, false, deckKeyOfCode(code)) + '>' + marksChipHTML(code) + '<div class=\"nm'"),

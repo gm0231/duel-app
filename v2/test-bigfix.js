@@ -214,6 +214,40 @@ async function boot() {
   for (let i = 0; i < 60 && !window.eval('window.__bf13Done'); i++) await sleep(50);
   ok(window.eval('window.__bf13Done') === true, 'BF13c (BU-24): the link-2 prompt resolved');
 
+  // ---- BU-85: flash chip names the suppressed card on its own line ----
+  ok(html.includes('#autopass.flash{white-space:normal') && html.includes('#autopass.flash .ap-name{display:block'),
+    'BF14 (BU-85): the flash chip stacks label + name (two lines, name ellipsised)');
+  ok(html.includes('#header.apflash #logline{white-space:nowrap'),
+    'BF14b (BU-85): the log line stays one line while the flash shows');
+  window.flashAutoPass('帝王の烈旋');
+  const apChip = doc.getElementById('autopass');
+  const apName = apChip.querySelector('.ap-name');
+  ok(apChip.classList.contains('flash') && !!apName && apName.textContent === '帝王の烈旋',
+    'BF14c (BU-85): flashAutoPass puts the full card name on its own line');
+  ok(doc.getElementById('header').classList.contains('apflash'),
+    'BF14d (BU-85): flashing marks the header so the log line holds one line');
+  window.eval('autoPassFlashUntil = 0'); window.updateAutoPassChip();
+  ok(!doc.getElementById('header').classList.contains('apflash'),
+    'BF14e (BU-85): the header mark clears when the flash ends');
+
+  // ---- BU-86: ensureSheetFits must not lift a peeked sheet ----
+  ok(/const peeked = \$\('sheetwrap'\)\.classList\.contains\('peek'\);\s*\n\s*if \(!peeked && r\.bottom/.test(fs.readFileSync(path.join(V2, 'client.js'), 'utf8')),
+    'BF14f (BU-86): the lift path is guarded by the peek state (source)');
+  const sheetEl = doc.getElementById('sheet'), wrapEl = doc.getElementById('sheetwrap');
+  // jsdom has no layout: stub a peeked sheet whose bottom sits 468px below the visible area
+  sheetEl.getBoundingClientRect = () => ({ bottom: 1088, top: 576, left: 0, right: 390, width: 390, height: 512, x: 0, y: 576 });
+  window.innerHeight = 620;
+  wrapEl.className = 'on peek';
+  sheetEl.style.bottom = ''; sheetEl.style.maxHeight = '';
+  window.ensureSheetFits();
+  ok(sheetEl.style.bottom === '' && sheetEl.style.maxHeight === '',
+    'BF14g (BU-86): a peeked sheet is NOT lifted (bottom/maxHeight untouched)');
+  wrapEl.className = 'on';
+  window.ensureSheetFits();
+  ok(sheetEl.style.bottom === '468px',
+    'BF14h (BU-86): the same sheet unpeeked IS lifted (bottom 468px — the guard, not the lift, changed)');
+  wrapEl.className = ''; sheetEl.style.bottom = ''; sheetEl.style.maxHeight = '';
+
   console.log(failures ? ('FAILURES: ' + failures) : 'ALL PASS');
   process.exit(failures ? 1 : 0);
 })().catch(e => { console.log('ERROR', e && e.stack || e); process.exit(2); });

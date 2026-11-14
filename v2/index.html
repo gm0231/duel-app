@@ -710,6 +710,17 @@
   #autopass{display:none;flex:0 1 auto;margin-left:6px;background:#4a3a10;color:#ffe9a8;border:1px solid var(--gold);border-radius:12px;font-size:11.5px;padding:6px 10px;min-height:32px;cursor:pointer;max-width:54%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   #autopass.on{display:flex;align-items:center;}
   #autopass.flash{background:#7a5a10;color:#fff;font-weight:700;}
+  /* BU-85: the flash names the suppressed card — one line truncated it
+     (measured: 「自動パス：帝王の烈旋」 cut to 「自動パス：帝王の」 at 103px).
+     The flash stacks two lines (label + name) at 10px, capped at 170px so the
+     row never overflows (measured: the longest single name 合体魔神ゲート・ガーディアン
+     fits whole at 139px; only 3+-name joins still ellipsis on the name line).
+     The .on rule makes the chip display:flex in a row — column is what stacks
+     the two lines. While flashing, the log line stays one line (ellipsis) so a
+     squeezed log cannot wrap the header tall. */
+  #autopass.flash{white-space:normal;line-height:1.25;text-align:left;flex:0 0 auto;flex-direction:column;align-items:stretch;max-width:170px;font-size:10px;}
+  #autopass.flash .ap-name{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  #header.apflash #logline{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   #autopass.inert{opacity:.42;filter:saturate(.5);}
   /* ---------- presentation FX layer (rounds A/B) ----------
      All duel presentation lives in #fxlayer as absolutely positioned
