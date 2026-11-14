@@ -234,6 +234,33 @@ async function boot() {
   ok(/linear-gradient\(#e6c877/.test(rPeek) && /linear-gradient\(#e6c877/.test(rDock) && /linear-gradient\(#e6c877/.test(rTray),
     'CB8d: all three peek toggles carry the gold primary treatment');
 
+  // ---------- CB9: BU-84 — the tray waits out a cut-in ----------
+  ev('(() => { document.getElementById("fxcutin").className = "on"; return true; })()');
+  const recBefore = trayRecords().length;
+  dispatch({ name: 'SELECT_CHAIN', player: 0, forced: false, entries: [E1], retryCount: 0 });
+  await tick(450); // several defer polls (100 ms) pass under the cut-in
+  ok(!trayOn() && !dockOn(), 'CB9a: while a cut-in owns #fxcutin the tray does NOT surface');
+  ok(!ev('window.__cbDone'), 'CB9b: the prompt stays unanswered behind the cut-in');
+  ok(trayRecords().slice(recBefore).join(',') === 'defer-cutin',
+    'CB9c: the deferral is recorded (got: ' + trayRecords().slice(recBefore).join(',') + ')');
+  ev('(() => { document.getElementById("fxcutin").className = ""; return true; })()');
+  await waitFor(trayOn, 'CB9d: once the cut-in releases, the tray arrives');
+  ok(trayRecords().filter(a => a === 'show').length >= 1, 'CB9e: the deferred tray shows normally');
+
+  // ---------- CB10: BU-81 — the dock pass is real; its line says its true scope ----------
+  click(doc.querySelector('#chaintray .ct-yes'));
+  await waitFor(dockOn, 'CB10a: the dock opens from the deferred tray');
+  const sub = doc.querySelector('#dock .sub');
+  ok(!!sub && sub.textContent.includes('この確認では発動しません') && sub.textContent.includes('新しい確認が来ることがあります'),
+    'CB10b: the pass line states the pass answers THIS question and a new one may come (got: ' + (sub ? sub.textContent : 'none') + ')');
+  ok(!sub || !sub.textContent.includes('このタイミングでは何も発動しません'),
+    'CB10c: the old over-promising line is gone');
+  click(doc.getElementById('chain-pass'));
+  await waitFor(() => ev('window.__cbDone'), 'CB10d: the dock pass answers the prompt');
+  ok(JSON.stringify(ev('window.__cbBytes')) === JSON.stringify(passBytes()),
+    'CB10e: the dock pass bytes are exactly the tray しない bytes (i32resp -1)');
+  ev('(() => { const h = document.getElementById("fxcutin"); if (h) h.className = ""; return true; })()');
+
   console.log(failures ? ('FAILURES: ' + failures) : 'ALL CHAINBADGE CHECKS PASSED');
   process.exit(failures ? 1 : 0);
 })().catch(e => { console.error('FATAL', e); process.exit(1); });
