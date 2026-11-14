@@ -8802,6 +8802,10 @@ window.__oppinfo = { boardCardAt, peekInfoTap };
 // requirement notes and the BU-28 truncation flag, so
 // test-clarity.js can pin them without a live duel.
 window.__clarity = { syncPeekBar, gridReqNote, announceDupNote, fxTruncated };
+// Test surface (bigfix-1115): this round's pure helpers, pinned by
+// test-bigfix.js without driving whole duels.
+window.__bigfix = { qName, contextLineHTML, handTapReason, confirmRevealIdx, deckThumbSrc, availZones, placeZoneLabel,
+  setLastConfirm: (cards, turn) => { lastConfirm = { cards, turn: turn == null ? null : turn, promptsAgo: 0 }; } };
 function uiYesNo(prompt, state) {
   const isEff = prompt.name === 'SELECT_EFFECTYN';
   // WHICH card and WHICH effect is being asked must be readable on
