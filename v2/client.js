@@ -684,6 +684,27 @@ function updateDeckSum() {
   el.innerHTML = nbHTML(txt);
   refreshStartGate();
   renderDeckCurrents();
+  dpCueUpdate(); // BU-82: a selection change can grow the settings stack
+}
+// BU-82: the deck page's scroll cue (see the CSS note in
+// index.html). The class lives on #deckpage; it is on exactly
+// while the settings region has more content below the fold.
+// jsdom reports 0 heights — the cue stays off there.
+let dpCueWired = false;
+function dpCueUpdate() {
+  const dp = $('deckpage'); if (!dp) return;
+  const m = dp.querySelector('.dp-main'); if (!m) return;
+  if (!dpCueWired) {
+    dpCueWired = true;
+    m.addEventListener('scroll', () => dpCueUpdate(), { passive: true });
+    window.addEventListener('resize', () => dpCueUpdate());
+    if (window.MutationObserver) new MutationObserver(() => dpCueUpdate()).observe(dp, { attributes: true, attributeFilter: ['style', 'class'] });
+  }
+  // BU-82: the compact tier for this page rides on the same
+  // visible-height signal the duel layout budgets against.
+  try { dp.classList.toggle('dp-compact', viewportHeights().baseH <= 700); } catch (e) {}
+  const more = m.scrollHeight > m.clientHeight + 1 && (m.scrollTop + m.clientHeight < m.scrollHeight - 1);
+  dp.classList.toggle('dp-canscroll', !!more);
 }
 function syncDeckSelection() {
   document.querySelectorAll('#seg-mydeck button.deck').forEach(b => b.classList.toggle('sel', b.dataset.v === myDeckKey));
@@ -6590,6 +6611,14 @@ function openLogHistory() {
   const sh = $('sheet');
   requestAnimationFrame(() => { try { sh.scrollTop = sh.scrollHeight; } catch (e) {} });
 }
+// BU-78: the hand bar's scroll cue (see the .hcard note in
+// index.html). jsdom reports 0 widths — the cue simply stays
+// off there; it is a painted-state class, never a gate.
+function handCueUpdate() {
+  const hel = $('hand'); if (!hel) return;
+  const more = hel.scrollWidth > hel.clientWidth + 1 && (hel.scrollLeft + hel.clientWidth < hel.scrollWidth - 1);
+  hel.classList.toggle('canscroll', !!more);
+}
 function render(state) {
   duelState = state;
   const me = state.players[HP], op = state.players[1 - HP];
@@ -6653,6 +6682,13 @@ function render(state) {
       (c.code != null && handCounts[c.code] > 1 ? '<div class="cnt">×' + handCounts[c.code] + '</div>' : '') +
       '<div class="himg"' + (c.code != null ? artInline(c.code, false, deckKeyOfSeat(HP)) : '') + '>' + (c.code != null ? marksChipHTML(c.code) : '') + hplate + '</div>' + band + '</div>';
   }).join('');
+  // BU-78: while more cards wait off the right edge (only
+  // reachable past the 46px shrink floor), fade that edge as
+  // the scroll cue; at the scroll end the fade lifts.
+  { const hel = $('hand');
+    if (hel && !hel.dataset.cueWired) { hel.dataset.cueWired = '1'; hel.addEventListener('scroll', () => handCueUpdate(), { passive: true }); }
+    handCueUpdate();
+  }
   // opponent hand = backs in the header chip only (count); chain bar
   const cb = $('chainbar');
   // redesign B (p2b): prune the FX layer's landed flags against
@@ -7073,9 +7109,39 @@ function dockClose() { $('dock').className = ''; $('dock').innerHTML = ''; const
 // しない answers with the pass button's exact bytes through the
 // same finishPrompt path.
 let chainTrayCtx = null; // { draw } while a tray is up
+let chainTrayDefer = null; // BU-84: { timer } while a tray waits out a cut-in
+let chainTrayForce = false; // BU-84: the defer failsafe's one-shot bypass (never defer twice)
+function fxCutinActive() { const h = $('fxcutin'); return !!h && h.className === 'on'; }
 function showChainTray(prompt, cause, liveIdx, openDock) {
   const host = $('chainui'), tray = $('chaintray');
   if (!host || !tray) { openDock(); return; } // no tray DOM: the dock owns the question directly
+  const forcedShow = chainTrayForce; chainTrayForce = false;
+  // BU-84 (2026-11-14): a chain question that lands while a
+  // summon / ace / keycard cut-in owns #fxcutin used to surface
+  // its tray ON TOP of the still-playing cut-in — the player
+  // had to decide チェーンする/しない with the board hidden
+  // behind the big card. The tray now waits until the cut-in
+  // releases the host (a tap skips the cut-in as before, so
+  // the wait is the player's to end), with a 6s failsafe so
+  // the question can never be swallowed. The prompt itself is
+  // untouched: it resolves only through the tray/dock as
+  // before, and chainTrayClose cancels a pending tray.
+  if (fxCutinActive() && !chainTrayDefer && !forcedShow) {
+    chainTrayCtx = { draw: openDock, pending: true };
+    fxRecord('chaintray', { action: 'defer-cutin', count: liveIdx.length, forced: !!prompt.forced });
+    const started = Date.now();
+    const timer = setInterval(() => {
+      if (!chainTrayCtx || !chainTrayCtx.pending) { clearInterval(timer); if (chainTrayDefer && chainTrayDefer.timer === timer) chainTrayDefer = null; return; }
+      if (!fxCutinActive() || Date.now() - started > 6000) {
+        clearInterval(timer); chainTrayDefer = null;
+        chainTrayCtx = { draw: openDock };
+        if (fxCutinActive()) chainTrayForce = true; // failsafe path: show even under a stuck cut-in
+        showChainTray(prompt, cause, liveIdx, openDock);
+      }
+    }, 100);
+    chainTrayDefer = { timer };
+    return;
+  }
   const shown = liveIdx.slice(0, 4).map(i => prompt.entries[i]);
   const more = liveIdx.length - shown.length;
   const wcls = shown.length >= 4 ? ' w32' : shown.length === 3 ? ' w40' : '';
@@ -7113,6 +7179,7 @@ function chainTrayNo() {
   finishPrompt(E.i32resp(-1)); // exactly the dock パス button's answer, same path
 }
 function chainTrayClose() {
+  if (chainTrayDefer) { clearInterval(chainTrayDefer.timer); chainTrayDefer = null; } // BU-84: a pending (deferred) tray dies with its prompt
   chainTrayCtx = null;
   const host = $('chainui');
   if (host) host.classList.remove('on', 'peek');
@@ -7850,7 +7917,15 @@ function uiChain(prompt, state) {
       '<div class="row">' + (prompt.forced ? '' : '<button class="bigbtn" id="chain-pass">パス</button>') + '</div>' +
       // W-17: what パス commits to, and that the question can
       // return — stated once, under the button itself.
-      (prompt.forced ? '' : '<div class="sub">パス＝このタイミングでは何も発動しません。場面が変わると、また確認されることがあります。</div>');
+      // BU-81 (2026-11-14): the old line promised "at this
+      // timing you activate nothing", but a pass answers only
+      // THIS question — when the opponent stacks another link
+      // or the timing moves on, a NEW question arrives (the
+      // tray comes back), which read as the pass not taking.
+      // The pass itself is real (the exact bytes of the tray's
+      // しない, through finishPrompt); the wording now says
+      // exactly that scope.
+      (prompt.forced ? '' : '<div class="sub">パス＝この確認では発動しません。相手がチェーンを重ねたり場面が変わると、新しい確認が来ることがあります。</div>');
     $('dock').className = 'on'; // exact class is a contract (tests/tools match on it) — do not append state classes here
     if (firstDraw && $('dock').animate) { // a NEW prompt visibly arrives, even if its text matches the previous one
       // ROUND 4 (H1): transform ONLY — no opacity keyframes. Round 3 made the

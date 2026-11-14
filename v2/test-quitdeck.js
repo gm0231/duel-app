@@ -81,6 +81,24 @@ async function boot(stash) {
     let menuReady = false;
     for (let i = 0; i < 450 && !menuReady; i++) {
       await sleep(200);
+      // QD3 stall root (diagnosed 2026-11-14, probe evidence in
+      // the round record): the duel can legitimately OPEN with
+      // a SELECT_CHAIN at the draw phase — when the shuffled
+      // opening hand holds the Super Quant quick-play spell
+      // (98349765, x2 in the deck), the core offers it at the
+      // first timing window and the client correctly raises
+      // the chain tray. The menu only enables at an idle
+      // prompt, which can only come after that question is
+      // answered; the old loop answered nothing and waited the
+      // full 90 s — a test-driver deadlock that read as a
+      // product stall (and surfaced mostly in loaded full-suite
+      // runs, which sample more shuffles under stretched
+      // timers). A player would simply decline; do exactly
+      // that with any chain question that arrives while waiting.
+      const trayNo = doc.querySelector('#chaintray .ct-no');
+      if (trayNo) { trayNo.click(); continue; }
+      const dockPass = doc.getElementById('chain-pass');
+      if (dockPass) { dockPass.click(); continue; }
       menuReady = !doc.getElementById('menubtn').disabled && doc.getElementById('sheetwrap').className !== 'on';
     }
     ok(menuReady, 'QD3: the duel reaches an idle prompt and その他 becomes available');

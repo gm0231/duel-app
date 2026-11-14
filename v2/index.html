@@ -315,7 +315,16 @@
      the two-line strip era spent 24px here; the band spends 16,
      and the 8px difference is art height. The kind colour rides
      the whole band (variant A), like every other name band. */
-  .hcard{width:var(--hw);height:var(--hh);flex:0 0 auto;border:1px solid var(--tile-edge);border-radius:5px;background:var(--tile);position:relative;padding:0;display:flex;flex-direction:column;overflow:hidden;cursor:pointer;}
+  /* BU-78 (2026-11-14): the hand card width rides the tile
+     unit, so at tall heights --hw reaches ~70px and 6 cards
+     (440px) overflow the 390px bar — the 6th card showed only
+     a sliver at the right edge with no scroll cue (the bar
+     hides its scrollbar). Cards now shrink to fit (flex
+     shrink, floor 46px: at the floor the bar scrolls as
+     before), and .canscroll fades the right edge while more
+     cards wait off-screen — the scroll cue the bar lacked. */
+  .hcard{width:var(--hw);height:var(--hh);flex:0 1 auto;min-width:46px;border:1px solid var(--tile-edge);border-radius:5px;background:var(--tile);position:relative;padding:0;display:flex;flex-direction:column;overflow:hidden;cursor:pointer;}
+  #hand.canscroll{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 26px),rgba(0,0,0,.2));mask-image:linear-gradient(90deg,#000 calc(100% - 26px),rgba(0,0,0,.2));}
   .himg{flex:1 1 auto;position:relative;background:#3a2f1d url('../assets/card-art-placeholder-s.jpg') center/cover;}
   .hcard .cnt{position:absolute;top:1px;right:1px;font-size:9px;font-weight:700;color:#191104;background:var(--gold);border-radius:6px;padding:0 4px;z-index:2;}
   .hcard.dim{opacity:.5;filter:saturate(.6);}
@@ -528,6 +537,15 @@
      over any art. */
   /* fx-ui round 5 (I2): auto-fit, not auto-fill — with 1-2 candidates the empty phantom columns shrank the real ones to a quarter of the sheet; auto-fit collapses the empty tracks so few candidates take the full width, and 3+ keep the ~117px columns. */
   .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(106px,1fr));gap:8px;grid-auto-rows:1fr;}
+  /* BU-79 (2026-11-14): with only 1-2 candidates the auto-fit
+     collapse stretched a lone tile to the sheet's full width
+     (measured 366x170) and the art read as a wide band. The
+     K4 rule (2026-11-12) is uniform tiles: a 1-2 candidate grid
+     keeps the SAME column width as the 3+ case (phantom tracks
+     hold the width), so a lone candidate is one standard tile.
+     This narrows I2's full-width behaviour to the 3+ case. */
+  .grid:has(> .gcard:first-child:last-child),
+  .grid:has(> .gcard:nth-child(2):last-child){grid-template-columns:repeat(auto-fill,minmax(106px,1fr));}
   .gcard{height:100%;box-sizing:border-box;}
   /* fx-ui round 2 (F7): the grid's "more below" cue — a
      full-width first line inside the sticky button row, shown
@@ -787,9 +805,17 @@
      shown ~1.6 s by fxOppNameTag; it never enters the flow, so
      the board layout cannot move under it. */
   .fx-oppnametag{position:absolute;top:47px;left:6px;height:24px;line-height:24px;max-width:calc(100% - 12px);padding:0 10px 0 8px;border-left:3px solid #5b8dd9;background:rgba(10,18,34,.9);color:#cfe2ff;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;}
-  .fx-notice{position:absolute;left:50%;top:33%;transform:translate(-50%,-50%);z-index:8;max-width:86%;background:linear-gradient(180deg,rgba(19,14,6,.95),rgba(7,5,2,.97));border:1px solid rgba(201,162,39,.7);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.65);padding:13px 18px;text-align:center;pointer-events:none;}
-  .fx-notice .nt{font-size:18px;font-weight:800;color:#ffe9a8;line-height:1.45;letter-spacing:.02em;}
-  .fx-notice .ns{font-size:12.5px;color:var(--txt-dim);margin-top:3px;line-height:1.4;}
+  /* BU-83 (2026-11-14): the notice used to be a big band at
+     top:33% — it covered the centre of the opponent's field
+     (monster zone, S/T zone, the LP band's left edge) for its
+     whole dwell. It is now a slim strip riding directly under
+     the header (81px by construction in both layout modes):
+     the opponent's pile bar sits under it briefly, but the
+     monster zones and the LP band — the decision surface —
+     stay readable. Overlay only: no board height is taken. */
+  .fx-notice{position:absolute;left:50%;top:84px;transform:translateX(-50%);z-index:8;max-width:94%;background:linear-gradient(180deg,rgba(19,14,6,.95),rgba(7,5,2,.97));border:1px solid rgba(201,162,39,.7);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.6);padding:6px 12px;text-align:center;pointer-events:none;}
+  .fx-notice .nt{font-size:14px;font-weight:800;color:#ffe9a8;line-height:1.35;letter-spacing:.02em;}
+  .fx-notice .ns{font-size:11px;color:var(--txt-dim);margin-top:1px;line-height:1.3;}
   /* Redesign F -> BU-72 (2026-11-13): the LP chip is now ONLY the
      LP-cost stamp. Effect damage and heals used to be chips too;
      the unified grammar presents them as the big ± numerals on
@@ -988,6 +1014,30 @@
      deck lists always did; the page frame (head + foot with the
      summary and the start button) never moves. */
   .dp-main{flex:1 1 auto;min-height:0;width:100%;display:flex;flex-direction:column;margin-top:2px;overflow-y:auto;overflow-x:hidden;}
+  /* BU-82 (2026-11-14): at 390x620 the settings stack measured
+     456px against the region's 434px — the last row (音) arrived
+     cut by ~18px with no sign the region could scroll. In the
+     compact tier (visible height <= 700 — the .dp-compact class
+     is driven from dpCueUpdate in client.js, since the duel
+     layout engine's own mode class never reaches this page)
+     the page tightens its vertical padding/margins so every
+     settings row is fully visible on arrival at 620. Taller
+     screens keep the roomier rhythm. */
+  #deckpage.dp-compact{padding:8px 14px 10px;}
+  #deckpage.dp-compact .deck{min-height:48px;}
+  #deckpage.dp-compact .segrow{margin:4px 0 2px;}
+  #deckpage.dp-compact .seg3 button{min-height:42px;}
+  #deckpage.dp-compact .settings{margin-top:3px;padding-top:3px;}
+  #deckpage.dp-compact .srow{margin-bottom:2px;}
+  #deckpage.dp-compact .srow .seg button{min-height:38px;}
+  /* BU-82 scroll cue: below the compact tier's reach (e.g. the
+     in-app webview's shorter band) the region still scrolls —
+     now it SAYS so: a fade at the region's lower edge plus a
+     line in the foot, both shown only while more content waits
+     below (the dp-canscroll class is driven from client.js). */
+  #deckpage.dp-canscroll .dp-main{box-shadow:inset 0 -22px 16px -10px rgba(0,0,0,.88);}
+  #dpmore{display:none;font-size:10.5px;color:var(--gold);text-align:center;padding:0 0 2px;letter-spacing:.1em;}
+  #deckpage.dp-canscroll #dpmore{display:block;}
   .dp-sec{display:flex;flex-direction:column;flex:0 0 auto;min-height:0;}
   .dp-sec .segrow{flex:0 0 auto;}
   #deckpage .decklist{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;flex-wrap:nowrap;gap:8px;overflow-y:auto;padding:2px;}
@@ -1264,6 +1314,7 @@
       </div>
     </div>
     <div class="dp-foot">
+      <div id="dpmore">▼ 下に設定の続きがあります</div>
       <div id="decksum"></div>
       <button class="startbtn" id="startbtn" disabled>読み込み中…</button>
     </div>
