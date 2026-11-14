@@ -6521,3 +6521,60 @@ QD3 (test-quitdeck stall flake) — root cause found; it was never slowness. The
 New/changed tests: test-smallfix.js (new; SF pins for 78/79/82/83), test-chainbadge CB9/CB10 (84/81), test-quitdeck QD3 wait-loop fix. Unmeasured: real-device WKWebView, real-device heights, sound audibility, and the published build's full-screen play look (parent-side check) — nothing in this round was verified on a phone.
 
 Addendum (same day, suite verification): the QD3 lesson has a second instance — test-strot's clicker never received BU-74's tray branch (test-ui's playDuel has it), so any 'ask' chain tray froze its duel the same way. Instrumented pristine runs: 2 of 3 froze/failing at a tray; a 4-run pristine baseline gave 1 pass / 1 ST4 fail / 2 tray-freeze timeouts at 200s. test-strot now mirrors test-ui (tray → チェーンする → dock branch answers); after the fix its duels always complete (57-81s in 3 runs). ST4 itself remains a shuffle-dependent non-vacuity flake in BOTH trees: a completed duel in which neither side ever produces a defense-position tile fails it (3 of 3 fixed-tree runs landed there, with 1.6-2.5k observation polls each) — pre-existing, not a regression of this round; the gate was not redesigned. Suite result on the final tree: 68 files, 63 exit 0; failures are exactly the documented baselines (test-cardart CAGG5, test-logdetail-ui D8/D9/D11/D12, test-neuron-url live-network timeout) plus the two timeout-only reruns that pass standalone (test-dmgnum ALL PASS on rerun) and test-strot as analysed above.
+
+## Backlog sweep round 3 — bigfix-1115 (2026-11-15; branch feat/bigfix-1115)
+
+Round record and probe evidence: ~/workspace/goals/simple-phone-duel-app/hidden_files/bigfix-1115/ (RECORD.md, probe-play.js, probe-glyphs.js, probe-out/). Verdicts per backlog item (measurements are Puppeteer mirror, 390 wide, DSF 2; "probe" = probe-play.js bfx sampler):
+
+BU-57 + BU-14 (context line): card names containing 「」 are now wrapped in 《》 as a whole via qName() (「自分の手札の《マジックカード「死者蘇生」》の効果による確認」), and the context line is a prefix form (location + name + effect no.) instead of the old suffix form, so multi-step selections keep the CURRENT step's card in front (the line is rebuilt from the live ctx on every uiSelectCards entry). Pinned by test-bigfix BF2/BF3.
+
+BU-21 (position sheet "back"): a true back button is impossible — a SELECT_PLACE answer is final the moment it is sent and the core never re-asks (protocol constraint, recorded in the ledger). What shipped instead: a single-zone placement answer is remembered (lastPlaceSel) and the immediately following SELECT_POSITION sheet names it — 「置く場所：自分のモンスターゾーン3（場所は変更できません）」 — cleared by any intervening prompt so it can never attach to a different summon. Pinned by BF5 (labels). Live-flow capture: PENDING.
+
+BU-53 (placement banner names the card): hand activations of spells/traps now set lastPlaceCard exactly like sets do (monsters excluded by the type check), so the banner reads 《月の書》を置く場所. Probe (620, Ishizu): place hints captured for 《おろかな副葬》 and 《月の書》 activated from hand.
+
+BU-38 (action sheet art band): the action sheet opens with a large art band (min(150px, 24dvh)) + attribute/race/level chips. Probe: .actart present on action sheets (122 samples at 620 duel 2).
+
+BU-45 (confirm sheet thumbnails): each confirm row carries a 40px art thumb (the confirming seat's deck art variant). Probe: thumbs present on real confirm sheets; pinned by BF8.
+
+BU-52 (deck-row thumbnails = key cards): DECK_KEYCARD per built-in deck (Luce 45409943 / Gate Guardian 8505920 / Great Magnus 84025439 / Rukina 13597785 / Diabell 4398189 / Aither 96570609, all resolved against data.json); deckThumbSrc falls back to the deck's first main card, then the placeholder. Applied to the deck page currents, the category rows and saved decks (saved decks use their own first main card). Pinned by BF6.
+
+BU-51 (blurb breaking inside proper nouns): redundant point suffixes removed from blurbs (points are already in the meta line), .deck .dd gets word-break:keep-all + overflow-wrap:anywhere, and the modal title may wrap instead of ellipsising. Pinned by BF7.
+
+BU-50 (dead space under title / deck page): #start centres its column and the start button follows the subtitle (30px) instead of being pushed to the bottom; the category list flexes and centres; the deck page settings block is margin-top:auto (collapses to 0 when content is tall, so BU-82's fit is unchanged).
+
+BU-47 (summary line wrapping): updateDeckSum shrinks the summary font 12px → 10.5px until it fits one line (scrollHeight check; jsdom-safe no-op). The longest built-in pairing still wraps to two lines — accepted and recorded.
+
+BU-48 (favicon): <link rel="icon"> to the card-art placeholder. Pinned by BF1.
+
+BU-62 rest (history sheet): the history is now a flex sheet — title + close row pinned, only the entries scroll, and it opens scrolled to the newest entry. Probe (620): ttl rect inside the sheet head, close row at the sheet's bottom edge, scroller at bottom on open.
+
+BU-41 (announce grid bottom row): uiAnnounceCard is the same flex-sheet shape (grid scrolls, the declare row is pinned). uiSort left as-is: its rows cannot overflow in practice (recorded in RECORD.md).
+
+BU-36 (sheet buttons vs header): placeSheetBtns clamps the × / 盤面を見る buttons so their top never crosses header bottom + 4px (tall sheets let the buttons slide onto the sheet's own top edge); in peek the JS seats them at header bottom + 4px instead of CSS top:10px. Probe (620, both duels): 449 button samples, 0 above the header line; peek samples sit exactly at headerBottom + 4.
+
+BU-55 (fold bar vs hand bottom): #peekbar is a single nowrap row (flex 1 1 0, min-width 0, ellipsis) — measured ~68px, one line, at 620. The hand cut-off itself was BU-78's fix and is unchanged.
+
+BU-74 rest (tray name band): floating cards widened 60px → 72px (small variants scaled too), tray 244px, chainui 252px; after render, each .ct-name shrinks 10px → 8px until it fits. Probe: sampled tray names at full width (sw == cw).
+
+BU-24 (chain list inside the dock): when the chain has 2+ links the dock shows a chip row （チェーン1 《…》 解決中 / 応答中 / 無効 / ✓) above the candidates. CSS/JS pinned by BF10d; live capture PENDING (no 2+ chain reached the dock in the probe duels — every chain seen was length 1; the chips render from state.chain, which the probe sampled 86 times at length 1).
+
+BU-39 (reason for a dead hand tap): handTapReason() derives, in order: battle-phase summon lock, per-card name limits (existing helper), full zones (monster / field / spell-trap, from the live board), and opponent's turn (only when no prompt is open). Nothing is shown when no reason is derivable. The hand also dims on the opponent's turn with no prompt open. Probe (620, both duels): tapping a hand card on the opponent's turn previewed 「相手のターンです」. Pinned by BF-suite + probe.
+
+BU-44 (phase banner): the label now seats on the LP band (probe: centre delta 0px across 366 samples) instead of 38% over the opponent's monsters; it defers while any decision UI is open (probe: 0 samples coexisting with sheet/dock/tray/place UI) with a ~2.6s cap after which it settles silently (hairline + header seat only); and any decision UI opening mid-banner cuts it to the settle state immediately (fxPhaseBannerCut wired into sheetOpen / uiPlace / showChainTray / dock draw). test-fx FX10/FXI-E1 still pass.
+
+BU-54 (direct-attack banner): the banner's bottom edge seats 16px above the LP band's bottom (probe: 84 attack samples, 0 overlaps with ATK/DEF plates; it can touch the lower edge of the own-LP plate and the top few px of the opponent's field row — recorded trade-off).
+
+BU-58 (selecting from the opponent's deck): confirmRevealIdx — hidden candidates are revealed (name + art) only when the whole hidden set exactly matches the set the game just confirmed to the human (same controller + location, same count, same code multiset, every candidate seq inside the confirmed set, same turn, at most one prompt old). Anything else stays face-down. The purpose line gains a mechanical subject (「相手のデッキから …」) when all candidates share one (controller, location). Pinned by BF9 (four cases). Live capture PENDING (the Alphan scene did not occur in the probe duels).
+
+BU-28 (effect text inside the chain dock): verified resolved by measurement — the dock candidate's .fxline carries the full effect text (probe: 86 dock samples, full text in DOM, none needed scrolling at the lengths seen; longer texts scroll inside the 97px frame per the layout-fix3 CSS). No code change.
+
+BU-33 (tile text clipping/overlap): verified by measurement — grid tiles sampled in the probe duels show no internal overlap (.loc/.nm/.stats); the tile contract itself is K4 (layout-fix3). The remaining overlap-prone surfaces were the declare sheet (BU-41) and hidden-candidate labels (BU-58). No code change.
+
+BU-37 rest (added mid-round from the triage round; confirmed defect): the auto-pass chip silently swallowed taps during a prompt (openDismissManager's stand-down) with no visual difference. The chip now takes the same inert treatment as the FX button (BU-25): syncChipInert mirrors #fxbtn (opacity .42 + saturate .5 + aria-disabled) while a prompt is open, re-applied from updateAutoPassChip / flashAutoPass whose className writes would otherwise wipe it. Pinned by test-bigfix BF11a–h (synthetic SELECT_CHAIN: inert on, manager does not open on tap, flag survives a mid-prompt chip rewrite, inert off after the answer).
+
+Added item (long move notices covering the header): the notice strip keeps its bottom anchor (header bottom − 2px) and the full K5 text, but its width is confined to the event-log column (#logline's live left/right), so the turn label, phase name/buttons, auto-pass chip, opponent-hand chip and FX button are never under it; type steps down (12.5px → 9px) only as far as the column height demands. Glyph-level measurement (probe-glyphs.js, text Range rects): turn-label and opponent-hand-chip glyphs covered in 0 / 709 samples across two runs; phase-name glyph coverage fell from 170/437 to 2/272 after tightening (the remaining two are the longest fusion-material notices brushing the label's lower edge by ~3px). The log line itself is replaced for the dwell — it is the same information channel.
+
+Also fixed (found during this round): the human side could not tap the field zone. availZones had no mapping for the core's 0x2000 disfield bit (SZONE seq 5); the bot's placeAnswer had it all along. A placement whose only offered zone is the field zone (a field spell's activation) therefore showed the hint with no tappable tile. availZones now maps it (human seat only), mirroring the bot. Pinned by BF4.
+
+New test file: test-bigfix.js (37 pins). Suite: PENDING.
+Unmeasured: real-device WKWebView, real-device heights, sound, and the published build's full-screen play look (parent-side check) — nothing in this round was verified on a phone.

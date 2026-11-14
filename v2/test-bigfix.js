@@ -121,9 +121,20 @@ async function boot() {
   const mk = (codes, seqs) => ({ cards: codes.map((code, i) => ({ ref: { code, con: 1, loc: 1, seq: seqs[i] } })), prompt: {} });
   B.setLastConfirm(gg3.map((code, i) => ({ code, con: 1, loc: 1, seq: 5 + i })), null);
   ok(B.confirmRevealIdx(mk(gg3, [5, 6, 7])).size === 3, 'BF9 (BU-58): an exact confirmed set is revealed');
+  ok(B.confirmRevealIdx(mk(gg3, [5, 6, 7])).get(1) === gg3[1], 'BF9a2 (BU-58): the reveal maps each index to its own code');
   ok(B.confirmRevealIdx(mk([gg3[0], gg3[1], 11111111], [5, 6, 7])).size === 0, 'BF9b (BU-58): a different code keeps the set hidden');
-  ok(B.confirmRevealIdx(mk(gg3, [5, 6, 9])).size === 0, 'BF9c (BU-58): a seq outside the confirmed set keeps it hidden');
+  // Measured protocol fact (probe bfdbg, Alphan scene): deck seqs
+  // are NOT stable between the confirm and the select (23/9/0 vs
+  // 14/24/19 for the same three cards) — seq plays no part here.
+  ok(B.confirmRevealIdx(mk(gg3, [5, 6, 9])).size === 3, 'BF9c (BU-58): differing seqs do not block the reveal (seq is not used)');
   ok(B.confirmRevealIdx(mk(gg3.slice(0, 2), [5, 6])).size === 0, 'BF9d (BU-58): a partial set keeps it hidden');
+  // A candidate without a code cannot be verified against the
+  // confirmed set and stays hidden.
+  ok(B.confirmRevealIdx(mk([0, 0, 0], [5, 6, 7])).size === 0, 'BF9e (BU-58): masked candidates (code 0) stay hidden — nothing to verify');
+  ok(B.confirmRevealIdx(mk([0, 0, 0], [5, 6, 9])).size === 0, 'BF9f (BU-58): masked candidates stay hidden regardless of seq');
+  B.setLastConfirm([{ code: gg3[0], con: 1, loc: 1, seq: 5 }, { code: gg3[0], con: 1, loc: 1, seq: 6 }, { code: gg3[1], con: 1, loc: 1, seq: 7 }], null);
+  ok(B.confirmRevealIdx(mk([gg3[0], gg3[1], gg3[1]], [5, 6, 7])).size === 0, 'BF9g (BU-58): a different code multiset (duplicates) keeps the set hidden');
+  ok(B.confirmRevealIdx(mk([gg3[0], gg3[0], gg3[1]], [5, 6, 7])).size === 3, 'BF9h (BU-58): the same multiset with duplicates is revealed');
   B.setLastConfirm([], null);
 
   // ---- stylesheet contracts (source pins; geometry is probe-measured) ----
@@ -132,6 +143,7 @@ async function boot() {
   ok(/#sheet \.actart\{/.test(html), 'BF10c (BU-38): action-sheet art band style exists');
   ok(/#dock \.chainlist\{/.test(html), 'BF10d (BU-24): dock chain list style exists');
   ok(/\.sortrow \.cthumb\{/.test(html), 'BF10e (BU-45): confirm thumb style exists');
+  ok(/\.ct-name\.wrap2\{[^}]*white-space:normal/.test(html), 'BF10f (BU-74): tray names that outlast the shrink wrap to two lines');
 
   // ---- BU-37 (rest): the auto-pass chip goes inert during a prompt ----
   // Same synthetic-prompt technique as test-fxround3: fabricate a
@@ -172,6 +184,35 @@ async function boot() {
   await sleep(120);
   ok(!chip.classList.contains('inert'), 'BF11h (BU-37): chip is live again after the prompt');
   window.eval(`(() => { dismissedDuel.delete('bf-probe'); updateAutoPassChip(); return true; })()`);
+
+  // ---- set-activation CHAIN word seat (setact) ----
+  // fxSetActivate with linkNo 2 must create the CHAIN word INSIDE
+  // the screen: the old seat (16px above the chain bar, which sits
+  // at y=0) put it at negative y. In jsdom all rects are 0, which
+  // is exactly the hostile case: old seat -70, new seat clamps to
+  // >= 0 via the pop-relative grammar.
+  window.eval(`fxSetActivate(${anyCode}, 2, null, 'ishizu', 1)`);
+  const word = doc.querySelector('#fxlayer .fx3-chainword');
+  ok(!!word && word.textContent === 'CHAIN', 'BF12a (setact): the CHAIN word node is created for a link-2 set activation');
+  ok(!!word && parseFloat(word.style.top) >= 0, 'BF12b (setact): the word seat is on screen (top >= 0), got ' + (word && word.style.top));
+
+  // ---- BU-24: the dock lists the whole chain at 2+ links ----
+  window.eval(`(() => {
+    duelState.chain = [{ code: ${anyCode}, con: 1, loc: 4, seq: 0, desc: 0 }, { code: ${anyCode}, con: 0, loc: 8, seq: 0, desc: ${anyCode} * 1048576 }];
+    duelState.solvingLink = 0;
+    window.__bf13Done = false;
+    uiAnswer({ name: 'SELECT_CHAIN', forced: false, entries: [{ code: ${anyCode}, con: 0, loc: 8, seq: 0, desc: ${anyCode} * 1048576 }] }, duelState)
+      .then(() => { window.__bf13Done = true; });
+    return true; })()`);
+  for (let i = 0; i < 60 && !doc.getElementById('chainui').classList.contains('on') && doc.getElementById('dock').className !== 'on'; i++) await sleep(50);
+  const yes13 = doc.querySelector('#chaintray .ct-yes'); if (yes13) click(yes13);
+  for (let i = 0; i < 60 && doc.getElementById('dock').className !== 'on'; i++) await sleep(50);
+  const cl = doc.querySelector('#dock .chainlist');
+  ok(!!cl && cl.querySelectorAll('.cl-chip').length === 2, 'BF13 (BU-24): the dock shows the whole chain (2 chips) at link 2');
+  ok(!!cl && /1 《.+》/.test(cl.textContent) && /2 《.+》/.test(cl.textContent), 'BF13b (BU-24): the chips number and name both links');
+  click(doc.querySelector('#dock #chain-pass'));
+  for (let i = 0; i < 60 && !window.eval('window.__bf13Done'); i++) await sleep(50);
+  ok(window.eval('window.__bf13Done') === true, 'BF13c (BU-24): the link-2 prompt resolved');
 
   console.log(failures ? ('FAILURES: ' + failures) : 'ALL PASS');
   process.exit(failures ? 1 : 0);

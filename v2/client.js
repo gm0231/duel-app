@@ -2723,14 +2723,22 @@ function queueConfirmEvents(evs) {
   }
 }
 // BU-58: candidate indices that may be shown face-up because the
-// game just confirmed exactly this set to the player. ALL of:
-// same controller + location across the hidden candidates, the
-// confirmed set for that (con, loc) has the same size and the
-// same code multiset, and every candidate's seq exists in the
-// confirmed set (the name assignment rides on seq). Any doubt
-// keeps the card hidden — the reveal is never guessed.
+// game just confirmed exactly this set to the player, as a Map of
+// index -> the code to display. ALL of: same controller +
+// location across the hidden candidates; every candidate carries
+// a code; the confirmed set for that (con, loc) has the same
+// size; and the two code MULTISETS are exactly equal. Each tile
+// then displays its OWN code's name/art — the match only proves
+// the identities are already public to this player, it never
+// assigns one. seq is deliberately NOT used: measured in the
+// Alphan scene (probe bfdbg, 2026-11-15), the candidates' deck
+// seqs (23/9/0) had nothing in common with the confirmed set's
+// (14/24/19) although the codes matched exactly — deck seqs are
+// not stable across an excavation. A candidate without a code
+// cannot be verified and stays hidden. Any doubt keeps the card
+// hidden — the reveal is never guessed.
 function confirmRevealIdx(o) {
-  const out = new Set();
+  const out = new Map();
   if (!o || !o.cards || !lastConfirm || lastConfirm.promptsAgo > 1) return out;
   if (lastConfirm.turn != null && duelState && lastConfirm.turn !== duelState.turnCount) return out;
   const hidden = [];
@@ -2738,15 +2746,14 @@ function confirmRevealIdx(o) {
   if (!hidden.length) return out;
   const con = hidden[0][0].con, loc = hidden[0][0].loc;
   if (hidden.some(([e]) => e.con !== con || e.loc !== loc)) return out;
+  if (hidden.some(([e]) => !e.code)) return out;
   const conf = lastConfirm.cards.filter(c => c.con === con && c.loc === loc && c.code);
   if (conf.length !== hidden.length) return out;
   const tally = (arr) => { const m = new Map(); for (const c of arr) m.set(c.code, (m.get(c.code) || 0) + 1); return m; };
   const a = tally(conf), b = tally(hidden.map(([e]) => e));
   if (a.size !== b.size) return out;
   for (const [code, n] of a) if (b.get(code) !== n) return out;
-  const confSeqs = new Set(conf.map(c => c.seq));
-  if (hidden.some(([e]) => !confSeqs.has(e.seq))) return out;
-  hidden.forEach(([, i]) => out.add(i));
+  for (const [e, i] of hidden) out.set(i, e.code);
   return out;
 }
 function confirmGroupLabel(con, loc) {
@@ -5827,9 +5834,16 @@ function fxSetActivate(code, linkNo, targetKey, deckKey, con) {
   // write) sits over the flipped card's own tile. The frame is over
   // the face-up tile, so it does not depend on the card-back art.
   if (linkNo >= 2) {
-    const bar = $('chainbar');
-    let wx = ar.cx, wy = ar.y + ar.h * 0.36 - 70; // fallback: above the tilted pop
-    if (bar) { const br = fxRel(bar); if (br.w > 0 || br.h > 0) { wx = br.cx; wy = br.y - 16; } }
+    // setact word seat (bigfix-1115, defect confirmed by the
+    // triage round): the word used to stand 16px above the chain
+    // bar — but in the current layout the bar itself sits at the
+    // very top of the screen (y=0), so the word landed at
+    // y −30..−1 and never appeared (measured on the published
+    // build, CDP cast + DOM sampling). The word now follows the
+    // normal activation grammar (fxChainSceneV3): it stands above
+    // the presentation card itself — here the tilted pop (74x96
+    // at 36% height) — clamped so it can never leave the screen.
+    const wx = ar.cx, wy = Math.max(14, ar.y + ar.h * 0.36 - 96 / 2 - 40);
     fxChainWord(wx, wy, 820, beatStart);
     if (!targetKey && duelState && duelState.players) { // fallback: locate the tile from the standing state by code
       for (let con = 0; con < 2 && !targetKey; con++) {
@@ -7414,6 +7428,11 @@ function showChainTray(prompt, cause, liveIdx, openDock) {
   tray.querySelectorAll('.ct-name').forEach(el => {
     let fs = 10;
     while (el.scrollWidth > el.clientWidth + 1 && fs > 8) { fs -= 0.5; el.style.fontSize = fs + 'px'; }
+    // The longest pool names (11+ chars, e.g. 教導の騎士フルルドリス
+    // measured 88px at the 8px floor against the 72px card) still
+    // overflow after the shrink — those wrap to two lines instead
+    // of truncating. Short names never reach this branch.
+    if (el.scrollWidth > el.clientWidth + 1) el.classList.add('wrap2');
   });
   chainTrayCtx = { draw: openDock };
   fxRecord('chaintray', { action: 'show', count: liveIdx.length, forced: !!prompt.forced });
@@ -8446,7 +8465,8 @@ function gridSheet(o) {
     // its identity is already public to the player by the rules.
     const revealIdx = confirmRevealIdx(o);
     const hidOf = (c, i) => selCardHidden(c.ref || c, o.prompt) && !(i != null && revealIdx.has(i));
-    const nameOf = (c, i) => hidOf(c, i) ? hiddenCardLabel(c.ref || c) : cardName(c.code);
+    const effCode = (c, i) => revealIdx.has(i) ? revealIdx.get(i) : c.code; // BU-58: a revealed candidate's identity comes from the confirm set (its own code may be masked)
+    const nameOf = (c, i) => hidOf(c, i) ? hiddenCardLabel(c.ref || c) : cardName(effCode(c, i));
     const tray = [...o.selected].map(i => '<span class="chip" data-chip="' + i + '">' + nameOf(o.cards[i], i) + ' ✕</span>').join('') +
       (o.locked || []).map(c => '<span class="chip locked">' + (selCardHidden(c, o.prompt) ? hiddenCardLabel(c) : cardName(c.code)) + '（固定）</span>').join('');
     const subTxt = typeof o.sub === 'function' ? o.sub() : o.sub;
@@ -8469,10 +8489,10 @@ function gridSheet(o) {
       // uniform size so candidates compare at a glance. The full
       // text lives in the detail modal (詳細) and nowhere else.
       '<div class="sheet-scroll"><div class="grid">' + o.cards.map((c, i) => {
-        const hid = hidOf(c, i);
-        return '<div class="gcard' + (hid ? ' back' : '') + (o.selected.has(i) ? ' sel' : '') + '" data-grid="' + i + '"' + (hid ? '' : artInline(c.code, false, c.ref && c.ref.con != null ? deckKeyOfSeat(c.ref.con) : deckKeyOfSeat(HP))) + '>' +
-        '<div class="loc">' + c.locLabel + '</div>' + (hid ? '' : marksChipHTML(c.code)) + '<div class="nm' + (hid ? '' : kindCls(c.code)) + '">' + (hid ? hiddenCardLabel(c.ref || c) : '<span class="nmtext">' + cardName(c.code) + (c.extra ? ' ' + c.extra : '') + '</span><button class="gdetail" data-gdetail="' + i + '">詳細</button>') + '</div>' +
-        (hid ? '' : (statsLine(c.code) ? '<div class="stats">' + statsLine(c.code) + '</div>' : '')) + '</div>';
+        const hid = hidOf(c, i), ec = effCode(c, i);
+        return '<div class="gcard' + (hid ? ' back' : '') + (o.selected.has(i) ? ' sel' : '') + '" data-grid="' + i + '"' + (hid ? '' : artInline(ec, false, c.ref && c.ref.con != null ? deckKeyOfSeat(c.ref.con) : deckKeyOfSeat(HP))) + '>' +
+        '<div class="loc">' + c.locLabel + '</div>' + (hid ? '' : marksChipHTML(ec)) + '<div class="nm' + (hid ? '' : kindCls(ec)) + '">' + (hid ? hiddenCardLabel(c.ref || c) : '<span class="nmtext">' + cardName(ec) + (c.extra ? ' ' + c.extra : '') + '</span><button class="gdetail" data-gdetail="' + i + '">詳細</button>') + '</div>' +
+        (hid ? '' : (statsLine(ec) ? '<div class="stats">' + statsLine(ec) + '</div>' : '')) + '</div>';
       }).join('') + '</div></div>' +
       // F7: the scroll cue rides INSIDE the button row as a
       // full-width first line — shown only while the candidate
@@ -8491,7 +8511,7 @@ function gridSheet(o) {
       draw(); }));
     // R-SEL-1: detail opens over the sheet; the selection (held
     // in o's closure) is untouched by opening or closing it.
-    $('sheet').querySelectorAll('[data-gdetail]').forEach(b => b.addEventListener('click', (ev) => { ev.stopPropagation(); playClick(); openInfoPop(o.cards[+b.dataset.gdetail].code, o.cards[+b.dataset.gdetail].ref || null); }));
+    $('sheet').querySelectorAll('[data-gdetail]').forEach(b => b.addEventListener('click', (ev) => { ev.stopPropagation(); playClick(); const gi = +b.dataset.gdetail; openInfoPop(revealIdx.has(gi) ? revealIdx.get(gi) : o.cards[gi].code, o.cards[gi].ref || null); }));
     $('sheet').querySelectorAll('[data-chip]').forEach(ch => ch.addEventListener('click', () => { playClick(); o.onToggle(+ch.dataset.chip); draw(); }));
     $('grid-confirm').addEventListener('click', () => { playClick(); o.onConfirm([...o.selected]); });
     const cancel = $('grid-cancel');
@@ -8769,7 +8789,7 @@ function uiSort(prompt, state) {
   const revealIdx = confirmRevealIdx({ cards: prompt.cards.map(c => ({ ref: c })), prompt });
   const draw = () => {
     sheetOpen('<div class="ttl">' + (prompt.name === 'SORT_CHAIN' ? 'チェーンの順番' : 'カードの順番') + '</div><div class="sub">' + (prompt.name === 'SORT_CHAIN' ? '上から順に処理される順番です。並べ替えて「この順番で決定」を押してください。' : '上から順に、次に使う順番に並べてください。') + '</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
-      order.map((ci, pos) => '<div class="sortrow"><span>' + (pos + 1) + '. ' + (selCardHidden(prompt.cards[ci], prompt) && !revealIdx.has(ci) ? hiddenCardLabel(prompt.cards[ci]) : cardName(prompt.cards[ci].code)) + '</span><span class="mv">' +
+      order.map((ci, pos) => '<div class="sortrow"><span>' + (pos + 1) + '. ' + (selCardHidden(prompt.cards[ci], prompt) && !revealIdx.has(ci) ? hiddenCardLabel(prompt.cards[ci]) : cardName(revealIdx.has(ci) ? revealIdx.get(ci) : prompt.cards[ci].code)) + '</span><span class="mv">' +
         '<button data-up="' + pos + '">↑</button><button data-down="' + pos + '">↓</button></span></div>').join('') +
       '<div class="btnrow"><button class="bigbtn" id="sort-ok">この順番で決定</button><button class="bigbtn sub" id="sort-keep">元の順番のままにする</button></div>');
     $('sheet').querySelectorAll('[data-up]').forEach(b => b.addEventListener('click', () => { const p = +b.dataset.up; if (p > 0) { [order[p-1], order[p]] = [order[p], order[p-1]]; } playClick(); draw(); }));
