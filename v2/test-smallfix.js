@@ -10,8 +10,15 @@
      page's vertical rhythm; #dpmore + .dp-canscroll are the
      scroll cue for shorter screens; dpCueUpdate drives both
      classes off viewportHeights().baseH.
-   BU-83 (move notice): .fx-notice is a slim strip under the
-     header (top:84px), no longer the top:33% centre band.
+   BU-83 (move notice): .fx-notice started as the top:33%
+     centre band, then a slim strip under the header (top:84px)
+     — which still covered the opponent's pile row and, when a
+     long move text wrapped, the monster-zone top edge (parent
+     re-verification 2026-11-14 evening; measured bottoms
+     151/189/208 vs pile top 80). Residue fix: the strip is
+     full-width and bottom-anchored INSIDE the header band by
+     fxNoticeShow (top set in JS from the measured header
+     rect); the route label rides the text flow inline.
    Source pins (CSS/DOM contract), in the test-fxround5 style —
    geometry itself is measured by the round's Puppeteer probes
    (deck page at 390x620/700/560, saved with the round record).
@@ -66,12 +73,27 @@ ok(/function dpCueUpdate\(\)/.test(clientSrc) && /dp-compact', viewportHeights\(
 
 // ---------- BU-83 ----------
 const notice = ruleDecls(/\.fx-notice\{([^}]*)\}/);
-ok(!!notice && notice['top'] === '84px' && notice['transform'] === 'translateX(-50%)',
-  'SF83a: the notice is a strip under the header (top:84px), not the centre band (got top=' + (notice && notice['top']) + ')');
+ok(!!notice && notice['left'] === '6px' && notice['right'] === '6px' && !('top' in notice) && !('transform' in notice),
+  'SF83a: the notice is a full-width strip with no fixed top — fxNoticeShow anchors it inside the header band (got left=' + (notice && notice['left']) + ', top=' + (notice && notice['top']) + ')');
 const noticeT = ruleDecls(/\.fx-notice \.nt\{([^}]*)\}/);
-ok(!!noticeT && noticeT['font-size'] === '14px',
-  'SF83b: the notice type is the slim 14px line (got ' + (noticeT && noticeT['font-size']) + ')');
-ok(!/\.fx-notice\{[^}]*top:33%/.test(html), 'SF83c: the old top:33% centre band is gone');
+ok(!!noticeT && noticeT['font-size'] === '12.5px',
+  'SF83b: the notice type is 12.5px so the worst-case grouped text fits the header band (got ' + (noticeT && noticeT['font-size']) + ')');
+ok(!/\.fx-notice\{[^}]*top:33%/.test(html) && !/\.fx-notice\{[^}]*top:84px/.test(html), 'SF83c: neither the old centre band nor the under-header strip remains');
+const noticeS = ruleDecls(/\.fx-notice \.ns\{([^}]*)\}/);
+ok(!!noticeS && noticeS['display'] === 'inline',
+  'SF83d: the route label rides the notice text flow inline (no second line)');
+ok(/hb\.getBoundingClientRect\(\)/.test(clientSrc) && /d\.style\.top = Math\.max\(0, Math\.round\(hr\.bottom - lr\.top - 2 - d\.offsetHeight\)\)/.test(clientSrc)
+  && /render\(t\) \{\s*anchorNotice\(\);/.test(clientSrc),
+  'SF83e: fxNoticeShow bottom-anchors the strip 2px above the measured header bottom, re-anchored every frame of the dwell');
+
+// ---------- parent re-verification 2026-11-14, item 2.1 ----------
+// The header hand chip is the OPPONENT's count (render writes
+// players[1-HP].hand.length; the mirror was verified equal to
+// the core's real hand count at 1,097 prompt boundaries, zero
+// divergence — see the round record's probe-counts). The bare
+// label 手札 read as the reader's own hand; it now says whose.
+ok(/id="oppHandChip">相手の手札 <b id="oppHandN">/.test(html),
+  'SF85a: the header hand chip is labelled 相手の手札 (it shows the opponent count)');
 
 console.log(failures ? ('FAILURES: ' + failures) : 'ALL SMALLFIX CHECKS PASSED');
 process.exit(failures ? 1 : 0);
