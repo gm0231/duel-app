@@ -5304,10 +5304,10 @@ function fxNoticeShow(text, sub, noBeat) {
           let fs = 12.5;
           if (nt) nt.style.fontSize = '';
           if (ns) ns.style.fontSize = '';
-          while (nt && d.offsetHeight > Math.max(0, hr.bottom - gr.top) && fs > 10) {
+          while (nt && d.offsetHeight > Math.max(0, hr.bottom - gr.top) && fs > 9) {
             fs -= 0.5;
             nt.style.fontSize = fs + 'px';
-            if (ns) ns.style.fontSize = Math.max(9, fs - 1.5) + 'px';
+            if (ns) ns.style.fontSize = Math.max(8, fs - 1.5) + 'px';
           }
         }
       }
@@ -7473,6 +7473,20 @@ function syncFxBtnInert() {
   const inert = !!currentPrompt;
   b.classList.toggle('inert', inert);
   b.setAttribute('aria-disabled', inert ? 'true' : 'false');
+  syncChipInert();
+}
+// BU-37 (rest, confirmed a defect by the triage round): the
+// auto-pass chip had the same silent-return path the FX button
+// had — openDismissManager stands down during a prompt, and a
+// tap only clicked. Give the chip the same inert look while a
+// prompt is open. The chip's class list is owned by
+// updateAutoPassChip / flashAutoPass (on / flash), so the flag
+// is re-applied from there as well as from here.
+function syncChipInert() {
+  const el = $('autopass'); if (!el) return;
+  const inert = !!currentPrompt;
+  el.classList.toggle('inert', inert);
+  el.setAttribute('aria-disabled', inert ? 'true' : 'false');
 }
 function uiAnswer(prompt, state) {
   return new Promise((resolve) => {
@@ -7992,11 +8006,13 @@ function updateAutoPassChip() {
     el.className = 'on';
   }
   else { el.className = ''; el.textContent = ''; }
+  syncChipInert(); // BU-37: className was just rewritten — re-apply the inert flag
 }
 function flashAutoPass(names) {
   const el = $('autopass'); if (!el) return;
   el.textContent = '自動パス：' + names;
   el.className = 'on flash';
+  syncChipInert(); // BU-37: same re-apply as updateAutoPassChip
   autoPassFlashUntil = Date.now() + 2600;
   setTimeout(updateAutoPassChip, 2700);
 }

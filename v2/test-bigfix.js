@@ -133,6 +133,46 @@ async function boot() {
   ok(/#dock \.chainlist\{/.test(html), 'BF10d (BU-24): dock chain list style exists');
   ok(/\.sortrow \.cthumb\{/.test(html), 'BF10e (BU-45): confirm thumb style exists');
 
+  // ---- BU-37 (rest): the auto-pass chip goes inert during a prompt ----
+  // Same synthetic-prompt technique as test-fxround3: fabricate a
+  // minimal state, register a dismissal so the chip is on screen,
+  // then dispatch a SELECT_CHAIN and watch the chip's classes.
+  const click = (el) => { if (el) el.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })); return !!el; };
+  window.eval('sheetClose()'); // BF8's confirm sheet is still open — start clean
+  for (let i = 0; i < 40 && doc.getElementById('sheetwrap').classList.contains('on'); i++) await sleep(50); // the close is animated; 'on' lands late
+  const anyCode = Number(Object.keys(data.cards)[0]);
+  window.eval(`(() => {
+    const P = () => ({ mzone: [null,null,null,null,null,null,null], szone: [null,null,null,null,null,null], grave: [], removed: [], extra: [], hand: [], deckCount: 38, lp: 8000 });
+    duelState = { players: [P(), P()], phaseName: 'MAIN1', turnCount: 2, chain: [], solvingLink: 0, winner: null, turnPlayer: 0, log: [], dlog: [], lastAttack: null };
+    render(duelState);
+    fxSettings.resp = 'auto';
+    dismissedDuel.set('bf-probe', { code: ${anyCode}, desc: 0 });
+    updateAutoPassChip();
+    return true;
+  })()`);
+  const chip = doc.getElementById('autopass');
+  ok(chip.className.includes('on') && !chip.classList.contains('inert'), 'BF11a (BU-37): chip is live before the prompt');
+  window.eval(`(() => { window.__bfDone = false;
+    uiAnswer({ name: 'SELECT_CHAIN', forced: false, entries: [{ code: ${anyCode}, con: 0, loc: 8, seq: 0, desc: ${anyCode} * 1048576 }] }, duelState)
+      .then(() => { window.__bfDone = true; });
+    return true; })()`);
+  for (let i = 0; i < 60 && !doc.getElementById('chainui').classList.contains('on') && doc.getElementById('dock').className !== 'on'; i++) await sleep(50);
+  ok(doc.getElementById('chainui').classList.contains('on') || doc.getElementById('dock').className === 'on', 'BF11b (BU-37): the synthetic chain prompt is up');
+  ok(chip.classList.contains('inert') && chip.getAttribute('aria-disabled') === 'true', 'BF11c (BU-37): chip is inert while the prompt is open');
+  ok(doc.getElementById('fxbtn').classList.contains('inert'), 'BF11d (BU-37): fx button inert in the same window (parity with BU-25)');
+  ok(!doc.getElementById('sheetwrap').classList.contains('on'), 'BF11e0 (BU-37): no sheet is open before the chip tap');
+  click(chip);
+  ok(!doc.getElementById('sheetwrap').classList.contains('on'), 'BF11e (BU-37): chip tap during a prompt does not open the manager');
+  window.eval('updateAutoPassChip()');
+  ok(chip.classList.contains('inert'), 'BF11f (BU-37): updateAutoPassChip during the prompt keeps the inert flag');
+  const trayNo = doc.querySelector('#chaintray .ct-no');
+  if (trayNo) click(trayNo); else click(doc.querySelector('#dock #chain-pass'));
+  for (let i = 0; i < 60 && !window.eval('window.__bfDone'); i++) await sleep(50);
+  ok(window.eval('window.__bfDone') === true, 'BF11g (BU-37): the synthetic prompt resolved');
+  await sleep(120);
+  ok(!chip.classList.contains('inert'), 'BF11h (BU-37): chip is live again after the prompt');
+  window.eval(`(() => { dismissedDuel.delete('bf-probe'); updateAutoPassChip(); return true; })()`);
+
   console.log(failures ? ('FAILURES: ' + failures) : 'ALL PASS');
   process.exit(failures ? 1 : 0);
 })().catch(e => { console.log('ERROR', e && e.stack || e); process.exit(2); });
