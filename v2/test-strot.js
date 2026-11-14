@@ -91,7 +91,21 @@ async function boot() {
     // ---- clicker (same policy as test-ui's playDuel) ----
     let acted = false;
     const click = (el) => { if (el) { el.click(); acted = true; } };
-    if ($('sheetwrap').className === 'on') {
+    if ($('chainui') && $('chainui').classList.contains('on')) {
+      // BU-74 tray branch — test-ui's playDuel has had it since
+      // the tray landed; this clicker never got it (diagnosed
+      // 2026-11-14, the QD3 lesson's second instance): a
+      // SELECT_CHAIN raised as the badge tray froze the duel
+      // for good, because no branch below can answer it, and
+      // ST4 then failed whenever the shuffle raised an 'ask'
+      // tray before a defense tile was observed — on pristine
+      // a797c25 this failed 2 of 3 instrumented runs (one
+      // frozen at the tray past 150 s), which is the flake the
+      // suite notes long carried as "ST4 under load". Mirror
+      // test-ui: チェーンする opens the dock, the dock branch
+      // below answers it.
+      click(q('.ct-yes', $('chaintray')));
+    } else if ($('sheetwrap').className === 'on') {
       const sheet = $('sheet');
       const inc = q('[data-inc]', sheet);
       const counterOk = q('#counter-confirm', sheet);
