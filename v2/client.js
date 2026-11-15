@@ -4156,12 +4156,13 @@ function fxProcessInner(evs, state) {
   fxPrev = cur;
   if (!prev) {
     // First update of the duel is the baseline: no diff events
-    // "happened" yet. The opening turn still gets its banner
-    // (BU-98: the opening turn is a turn start like any other
-    // for the player reading the board — the VS curtain has
-    // already lifted before the duel is created, so nothing
-    // covers it; every later turn start banners, so the first
-    // one staying silent read as the same invisibility defect).
+    // "happened" yet. If it already carries a live turn, that
+    // turn banners (BU-98: the opening turn is a turn start
+    // like any other for the player reading the board — the VS
+    // curtain has already lifted before the duel is created,
+    // so nothing covers it). In the real flow the first update
+    // is the virgin turn-0 state and the opening banner fires
+    // on the 0 -> 1 transition below instead.
     if (cur.tp != null && cur.turn > 0 && cur.winner == null) fxTurnBanner(cur.tp === HP, Math.max(1, cur.turn));
     return;
   }
@@ -4174,6 +4175,13 @@ function fxProcessInner(evs, state) {
   // input lock (fxTurnBanner), fired BEFORE the phase banner so
   // the phase banner's defer machinery can queue behind it.
   if (prev.tp != null && cur.tp != null && cur.tp !== prev.tp && cur.turn > 0 && cur.winner == null) fxTurnBanner(cur.tp === HP, Math.max(1, cur.turn));
+  // BU-98 follow-up: the opening turn is neither the baseline
+  // nor a flip in the real flow — the engine emits the virgin
+  // turn-0 state first (measured: two snapshots), then turn 1
+  // arrives with the SAME turn player, so the flip condition
+  // never sees it. The 0 -> 1 transition is the opening turn
+  // start and banners like any other.
+  if (prev.turn === 0 && cur.turn > 0 && cur.tp != null && cur.winner == null) fxTurnBanner(cur.tp === HP, Math.max(1, cur.turn));
   // ---- phase banner (3-8): only at the transition, an overlay band
   if (cur.phaseFam && cur.phaseFam !== prev.phaseFam && cur.turn > 0) fxPhaseBanner(cur.phaseFam);
   // ---- zone cell diffs

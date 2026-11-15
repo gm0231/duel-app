@@ -140,6 +140,17 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   // TF19 already pins "never resolved while the element was up")
   ok(holdResolvedAt - bornAt >= 1100 && holdResolvedAt - bornAt <= 2600, 'TF22: the hold resolves only after the full span — the prompt is presented after, not instead (at ' + (holdResolvedAt - bornAt) + ' ms)');
 
+  // BU-98 follow-up: in the real flow the engine emits the
+  // virgin turn-0 state first, so the opening turn arrives as a
+  // 0 -> 1 transition with the SAME turn player (no flip). It
+  // must banner too.
+  fx.reset();
+  step(fakeState(s => { s.turnCount = 0; s.turnPlayer = 0; s.phaseName = ''; }));
+  ok(fx.log.length === 0 && !turnEl(), 'TF24: the virgin turn-0 snapshot stays silent');
+  recs = step(fakeState(s => { s.turnCount = 1; s.turnPlayer = 0; s.phaseName = 'DRAW'; }));
+  ok(has(recs, 'turnbanner', r => r.turn === 1 && r.mine === true) && !!turnEl(), 'TF25: the 0 -> 1 transition fires the opening banner {turn:1, mine:true}');
+  fx.turnCut();
+
   // wiring: humanAnswerer awaits the hold before the confirm
   // sheet / uiAnswer (source-level pin, same spirit as TF16)
   const haIdx = clientSrc.indexOf('humanAnswerer: async');
