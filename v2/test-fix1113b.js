@@ -71,14 +71,19 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     'F63c: the confirmation sheet offers 終了する and 対局に戻る');
   ok(ask.includes("$('quit-cancel').addEventListener('click', () => { playClick(); sheetClose(); })"),
     'F63d: 対局に戻る only closes the sheet (the duel continues)');
-  // F1b: the early veil lift sits BEFORE the data.json fetch in the boot IIFE
+  // F1b: the early veil lift sits BEFORE the data.json load in the boot IIFE
   // (BU-69 revision, fix round 2026-11-13 #3: the prefix no longer
   // merely peeks at the stash — it consumes and APPLIES it there,
   // so the summary is correct from the first frame; the pins now
   // name the consume-in-prefix shape. The behavioral side is
   // pinned by test-fix1113c R1-B1..B5 with a deferred fetch.)
+  // loadspeed-1116 locator move: the boot's data load now consumes
+  // the parse-time prefetch promise (window.__mdBoot) when present
+  // and falls back to the direct fetch — the pinned ORDER (stash
+  // consumed in the prefix, before the data await) is unchanged;
+  // only the located statement's shape moved.
   const liftIdx = clientSrc.indexOf("const td = sessionStorage.getItem('v3todeck');");
-  const fetchIdx = clientSrc.indexOf("DATA = await (await fetch('data.json')).json();");
+  const fetchIdx = clientSrc.indexOf('DATA = earlyBoot && earlyBoot.data ? await earlyBoot.data');
   ok(liftIdx > 0 && fetchIdx > 0 && liftIdx < fetchIdx,
     'F63e: the boot-time veil lift reads the stash before data.json is fetched');
   const landIdx = clientSrc.indexOf('if (todeckLanded) {');

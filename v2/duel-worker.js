@@ -115,6 +115,30 @@ function workerTransport(worker) {
   };
 }
 
+// loadspeed-1116: one pre-created browser Worker, warmed at boot
+// time. engine-worker.js answers {type:'warmup'} by instantiating
+// the ocgcore module (wasm download + compile) and posting
+// nothing back, so by the time the user taps start, the next
+// createClientDuel only has to hand this worker its start
+// message. Consumed once; a later duel builds a fresh worker
+// exactly as before (fresh module per duel, as today). Browser-
+// only: with no Worker global (Node, jsdom) this stays a no-op,
+// and an explicit env.WorkerCtor override never consumes the
+// prewarmed worker (it was built with the default constructor).
+let prewarmedWorker = null;
+function prewarmClientDuel(env) {
+  env = env || {};
+  if (prewarmedWorker) return prewarmedWorker;
+  const WorkerCtor = 'WorkerCtor' in env ? env.WorkerCtor
+    : (typeof Worker !== 'undefined' ? Worker : undefined);
+  if (!WorkerCtor) return null;
+  try {
+    prewarmedWorker = new WorkerCtor('engine-worker.js');
+    prewarmedWorker.postMessage({ type: 'warmup' });
+    return prewarmedWorker;
+  } catch (e) { prewarmedWorker = null; return null; }
+}
+
 // createClientDuel(DATA, opts, env?) -> Promise<Duel-like>
 // Browser with Worker: engine runs in engine-worker.js behind WorkerDuel.
 // No Worker (jsdom test harnesses etc.): full fallback to the in-process
@@ -125,7 +149,9 @@ async function createClientDuel(DATA, opts, env) {
   const WorkerCtor = 'WorkerCtor' in env ? env.WorkerCtor
     : (typeof Worker !== 'undefined' ? Worker : undefined);
   if (WorkerCtor) {
-    const worker = new WorkerCtor('engine-worker.js');
+    let worker;
+    if (!('WorkerCtor' in env) && prewarmedWorker) { worker = prewarmedWorker; prewarmedWorker = null; }
+    else worker = new WorkerCtor('engine-worker.js');
     return new WorkerDuel(workerTransport(worker), DATA, opts);
   }
   const factory = env.OcgCoreModule ||
@@ -135,8 +161,8 @@ async function createClientDuel(DATA, opts, env) {
   return new E.Duel(M, DATA, opts);
 }
 
-const DuelWorker = { WorkerDuel, createClientDuel, workerTransport };
+const DuelWorker = { WorkerDuel, createClientDuel, workerTransport, prewarmClientDuel };
 if (typeof module !== 'undefined') module.exports = DuelWorker;
-else { global.WorkerDuel = WorkerDuel; global.createClientDuel = createClientDuel; global.DuelWorker = DuelWorker; }
+else { global.WorkerDuel = WorkerDuel; global.createClientDuel = createClientDuel; global.DuelWorker = DuelWorker; global.prewarmClientDuel = prewarmClientDuel; }
 
 })(typeof window !== 'undefined' ? window : globalThis);

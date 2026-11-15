@@ -1621,10 +1621,33 @@ try {
   }
 } catch (e) {}
 </script>
-<script src="build/ocgcore.js"></script>
-<script src="engine.js"></script>
-<script src="duel-worker.js"></script>
-<script src="neuron.js"></script>
-<script src="client.js"></script>
+<script>
+// loadspeed-1116: start the card-data downloads NOW, in parallel
+// with the deferred script chain below, instead of after
+// client.js (~220KB gz) has downloaded, parsed and reached its
+// first await — the boot used to fetch data.json only then, so
+// the two biggest downloads ran strictly in series. client.js's
+// boot consumes window.__mdBoot.data / .fx when present and
+// falls back to its own fetch otherwise (jsdom test hosts have
+// no fetch at parse time; nothing here may assume it). The
+// no-op catches keep an early failure from surfacing as an
+// unhandled rejection before the boot attaches its own handler;
+// the boot's await still sees the rejection and runs the
+// existing failure path (message + reload button).
+try {
+  if (typeof fetch === 'function') {
+    var __mdData = fetch('data.json').then(function (r) { if (!r.ok) throw new Error('data.json HTTP ' + r.status); return r.json(); });
+    __mdData.catch(function () {});
+    var __mdFx = fetch('fxmap.json').then(function (r) { if (!r.ok) throw new Error('fxmap.json HTTP ' + r.status); return r.json(); });
+    __mdFx.catch(function () {});
+    window.__mdBoot = { data: __mdData, fx: __mdFx };
+  }
+} catch (e) {}
+</script>
+<script defer src="build/ocgcore.js"></script>
+<script defer src="engine.js"></script>
+<script defer src="duel-worker.js"></script>
+<script defer src="neuron.js"></script>
+<script defer src="client.js"></script>
 </body>
 </html>

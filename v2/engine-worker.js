@@ -8,7 +8,10 @@
      - Node worker_threads: parentPort / workerData; build/ocgcore.js and
        engine.js are require()d (same style as test-node.js).
    Protocol:
-     in : {type:'start', data, opts:{seed, pace, deckP0, deckP1, humanTeam,
+     in : {type:'warmup'}                 (loadspeed-1116: instantiate
+                                            the ocgcore module ahead of
+                                            the duel; posts nothing back)
+          {type:'start', data, opts:{seed, pace, deckP0, deckP1, humanTeam,
                                      fast?, digest?, rngSeed?, watch?}}
           {type:'answer', id, bytes:Uint8Array}
           {type:'refresh'}                    (only while a prompt waits)
@@ -110,8 +113,38 @@ let duel = null;
 let promptSeq = 0;
 const pendingAnswers = new Map(); // id -> resolve(bytes)
 
+// loadspeed-1116: the ocgcore module instance, created lazily and
+// cached. A worker hosts exactly one duel in every real flow (the
+// client builds a fresh worker per duel; the prewarmed worker is
+// consumed by a single createClientDuel), so caching the factory
+// promise changes nothing for a cold start — it only lets a
+// 'warmup' message pay the wasm download + compile ahead of the
+// duel. A rejected factory promise is dropped from the cache so a
+// failed warmup never poisons the real start (which then retries
+// and reports through the normal error path).
+let modulePromise = null;
+function getCoreModule() {
+  if (!modulePromise) {
+    modulePromise = OcgCoreFactory({
+      // Browser: this script sits in v2/, the wasm in v2/build/ — prefix
+      // 'build/'. Node: the glue reads the located path from the filesystem,
+      // so it must be absolute (a relative 'build/...' would depend on the
+      // host process's CWD).
+      locateFile: (path) => {
+        if (!path.endsWith('.wasm')) return path;
+        return HOST.kind === 'node'
+          ? require('path').join(__dirname, 'build', path)
+          : 'build/' + path;
+      },
+    });
+    modulePromise.catch(() => { modulePromise = null; });
+  }
+  return modulePromise;
+}
+
 async function handle(msg) {
   if (!msg || typeof msg !== 'object') return;
+  if (msg.type === 'warmup') { getCoreModule().catch(() => {}); return; }
   if (msg.type === 'start') return startSession(msg);
   if (msg.type === 'answer') {
     const res = pendingAnswers.get(msg.id);
@@ -129,18 +162,7 @@ async function startSession(msg) {
   const opts = msg.opts || {};
   const data = msg.data;
   const digest = opts.digest ? makeDigest() : null;
-  const M = await OcgCoreFactory({
-    // Browser: this script sits in v2/, the wasm in v2/build/ — prefix
-    // 'build/'. Node: the glue reads the located path from the filesystem,
-    // so it must be absolute (a relative 'build/...' would depend on the
-    // host process's CWD).
-    locateFile: (path) => {
-      if (!path.endsWith('.wasm')) return path;
-      return HOST.kind === 'node'
-        ? require('path').join(__dirname, 'build', path)
-        : 'build/' + path;
-    },
-  });
+  const M = await getCoreModule();
   duel = new Engine.Duel(M, data, {
     seed: opts.seed,
     pace: opts.fast ? { bot: 0, botChain: 0, batch: 0 } : opts.pace,

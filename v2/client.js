@@ -10564,6 +10564,17 @@ function wireSeg(id, apply) {
   }));
 }
 (async () => {
+  // loadspeed-1116: service worker registration (repeat-visit
+  // speed; design in sw.js — versioned cache, network-first code,
+  // cache-first heavy data). Registered here, before the data
+  // load, so it happens even on the boot failure path. Guarded
+  // for jsdom/Node test hosts and non-http(s) pages; a failed
+  // registration must never break the boot, so failures are
+  // swallowed — the app then behaves exactly as before sw.js.
+  try {
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && /^https?:$/.test(location.protocol))
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+  } catch (e) {}
   // deck-select page navigation (pure DOM — wired before the data
   // load so the pages can be walked even on the failure path, whose
   // retry button lives on the deck page).
@@ -10677,13 +10688,20 @@ function wireSeg(id, apply) {
     else $('neuroncode').focus();
   });
   try {
-    DATA = await (await fetch('data.json')).json();
+    // loadspeed-1116: the inline script in index.html started the
+    // data.json / fxmap.json downloads at parse time, in parallel
+    // with this file's own download; consume those promises when
+    // present, fetch directly otherwise (test hosts, no-fetch
+    // browsers). A rejected early promise lands in the same
+    // failure path as a rejected fetch did before.
+    const earlyBoot = (typeof window !== 'undefined' && window.__mdBoot) || null;
+    DATA = earlyBoot && earlyBoot.data ? await earlyBoot.data : await (await fetch('data.json')).json();
     // fxmap.json: which printed effect a desc index names. A failed
     // or foreign-shaped response (test stubs answer every fetch
     // with data.json) just leaves FXMAP empty — identification
     // degrades to full-text display, never to wrong numbers.
     try {
-      const fm = await (await fetch('fxmap.json')).json();
+      const fm = earlyBoot && earlyBoot.fx ? await earlyBoot.fx : await (await fetch('fxmap.json')).json();
       const k = Object.keys(fm || {})[0];
       if (fm && k && fm[k] && typeof fm[k].n === 'number') FXMAP = fm;
     } catch (e) { /* identification off, display unaffected */ }
@@ -10693,6 +10711,13 @@ function wireSeg(id, apply) {
     // and labelled while loading, live only when a duel can start.
     const sb = $('startbtn'); sb.disabled = false; sb.textContent = 'デュエル開始';
     bootReady = true; refreshStartGate(); // a restored unplayable saved deck must not re-enable start
+    // loadspeed-1116: warm the engine worker now — the wasm
+    // download and compile then happen while the user browses
+    // the deck pages, not after the start tap (the tap used to
+    // pay worker spin-up + ~390KB gz wasm + compile in series).
+    // Best-effort: any failure just leaves the duel start on the
+    // old cold path.
+    try { if (typeof DuelWorker !== 'undefined' && DuelWorker.prewarmClientDuel) DuelWorker.prewarmClientDuel(); } catch (e) {}
   } catch (e) {
     $('loadmsg').textContent = 'カードデータの読み込みに失敗しました。通信環境を確認して、もう一度お試しください。';
     const sb = $('startbtn'); sb.disabled = false; sb.textContent = '再読み込み';
