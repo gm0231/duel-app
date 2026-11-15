@@ -55,8 +55,11 @@ async function main() {
 
   // ---------- round 5 I2 ports ----------
   const grid = ruleDecls(/\.grid\{([^}]*)\}/);
-  ok(!!grid && /auto-fit/.test(grid['grid-template-columns'] || '') && !/auto-fill/.test(grid['grid-template-columns'] || ''),
-    'LR-I2a: I2 — the selection grid collapses unused tracks (auto-fit), so few-candidate sheets use the full width');
+  // BU-101 successor (2026-11-15) of the I2 pin: see FX5-4 —
+  // auto-fit's full-width-for-few behaviour was narrowed by
+  // BU-79 and retired by BU-101; the base rule is auto-fill.
+  ok(!!grid && /auto-fill/.test(grid['grid-template-columns'] || '') && !/auto-fit/.test(grid['grid-template-columns'] || ''),
+    'LR-I2a: I2 successor (BU-101) — the selection grid keeps phantom tracks (auto-fill); tiles are the standard width at any visible count');
   const itext = ruleDecls(/\.gcard \.itext\{([^}]*)\}/);
   // layout-fix J1 superseded the clamp with full in-tile text;
   // layout-fix3 K4 (user decision) retires the in-tile text

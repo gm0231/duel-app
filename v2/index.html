@@ -561,17 +561,24 @@
      top-left corner (never in the text stack), and the name /
      stats / effect lines sit on near-solid stone so they read
      over any art. */
-  /* fx-ui round 5 (I2): auto-fit, not auto-fill — with 1-2 candidates the empty phantom columns shrank the real ones to a quarter of the sheet; auto-fit collapses the empty tracks so few candidates take the full width, and 3+ keep the ~117px columns. */
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(106px,1fr));gap:8px;grid-auto-rows:1fr;}
-  /* BU-79 (2026-11-14): with only 1-2 candidates the auto-fit
-     collapse stretched a lone tile to the sheet's full width
-     (measured 366x170) and the art read as a wide band. The
-     K4 rule (2026-11-12) is uniform tiles: a 1-2 candidate grid
-     keeps the SAME column width as the 3+ case (phantom tracks
-     hold the width), so a lone candidate is one standard tile.
-     This narrows I2's full-width behaviour to the 3+ case. */
-  .grid:has(> .gcard:first-child:last-child),
-  .grid:has(> .gcard:nth-child(2):last-child){grid-template-columns:repeat(auto-fill,minmax(106px,1fr));}
+  /* fx-ui round 5 (I2) chose auto-fit so few candidates took
+     the full width; BU-79 (2026-11-14) narrowed that to the
+     3+ case with a :has() override below (a lone tile had
+     measured 366x170, a wide band — the K4 rule, 2026-11-12,
+     is uniform tiles, so 1-2 DOM candidates kept the standard
+     column width via phantom tracks). BU-101 (2026-11-15):
+     the override counted DOM children, but BU-100's word
+     search hides tiles with display:none — hidden tiles stay
+     in the DOM, the override never fired, and a search that
+     left 1-2 VISIBLE tiles stretched them again (measured at
+     390x620: 1 visible = 366px wide, 2 visible = 179px, the
+     resolved template "366px 0px 0px"). The base rule is
+     auto-fill now: phantom tracks ALWAYS hold the standard
+     ~117px column, whatever the visible count and however it
+     came about, and the :has() override is retired as
+     redundant. The 3+ rendering is unchanged (every track
+     is filled under either keyword). */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(106px,1fr));gap:8px;grid-auto-rows:1fr;}
   .gcard{height:100%;box-sizing:border-box;}
   /* fx-ui round 2 (F7): the grid's "more below" cue — a
      full-width first line inside the sticky button row, shown
@@ -641,8 +648,16 @@
      browser-remembered real size after first render). Bench on
      the heaviest sheet (16-card grid, full texts): open+forced-
      layout 9.7ms median / 52.7ms max -> 1.0 / 18.2. Rendered
-     rows are unchanged. */
-  #sheet .gcard{content-visibility:auto;contain-intrinsic-size:auto 172px;}
+     rows are unchanged. BU-101 (2026-11-15): the fallback is
+     the tile's TRUE content-box height, 160px (170px
+     border-box - 8px padding - 2px border; tile scrollHeight
+     measures 168 = content + padding). At 172px a
+     not-yet-rendered tile contributed 182px outer to the
+     shared 1fr row sizing and inflated EVERY row of a long
+     grid (the 165-name declare grid measured 182px rows
+     against the 170px standard tile), so the many-candidate
+     state deviated from the standard height too. */
+  #sheet .gcard{content-visibility:auto;contain-intrinsic-size:auto 160px;}
   #sheet .sortrow{content-visibility:auto;contain-intrinsic-size:auto 54px;}
   /* brushup round 2: reason line under a pile-sheet row (the
      cannot-activate reasons on the grave / EX surfaces) */
