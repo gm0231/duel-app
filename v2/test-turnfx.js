@@ -63,9 +63,12 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   ok(!!fx && typeof fx.turnBannerText === 'function' && typeof fx.turnCut === 'function', 'TF0: __fx turn surface exists');
   fx.reset();
 
-  // baseline (HP = 0 in a fresh boot): silent
-  step(fakeState());
-  ok(fx.log.length === 0 && !turnEl(), 'TF1: first snapshot is a silent baseline (no banner at duel start)');
+  // baseline (HP = 0 in a fresh boot): BU-98 — the opening turn
+  // banners like any other turn start (it used to stay silent,
+  // which read as the same invisibility defect as the flips)
+  let base = step(fakeState());
+  ok(has(base, 'turnbanner', r => r.turn === 1 && r.mine === true) && !!turnEl(), 'TF1: the opening turn (baseline snapshot) fires its banner {turn:1, mine:true}');
+  fx.turnCut();
 
   // flip to the opponent, turn 2, draw phase in the same batch
   let recs = step(fakeState(s => { s.turnPlayer = 1; s.turnCount = 2; s.phaseName = 'DRAW'; }));
@@ -104,6 +107,55 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   for (let i = 0; i < 20 && !deferredShown; i++) { await sleep(60); if (turnEl()) deferredShown = true; }
   ok(deferredShown && fx.turnBannerText().includes('相手のターン'), 'TF14: the deferred banner fires once the UI closes');
   fx.turnCut();
+
+  // BU-98 (turnfxfix-1115): a prompt presented at the very moment
+  // of the flip to the HUMAN's turn must not cut the banner. The
+  // prompt funnel (humanAnswerer) awaits fx.turnHold() before any
+  // opener runs; here the hold stands in for that prompt. The
+  // banner must run its full span at full opacity, and the hold
+  // must resolve only after the banner has retired.
+  recs = step(fakeState(s => { s.turnPlayer = 0; s.turnCount = 5; s.phaseName = 'DRAW'; }));
+  ok(has(recs, 'turnbanner', r => r.turn === 5 && r.mine === true) && !!turnEl(), 'TF18: flip to the human at turn 5 births the gold banner');
+  const bornAt = Date.now();
+  let holdResolved = false, holdResolvedAt = 0;
+  const holdP = fx.turnHold().then(() => { holdResolved = true; holdResolvedAt = Date.now(); });
+  let maxOpSeen = 0, elGoneAt = 0, resolvedWhileUp = false;
+  for (let i = 0; i < 120; i++) {
+    await sleep(25);
+    const el = turnEl();
+    if (el) {
+      const inner = el.querySelector('.fx-turn-in');
+      const op = inner ? parseFloat(inner.style.opacity || '0') : 0;
+      if (op > maxOpSeen) maxOpSeen = op;
+      if (holdResolved) resolvedWhileUp = true;
+    } else if (!elGoneAt) elGoneAt = Date.now();
+    if (holdResolved && elGoneAt) break;
+  }
+  await holdP;
+  ok(!resolvedWhileUp && holdResolved, 'TF19: the prompt hold never resolves while the banner is up (the prompt waits)');
+  ok(maxOpSeen >= 0.99, 'TF20: the banner reaches full opacity under the waiting prompt (max ' + maxOpSeen + ')');
+  ok(elGoneAt - bornAt >= 1100 && elGoneAt - bornAt <= 2400, 'TF21: the banner lives its full span before the prompt proceeds (life ' + (elGoneAt - bornAt) + ' ms)');
+  // (order vs elGoneAt is a sampling race between the hold's 40 ms
+  // poll and this loop's 25 ms poll; the span is the substance —
+  // TF19 already pins "never resolved while the element was up")
+  ok(holdResolvedAt - bornAt >= 1100 && holdResolvedAt - bornAt <= 2600, 'TF22: the hold resolves only after the full span — the prompt is presented after, not instead (at ' + (holdResolvedAt - bornAt) + ' ms)');
+
+  // BU-98 follow-up: in the real flow the engine emits the
+  // virgin turn-0 state first, so the opening turn arrives as a
+  // 0 -> 1 transition with the SAME turn player (no flip). It
+  // must banner too.
+  fx.reset();
+  step(fakeState(s => { s.turnCount = 0; s.turnPlayer = 0; s.phaseName = ''; }));
+  ok(fx.log.length === 0 && !turnEl(), 'TF24: the virgin turn-0 snapshot stays silent');
+  recs = step(fakeState(s => { s.turnCount = 1; s.turnPlayer = 0; s.phaseName = 'DRAW'; }));
+  ok(has(recs, 'turnbanner', r => r.turn === 1 && r.mine === true) && !!turnEl(), 'TF25: the 0 -> 1 transition fires the opening banner {turn:1, mine:true}');
+  fx.turnCut();
+
+  // wiring: humanAnswerer awaits the hold before the confirm
+  // sheet / uiAnswer (source-level pin, same spirit as TF16)
+  const haIdx = clientSrc.indexOf('humanAnswerer: async');
+  const haLine = haIdx >= 0 ? clientSrc.slice(haIdx, haIdx + 400) : '';
+  ok(haLine.includes('await fxTurnBannerHold()') && haLine.indexOf('fxTurnBannerHold') < haLine.indexOf('showPendingConfirms'), 'TF23: humanAnswerer awaits fxTurnBannerHold() before showPendingConfirms/uiAnswer');
 
   // a decided duel never banners
   recs = step(fakeState(s => { s.turnPlayer = 0; s.turnCount = 5; s.winner = 1; }));
