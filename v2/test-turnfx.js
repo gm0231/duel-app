@@ -152,8 +152,12 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   fx.turnCut();
 
   // wiring: humanAnswerer awaits the hold before the confirm
-  // sheet / uiAnswer (source-level pin, same spirit as TF16)
-  const haIdx = clientSrc.indexOf('humanAnswerer: async');
+  // sheet / uiAnswer (source-level pin, same spirit as TF16).
+  // watchmode-1116: the answerer is now the non-watch branch of
+  // a ternary (humanAnswerer: watchModeOn ? undefined : async
+  // ...), so the locator anchors on the answerer body itself;
+  // the pinned ordering is unchanged.
+  const haIdx = clientSrc.indexOf('async (prompt, state) => { maybeSettleLayout(); render(state); await fxTurnBannerHold();');
   const haLine = haIdx >= 0 ? clientSrc.slice(haIdx, haIdx + 400) : '';
   ok(haLine.includes('await fxTurnBannerHold()') && haLine.indexOf('fxTurnBannerHold') < haLine.indexOf('showPendingConfirms'), 'TF23: humanAnswerer awaits fxTurnBannerHold() before showPendingConfirms/uiAnswer');
 

@@ -10449,6 +10449,20 @@ function maybeSettleLayout() {
 // environment; this puts them on the screen itself. Default off:
 // without the parameter nothing is created and nothing changes.
 const layoutDebugOn = /[?&]layoutdebug=1(?:&|$)/.test(window.location.search || '');
+// watchmode-1116: developer-only watch mode (both seats CPU).
+// The ONLY entry is the URL parameter ?watch=1 — no button,
+// menu or setting exposes it, so normal players never see it.
+// While it is on, the start handler wires the duel with no
+// humanAnswerer and the wire flag 'watch', so the engine
+// driver routes the human seat's prompts through the same bot
+// path the CPU seat uses (botAnswer policy, pace, live-stat
+// refresh and the Gravekeeper's Trap oracle included — see
+// engine.js's driver routing and engine-worker.js). The point
+// is watching the CPU policy play a deck (Ishizu above all) on
+// the real screen, FX and all, instead of only in Node benches.
+// With no parameter the flag is false and every watch-gated
+// branch below resolves to the pre-existing behaviour.
+const watchModeOn = /[?&]watch=1(?:&|$)/.test(window.location.search || '');
 function renderLayoutDebug() {
   if (!layoutDebugOn) return;
   let el = document.getElementById('layoutdebug');
@@ -10732,6 +10746,10 @@ function wireSeg(id, apply) {
     playSe('vs_start');
     preloadCardArt([myDeckKey, opDeckKey]); // belt-and-braces: the chosen decks' art is warm before the first render
     previewState = null; // preview restarts with the duel (default: first hand card)
+    // watchmode-1116: the watch bar rides in the header for the
+    // whole watch duel (and only then). Set before applyLayout
+    // so the fit budgets for it from the first frame.
+    $('watchbar').classList.toggle('on', watchModeOn);
     applyLayout(); // fit once to this viewport, then frozen for the whole duel
     layoutSettleArmed = true; layoutSettled = false; // round 3: one post-render settle, still inside the start sequence
     // Seat wiring (item 5): the core's first player is always seat 0, so a
@@ -10748,7 +10766,10 @@ function wireSeg(id, apply) {
     // covers the engine-start wait, so the tap is never followed
     // by dead time (audit C-33).
     {
-      $('vssub').innerHTML = deckDisplayName(myDeckKey) + ' vs ' + deckDisplayName(opDeckKey) + '<br>あなたは' + (humanFirst ? '先攻' : '後攻') + 'です';
+      $('vssub').innerHTML = deckDisplayName(myDeckKey) + ' vs ' + deckDisplayName(opDeckKey) + '<br>' +
+        (watchModeOn
+          ? '観戦モード ― 先攻は' + deckDisplayName(humanFirst ? myDeckKey : opDeckKey)
+          : 'あなたは' + (humanFirst ? '先攻' : '後攻') + 'です');
       const vs = $('vsoverlay'); vs.classList.add('on');
       try {
         // DS-07 (brushup round 3): the curtain itself is NEVER
@@ -10798,8 +10819,12 @@ function wireSeg(id, apply) {
     $('logline').textContent = '対戦を準備中…';
     duel = await createClientDuel(DATA, {
       seed: (Date.now() % 100000) + 1,
-      pace: { bot: 620, botChain: 300, batch: 40 },
+      // watchmode-1116: in watch mode every prompt takes the bot
+      // path's pace — slowed to a readable ~800ms so each CPU
+      // decision can be followed on screen.
+      pace: watchModeOn ? { bot: 800, botChain: 800, batch: 40 } : { bot: 620, botChain: 300, batch: 40 },
       deckP0, deckP1, humanTeam: HP,
+      watch: watchModeOn || undefined,
       onLog: () => {},
       onUpdate: (state) => {
         if (duel) { try { duel.refreshFieldStats(); } catch (e) {} }
@@ -10819,7 +10844,14 @@ function wireSeg(id, apply) {
       // presentation (the confirm sheet included) waits out the
       // turn banner via fxTurnBannerHold, then proceeds. Away
       // from a turn change the hold resolves immediately.
-      humanAnswerer: async (prompt, state) => { maybeSettleLayout(); render(state); await fxTurnBannerHold(); await showPendingConfirms(); return uiAnswer(prompt, state); },
+      // watchmode-1116: in watch mode there is NO humanAnswerer —
+      // that absence is the whole wiring: the engine driver then
+      // answers the human seat from its bot path too (and in the
+      // worker build, engine-worker.js likewise omits its
+      // main-thread answerer when the 'watch' flag is set, so no
+      // prompt ever crosses to this thread; the client only
+      // renders the update stream).
+      humanAnswerer: watchModeOn ? undefined : async (prompt, state) => { maybeSettleLayout(); render(state); await fxTurnBannerHold(); await showPendingConfirms(); return uiAnswer(prompt, state); },
     });
     const stats = await duel.run();
     const st = duel.state;
@@ -10838,8 +10870,15 @@ function wireSeg(id, apply) {
     // LP is a mid-calculation value, so it is clamped for display
     // and the overkill is written separately.
     const won = st.winner === HP;
-    $('resultTitle').textContent = won ? '勝利！' : '敗北';
-    const reason = st.winReason === 1
+    // watchmode-1116: nobody "won" against the viewer in a watch
+    // duel — the result names the winning deck and both decks'
+    // final LP instead of the player's 勝利/敗北 framing.
+    $('resultTitle').textContent = watchModeOn
+      ? deckDisplayName(seatDeckKeys[st.winner]) + ' の勝利'
+      : (won ? '勝利！' : '敗北');
+    const reason = watchModeOn
+      ? (st.winReason === 1 ? 'LPが0になって決着' : st.winReason === 2 ? 'デッキが尽きて決着' : '効果による決着')
+      : st.winReason === 1
       ? (won ? '相手のLPが0になりました' : 'あなたのLPが0になりました')
       : st.winReason === 2
         ? (won ? '相手のデッキが尽きました' : 'あなたのデッキが尽きました')
@@ -10847,7 +10886,9 @@ function wireSeg(id, apply) {
     $('resultDetail').textContent = 'ターン ' + stats.turns + ' で決着 ― ' + reason;
     const myLp = st.players[HP].lp, opLp = st.players[1 - HP].lp;
     const over = !won && myLp < 0 ? '（' + (-myLp) + ' の超過ダメージ）' : (won && opLp < 0 ? '（' + (-opLp) + ' の超過ダメージ）' : '');
-    $('resultSub').textContent = '最終LP 自分 ' + Math.max(0, myLp) + ' ― 相手 ' + Math.max(0, opLp) + over;
+    $('resultSub').textContent = watchModeOn
+      ? '最終LP ' + deckDisplayName(myDeckKey) + ' ' + Math.max(0, myLp) + ' ― ' + deckDisplayName(opDeckKey) + ' ' + Math.max(0, opLp) + over
+      : '最終LP 自分 ' + Math.max(0, myLp) + ' ― 相手 ' + Math.max(0, opLp) + over;
     $('result').style.display = 'flex';
     // V4-4: the result stands with a snap, sinking 10 px into place;
     // a gold bloom pulls a beat behind it (an element of the result
@@ -10881,6 +10922,11 @@ function wireSeg(id, apply) {
     if (!$('sheetwrap').classList.contains('on') && histFromResult) { histFromResult = false; $('result').style.display = 'flex'; }
   });
   $('titlebtn').addEventListener('click', () => location.reload());
+  // watchmode-1116: the watch bar's stop button — the same exit
+  // as the result screen's タイトル button (a plain reload back
+  // to the title screen; the ?watch=1 parameter survives the
+  // reload, so the next duel started is a watch duel again).
+  $('watchstop').addEventListener('click', () => location.reload());
   // mid-duel exit restore: 選択に戻る in the その他 menu reloads
   // with 'v3todeck' stashed. BU-69: the stash was already consumed
   // and applied in the boot prefix (selections + summary correct

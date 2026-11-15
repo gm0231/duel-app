@@ -85,7 +85,7 @@ class WorkerDuel {
   run() {
     const o = this.opts;
     const wire = {}; // serializable opts only — no functions cross over
-    for (const k of ['seed', 'pace', 'deckP0', 'deckP1', 'humanTeam', 'fast', 'digest'])
+    for (const k of ['seed', 'pace', 'deckP0', 'deckP1', 'humanTeam', 'fast', 'digest', 'watch'])
       if (o[k] !== undefined) wire[k] = o[k];
     const p = new Promise((resolve, reject) => { this._runResolve = resolve; this._runReject = reject; });
     this.transport.post({ type: 'start', data: this.data, opts: wire });
