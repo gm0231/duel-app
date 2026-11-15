@@ -89,9 +89,9 @@ ok(!/\.fx-notice\{[^}]*top:33%/.test(html) && !/\.fx-notice\{[^}]*top:84px/.test
 const noticeS = ruleDecls(/\.fx-notice \.ns\{([^}]*)\}/);
 ok(!!noticeS && noticeS['display'] === 'inline',
   'SF83d: the route label rides the notice text flow inline (no second line)');
-ok(/hb\.getBoundingClientRect\(\)/.test(clientSrc) && /d\.style\.top = Math\.max\(0, Math\.round\(hr\.bottom - lr\.top - 2 - d\.offsetHeight\)\)/.test(clientSrc)
+ok(/hb\.getBoundingClientRect\(\)/.test(clientSrc) && /d\.style\.top = Math\.max\(0, Math\.round\(\(hr2\.bottom - fxTagGrowPx\) - lr\.top - 2 - d\.offsetHeight\)\)/.test(clientSrc)
   && /render\(t\) \{\s*anchorNotice\(\);/.test(clientSrc),
-  'SF83e: fxNoticeShow bottom-anchors the strip 2px above the measured header bottom, re-anchored every frame of the dwell');
+  'SF83e: fxNoticeShow bottom-anchors the strip 2px above the measured header bottom, re-anchored every frame of the dwell (fix9396b BU-94: the anchor reads the header bottom re-read AFTER the growth, minus the tag band fxTagGrowPx — with no tag it is identical to the old hr.bottom formula)');
 
 // ---------- parent re-verification 2026-11-14, item 2.1 ----------
 // The header hand chip is the OPPONENT's count (render writes

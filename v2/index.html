@@ -601,7 +601,7 @@
   /* BU-66: the location label stacks UNDER the marks chip's
      top-left seat (the chip is ~16px tall from top:3px), so its
      seat is fixed whether or not the card carries a chip */
-  .gcard .loc{position:absolute;top:23px;left:3px;z-index:2;font-size:9.5px;line-height:1.5;color:var(--gold);background:rgba(4,3,1,.88);border:1px solid var(--gold-dim);border-radius:8px;padding:0 6px;}
+  .gcard .loc{position:absolute;top:23px;left:3px;z-index:2;font-size:9.5px;line-height:1.5;color:var(--gold);background:rgba(4,3,1,.88);border:1px solid var(--gold-dim);border-radius:8px;padding:0 6px;white-space:nowrap;max-width:calc(100% - 6px);overflow:hidden;text-overflow:ellipsis;}
   .gcard.sel{box-shadow:0 0 0 2px var(--ok);}
   .btnrow{display:flex;gap:6px;margin-top:12px;position:sticky;bottom:0;background:#1d1811;z-index:2;padding-bottom:2px;}
   .optbtn{display:block;width:100%;text-align:left;background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:6px;font-size:14px;padding:13px 12px;min-height:48px;margin:4px 0;cursor:pointer;}
@@ -906,7 +906,7 @@
      information, principle 4). A transient overlay in #fxlayer,
      shown ~1.6 s by fxOppNameTag; it never enters the flow, so
      the board layout cannot move under it. */
-  .fx-oppnametag{position:absolute;top:47px;left:6px;height:24px;line-height:24px;max-width:calc(100% - 12px);padding:0 10px 0 8px;border-left:3px solid #5b8dd9;background:rgba(10,18,34,.9);color:#cfe2ff;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;}
+  .fx-oppnametag{position:absolute;left:6px;height:24px;line-height:24px;max-width:calc(100% - 12px);padding:0 10px 0 8px;border-left:3px solid #5b8dd9;background:rgba(10,18,34,.9);color:#cfe2ff;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;}
   /* BU-83 (2026-11-14): the notice used to be a big band at
      top:33% — it covered the centre of the opponent's field
      (monster zone, S/T zone, the LP band's left edge) for its

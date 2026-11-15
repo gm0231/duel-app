@@ -302,13 +302,21 @@ function parsePrompt(msg) {
     }
     case 16: { // SELECT_CHAIN
       const player = r.u8(); const speCount = r.u8(); const forced = r.u8();
+      // fix9396b-1115 (obs-1): the core writes the ASKED player's
+      // hint_timing mask here (playerop.cpp SelectChain step 0) and
+      // the other player's after it — TIMING_BATTLE_STEP_END
+      // (0x4000000, set when the turn player ends the Battle Step)
+      // and TIMING_BATTLE_END (0x10, the Battle Phase's End Step)
+      // arrive on this wire, while the mirror's lastTrigger still
+      // says BATTLE_START (128 is not a major phase). Keep both
+      // masks on the prompt so the trigger can be refined below.
       const hint0 = r.u32(), hint1 = r.u32();
       const n = r.u32(); const entries = [];
       for (let i = 0; i < n; i++) {
         const e = cardEntry(r); e.desc = r.u64n(); e.mode = r.u8();
         entries.push(e);
       }
-      return { type, name: 'SELECT_CHAIN', player, speCount, forced: !!forced, entries };
+      return { type, name: 'SELECT_CHAIN', player, speCount, forced: !!forced, entries, hint0, hint1 };
     }
     case 15: case 20: { // SELECT_CARD / SELECT_TRIBUTE
       const player = r.u8(); const cancelable = r.u8();
@@ -6411,7 +6419,27 @@ class Duel {
           // a context-free 「効果への応答」. A trigger from an
           // earlier turn is never attached (stale).
           { const lt = this.state.lastTrigger;
-            prompt.trigger = (!prompt.context && lt && lt.turn === this.state.turnCount) ? lt : null; }
+            prompt.trigger = (!prompt.context && lt && lt.turn === this.state.turnCount) ? lt : null;
+            // fix9396b-1115 (obs-1): a phase trigger that reads
+            // BATTLE_START can be the Battle Step's END window
+            // (the turn player chose MP2/EP at BATTLECMD — the core
+            // then asks the opponent, then the turn player, at
+            // TIMING_BATTLE_STEP_END) or the Battle Phase's End Step
+            // (PhaseEvent PHASE_BATTLE, TIMING_BATTLE_END). Both
+            // arrive while the mirror still says BATTLE_START, so
+            // the client used to print the identical
+            // 「バトルフェイズ開始時にチェーンできます」 twice.
+            // The asked player's hint_timing mask (kept on the
+            // prompt by parsePrompt) names the true window — refine
+            // the phase from it. Only the two battle-end bits are
+            // consulted: every other phase bit already agrees with
+            // lastTrigger, and a 0 mask means "no timing recorded".
+            // Copy: prompt.trigger aliases lastTrigger, never mutate it.
+            if (prompt.trigger && prompt.trigger.kind === 'phase' && prompt.name === 'SELECT_CHAIN') {
+              const h0 = prompt.hint0 || 0;
+              const refined = (h0 & 0x4000000) ? 'BATTLE_STEP_END' : (h0 & 0x10) ? 'BATTLE' : null;
+              if (refined && refined !== prompt.trigger.phase) prompt.trigger = Object.assign({}, prompt.trigger, { phase: refined });
+            } }
           // layout-fix3 K1: an Xyz material selection (the core
           // declares it via hint 513) whose target was picked at
           // this turn's command prompt carries the monster's TRUE

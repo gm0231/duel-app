@@ -5309,18 +5309,44 @@ function fxAtkBanner() {
 // human's own actions. One tag at a time: a newer action replaces
 // the tag that is still up. Animation is WAAPI opacity/transform
 // only, on the shared kill-timer discipline of the other tags.
-let fxOppTagEl = null, fxOppTagTimer = null;
+let fxOppTagEl = null, fxOppTagTimer = null, fxTagRaf = 0;
+// fix9396b-1115 (BU-94 remainder): the extra header height (px)
+// the opponent-name tag has currently added on top of the
+// notice's own growth. anchorNotice subtracts it when it reads
+// the header's bottom, so the tag's band never pushes the notice
+// down into the tag; the tag's own loop recomputes it per frame.
+let fxTagGrowPx = 0;
 function fxOppNameTag(text, detail) {
   fxRecord('oppnametag', detail);
   const layer = fxLayerEl(); if (!layer) return;
   if (fxOppTagTimer) { clearTimeout(fxOppTagTimer); fxOppTagTimer = null; }
-  if (fxOppTagEl) { try { fxOppTagEl.remove(); } catch (e) {} fxOppTagEl = null; }
+  if (fxTagRaf) { cancelAnimationFrame(fxTagRaf); fxTagRaf = 0; }
+  // a replacement tag takes the old tag's growth back first —
+  // the new tag's loop re-adds only what it still needs
+  if (fxOppTagEl) { fxTagRestoreHeader(); try { fxOppTagEl.remove(); } catch (e) {} fxOppTagEl = null; }
   const d = document.createElement('div');
   d.className = 'fx-oppnametag';
   d.dataset.how = detail.how || '';
   d.textContent = text;
   layer.appendChild(d);
   fxOppTagEl = d;
+  // fix9396b-1115 (BU-94 remainder): the tag used to sit at a
+  // fixed top:47px — row 2's band — so it covered the turn
+  // readout (measured 1,152 px2), the latest-event line
+  // (4,411 px2) and the opponent-hand chip (839 px2), and a
+  // move notice covered it in turn (4,416 px2). It now gets its
+  // own band BELOW row 2 (below a live notice when one is up),
+  // positioned per frame while it lives: the header grows to
+  // hold it, exactly like the notice's growth, and the board
+  // shifts down for the tag's dwell the same way it already
+  // does for a long notice.
+  const step = () => {
+    if (!fxOppTagEl || fxOppTagEl !== d) return;
+    fxOppTagPosition();
+    fxTagRaf = requestAnimationFrame(step);
+  };
+  fxOppTagPosition();
+  fxTagRaf = requestAnimationFrame(step);
   // reading time (user principle 2026-11-12): the tag stays for
   // as long as its text needs, not a flat 1.6s.
   const tagDur = Math.max(1600, Math.min(3200, 600 + (text || '').length * 75));
@@ -5332,9 +5358,70 @@ function fxOppNameTag(text, detail) {
   ], { duration: tagDur, easing: 'ease-out' });
   fxOppTagTimer = setTimeout(() => {
     fxOppTagTimer = null;
+    if (fxTagRaf) { cancelAnimationFrame(fxTagRaf); fxTagRaf = 0; }
     if (fxOppTagEl === d) fxOppTagEl = null;
     try { d.remove(); } catch (e) {}
+    fxTagRestoreHeader();
   }, tagDur + 40);
+}
+// fix9396b-1115 (BU-94 remainder): one positioning pass for the
+// opponent-name tag. Its band starts below the lowest row-2
+// content (turn readout / event line / chips) — or below a live
+// move notice when one is up, so the two announcements stack
+// instead of covering each other. The header grows by exactly
+// the deficit (sticky, like the notice's growth); the loop runs
+// per frame, so a notice arriving or leaving mid-dwell, or the
+// event line wrapping to a third row, re-stacks it at once.
+function fxOppTagPosition() {
+  const d = fxOppTagEl; if (!d) return;
+  const layer = fxLayerEl(); const hb = document.getElementById('header');
+  if (!layer || !hb) return;
+  const lr = layer.getBoundingClientRect(), hr = hb.getBoundingClientRect();
+  if (!lr.width || !hr.height) return;
+  // lowest row-2 content edge (only visible elements count)
+  let row2Bottom = hr.top + 71; // row 2's nominal bottom (47 + 24)
+  for (const id of ['turninfo', 'logline', 'oppHandChip', 'autopass']) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) row2Bottom = Math.max(row2Bottom, r.bottom);
+  }
+  const n = layer.querySelector('.fx-notice');
+  let tagTopVp = row2Bottom + 2;
+  if (n) {
+    const nr = n.getBoundingClientRect();
+    if (nr.height > 0) tagTopVp = nr.bottom + 2;
+  }
+  d.style.top = Math.max(0, Math.round(tagTopVp - lr.top)) + 'px';
+  // grow the header so the tag's band stays inside it (the
+  // notice's growth is untouched — this adds on top of it)
+  const need = Math.round(tagTopVp + 24 - hr.bottom);
+  if (need > 0) {
+    if (fxNoticeHdrPrevMinH == null) fxNoticeHdrPrevMinH = hb.style.minHeight || '';
+    const want = (hb.offsetHeight + need) + 'px';
+    if (hb.style.minHeight !== want) {
+      hb.style.minHeight = want;
+      fxTagGrowPx += need;
+      fxNoticeHdrGrew = true;
+      try { layoutFit(false); } catch (e) {}
+    }
+  }
+}
+// fix9396b-1115 (BU-94 remainder): when the tag leaves, take
+// only its own growth back — never below the shared base, and
+// never under a live notice (its per-frame anchor re-grows
+// whatever it still needs). When no notice is up either, the
+// shared base record is released, as the notice's restore does.
+function fxTagRestoreHeader() {
+  const hb = document.getElementById('header');
+  const grew = fxTagGrowPx; fxTagGrowPx = 0;
+  if (!hb || !grew) return;
+  const base = parseFloat(fxNoticeHdrPrevMinH || '0') || 0;
+  const cur = parseFloat(hb.style.minHeight || '0') || 0;
+  const want = Math.max(base, cur - grew);
+  if (hb.style.minHeight !== want + 'px') hb.style.minHeight = want ? want + 'px' : (fxNoticeHdrPrevMinH || '');
+  try { layoutFit(false); } catch (e) {}
+  if (!document.querySelector('#fxlayer .fx-notice')) { fxNoticeHdrPrevMinH = null; fxNoticeHdrGrew = false; }
 }
 // ---- floating notice (layout redesign; user principle
 // 2026-11-12): a situation line shown LARGE, floating at screen
@@ -5555,8 +5642,22 @@ function fxNoticeGrowHeader(over) {
 function fxNoticeRestoreHeader() {
   if (!fxNoticeHdrGrew) return;
   const hb = document.getElementById('header');
-  if (hb) hb.style.minHeight = fxNoticeHdrPrevMinH || '';
-  fxNoticeHdrPrevMinH = null; fxNoticeHdrGrew = false;
+  // fix9396b-1115 (BU-94 remainder): when a name tag is still up,
+  // its band owns part of the growth — take back only the notice's
+  // share (base + the tag's current growth) and keep the shared
+  // base record for the tag's own restore. The tag's per-frame
+  // loop re-adds any deficit the next frame, so a 1-frame dip is
+  // the worst case.
+  if (hb) {
+    if (fxOppTagEl) {
+      const base = parseFloat(fxNoticeHdrPrevMinH || '0') || 0;
+      hb.style.minHeight = (base + fxTagGrowPx) + 'px';
+      fxNoticeHdrGrew = false;
+    } else {
+      hb.style.minHeight = fxNoticeHdrPrevMinH || '';
+      fxNoticeHdrPrevMinH = null; fxNoticeHdrGrew = false;
+    }
+  } else { fxNoticeHdrPrevMinH = null; fxNoticeHdrGrew = false; }
   try { layoutFit(false); } catch (e) {}
 }
 function fxNoticeShow(text, sub, noBeat, deferrals) {
@@ -5617,6 +5718,12 @@ function fxNoticeShow(text, sub, noBeat, deferrals) {
   const anchorNotice = () => {
     if (!hb) { d.style.top = '2px'; return; }
     const lr = layer.getBoundingClientRect(), hr = hb.getBoundingClientRect();
+    // fix9396b-1115 (BU-94 remainder): the header bottom the
+    // notice anchors to EXCLUDES the tag's band (fxTagGrowPx) —
+    // the tag stacks BELOW the notice, so the notice's home is
+    // the natural header bottom, not the tag-grown one. With no
+    // tag up this is 0 and the arithmetic is exactly as before.
+    const effBottom = hr.bottom - fxTagGrowPx;
     if (lg && lr.width) {
       const gr = lg.getBoundingClientRect();
       if (gr.width > 0) {
@@ -5651,7 +5758,7 @@ function fxNoticeShow(text, sub, noBeat, deferrals) {
           let fs = 12.5;
           if (nt) nt.style.fontSize = '';
           if (ns) ns.style.fontSize = '';
-          while (nt && d.offsetHeight > Math.max(0, hr.bottom - gr.top) && fs > 9) {
+          while (nt && d.offsetHeight > Math.max(0, effBottom - gr.top) && fs > 9) {
             fs -= 0.5;
             nt.style.fontSize = fs + 'px';
             if (ns) ns.style.fontSize = Math.max(8, fs - 1.5) + 'px';
@@ -5659,7 +5766,6 @@ function fxNoticeShow(text, sub, noBeat, deferrals) {
         }
       }
     }
-    d.style.top = Math.max(0, Math.round(hr.bottom - lr.top - 2 - d.offsetHeight)) + 'px';
     // BU-94: grow the header instead of rising past the row-1 text.
     // The cap is the bottom of the row-1 content that horizontally
     // overlaps the notice (#phaseinfo / #phasebtn / #loghistbtn — the
@@ -5670,6 +5776,11 @@ function fxNoticeShow(text, sub, noBeat, deferrals) {
     // the notice may still rise into row 1's empty band, which
     // covers nothing. Zero-geometry environments (jsdom) skip this
     // entirely.
+    // fix9396b-1115: the growth is applied BEFORE the top is set
+    // (the old order set top from the pre-growth header, so the
+    // notice sat up to 20px into row 1 for a frame — measured in
+    // the wild as 800 px2 over the history button). Re-read the
+    // header after growing so the top lands on the grown bottom.
     if (d.offsetHeight > 0 && hr.height > 0) {
       const nr = d.getBoundingClientRect();
       let cap = null;
@@ -5680,10 +5791,12 @@ function fxNoticeShow(text, sub, noBeat, deferrals) {
         if (r.width > 0 && r.right > nr.left && r.left < nr.right) cap = cap == null ? r.bottom : Math.max(cap, r.bottom);
       }
       if (cap != null) {
-        const topVp = hr.bottom - 2 - d.offsetHeight;
+        const topVp = effBottom - 2 - d.offsetHeight;
         if (topVp < cap - 0.5) fxNoticeGrowHeader(cap - topVp);
       }
     }
+    const hr2 = hb.getBoundingClientRect();
+    d.style.top = Math.max(0, Math.round((hr2.bottom - fxTagGrowPx) - lr.top - 2 - d.offsetHeight)) + 'px';
   };
   anchorNotice();
   const hold = fxReadMs(text + (sub || ''));
@@ -7391,7 +7504,7 @@ function phaseJa(n) {
   // the room the mock's hierarchy gives it. phaseJaContext keeps
   // its own compact names for confirmation context lines.
   return { DRAW: 'ドロー', STANDBY: 'スタンバイ', MAIN1: 'メインフェイズ 1', BATTLE_START: 'バトル開始', BATTLE_STEP: 'バトルステップ',
-    DAMAGE: 'ダメージ計算前', DAMAGE_CAL: 'ダメージ計算時', BATTLE: 'バトル', MAIN2: 'メインフェイズ 2', END: 'エンド' }[n] || n;
+    DAMAGE: 'ダメージ計算前', DAMAGE_CAL: 'ダメージ計算時', BATTLE: 'バトル', BATTLE_STEP_END: 'バトルステップ終了', MAIN2: 'メインフェイズ 2', END: 'エンド' }[n] || n;
 }
 // Confirmation prompts (chain / effect-yes-no) recur at MANY timings with
 // the same candidate set — a set quick-play spell is re-offered at every
@@ -7424,6 +7537,24 @@ function phaseJaContext(n) {
 function timingText(state) {
   const ph = state.phaseName ? '・' + phaseJaContext(state.phaseName) : '';
   return (state.turnPlayer === HP ? '自分のターン' : '相手のターン') + ph;
+}
+// fix9396b-1115 (obs-1): the trigger wording for a phase window.
+// The Start Step and the Battle Step's End Step are DIFFERENT
+// windows and must not share one label — the old
+// phaseJaContext(phase) + '開始時' printed the identical
+// 「バトルフェイズ開始時にチェーンできます」 for both, so a
+// player who had just answered "no" saw the same question again
+// and read it as a swallowed tap. The end-step windows get their
+// own 終了時 wording; every other phase keeps 開始時. Deliberate
+// exception to the W-27 collapse (phaseJaContext folds the battle
+// sub-steps to バトルフェイズ for the phase readout): the collapse
+// is for the readout, but a confirmation's cause must name the
+// window it actually answers.
+function phaseTrigText(ph) {
+  if (!ph) return 'ターン開始時';
+  if (ph === 'BATTLE_STEP_END') return 'バトルステップ終了時';
+  if (ph === 'BATTLE') return 'バトルフェイズ終了時';
+  return phaseJaContext(ph) + '開始時';
 }
 function confirmTag(state) { // call ONCE per shown prompt, never per redraw
   if (state.turnCount !== confirmTurn) { confirmTurn = state.turnCount; confirmSeq = 0; }
@@ -7582,6 +7713,19 @@ function sheetOpen(html, kind) {
   sheetAnimCancel(sheet); sheetAnimCancel(wrap);
   sheet.innerHTML = html;
   wrap.className = 'on';
+  // fix9396b-1115 (obs-3): a tile's location badge used to wrap
+  // mid-word (「相手のモンスターゾー ン3」, 2 lines, 30.5px) —
+  // the longest label (相手のモンスターゾーンN, 12 chars) is
+  // wider than a tile at 9.5px. The badge is nowrap now, and its
+  // type steps down to the 8px floor before it ever clips (the
+  // 12-char label fits a 390px tile at 8px; jsdom measures 0
+  // widths and the loop simply never runs there, as with the
+  // tray's name fit). Runs in sheetOpen so every sheet builder
+  // gets it, including redraws.
+  sheet.querySelectorAll('.gcard .loc').forEach(el => {
+    let fs = 9.5;
+    while (el.scrollWidth > el.clientWidth + 1 && fs > 8) { fs -= 0.5; el.style.fontSize = fs + 'px'; }
+  });
   clearPeekBar(); // a fresh sheet resets peek (className above); its mirrors die with the old content
   wrap.dataset.kind = sheetKind;
   const pk = $('peekbtn'); if (pk) pk.textContent = '盤面を見る';
@@ -8560,14 +8704,14 @@ function uiChain(prompt, state) {
             : trig.kind === 'solved'
               ? '《' + (trig.code ? cardName(trig.code) : 'モンスター') + '》の効果解決の後'
               : trig.kind === 'phase'
-                ? (trig.phase ? phaseJaContext(trig.phase) + '開始時' : 'ターン開始時')
+                ? phaseTrigText(trig.phase)
                 : '《' + (trig.code ? cardName(trig.code) : 'モンスター') + '》の' + (trig.verb === 62 ? '特殊召喚' : trig.verb === 64 ? '反転召喚' : '召喚') + 'への応答',
             tray: trig.kind === 'attack'
               ? '<b>《' + (trig.code ? cardName(trig.code) : 'モンスター') + '》</b>の攻撃宣言にチェーンできます'
               : trig.kind === 'solved'
                 ? '<b>《' + (trig.code ? cardName(trig.code) : 'モンスター') + '》</b>の効果解決の後にチェーンできます'
                 : trig.kind === 'phase'
-                  ? (trig.phase ? phaseJaContext(trig.phase) + '開始時' : 'ターン開始時') + 'にチェーンできます'
+                  ? phaseTrigText(trig.phase) + 'にチェーンできます'
                   : '<b>《' + (trig.code ? cardName(trig.code) : 'モンスター') + '》</b>の' + (trig.verb === 62 ? '特殊召喚' : trig.verb === 64 ? '反転召喚' : '召喚') + 'にチェーンできます' }
         : null;
   const draw = () => {

@@ -70,9 +70,9 @@ const data = JSON.parse(fs.readFileSync(path.join(V2, 'data.json'), 'utf8'));
   ok(engineSrc.includes("bn(name) { return '《' + name + '》'; }") && (engineSrc.match(/this\.bn\(/g) || []).length >= 8 &&
      engineSrc.includes("this.pushLog('チェーン' + this.chain.length + '：' + this.bn(this.nameOf(code)))"),
     "LF2-J2'b: the engine wraps band-line names in 《》 (chain line + at least 8 bn() call sites in pushLog paths)");
-  ok(clientSrc.includes('の効果解決の後') && clientSrc.includes("phaseJaContext(trig.phase) + '開始時'") &&
+  ok(clientSrc.includes('の効果解決の後') && clientSrc.includes("phaseTrigText(trig.phase)") &&
      engineSrc.includes("case 73:") && engineSrc.includes("kind: 'solved'") && engineSrc.includes("kind: 'phase'"),
-    "LF2-J4'a: solved/phase triggers are recorded engine-side and labelled in the dock");
+    "LF2-J4'a: solved/phase triggers are recorded engine-side and labelled in the dock (fix9396b obs-1: the dock/tray label now goes through phaseTrigText, which reads 開始時 for start windows and 終了時 for the Battle Step End / Battle End windows — the old phaseJaContext(trig.phase) + '開始時' call is gone by design)");
   ok(!engineSrc.includes('lt.phase === this.state.phaseName'),
     "LF2-J4'b: trigger attachment is same-turn (the round-1 turn+phase gate is gone)");
   ok(clientSrc.includes('window.__chain = { open:'),
