@@ -28,7 +28,26 @@ let myDeckKey = 'ishizu', opDeckKey = 'gg', firstChoice = 'first';
 let autoPassFlashUntil = 0;
 
 function cardName(code) { return (DATA && DATA.names[code]) || ('#' + code); }
-function cardData(code) { return (DATA && DATA.cards[code]) || null; }
+// Token card data (BU-102, 2026-11-15): tokens are NOT pool cards —
+// data.json carries only their names (綿毛トークン / ドッペル・
+// トークン), deliberately no cards row, so the pool stays 362 and
+// every count built from DATA.cards keys is untouched. But the
+// display layer resolves a card through cardData(), and a null row
+// made tokens invisible to it: isMonster() was false, so the field
+// ATK/DEF plate never printed for a token and the detail surfaces
+// (resident preview / info pop / card-info sheet) showed no stats
+// at all. The rows below mirror the engine's TOKEN_CARD_DATA
+// (engine.js — the babelcdb values the core registers) in the
+// data.json row shape, and cardData() falls back to them.
+// 16401 = TYPE_MONSTER|TYPE_NORMAL|TYPE_TOKEN; attribute 8 = WIND,
+// 32 = DARK; race 1024 = Plant, 1 = Warrior.
+const TOKEN_CARD_DATA = {
+  15341822: { code: 15341822, alias: 0, setcodes: [], type: 16401, level: 1, lscale: 0, rscale: 0, attribute: 8, race: 1024, atk: 0, def: 0, link_marker: 0 },
+  15341823: { code: 15341823, alias: 0, setcodes: [], type: 16401, level: 1, lscale: 0, rscale: 0, attribute: 8, race: 1024, atk: 0, def: 0, link_marker: 0 },
+  53855410: { code: 53855410, alias: 0, setcodes: [], type: 16401, level: 1, lscale: 0, rscale: 0, attribute: 32, race: 1, atk: 400, def: 400, link_marker: 0 },
+  53855411: { code: 53855411, alias: 0, setcodes: [], type: 16401, level: 1, lscale: 0, rscale: 0, attribute: 32, race: 1, atk: 400, def: 400, link_marker: 0 },
+};
+function cardData(code) { return (DATA && DATA.cards[code]) || TOKEN_CARD_DATA[code] || null; }
 // ---- per-card illustrations (decided 2026-11-03: the user supplies
 // an image per card and each is applied as it arrives; cards without
 // an entry keep the shared placeholder art — the fallback IS the
@@ -7563,7 +7582,7 @@ function syncPeekBar() {
 // or cancels anything, so a choice can be checked mid-selection
 // and the selection is exactly as it was left.
 function openInfoPop(code, ref, fx) {
-  if (code == null || !DATA || !DATA.cards[code]) return;
+  if (code == null || !DATA || !cardData(code)) return; // BU-102: cardData, not DATA.cards — tokens have no pool row but do have display data
   setPreview(code, ref || null);
   const mats = ref ? liveMats(ref.con, ref.loc, ref.seq) : null;
   const meta = cardMetaLine(code, mats);
@@ -10130,7 +10149,7 @@ function renderLayoutDebug() {
 // Default before any tap: the first card of the opening hand.
 let previewState = null; // {code, con, loc, seq, sig, deckKey}
 function setPreview(code, ref, reason) {
-  if (code == null || !DATA || !DATA.cards[code]) return;
+  if (code == null || !DATA || !cardData(code)) return; // BU-102: cardData, not DATA.cards — tokens have no pool row but do have display data
   // deck-scoped art: the instance's seat decides when a ref names
   // one; a bare code resolves by unique deck membership instead.
   const deckKey = ref && ref.con != null ? deckKeyOfSeat(ref.con) : deckKeyOfCode(code);
