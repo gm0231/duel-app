@@ -2530,6 +2530,24 @@ async function boot() {
   ok(GGART.every(c => ggHelp.preloaded.includes('../assets/card-art-std-' + c + '-s.jpg') && ggHelp.preloaded.includes('../assets/card-art-std-' + c + '.jpg')), 'CAGG4: selecting the GG deck preloads both std sizes (deck-select preload, no blank flash)');
   ok(ggHelp.stdCount === 326 && ggHelp.overlap.length === 0, 'CAGG5: scoping — STD_ART holds exactly 326 codes (112 until the 36th delivery graduated Rollback to a user painting, dropping it to 111; the classic deck rounds then grew it — 254 at the classic3 base — and classic round 3 added 72 more) and never shadows a user painting (no overlap with CARD_ART)');
   ok(ggHelp.uncovered.length === 0, 'CAGG5b: full-pool coverage — every one of the 165 pool cards now resolves some art');
+  // BU-103 (2026-11-15): the per-theme 0f loops (CA0 / CASQ0f /
+  // CAENV0f / CAGG0f) only ever asserted the files for their own
+  // hard-coded code lists, so the classic deck rounds' STD_ART
+  // codes had NO file-existence coverage at all — classic round 3
+  // delivered its 144 files into v2/ (a directory cardArtFile
+  // never reads; it serves ../assets only) and the whole suite
+  // stayed green while all 72 new cards 404'd in the shipped app.
+  // Close the gap generically: EVERY registered STD_ART code must
+  // have both delivered files in ../assets.
+  const allStdCodes = window.eval(`Object.keys(STD_ART).map(Number)`);
+  const stdMissing = [];
+  for (const c of allStdCodes) {
+    for (const suf of ['.jpg', '-s.jpg']) {
+      const p = path.join(V2, '..', 'assets', 'card-art-std-' + c + suf);
+      if (!fs.existsSync(p) || fs.statSync(p).size <= 10000) stdMissing.push('card-art-std-' + c + suf);
+    }
+  }
+  ok(allStdCodes.length === 326 && stdMissing.length === 0, 'CAGG5c: delivery completeness — every one of the 326 STD_ART codes has BOTH files in ../assets (>10KB); missing: ' + stdMissing.slice(0, 6).join(', ') + (stdMissing.length > 6 ? ' …' : ''));
   const resGG = window.eval(`
     (() => {
       const mon = (code, pos) => { const d = DATA.cards[code]; return { code, pos, materials: 0, curAtk: d.atk, curDef: d.def }; };
