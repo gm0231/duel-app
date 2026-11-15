@@ -56,10 +56,17 @@ ok(/function handCueUpdate\(\)/.test(clientSrc) && /classList\.toggle\('canscrol
 
 // ---------- BU-79 ----------
 const baseGrid = ruleDecls(/\.grid\{([^}]*)\}/);
-ok(!!baseGrid && /auto-fit/.test(baseGrid['grid-template-columns'] || ''),
-  'SF79a: the base grid rule for 3+ candidates is unchanged (auto-fit)');
-ok(/\.grid:has\(> \.gcard:first-child:last-child\),\s*\.grid:has\(> \.gcard:nth-child\(2\):last-child\)\{grid-template-columns:repeat\(auto-fill,minmax\(106px,1fr\)\);/.test(html),
-  'SF79b: 1-2 candidate grids keep standard-width columns (auto-fill via :has) — no full-width band tile');
+// BU-101 successor (2026-11-15) of the BU-79 pins: the :has()
+// override counted DOM children, but BU-100's word search
+// hides tiles with display:none (they stay in the DOM), so a
+// filtered 1-2 VISIBLE tiles fell back to auto-fit and
+// stretched (measured 366px / 179px wide). The standard-width
+// guarantee moved INTO the base rule (auto-fill); the
+// override is retired. The 3+ rendering is unchanged.
+ok(!!baseGrid && /auto-fill/.test(baseGrid['grid-template-columns'] || '') && !/auto-fit/.test(baseGrid['grid-template-columns'] || ''),
+  'SF79a: successor (BU-101) — the base grid rule itself is auto-fill; standard-width columns at any visible count');
+ok(!/\.grid:has\(> \.gcard/.test(html),
+  'SF79b: successor (BU-101) — the BU-79 :has() override is retired (the base rule carries the guarantee now)');
 
 // ---------- BU-82 ----------
 ok(/id="dpmore"/.test(html) && /#deckpage\.dp-canscroll #dpmore\{display:block;/.test(html),

@@ -69,8 +69,16 @@ async function main() {
   ok(!!header && !('min-height' in header) && !('height' in header) && /const LAYOUT_MODES = \{/.test(clientSrc),
     'FX5-3: I1 successor (BU-73) — the header carries the old band\'s role at 81px by construction (no height of its own) and the budget is the mode table');
   const grid = ruleDecls(/\.grid\{([^}]*)\}/);
-  ok(!!grid && /auto-fit/.test(grid['grid-template-columns'] || '') && !/auto-fill/.test(grid['grid-template-columns'] || ''),
-    'FX5-4: I2 — the selection grid collapses unused tracks (auto-fit), so few-candidate sheets use the full width');
+  // BU-101 successor (2026-11-15) of the I2 pin: I2's auto-fit
+  // (few candidates take the full width) was narrowed by BU-79
+  // for 1-2 DOM candidates and is now retired outright — the
+  // base rule is auto-fill, so phantom tracks always hold the
+  // standard column width whatever the VISIBLE count (BU-100's
+  // display:none search filter kept hidden tiles in the DOM,
+  // slipped past BU-79's :has() override, and stretched a
+  // filtered 1-2 visible tiles to 366/179px — measured).
+  ok(!!grid && /auto-fill/.test(grid['grid-template-columns'] || '') && !/auto-fit/.test(grid['grid-template-columns'] || ''),
+    'FX5-4: I2 successor (BU-101) — the selection grid keeps phantom tracks (auto-fill); tiles are the standard width at any visible count');
   const itext = ruleDecls(/\.gcard \.itext\{([^}]*)\}/);
   // layout-fix3 K4 supersedes J1 (user decision 2026-11-12): the
   // full-text-in-tile design was rejected in real play ("a wall
