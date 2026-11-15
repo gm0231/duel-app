@@ -535,6 +535,23 @@
   #tray{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;}
   .chip{font-size:11px;border:1px solid var(--gold);border-radius:10px;padding:5px 8px;background:#4a3a10;cursor:pointer;}
   .chip.locked{border-color:var(--txt-dim);background:var(--panel2);cursor:default;}
+  /* BU-100: card-name word search (declare grid + selection
+     sheets). The input text is 16px so iOS does not auto-zoom
+     on focus — a zoom would shove the sheet's fixed rows
+     around while the keyboard is up. The field is a fixed flex
+     child of the sheet; only the candidate region below it
+     scrolls, so the confirm row stays reachable. */
+  #sheet .cardsearch{margin:0 0 8px;flex:0 0 auto;}
+  #sheet .cardsearch-input{width:100%;box-sizing:border-box;font-size:16px;line-height:1.4;padding:9px 12px;border-radius:8px;border:1px solid var(--gold-dim);background:var(--panel2);color:var(--txt);}
+  #sheet .cardsearch-input::placeholder{color:var(--txt-dim);}
+  /* BU-100: on the selection sheets the field starts closed
+     behind this button-row toggle — the sheets' 620px fit
+     budget is measured to the last pixels (layout-fix5), and
+     an always-open field would push candidates out of
+     first-render reach. The toggle is NOT a .bigbtn, so the
+     peek bar never mirrors it. */
+  #sheet .searchtoggle{flex:0 0 auto;font-size:12.5px;padding:12px 10px;border-radius:6px;border:1px solid var(--gold-dim);background:var(--panel2);color:var(--gold);cursor:pointer;}
+  #sheet .search-none{font-size:12.5px;color:var(--txt-dim);text-align:center;padding:16px 4px;}
   /* fx-ui round 2 (F2): selection tiles were 82px columns with
      10px text stacked over the art — the location label wrapped
      onto the name band and the detail button, and effect text was
