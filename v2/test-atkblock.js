@@ -113,8 +113,13 @@ const reason = (code, con, seq, state) => AB.reason(code, con, MZONE, seq, state
   // lock on the opponent (「相手モンスターはそのモンスターにしか
   // 攻撃できない」), likewise core-enforced continuous — not a
   // summon-turn block either.
-  ok(JSON.stringify(barring) === JSON.stringify([TANK, SHADOW, 36898537, 78625592, 85252081, 11646785, 57031794, 57450198, 24092792].sort((a, b) => a - b)),
-    'B1: pool-wide attack-barring clauses == exactly the 9 enumerated cards');
+  // 《カオス・ソーサラー》 and 《カオス・ソルジャー －開闢の使者－》
+  // joined with the Chaos classic deck (2026-11-15): their bar is
+  // the self-imposed attack lock of their own banish effect
+  // (「この効果を発動するターン、このカードは攻撃できない」),
+  // core-enforced continuous — likewise not a summon-turn block.
+  ok(JSON.stringify(barring) === JSON.stringify([TANK, SHADOW, 36898537, 78625592, 85252081, 11646785, 57031794, 57450198, 24092792, 9596126, 72989439].sort((a, b) => a - b)),
+    'B1: pool-wide attack-barring clauses == exactly the 11 enumerated cards');
   const pend = Object.values(data.cards).filter(c => (c.type & 0x1000000) !== 0).length;
   ok(pend === 0, 'B2: pool holds zero Pendulum monsters (Horus rider branch unreachable)');
   const ggAll = [...data.decks.gg.main, ...data.decks.gg.extra];

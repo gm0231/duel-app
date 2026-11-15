@@ -267,8 +267,8 @@ async function boot() {
     ok(labels.hakamori === '永続罠', 'CV-DI6: Gravekeeper\'s Trap labels 永続罠');
     ok(labels.tsukoku === 'カウンター罠', 'CV-DI7: Solemn Strike (神の通告) labels カウンター罠');
     ok(labels.monster === '', 'CV-DI8: a monster gets no spell/trap label (its meta line is attribute / race / level)');
-    ok(labels.coverage.empty === 0 && labels.coverage.total === 165, 'CV-DI9: pool-wide, every one of the 165 cards resolves a non-empty meta line');
-    ok(labels.coverage.st === 64 && labels.coverage.mon === 101, 'CV-DI10: coverage split is 64 spells/traps labelled + 101 monsters on the attribute line (165-card pool: the Monarch deck added 9 spells/traps and 9 monsters)');
+    ok(labels.coverage.empty === 0 && labels.coverage.total === 234, 'CV-DI9: pool-wide, every one of the 234 cards resolves a non-empty meta line');
+    ok(labels.coverage.st === 88 && labels.coverage.mon === 146, 'CV-DI10: coverage split is 88 spells/traps labelled + 146 monsters on the attribute line (234-card pool: the Monarch deck added 9 spells/traps and 9 monsters; the classic decks Lightsworn / Fire King / Chaos added 24 spells/traps and 45 monsters)');
   }
   window.eval('openCardInfo(' + GENSEI + ')');
   {
