@@ -3428,12 +3428,14 @@ function fxPhaseBannerCut() {
 function fxPhaseBanner(fam) {
   const info = FX_PHASES[fam]; if (!info) return;
   const layer = fxLayerEl(); if (!layer) return;
-  if (fxDecisionUiOpen()) {
+  // BU-92: a live turn banner outranks the phase banner — the
+  // phase banner waits behind it on this same pending machinery.
+  if (fxDecisionUiOpen() || fxTurnBannerBusy()) {
     if (fxPhasePending) { fxPhasePending.fam = fam; fxPhasePending.since = performance.now(); return; }
     const pend = { fam, since: performance.now(), timer: null };
     pend.timer = setInterval(() => {
       if (fxPhasePending !== pend) { try { clearInterval(pend.timer); } catch (e) {} return; }
-      if (!fxDecisionUiOpen()) { clearInterval(pend.timer); fxPhasePending = null; fxPhaseBanner(pend.fam); }
+      if (!fxDecisionUiOpen() && !fxTurnBannerBusy()) { clearInterval(pend.timer); fxPhasePending = null; fxPhaseBanner(pend.fam); }
       else if (performance.now() - pend.since > 2600) { clearInterval(pend.timer); fxPhasePending = null; fxPhaseSettleSilent(); }
     }, 120);
     fxPhasePending = pend;
@@ -3537,6 +3539,89 @@ function fxPhaseBanner(fam) {
     },
   });
   fxRecord('phase', { phase: fam });
+}
+// ------------------------------------------------------------ BU-92: turn-change banner + input lock
+// User direction (2026-11-15, from real play): at every turn
+// change, show WHOSE turn it is, large, with a proper effect, so
+// the switch is unmistakable — and (follow-up the same day) lock
+// player input while the effect runs, so a stray tap at the
+// switch cannot misfire. Design (RECORD turnfx-1115):
+//  - text: main line 「自分のターン」/「相手のターン」, sub line
+//    「ターン N」 — the header readout's grammar, made large.
+//  - seat: centre of #app, 42px, seat colours (gold = human,
+//    lapis = opponent), radial glow + a seat-coloured rule that
+//    sweeps open under the words.
+//  - span: 1300 ms on the FX clock (in 0-220, hold to 950, out
+//    950-1300) — longer than the phase banner's 820 ms, in line
+//    with the summon callout's hold.
+//  - rank: turn banner > phase banner. Displaying cuts a live
+//    phase banner (it settles silently into the header readout),
+//    and the phase banner defers behind a live turn banner on
+//    its own pending machinery.
+//  - input lock: the element itself is the veil — .fx-turn is
+//    inset:0 with pointer-events:auto inside the otherwise
+//    pointer-events:none #fxlayer, so the element's lifetime IS
+//    the lock's lifetime. Decision UIs live above #fxlayer and
+//    their openers call fxTurnBannerCut() (the same four sites
+//    that cut the phase banner), so the moment a prompt is
+//    presented the banner dies and the lock releases — a pending
+//    prompt can never be starved or deadlocked by the lock.
+//  - defer: if a decision UI is already open at the flip, the
+//    banner waits on a 120 ms poll (cap ~2.6 s, then dropped
+//    silently — the header readout always shows whose turn it
+//    is, so nothing is lost).
+//  - safety: a wall-clock timer force-cuts the banner at
+//    3000 ms. The FX clock freezes with rAF in a backgrounded
+//    tab; a lock-bearing element must never be able to stick.
+let fxTurnEl = null, fxTurnScene = null, fxTurnPending = null, fxTurnSafety = null;
+function fxTurnBannerBusy() { return !!fxTurnEl; }
+function fxTurnBannerCut() {
+  if (fxTurnPending) { try { clearInterval(fxTurnPending.timer); } catch (e) {} fxTurnPending = null; }
+  if (fxTurnSafety) { try { clearTimeout(fxTurnSafety); } catch (e) {} fxTurnSafety = null; }
+  if (fxTurnScene && !fxTurnScene.dead) fxTurnScene.dead = true;
+  fxTurnScene = null;
+  if (fxTurnEl) { try { fxTurnEl.remove(); } catch (e) {} fxTurnEl = null; }
+}
+function fxTurnBanner(mine, turnNo) {
+  const layer = fxLayerEl(); if (!layer) return;
+  if (fxDecisionUiOpen()) {
+    if (fxTurnPending) { fxTurnPending.mine = mine; fxTurnPending.turnNo = turnNo; fxTurnPending.since = performance.now(); return; }
+    const pend = { mine, turnNo, since: performance.now(), timer: null };
+    pend.timer = setInterval(() => {
+      if (fxTurnPending !== pend) { try { clearInterval(pend.timer); } catch (e) {} return; }
+      if (!fxDecisionUiOpen()) { clearInterval(pend.timer); fxTurnPending = null; fxTurnBanner(pend.mine, pend.turnNo); }
+      else if (performance.now() - pend.since > 2600) { clearInterval(pend.timer); fxTurnPending = null; }
+    }, 120);
+    fxTurnPending = pend;
+    return;
+  }
+  fxTurnBannerCut(); // a re-flip replaces any live banner
+  fxPhaseBannerCut(); // rank: the phase banner settles silently
+  const d = document.createElement('div');
+  d.className = 'fx-turn' + (mine ? ' mine' : ' opp');
+  d.innerHTML = '<div class="fx-turn-in"><div class="fx-turn-sub">ターン ' + turnNo + '</div>' +
+    '<div class="fx-turn-main">' + (mine ? '自分のターン' : '相手のターン') + '</div><div class="fx-turn-line"></div></div>';
+  layer.appendChild(d);
+  fxTurnEl = d;
+  const inner = d.firstChild, line = inner.lastChild;
+  fxTurnSafety = setTimeout(() => fxTurnBannerCut(), 3000);
+  const sc = fxAddScene({
+    kind: 'turnbanner', dur: 1300,
+    render(t) {
+      const inU = FXE.snap(fxSeg(t, 0, 220));
+      const outU = fxSeg(t, 950, 1300);
+      inner.style.opacity = String(Math.min(inU, 1 - outU));
+      inner.style.transform = 'scale(' + (0.92 + 0.08 * inU).toFixed(3) + ') translateY(' + (-10 * outU).toFixed(1) + 'px)';
+      line.style.transform = 'scaleX(' + FXE.outCubic(fxSeg(t, 60, 560)).toFixed(3) + ')';
+    },
+    onDone() {
+      if (fxTurnSafety) { try { clearTimeout(fxTurnSafety); } catch (e) {} fxTurnSafety = null; }
+      try { d.remove(); } catch (e) {} if (fxTurnEl === d) fxTurnEl = null;
+      if (fxTurnScene === sc) fxTurnScene = null;
+    },
+  });
+  fxTurnScene = sc;
+  fxRecord('turnbanner', { turn: turnNo, mine: !!mine });
 }
 // ------------------------------------------------------------ V3 stage 1: FX foundation
 // One clock, a scene engine, signature easings, sprite particles and
@@ -3965,6 +4050,7 @@ function fxResetFoundation() {
   fxStopUntilWall = 0; fxTimeMs = 0; fxLastWall = 0; fxBeatTail = 0; // beat book restarts with the FX clock
   fxAceSceneRef = null; fxFinisherSceneRef = null; fxAceRecent = null; fxKeycardSceneRef = null; // stage 3 scene refs (hosts are wiped by fxResetDuel)
   fxChainWordScene = null; fxBannerScene = null; // V4 scene refs
+  fxTurnBannerCut(); // BU-92: no turn banner, lock or pending wait survives a reset
   // redesign E: the sweep's leftovers live outside #fxlayer (the
   // hairline is a #header child, the seated state a #phaseinfo
   // class) — clear them explicitly so no gold survives a reset
@@ -3991,7 +4077,7 @@ function fxSnap(state) {
     deck: state.players.map(P => P.deckCount),
     handLen: state.players.map(P => P.hand.length),
     myHand: state.players[HP].hand.map(c => c.code),
-    phaseFam: fxPhaseFamily(state.phaseName), turn: state.turnCount,
+    phaseFam: fxPhaseFamily(state.phaseName), turn: state.turnCount, tp: state.turnPlayer,
     chainLen: state.chain.length, solving: state.solvingLink,
     links: state.chain.map(l => ({ code: l.code, con: l.con, solved: !!l.solved, neg: !!(l.negated || l.disabled) })),
     lp: state.players.map(P => P.lp), winner: state.winner,
@@ -4040,6 +4126,11 @@ function fxProcessInner(evs, state) {
   // rebuilt) takes its landed flags with it — the next chain
   // starts un-absorbed and re-earns the gold on its own landings
   if (cur.chainLen === 0 || cur.chainLen < prev.chainLen) { try { fxChainLanded.clear(); } catch (e) {} }
+  // ---- BU-92: turn-change banner. The turn player flipping is
+  // the loudest event in a duel: it gets its own large banner +
+  // input lock (fxTurnBanner), fired BEFORE the phase banner so
+  // the phase banner's defer machinery can queue behind it.
+  if (prev.tp != null && cur.tp != null && cur.tp !== prev.tp && cur.turn > 0 && cur.winner == null) fxTurnBanner(cur.tp === HP, Math.max(1, cur.turn));
   // ---- phase banner (3-8): only at the transition, an overlay band
   if (cur.phaseFam && cur.phaseFam !== prev.phaseFam && cur.turn > 0) fxPhaseBanner(cur.phaseFam);
   // ---- zone cell diffs
@@ -6661,6 +6752,12 @@ window.__fx = {
   markChainLanded: (n, code) => fxChainMarkLanded(n, code),
   finisherGateMs: () => fxFinisherGateMs(), // redesign G: the result gate, readable for verification
   phaseSeated: () => { const pi = $('phaseinfo'); return !!pi && pi.classList.contains('fx-seated'); }, // redesign E: the settled phase state
+  // BU-92: the live turn banner's text (main + sub), or null when
+  // no banner is up — the banner element IS the input lock, so
+  // non-null also means input is locked. turnCut lets a harness
+  // exercise the same release the decision-UI openers trigger.
+  turnBannerText: () => { const el = document.querySelector('#fxlayer .fx-turn'); return el ? el.textContent : null; },
+  turnCut: () => fxTurnBannerCut(),
   clearChainLanded: () => fxChainLanded.clear(),
   // V3 stage 1 foundation surface: the shared clock, the scene
   // registry, the particle budget and the hit-stop — so harnesses
@@ -7286,7 +7383,7 @@ function ensureSheetFits() {
 }
 function sheetOpen(html, kind) {
   sheetKind = kind || 'prompt';
-  fxPhaseBannerCut(); // BU-44: a decision UI opening settles any live phase banner
+  fxPhaseBannerCut(); fxTurnBannerCut(); // BU-44/BU-92: a decision UI opening settles any live phase banner and releases the turn lock
   closeInfoPop();
   const wrap = $('sheetwrap'), sheet = $('sheet');
   // layout-fix5 M1: the sheet's height budget (--appvh) was frozen
@@ -7519,7 +7616,7 @@ function showChainTray(prompt, cause, liveIdx, openDock) {
     chainTrayDefer = { timer };
     return;
   }
-  fxPhaseBannerCut(); // BU-44: the tray opening settles any live phase banner
+  fxPhaseBannerCut(); fxTurnBannerCut(); // BU-44/BU-92: the tray opening settles any live phase banner and releases the turn lock
   const shown = liveIdx.slice(0, 4).map(i => prompt.entries[i]);
   const more = liveIdx.length - shown.length;
   const wcls = shown.length >= 4 ? ' w32' : shown.length === 3 ? ' w40' : '';
@@ -8292,7 +8389,7 @@ function uiChain(prompt, state) {
                   : '<b>《' + (trig.code ? cardName(trig.code) : 'モンスター') + '》</b>の' + (trig.verb === 62 ? '特殊召喚' : trig.verb === 64 ? '反転召喚' : '召喚') + 'にチェーンできます' }
         : null;
   const draw = () => {
-    fxPhaseBannerCut(); // BU-44: the dock opening settles any live phase banner
+    fxPhaseBannerCut(); fxTurnBannerCut(); // BU-44/BU-92: the dock opening settles any live phase banner and releases the turn lock
     const peeked = document.getElementById('app').classList.contains('dockpeek');
     $('dock').innerHTML =
       // layout redesign: the header carries the 盤面を見る
@@ -8495,7 +8592,7 @@ function renderPlaceHint() {
     (placeCtx.retry ? '<div class="retry">その場所には置けません。光っている場所から選んでください。</div>' : '');
 }
 function uiPlace(prompt, state) {
-  fxPhaseBannerCut(); // BU-44: the place hint is decision UI too
+  fxPhaseBannerCut(); fxTurnBannerCut(); // BU-44/BU-92: the place hint is decision UI too — it settles the phase banner and releases the turn lock
   const zones = availZones(prompt);
   let title;
   if (prompt.name === 'SELECT_PLACE') {
