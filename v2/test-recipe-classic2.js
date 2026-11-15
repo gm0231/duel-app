@@ -80,7 +80,7 @@ const allDeckCodes = new Set();
 for (const key of Object.keys(EXPECT)) { data.decks[key].main.forEach(c => allDeckCodes.add(c)); data.decks[key].extra.forEach(c => allDeckCodes.add(c)); }
 const PRE_EXISTING = [5318639, 29401950, 94192409, 97077563, 24508238, 53129443, 44095762, 53582587, 83764718, 40605147, 18144506, 44508094];
 const NEW_CODES = [...allDeckCodes].filter(c => !PRE_EXISTING.includes(c));
-ok(Object.keys(data.cards).length === 290, 'C7: the pool is now 290 cards (234 + 56 classic implementations; got ' + Object.keys(data.cards).length + ')');
+ok(Object.keys(data.cards).length === 362, 'C7: the pool is now 362 cards (234 + 56 classic implementations + 72 classic round 8-11 implementations; got ' + Object.keys(data.cards).length + ')');
 ok(NEW_CODES.length === 56, 'C8: the three recipes span 56 newly implemented cards (got ' + NEW_CODES.length + ')');
 for (const pc of NEW_CODES) {
   const c = data.cards[pc];

@@ -101,9 +101,9 @@ const name = (c) => data.names[c];
 // ---------- K1: the printed-requirement parser over the whole pool ----------
 {
   const xyz = Object.values(data.cards).filter(c => (c.type & 0x800000));
-  let allParsed = xyz.length === 23;
+  let allParsed = xyz.length === 26;
   for (const c of xyz) { const r = Engine.xyzMaterialReq(c.code, data); if (!r || typeof r.min !== 'number') allParsed = false; }
-  ok(allParsed, 'LF3-K1c: xyzMaterialReq parses all 23 Xyz monsters in the pool (14 through the classic decks round 2-4; +9 with Six Samurai / Inzektor / The Agents, 2026-11-15 — all 23 verified parsing)');
+  ok(allParsed, 'LF3-K1c: xyzMaterialReq parses all 26 Xyz monsters in the pool (14 through the classic decks round 2-4; +9 with Six Samurai / Inzektor / The Agents, 2026-11-15; +3 with Gladiator Beasts / Cyber / Junk Doppel / Gadgets, 2026-11-15 — all 26 verified parsing)');
   const b = Engine.xyzMaterialReq(62967433, data), ca = Engine.xyzMaterialReq(82633039, data), mg = Engine.xyzMaterialReq(84025439, data);
   ok(b && b.min === 2 && b.max === null, 'LF3-K1d: Baromett 「×２体以上」 -> min 2, no upper bound');
   ok(ca && ca.min === 2 && ca.max === 2, 'LF3-K1e: Castel 「×２」 -> exactly 2');

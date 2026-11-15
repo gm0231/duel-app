@@ -5,13 +5,14 @@
    patches; anything uncovered is enumerated here, with counts).
    Loads the REAL client.js (vm + stub DOM, same technique as
    test-fxidentify) against the REAL data.json / fxmap.json and
-   asserts, for all 290 cards (63 -> 89 with the Super Quant deck,
+   asserts, for all 362 cards (63 -> 89 with the Super Quant deck,
    89 -> 144 with the Elfennotes / White Forest decks, 2026-11-08;
    144 -> 147 with the v12/v13 additions; 147 -> 165 with the
    Monarch deck, 2026-11-11; 165 -> 234 with the classic decks
    Lightsworn / Fire King / Chaos, 2026-11-15; 234 -> 290 with
    the classic decks Six Samurai / Inzektor / The Agents,
-   2026-11-15):
+   2026-11-15; 290 -> 362 with the classic decks Gladiator
+   Beast / Cyber Dragon / Junk Doppel / Gadget, 2026-11-15):
      A. every fxmap target (map / pmap / yn / bare) names an
         existing printed segment of that card;
      B. every described activatable desc idx resolves (via
@@ -204,6 +205,32 @@ const EXCEPTIONS = {
   '90397998|0': '公式テキストに効果番号が存在しない（旧書式）',
   '95395761|0': '公式テキストに効果番号が存在しない（旧書式）',
   '95519486|0': '公式テキストに効果番号が存在しない（旧書式）',
+  // Classic decks round 8-11 (2026-11-15): old-style official
+  // texts carry NO circled numbers at all (full text is shown) —
+  // Gladiator Beast / Junk additions whose current official
+  // printing is still the unnumbered format (idx1 of the
+  // Gladiator Beasts is the shared battle-phase-end tag trigger
+  // inside the same unnumbered text)
+  '612115|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '612115|1': '公式テキストに効果番号が存在しない（旧書式）',
+  '2619149|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '2619149|1': '公式テキストに効果番号が存在しない（旧書式）',
+  '5975022|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '5975022|1': '公式テキストに効果番号が存在しない（旧書式）',
+  '57731460|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '57731460|1': '公式テキストに効果番号が存在しない（旧書式）',
+  '78868776|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '77642288|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '27346636|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '42810973|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '37993923|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '37993923|1': '公式テキストに効果番号が存在しない（旧書式）',
+  '59771339|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '59771339|1': '公式テキストに効果番号が存在しない（旧書式）',
+  // Classic decks round 8-11 (2026-11-15): described indices
+  // that name procedures / restriction hints, never prompts
+  '92373006|0': '特殊召喚手続き（①）と②の起動効果が同じ説明idx 0を共有する。番号を誤らせないため番号特定しない',
+  '63031396|1': '①本文のEX召喚制限（融合モンスター限定・CLIENT_HINT付き持続制限）の説明。プロンプトにならない',
 };
 // ---------- C: undescribed blocks knowingly not prompt-bearing ----------
 const NON_PROMPT = {
@@ -279,11 +306,27 @@ const NON_PROMPT = {
   '90397998': '六武衆の身代わり破壊持続（別の「六武衆」を破壊する適用処理）。発動ではない',
   '95395761': '装備側の身代わり破壊持続（装備モンスターの代わりに破壊される適用処理）。発動ではない',
   '95519486': '六武衆の身代わり破壊持続（別の「六武衆」を破壊する適用処理）。発動ではない',
+  // Classic decks round 8-11 (2026-11-15): continuous /
+  // machinery blocks of the Gladiator Beast / Cyber Dragon /
+  // Junk Doppel / Gadget additions, hand-audited against the
+  // bundled scripts
+  '1142880': '③の解決で登録される機械族限定の特殊召喚ロック機構。発動ではない',
+  '3370104': '①持続（対象を取る魔法・罠の無効化）の適用機構。発動エントリにならない',
+  '5556499': '①特殊召喚手続き＋②の適用機構（相手の手札を確認し捨てさせる処理）。発動エントリにならない',
+  '20932152': '①特殊召喚手続き。発動ではない',
+  '23171610': '①の解決で登録されるエンドフェイズ破壊処理。発動ではない',
+  '25924653': '①の適用機構（ダリウスがフィールドを離れた時に、特殊召喚したモンスターをデッキに戻す処理）。発動ではない',
+  '29975188': '③持続（「サイバー・ドラゴン」の攻撃力・守備力アップ）の適用機構。発動エントリにならない',
+  '37630732': '①の適用機構（攻撃力アップの付与／エンドフェイズのダメージ処理）。発動ではない',
+  '56364287': '②の解決で登録される機械族限定の特殊召喚ロック機構。発動ではない',
+  '59281922': '②の解決で登録される機械族限定の特殊召喚ロック機構。発動ではない',
+  '64599569': '②の適用機構（融合召喚成功時に元々の攻撃力・守備力を設定する処理）。発動ではない',
+  '7573135': '①の解決で登録されるエンドフェイズのデッキ戻し処理。発動ではない',
 };
 
 // ---------- A + B + classification table ----------
 const clsCount = { '番号特定': 0, '番号特定（スコープ/yn/bare）': 0, '単一効果/発動慣例': 0, '番号対象なし': 0, '未カバー': 0 };
-console.log('---- pool classification (290) ----');
+console.log('---- pool classification (362) ----');
 for (const code of Object.keys(data.cards)) {
   const fx = fxmap[code];
   const segs = T.effectSegments(+code);
@@ -332,7 +375,7 @@ for (const code of Object.keys(data.cards)) {
   console.log(code + ' | ' + data.names[code] + ' | segs=' + segs.length + ' | desc=' + [...desc].join(',') + ' | ' + cls);
 }
 console.log('classification counts:', JSON.stringify(clsCount));
-ok(Object.keys(data.cards).length === 290, 'pool is 290 cards');
+ok(Object.keys(data.cards).length === 362, 'pool is 362 cards');
 ok(clsCount['未カバー'] === 0, 'no card is left unclassified/uncovered without an enumerated reason');
 
 // ---------- D: lingering-restriction scan ----------
@@ -382,6 +425,12 @@ const EXPECTED_RESTRICTIONS = [
   '57103969:カード名発動制限（1ターン1枚）',
   '59388357:カード名発動制限（1ターン1枚）',
   '83555666:カード名発動制限（1ターン1枚）',
+  // Classic decks round 8-11 (2026-11-15): 《エマージェンシー・
+  // サイバー》《ジャンク・パペット》《サイバー・リペア・プラント》
+  // carry the same 1-turn card-name limit.
+  '60600126:カード名発動制限（1ターン1枚）',
+  '67968069:カード名発動制限（1ターン1枚）',
+  '86686671:カード名発動制限（1ターン1枚）',
 ];
 ok(JSON.stringify([...found].sort()) === JSON.stringify([...EXPECTED_RESTRICTIONS].sort()),
   'D: restriction scan finds exactly the enumerated set (found: ' + found.join(' / ') + ')');
@@ -481,8 +530,8 @@ T.setDATA(data); // restore the real pool for the sections below
 
 // ---------- G: card-name activation limits (brushup round 2) ----------
 ok(JSON.stringify(PC.nameLimitCards().map(x => x.code + ':' + x.scope).sort()) === JSON.stringify([
-  '17484499:duel', '22993208:turn', '28958464:turn', '31002402:turn', '33609262:turn', '35569555:turn', '35726888:turn', '45725480:turn', '57103969:turn', '59388357:turn', '60921537:turn', '82956214:turn', '83555666:turn',
-]), 'G1: card-name limit derivation = {現世と冥界の逆転:duel, マジックカード「死者蘇生」/おろかな副葬/七星の宝刀/帝王の深怨/凶導の福音/凶導の聖告/凶導の葬列/ドラグマ・パニッシュメント:turn} (the Magic Card returns to the pool in v13; the classic has no name limit; 帝王の深怨 joins with the Monarch deck, 2026-11-11; 炎王の急襲/炎舞－「天璣」/炎王炎環/破壊輪 join with the classic decks, 2026-11-15)');
+  '17484499:duel', '22993208:turn', '28958464:turn', '31002402:turn', '33609262:turn', '35569555:turn', '35726888:turn', '45725480:turn', '57103969:turn', '59388357:turn', '60600126:turn', '60921537:turn', '67968069:turn', '82956214:turn', '83555666:turn', '86686671:turn',
+]), 'G1: card-name limit derivation = {現世と冥界の逆転:duel, マジックカード「死者蘇生」/おろかな副葬/七星の宝刀/帝王の深怨/凶導の福音/凶導の聖告/凶導の葬列/ドラグマ・パニッシュメント:turn} (the Magic Card returns to the pool in v13; the classic has no name limit; 帝王の深怨 joins with the Monarch deck, 2026-11-11; 炎王の急襲/炎舞－「天璣」/炎王炎環/破壊輪 join with the classic decks, 2026-11-15; エマージェンシー・サイバー/ジャンク・パペット/サイバー・リペア・プラント join with classic decks round 8-11, 2026-11-15)');
 PC.reset();
 ok(PC.nameLimitReason(35726888) === null, 'G2: おろかな副葬 unspent -> silent');
 PC.trackUsedFx({ turnCount: 1, chain: [{ code: 35726888, con: 0, loc: 2, seq: 0, desc: SID(35726888, 0) }] });

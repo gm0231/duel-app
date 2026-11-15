@@ -369,6 +369,55 @@ const OVERRIDES = {
   96570609: { 1: 1, 2: 2 },
   // 冥帝エレボス: idx1=summon trigger=①, idx2=GY quick=②.
   23064604: { 1: 1, 2: 2 },
+  // Classic decks round 8-11 (2026-11-15), each hand-audited
+  // against the bundled script's registration order and the
+  // official text:
+  // サイバー・ドラゴン・ネクステア: ① is the undescribed
+  //   name-treat continuous; idx0=hand ignition self-summon=②,
+  //   idx1=summon trigger=③.
+  1142880: { 0: 2, 1: 3 },
+  // サイバー・フェニックス: ① is the undescribed targeting-
+  //   negation continuous; idx0=battle-destroyed trigger=②.
+  3370104: { 0: 2 },
+  // サイバー・ドラゴン・ツヴァイ: ① is the undescribed GY
+  //   name-treat, ③ the undescribed battle ATK continuous;
+  //   idx0=ignition=②.
+  5373478: { 0: 2 },
+  // マシンナーズ・フォートレス: ① is the undescribed summon
+  //   procedure, ② the undescribed chain-solving application;
+  //   idx0=battle-destroyed trigger=③.
+  5556499: { 0: 3 },
+  // サイバー・ドラゴン・コア: ① is the undescribed name-treat
+  //   continuous; idx0=summon trigger=②, idx1=GY ignition=③.
+  23893227: { 0: 2, 1: 3 },
+  // 剣闘獣ネロキウス: ① is the undescribed continuous pair;
+  //   idx1=battle-phase-end tag trigger=②.
+  29357956: { 1: 2 },
+  // サイバー・ドラゴン・フィーア: ① is the undescribed
+  //   name-treat, ③ the undescribed stat-boost continuous;
+  //   idx0=hand trigger=②.
+  29975188: { 0: 2 },
+  // 剣闘獣ドミティアノス: idx0=negate quick=①, idx1=battle-
+  //   phase-end tag trigger=③ (② is the undescribed attack-
+  //   target continuous).
+  33652635: { 0: 1, 1: 3 },
+  // マシンナーズ・ギアフレーム: the summon search trigger is
+  //   described at idx2=① (②'s Union ignition is registered by
+  //   the Union procedure helper and owns no description).
+  42940404: { 2: 1 },
+  // サイバー・ドラゴン・ヘルツ: ① is the undescribed
+  //   name-treat continuous; idx0=special-summon trigger=②,
+  //   idx1=sent-to-GY trigger=③.
+  56364287: { 0: 2, 1: 3 },
+  // サイバー・ドラゴン・ドライ: ① is the undescribed
+  //   name-treat continuous; idx0=summon trigger=②,
+  //   idx1=banished trigger=③ (idx2 is ②'s lock hint — see
+  //   KNOWN_NON_ACTIVATABLE).
+  59281922: { 0: 2, 1: 3 },
+  // マシンナーズ・ピースキーパー: the destroyed trigger is
+  //   described at idx2=② (①'s Union ignition is registered by
+  //   the Union procedure helper and owns no description).
+  78349103: { 2: 2 },
 };
 // Prompt-scoped maps (see header): desc idx -> {idle, chain}.
 // マスターフレア・ヒュペリオン: idx0 is registered by BOTH its IGNITION
@@ -409,6 +458,17 @@ const BARE = {
   //   only ever surface as idle spsummon entries and stay
   //   unpinned, like every other procedure.
   29726552: [{ loc: 4, scope: 'chain', n: 4 }],
+  // Classic decks round 8-11 (2026-11-15):
+  // サイバー・ドラゴン・インフィニティ: NO effect owns a
+  //   description. Its only MZONE idle activatable is ② (the
+  //   attach ignition); its only chain-scope activatable is ③
+  //   (the EVENT_CHAINING negate).
+  10443957: [{ loc: 4, scope: 'idle', n: 2 }, { loc: 4, scope: 'chain', n: 3 }],
+  // キメラテック・ランページ・ドラゴン: NO effect owns a
+  //   description. Its only MZONE idle activatable is ② (the
+  //   mill ignition); its only chain-scope activatable is ①
+  //   (the fusion-summon trigger).
+  84058253: [{ loc: 4, scope: 'idle', n: 2 }, { loc: 4, scope: 'chain', n: 1 }],
 };
 // SetDescription indices that are described but knowingly NOT
 // activatable indices (excluded from the UNACCOUNTED alarm):
@@ -472,6 +532,14 @@ const KNOWN_NON_ACTIVATABLE = {
   //   tribute grant (CLIENT_HINT) its activation registers —
   //   part of printed ①, never an activation prompt.
   79844764: [1],
+  // Classic decks round 8-11 (2026-11-15):
+  // ジャンク・フォアード idx0 = its special-summon procedure's
+  //   description (a procedure, never an activation prompt).
+  56410040: [0],
+  // サイバー・ドラゴン・ドライ idx2 = the description of the
+  //   EFFECT_CANNOT_SPECIAL_SUMMON lock (CLIENT_HINT) its ②
+  //   resolution registers — a restriction hint, never a prompt.
+  59281922: [2],
 };
 
 const out = {};

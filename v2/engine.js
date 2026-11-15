@@ -1659,6 +1659,18 @@ for (const c of [1498130, 2511717, 49721904, 75116619, 78792195, 83039729, 74094
   52601736, 65844845, 28985331, 65192027, 16550875, 38643567, 81439173, 44505297, 26211048, 47805931,
   581014, 37926346, 91188343, 64734921, 39552864, 28573958, 55794644, 17266660, 12171659, 1353770,
   54977057, 56433456, 38120068, 81066751, 10002346, 2766877, 1249315]) NEW_CODES.add(c);
+// Classic decks round 8-11 (2026-11-15): Gladiator Beast / Cyber
+// Dragon / Junk Doppel / Gadget additions. Same registration
+// rationale as above. fxKinds reads the verbs from the printed
+// text; theme-specific bot profiles are future work (same caveat
+// as rounds 2-7).
+for (const c of [612115, 1006081, 1142880, 1546123, 2619149, 3370104, 3659803, 5373478, 5556499, 5975022, 7573135,
+  10443957, 11747708, 13839120, 15341821, 20932152, 23171610, 23571046, 23893227, 24696097, 25924653, 27346636,
+  28912357, 29021114, 29357956, 29975188, 33652635, 35224440, 37630732, 37993923, 41172955, 41470137, 42810973,
+  42940404, 48156348, 50091196, 53855409, 55010259, 56364287, 56410040, 57731460, 58069384, 59281922, 59771339,
+  60600126, 60800381, 63031396, 63977008, 63995093, 64599569, 67968069, 70095154, 70342110, 73285669, 74157028,
+  74860293, 77642288, 78349103, 78868776, 78922939, 79229522, 84058253, 84749824, 86445415, 86686671, 90582719,
+  90953320, 92373006, 96216229, 96363153, 97268402, 98891840]) NEW_CODES.add(c);
 // Setcodes (data.json `setcodes` values) for the new themes.
 const SETC = { SQ: 220, SQM: 4316, BEAST: 8412, DOGMA: 326, ELF: 464, WF: 426, SIN: 516, AZAMINA: 436 };
 function hasSetC(cd, s) { return !!cd && Array.isArray(cd.setcodes) && cd.setcodes.includes(s); }
@@ -6241,6 +6253,17 @@ function botAnswer(prompt, state, data, mem) {
 //   humanTeam: core seat answered by humanAnswerer (default 0)
 //   onMessage(msgBytes): raw tap of every core message (tests/diagnostics)
 const sleepDefault = (ms) => new Promise(res => setTimeout(res, ms));
+// Token card data rows (babelcdb datas values), registered with
+// the core next to the pool cards in Duel._register — see the
+// comment there. 16401 = TYPE_MONSTER|TYPE_NORMAL|TYPE_TOKEN.
+// 15341822/23 = 綿毛トークン (WIND Plant, 0/0); 53855410/11 =
+// ドッペル・トークン (DARK Warrior, 400/400).
+const TOKEN_CARD_DATA = [
+  { code: 15341822, type: 16401, level: 1, attribute: 8, race: 1024, atk: 0, def: 0 },
+  { code: 15341823, type: 16401, level: 1, attribute: 8, race: 1024, atk: 0, def: 0 },
+  { code: 53855410, type: 16401, level: 1, attribute: 32, race: 1, atk: 400, def: 400 },
+  { code: 53855411, type: 16401, level: 1, attribute: 32, race: 1, atk: 400, def: 400 },
+];
 class Duel {
   constructor(M, data, opts) {
     this.M = M; this.data = data; this.opts = opts || {};
@@ -6262,6 +6285,23 @@ class Duel {
       const raceLo = c.race % 4294967296, raceHi = Math.floor(c.race / 4294967296);
       ccall('poc_register_card', null, ['number','number','string','number','number','number','number','number','number','number','number','number','number'],
         [c.code, c.alias, (c.setcodes || []).join(','), c.type, c.level, c.attribute, raceLo, raceHi, c.atk, c.def, c.lscale, c.rscale, c.link_marker]);
+    }
+    // Token card data (classic decks round 8-11, 2026-11-15):
+    // 《ダンディライオン》 and 《ドッペル・ウォリアー》 — the pool's
+    // first token generators — create tokens by code (id+1 / id+2).
+    // Tokens are not pool cards (no data.json cards row), but the
+    // core still needs their data: with no row it reads back a
+    // zeroed type, and register_card then treats the missing
+    // initial_effect as a FORCED error that aborts the summoning
+    // operation itself (measured: Dandylion's operation died at
+    // Duel.CreateToken and no token ever appeared). With the real
+    // TYPE_TOKEN|TYPE_NORMAL row (babelcdb values) the missing
+    // script is tolerated exactly like a Normal monster's. The
+    // display names live in data.json names (綿毛トークン /
+    // ドッペル・トークン, as printed in the generators' texts).
+    for (const t of TOKEN_CARD_DATA) {
+      ccall('poc_register_card', null, ['number','number','string','number','number','number','number','number','number','number','number','number','number'],
+        [t.code, 0, '', t.type, t.level, t.attribute, t.race, 0, t.atk, t.def, 0, 0, 0]);
     }
     const enc = new TextEncoder();
     for (const name of Object.keys(data.scripts)) {

@@ -2528,7 +2528,7 @@ async function boot() {
   ok(ggHelp.res.every(r => r.small === '../assets/card-art-std-' + r.code + '-s.jpg' && r.big === '../assets/card-art-std-' + r.code + '.jpg'), 'CAGG2: cardArtFile returns the std files (small + big) for all 28');
   ok(ggHelp.res.every(r => r.inline.includes('card-art-std-' + r.code + '-s.jpg')), 'CAGG3: artInline carries the std art for all 28 (no surface falls back to the placeholder)');
   ok(GGART.every(c => ggHelp.preloaded.includes('../assets/card-art-std-' + c + '-s.jpg') && ggHelp.preloaded.includes('../assets/card-art-std-' + c + '.jpg')), 'CAGG4: selecting the GG deck preloads both std sizes (deck-select preload, no blank flash)');
-  ok(ggHelp.stdCount === 111 && ggHelp.overlap.length === 0, 'CAGG5: scoping — STD_ART holds exactly 111 codes (112 until the 36th delivery graduated Rollback to a user painting) and never shadows a user painting (no overlap with CARD_ART)');
+  ok(ggHelp.stdCount === 326 && ggHelp.overlap.length === 0, 'CAGG5: scoping — STD_ART holds exactly 326 codes (112 until the 36th delivery graduated Rollback to a user painting, dropping it to 111; the classic deck rounds then grew it — 254 at the classic3 base — and classic round 3 added 72 more) and never shadows a user painting (no overlap with CARD_ART)');
   ok(ggHelp.uncovered.length === 0, 'CAGG5b: full-pool coverage — every one of the 165 pool cards now resolves some art');
   const resGG = window.eval(`
     (() => {
