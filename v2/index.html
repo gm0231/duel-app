@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>MILLENNIUM DUELISTS</title>
+<link rel="icon" type="image/jpeg" href="../assets/card-art-placeholder-s.jpg">
 <style>
   :root{
     --gold:#c9a227; --gold-dim:#8a6d1f; --ink:#0d0b08; --panel:#1b1712; --panel2:#241e16;
@@ -440,25 +441,29 @@
      info taps via the document delegate, exactly as for the
      dock peek. Appearance and the float are pure CSS (no WAAPI)
      so the FX arrival measurements are untouched. */
-  #chainui{position:absolute;right:10px;bottom:10px;width:216px;z-index:40;display:none;flex-direction:column;align-items:flex-end;gap:6px;}
+  #chainui{position:absolute;right:10px;bottom:10px;width:252px;z-index:40;display:none;flex-direction:column;align-items:flex-end;gap:6px;}
   #chainui.on{display:flex;animation:ctin .24s ease-out;}
   @keyframes ctin{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:none;}}
   #chainui.peek{pointer-events:none;}
   #chainui.peek #ctpeek{pointer-events:auto;}
   #chainui.peek #chaintray{visibility:hidden;}
   #ctpeek{min-height:52px;background:linear-gradient(#e6c877,var(--gold));color:#191104;border:1px solid #e6c877;border-radius:8px;font-size:15px;font-weight:700;padding:12px 18px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.5);}
-  #chaintray{width:216px;background:rgba(23,18,8,.97);border:1.5px solid var(--gold);border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.65);padding:10px;}
+  #chaintray{width:244px;background:rgba(23,18,8,.97);border:1.5px solid var(--gold);border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.65);padding:10px;}
   .ct-cause{display:flex;gap:8px;align-items:center;margin-bottom:9px;cursor:pointer;}
   .ct-cause-art{flex:0 0 auto;width:30px;height:42px;border-radius:3px;border:1px solid #b0483e;background:#3a2f1d center/cover;}
   .ct-cause-txt{font-size:11.5px;line-height:1.5;color:var(--txt);}
   .ct-cause-txt b{color:#ffb59d;}
   .ct-cards{display:flex;gap:8px;align-items:flex-end;margin-bottom:10px;min-height:68px;}
-  .ct-card{display:flex;flex-direction:column;width:46px;animation:ctfloat 2.4s ease-in-out infinite;}
+  /* BU-74 (rest): the floating card is wide enough for a full name
+     line; the name font steps down in JS (ctFitName) before it ever
+     truncates. The tray grows with the card (216 -> 252px). */
+  .ct-card{display:flex;flex-direction:column;width:72px;animation:ctfloat 2.4s ease-in-out infinite;}
   .ct-card.ph1{animation-delay:-.6s;} .ct-card.ph2{animation-delay:-1.2s;} .ct-card.ph3{animation-delay:-1.8s;}
-  .ct-cards.w40 .ct-card{width:40px;} .ct-cards.w32 .ct-card{width:32px;}
+  .ct-cards.w40 .ct-card{width:60px;} .ct-cards.w32 .ct-card{width:48px;}
   .ct-art{width:100%;height:56px;border-radius:4px;border:1px solid var(--gold);background:#3a2f1d center/cover;}
   .ct-cards.w40 .ct-art{height:49px;} .ct-cards.w32 .ct-art{height:40px;}
-  .ct-name{font-size:9.5px;line-height:1.25;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;text-align:center;}
+  .ct-name{display:block;font-size:10px;line-height:1.25;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;text-align:center;}
+  .ct-name.wrap2{white-space:normal;overflow:visible;}
   .ct-more{align-self:center;font-size:11px;color:var(--gold);border:1px solid var(--gold-dim);border-radius:999px;padding:4px 8px;white-space:nowrap;}
   .ct-badges{display:flex;gap:6px;justify-content:flex-end;align-items:stretch;}
   .ct-yes{min-height:52px;background:linear-gradient(#e6c877,var(--gold));color:#191104;border:1px solid #e6c877;border-radius:999px;font-size:15px;font-weight:700;padding:12px 14px;white-space:nowrap;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.5);animation:ctfloat 2.4s ease-in-out infinite;animation-delay:-.3s;}
@@ -507,9 +512,13 @@
      confirm can be answered while looking at the board (R-SEL-2).
      The band exists only in peek mode and only when the sheet
      actually carries answer controls (.onbar). */
-  #peekbar{display:none;position:absolute;left:0;right:0;bottom:0;z-index:52;background:#1d1811;border-top:2px solid var(--gold);padding:8px;flex-wrap:wrap;gap:6px;max-height:34dvh;overflow-y:auto;}
+  /* BU-55: ONE row of answer buttons (was flex-wrap:wrap, up to two
+     rows / 112px, which ate the hand's bottom edge at short heights).
+     Buttons keep the 52px tap height; labels shrink before the row
+     ever wraps. */
+  #peekbar{display:none;position:absolute;left:0;right:0;bottom:0;z-index:52;background:#1d1811;border-top:2px solid var(--gold);padding:8px;flex-wrap:nowrap;gap:6px;max-height:34dvh;overflow-y:auto;}
   #sheetwrap.peek #peekbar.onbar{display:flex;}
-  #peekbar .bigbtn{flex:1 1 40%;}
+  #peekbar .bigbtn{flex:1 1 0;min-width:0;font-size:12.5px;padding-left:4px;padding-right:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   #sheet .seg button{min-height:44px;}
   #header.busy::after{content:'';position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);background-size:40% 100%;background-repeat:no-repeat;animation:busyslide 1.1s linear infinite;pointer-events:none;z-index:4;}
   @keyframes busyslide{from{background-position:-40% 0;}to{background-position:140% 0;}}
@@ -571,6 +580,16 @@
   .posbtn .glyph.def{transform:rotate(90deg);}
   .posbtn .glyph.back{background:#171208 url('../assets/card-back-s.jpg') center/cover;}
   .sortrow{display:flex;align-items:center;gap:6px;border:1px solid var(--tile-edge);border-radius:6px;padding:6px 8px;margin:4px 0;background:var(--panel2);font-size:12px;}
+  /* BU-45: confirm-sheet rows carry the card's face (40px thumb). */
+  .sortrow .cthumb{flex:0 0 auto;width:40px;height:40px;border-radius:4px;border:1px solid var(--gold-dim);background:#3a2f1d center/cover;}
+  /* BU-38: the action sheet leads with the card's big art band
+     (same seat as the detail pop's .popart, a little shorter). */
+  #sheet .actart{position:relative;width:100%;height:min(150px,24dvh);border-radius:8px;border:1px solid var(--gold-dim);background:#3a2f1d url('../assets/card-art-placeholder.jpg') center/cover;margin-bottom:8px;}
+  /* BU-24: the chain dock lists the whole chain under its cause. */
+  #dock .chainlist{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 8px;}
+  #dock .chainlist .cl-chip{font-size:11px;line-height:1.4;padding:3px 8px;border-radius:999px;border:1px solid var(--gold-dim);color:var(--txt-dim);background:#0f0b06;white-space:nowrap;}
+  #dock .chainlist .cl-chip.cur{border-color:var(--gold);color:#ffe9a8;font-weight:700;}
+  #dock .chainlist .cl-chip.solving{border-color:#7fd4ff;color:#bfeaff;}
   /* card-view round: pile rows (grave / removed / EX) lead with the
      card's own thumbnail — the small art file, top-anchored like
      every other surface; unlisted cards fall back to the shared
@@ -626,11 +645,15 @@
   /* round B: the start screen gained two setting rows (cut-in /
      response mode) — at short viewports the column can exceed the
      screen, so the START overlay (not the duel board) may scroll */
-  #start{justify-content:flex-start;overflow-y:auto;padding:6px 20px 8px;}
+  /* BU-50: centre the title + start-button group vertically instead
+     of title-at-top / button-at-bottom with a dead band between
+     (measured ~500px of nothing at 700). overflow stays for short
+     heights, where the group simply scrolls. */
+  #start{justify-content:center;overflow-y:auto;padding:6px 20px 8px;}
   #start h1{font-size:26px;font-weight:800;letter-spacing:.14em;line-height:1.3;margin:4px 0 2px;}
   #start h1 span{display:block;}
   #start .subtitle{font-size:12px;letter-spacing:.34em;color:var(--gold-dim);margin:1px 0 3px;}
-  #start .startbtn{margin-top:auto;}
+  #start .startbtn{margin-top:30px;}
   /* placement hint is an overlay banner under the top bar — it must never
      push the board down when it appears mid-duel */
   #placehint{display:none;position:absolute;top:44px;left:0;right:0;z-index:30;background:#4a3a10;color:#ffe9a8;font-size:12px;text-align:center;padding:6px;border-bottom:1px solid var(--gold);pointer-events:none;}
@@ -687,6 +710,18 @@
   #autopass{display:none;flex:0 1 auto;margin-left:6px;background:#4a3a10;color:#ffe9a8;border:1px solid var(--gold);border-radius:12px;font-size:11.5px;padding:6px 10px;min-height:32px;cursor:pointer;max-width:54%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   #autopass.on{display:flex;align-items:center;}
   #autopass.flash{background:#7a5a10;color:#fff;font-weight:700;}
+  /* BU-85: the flash names the suppressed card — one line truncated it
+     (measured: 「自動パス：帝王の烈旋」 cut to 「自動パス：帝王の」 at 103px).
+     The flash stacks two lines (label + name) at 10px, capped at 170px so the
+     row never overflows (measured: the longest single name 合体魔神ゲート・ガーディアン
+     fits whole at 139px; only 3+-name joins still ellipsis on the name line).
+     The .on rule makes the chip display:flex in a row — column is what stacks
+     the two lines. While flashing, the log line stays one line (ellipsis) so a
+     squeezed log cannot wrap the header tall. */
+  #autopass.flash{white-space:normal;line-height:1.25;text-align:left;flex:0 0 auto;flex-direction:column;align-items:stretch;max-width:170px;font-size:10px;}
+  #autopass.flash .ap-name{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  #header.apflash #logline{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  #autopass.inert{opacity:.42;filter:saturate(.5);}
   /* ---------- presentation FX layer (rounds A/B) ----------
      All duel presentation lives in #fxlayer as absolutely positioned
      overlays computed from painted rects. The layer never receives
@@ -833,7 +868,7 @@
      transient surface) — it can NEVER reach the pile row or
      any zone, at any text length. Overlay only: no board
      height is taken, tile size is untouched. */
-  .fx-notice{position:absolute;left:6px;right:6px;z-index:8;background:linear-gradient(180deg,rgba(19,14,6,.95),rgba(7,5,2,.97));border:1px solid rgba(201,162,39,.7);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.6);padding:5px 10px;pointer-events:none;}
+  .fx-notice{position:absolute;left:6px;right:6px;z-index:8;background:linear-gradient(180deg,rgba(19,14,6,.95),rgba(7,5,2,.97));border:1px solid rgba(201,162,39,.7);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.6);padding:3px 8px;pointer-events:none;}
   .fx-notice .nt{font-size:12.5px;font-weight:800;color:#ffe9a8;line-height:1.3;letter-spacing:.02em;}
   .fx-notice .ns{display:inline;font-size:11px;font-weight:400;color:var(--txt-dim);margin-right:7px;line-height:1.3;}
   /* Redesign F -> BU-72 (2026-11-13): the LP chip is now ONLY the
@@ -1072,14 +1107,19 @@
      「ン」 on its own line. Same rule as card names: one line,
      ellipsis as the backstop; 12px fits both current names. */
   #deckpage .deck .dn{display:block;font-size:13px;font-weight:700;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  #deckpage .deck .dd{display:block;font-size:11.5px;color:var(--txt-dim);line-height:1.5;margin-top:2px;}
+  /* BU-51: never break inside a word/name in the deck description;
+     anywhere is only the last-resort overflow guard. */
+  #deckpage .deck .dd{display:block;font-size:11.5px;color:var(--txt-dim);line-height:1.5;margin-top:2px;word-break:keep-all;overflow-wrap:anywhere;}
   #deckpage .deck.sel{background:#3a2a10;border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold);}
   #deckpage .deck.sel .dn{color:#ffe9a8;}
   #deckpage .deck .check{position:absolute;top:7px;right:7px;width:9px;height:9px;border-radius:50%;background:var(--gold);box-shadow:0 0 7px var(--gold);display:none;}
   #deckpage .deck.sel .check{display:block;}
   #deckpage .seg3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;width:100%;}
   #deckpage .seg3 button{min-height:44px;font-size:14px;}
-  #deckpage .settings{width:100%;margin-top:6px;border-top:1px solid #2c2110;padding-top:5px;flex:0 0 auto;}
+  /* BU-50: the settings block absorbs the page's slack at the
+     bottom (auto margin collapses to 0 when the page scrolls, so
+     short heights keep the BU-82 fit exactly). */
+  #deckpage .settings{width:100%;margin-top:auto;border-top:1px solid #2c2110;padding-top:5px;flex:0 0 auto;}
   #deckpage .srow{display:flex;align-items:center;gap:10px;margin-bottom:4px;width:100%;}
   #deckpage .srow .sl{width:86px;flex:none;font-size:12px;color:#c9b586;text-align:left;}
   #deckpage .srow .seg{flex:1;margin-top:0;flex-wrap:nowrap;}
@@ -1127,12 +1167,16 @@
      composited or live — can show through. */
   #deckcat{display:none;justify-content:flex-start;overflow:hidden;padding:10px 14px 12px;align-items:stretch;text-align:left;background:#0d0b08;}
   #deckcatback,#deckviewback{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:12.5px;padding:9px 12px;cursor:pointer;flex:0 0 auto;}
-  .catlist{display:flex;flex-direction:column;gap:10px;width:100%;margin-top:14px;}
+  /* BU-50: the category list fills the page height and centres its
+     buttons as a group (was: buttons in the top third, ~60% empty). */
+  .catlist{display:flex;flex-direction:column;gap:10px;width:100%;margin-top:14px;flex:1 1 auto;justify-content:center;}
   .catbtn{background:#1d1508;color:var(--txt);border:1px solid #4a3a1c;border-radius:12px;font-size:15px;font-weight:700;padding:16px 14px;text-align:left;cursor:pointer;letter-spacing:.03em;}
   #deckmodal{display:none;position:absolute;inset:0;z-index:70;background:#000a;align-items:center;justify-content:center;padding:18px;}
   .dm-panel{background:#14100a;border:1px solid var(--gold-dim);border-radius:14px;width:100%;max-width:430px;max-height:86dvh;display:flex;flex-direction:column;padding:12px;}
   .dm-head{display:flex;align-items:center;gap:10px;flex:0 0 auto;}
-  .dm-title{font-size:15px;font-weight:700;color:var(--gold);letter-spacing:.05em;flex:1 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  /* BU-51: the category title wraps to a second line instead of
+     being cut mid-parenthesis («Genesys環境テーマ（2026年10月…»). */
+  .dm-title{font-size:15px;font-weight:700;color:var(--gold);letter-spacing:.05em;flex:1 1 auto;line-height:1.35;}
   #deckmodalx{flex:none;width:36px;height:36px;background:var(--panel2);color:var(--gold);border:1px solid var(--gold-dim);border-radius:8px;font-size:16px;cursor:pointer;}
   .dm-body{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;margin-top:10px;}
   #deckmodal .decklist{flex:1 1 auto;min-height:0;min-width:0;display:flex;flex-direction:column;flex-wrap:nowrap;gap:8px;overflow-y:auto;overflow-x:hidden;padding:2px;}
@@ -1140,7 +1184,7 @@
   #deckmodal .deck img{width:26px;height:36px;object-fit:cover;border-radius:4px;flex:none;}
   #deckmodal .deck .txt{min-width:0;flex:1 1 auto;}
   #deckmodal .deck .dn{display:block;font-size:13px;font-weight:700;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  #deckmodal .deck .dd{display:block;font-size:11.5px;color:var(--txt-dim);line-height:1.5;margin-top:2px;}
+  #deckmodal .deck .dd{display:block;font-size:11.5px;color:var(--txt-dim);line-height:1.5;margin-top:2px;word-break:keep-all;overflow-wrap:anywhere;}
   #deckmodal .deck.sel{background:#3a2a10;border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold);}
   #deckmodal .deck.sel .dn{color:#ffe9a8;}
   #deckmodal .deck .check{position:absolute;top:7px;right:7px;width:9px;height:9px;border-radius:50%;background:var(--gold);box-shadow:0 0 7px var(--gold);display:none;}

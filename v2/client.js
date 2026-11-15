@@ -18,6 +18,7 @@ let phaseAction = null;     // {label, bytes} for the phase button
 let menuActions = [];       // extra idle actions (hand shuffle)
 let placeCtx = null;        // active SELECT_PLACE/DISFIELD interaction
 let lastPlaceCard = null;   // {key, code} of a just-chosen summon/set action
+let lastPlaceSel = null;    // BU-21: {con, loc, seq} of the placement answer just sent (position sheet names it)
 let pendingAttacker = null; // {code} of a just-chosen 攻撃 action (BATTLECMD)
 let promptAttacker = null;  // pendingAttacker, bound to the prompt it preceded
 let dismissedChains = new Set(); // chain-candidate dismissals (this chain only)
@@ -569,9 +570,11 @@ const DECK_BLURB = {
   ishizu: 'イシズ・墓地を入れ替える逆転のデッキ',
   gg: '三魔神の合体と壁のデッキ',
   superquant: '超量を重ねてグレート・マグナスを呼ぶデッキ',
-  elfennotes: 'Genesys環境テーマのエルフェンノーツデッキ（100pt組み直し）',
-  whiteforest: 'Genesys環境テーマの白き森デッキ（100pt組み直し）',
-  monarch: '従騎から帝をアドバンス召喚するクラシックデッキ（領域なし・100pt）',
+  // BU-51: the pt total is appended by deckMetaLine itself, so the
+  // blurbs no longer repeat it — shorter lines, fewer mid-name wraps.
+  elfennotes: 'Genesys環境テーマのエルフェンノーツデッキ',
+  whiteforest: 'Genesys環境テーマの白き森デッキ',
+  monarch: '従騎から帝をアドバンス召喚するクラシックデッキ（領域なし）',
 };
 const DECK_CATEGORIES = [
   { id: 'character', label: 'キャラクターデッキ' },
@@ -617,12 +620,25 @@ function deckMetaLine(k) {
   if (deckPtCache.has(k)) s += '・' + deckPtCache.get(k) + 'pt';
   return s;
 }
+// BU-52: a deck row's face is the deck's own key card, not the
+// shared placeholder (codes verified against data.json). Saved /
+// future decks fall back to their first main-deck card, and a
+// card with no art at all falls back to the placeholder.
+const DECK_KEYCARD = { ishizu: 45409943, gg: 8505920, superquant: 84025439, elfennotes: 13597785, whiteforest: 4398189, monarch: 96570609 };
+function deckThumbSrc(key) {
+  let code = DECK_KEYCARD[key];
+  if (code == null) { const d = deckListOf(key); if (d && d.main && d.main.length) code = d.main[0]; }
+  if (code == null) return null;
+  return cardArtFile(code, false, key);
+}
 function renderDeckCurrents() {
   const fill = (el, key) => {
     if (!el) return;
     const dn = el.querySelector('.dn'), dd = el.querySelector('.dd');
     if (dn) dn.textContent = deckDisplayName(key);
     if (dd) dd.textContent = deckMetaLine(key);
+    const img = el.querySelector('img'), src = deckThumbSrc(key);
+    if (img && src) img.src = src;
   };
   fill($('mydeckcur'), myDeckKey);
   fill($('opdeckcur'), opDeckKey);
@@ -682,6 +698,13 @@ function updateDeckSum() {
   // text content is identical, the break opportunities now sit
   // only between units.
   el.innerHTML = nbHTML(txt);
+  // BU-47: shrink-to-fit — step the font down (floor 10.5px)
+  // while the summary still needs a second line, so the common
+  // deck pairings stand on one line. jsdom reports height 0,
+  // which reads as "fits" and leaves the size untouched.
+  el.style.fontSize = '';
+  let fs = 12;
+  while (el.scrollHeight > 20 && fs > 10.5) { fs -= 0.5; el.style.fontSize = fs + 'px'; }
   refreshStartGate();
   renderDeckCurrents();
   dpCueUpdate(); // BU-82: a selection change can grow the settings stack
@@ -746,7 +769,7 @@ function renderSavedDecks() {
     const d = document.createElement('div');
     d.className = 'deck saved saveditem' + (myDeckKey === key ? ' sel' : '');
     d.dataset.k = key;
-    d.innerHTML = '<img src="../assets/card-art-placeholder-s.jpg" alt=""><span class="txt"><span class="dn"></span><span class="dd"></span></span><span class="check"></span><button class="decklist-btn">一覧</button><button class="deckdel">削除</button>';
+    d.innerHTML = '<img src="' + (deckThumbSrc(key) || '../assets/card-art-placeholder-s.jpg') + '" alt=""><span class="txt"><span class="dn"></span><span class="dd"></span></span><span class="check"></span><button class="decklist-btn">一覧</button><button class="deckdel">削除</button>';
     d.querySelector('.dn').textContent = r.name;
     d.querySelector('.dd').textContent = savedMetaLine(r);
     d.addEventListener('click', () => { playClick(); selectMyDeck(key); });
@@ -964,7 +987,7 @@ function buildDeckRows() {
       const b = document.createElement('button');
       b.className = 'deck' + ((contId === 'seg-mydeck' ? myDeckKey : opDeckKey) === k ? ' sel' : '');
       b.dataset.v = k;
-      b.innerHTML = '<img src="../assets/card-art-placeholder-s.jpg" alt=""><span class="txt"><span class="dn"></span><span class="dd"></span></span><span class="check"></span>';
+      b.innerHTML = '<img src="' + (deckThumbSrc(k) || '../assets/card-art-placeholder-s.jpg') + '" alt=""><span class="txt"><span class="dn"></span><span class="dd"></span></span><span class="check"></span>';
       b.querySelector('.dn').textContent = deckDisplayName(k);
       b.querySelector('.dd').textContent = deckMetaLine(k);
       const vb = document.createElement('button');
@@ -1793,18 +1816,30 @@ function ensureBandFits() {
 // a pathological long card name — never the line as a whole.)
 // Source context of a prompt (Phase 2 item 1): the chain link whose effect is
 // asking. Attached by the engine driver from the core's CHAINING stream.
+// BU-57: quote a card name without ever doubling the brackets —
+// a name that itself carries 「」/《》 (《マジックカード「死者蘇生」》)
+// is wrapped in 《》, every other name in 「」.
+function qName(name) {
+  const n = String(name == null ? '' : name);
+  return /[「」《》]/.test(n) ? '《' + n + '》' : '「' + n + '」';
+}
 function contextLineHTML(prompt) {
   const ctx = prompt && prompt.context;
   if (!ctx) return '';
   // Name the effect number too when the asking link's desc pins it
   // (same wording everywhere a context line appears).
   const fx = resolveEffect(ctx.code, ctx.desc);
-  const what = fx && fx.n ? '」の効果' + CIRCLED_NUM[fx.n - 1] : '」の効果';
-  return '<div class="ctx">' + nbHTML('「' + cardName(ctx.code) + what + 'による確認（' + locLabel(ctx) + '）') + '</div>';
+  const what = 'の効果' + (fx && fx.n ? CIRCLED_NUM[fx.n - 1] : '');
+  // BU-14: the source's location LEADS the line as attribution
+  // («自分の手札の「X」の効果①による確認») — trailing it in
+  // parentheses read as "the place you are choosing from now",
+  // which goes stale across a multi-step selection while the
+  // source (the thing the line actually names) never changes.
+  return '<div class="ctx">' + nbHTML(locLabel(ctx) + 'の' + qName(cardName(ctx.code)) + what + 'による確認') + '</div>';
 }
 function contextText(prompt) {
   const ctx = prompt && prompt.context;
-  return ctx ? '「' + cardName(ctx.code) + '」の効果：' : '';
+  return ctx ? qName(cardName(ctx.code)) + 'の効果：' : '';
 }
 // ---------------------------------------------------------------- audio (item 6)
 // User-assigned files only (assets/se, assets/bgm). No generated audio.
@@ -2272,6 +2307,32 @@ function nameLimitReason(code) {
   const rec = usedFxByCode.get(code);
   return rec && rec.any ? 'このカード名のカードは１ターンに１枚しか発動できません' : null;
 }
+// BU-39: why a tapped hand card cannot be played right now —
+// ONLY reasons the client can derive with certainty from the
+// live state, in the order the older tap handler established
+// (battle-phase lock, then a spent card-name limit), plus the
+// two the old handler could not say: a full zone row (the core
+// offers no summon/set/activation that needs a zone it cannot
+// have) and the opponent's turn. Anything else returns null and
+// the preview simply shows no reason — never a guessed one.
+function handTapReason(code, key) {
+  if (!duelState || code == null) return null;
+  const d = cardData(code); if (!d) return null;
+  const hasAct = key ? actionMap.has(key) : false;
+  if (cmdPromptOpen && !hasAct) {
+    if (currentPrompt && currentPrompt.prompt.name === 'SELECT_BATTLECMD' && isMonster(code)) return 'バトルフェイズ中は通常召喚できません';
+    const nl = nameLimitReason(code); if (nl) return nl;
+    const me = duelState.players[HP];
+    if (isMonster(code) && me.mzone.slice(0, 5).every(c => c)) return 'モンスターゾーンに空きがありません';
+    if (d.type & 0x6) {
+      if (d.type & 0x80000) { if (me.szone[5]) return 'フィールドゾーンに空きがありません'; }
+      else if ([0, 1, 2, 3, 4].every(i => me.szone[i])) return '魔法・罠ゾーンに空きがありません';
+    }
+    return null;
+  }
+  if (!currentPrompt && duelState.winner == null && duelState.turnPlayer !== HP) return '相手のターンです';
+  return null;
+}
 let _graveSentCards = null; // Map code -> printed number of the segment carrying the clause
 function graveSentCards() {
   if (_graveSentCards) return _graveSentCards;
@@ -2646,10 +2707,54 @@ function settleConfirmSheet() {
   const r = confirmSheetResolve; confirmSheetResolve = null;
   if (r) r();
 }
+// BU-58: the most recent batch of cards the game itself showed
+// this player (MSG_CONFIRM_CARDS), kept after the confirm sheet
+// drains the queue — a selection prompt that follows for exactly
+// those cards may name them (see confirmRevealIdx). promptsAgo
+// counts human prompts dispatched since the batch landed; the
+// reveal is only offered to the first one.
+let lastConfirm = null;
 function queueConfirmEvents(evs) {
   for (const ev of evs || []) {
-    if (ev.kind === 'confirm' && ev.shown === HP && ev.cards && ev.cards.some(c => c.code)) pendingConfirms.push(ev);
+    if (ev.kind === 'confirm' && ev.shown === HP && ev.cards && ev.cards.some(c => c.code)) {
+      pendingConfirms.push(ev);
+      lastConfirm = { cards: ev.cards.filter(c => c.code), turn: duelState ? duelState.turnCount : null, promptsAgo: 0 };
+    }
   }
+}
+// BU-58: candidate indices that may be shown face-up because the
+// game just confirmed exactly this set to the player, as a Map of
+// index -> the code to display. ALL of: same controller +
+// location across the hidden candidates; every candidate carries
+// a code; the confirmed set for that (con, loc) has the same
+// size; and the two code MULTISETS are exactly equal. Each tile
+// then displays its OWN code's name/art — the match only proves
+// the identities are already public to this player, it never
+// assigns one. seq is deliberately NOT used: measured in the
+// Alphan scene (probe bfdbg, 2026-11-15), the candidates' deck
+// seqs (23/9/0) had nothing in common with the confirmed set's
+// (14/24/19) although the codes matched exactly — deck seqs are
+// not stable across an excavation. A candidate without a code
+// cannot be verified and stays hidden. Any doubt keeps the card
+// hidden — the reveal is never guessed.
+function confirmRevealIdx(o) {
+  const out = new Map();
+  if (!o || !o.cards || !lastConfirm || lastConfirm.promptsAgo > 1) return out;
+  if (lastConfirm.turn != null && duelState && lastConfirm.turn !== duelState.turnCount) return out;
+  const hidden = [];
+  o.cards.forEach((c, i) => { const e = c.ref || c; if (selCardHidden(e, o.prompt)) hidden.push([e, i]); });
+  if (!hidden.length) return out;
+  const con = hidden[0][0].con, loc = hidden[0][0].loc;
+  if (hidden.some(([e]) => e.con !== con || e.loc !== loc)) return out;
+  if (hidden.some(([e]) => !e.code)) return out;
+  const conf = lastConfirm.cards.filter(c => c.con === con && c.loc === loc && c.code);
+  if (conf.length !== hidden.length) return out;
+  const tally = (arr) => { const m = new Map(); for (const c of arr) m.set(c.code, (m.get(c.code) || 0) + 1); return m; };
+  const a = tally(conf), b = tally(hidden.map(([e]) => e));
+  if (a.size !== b.size) return out;
+  for (const [code, n] of a) if (b.get(code) !== n) return out;
+  for (const [e, i] of hidden) out.set(i, e.code);
+  return out;
 }
 function confirmGroupLabel(con, loc) {
   const whose = con === HP ? '自分' : '相手';
@@ -2678,8 +2783,12 @@ function showPendingConfirms() {
       // top of the deck is the HIGHEST seq (the mirror's deckTop rule)
       const sorted = g.cards.slice().sort((a, b) => g.loc === E.LOC.DECK ? b.seq - a.seq : a.seq - b.seq);
       html += '<div class="ttl" style="margin-top:8px">' + confirmGroupLabel(g.con, g.loc) + '</div>' +
-        sorted.map((c, i) => '<div class="sortrow" data-info="' + c.code + '">' +
-          (g.loc === E.LOC.DECK ? (i + 1) + '枚目：' : '') + cardName(c.code) + '<span class="chev">›</span></div>').join('');
+        // BU-45: every row carries the card's face (the row tap
+        // already opens the detail pop; the thumb is the same
+        // small art the board tiles use, deck context included).
+        sorted.map((c, i) => { const f = cardArtFile(c.code, false, deckKeyOfSeat(c.con)); return '<div class="sortrow" data-info="' + c.code + '">' +
+          '<span class="cthumb"' + (f ? ' style="background-image:url(' + f + ')"' : '') + '></span>' +
+          (g.loc === E.LOC.DECK ? (i + 1) + '枚目：' : '') + cardName(c.code) + '<span class="chev">›</span></div>'; }).join('');
     }
     html += '<div class="btnrow"><button class="bigbtn" id="sheet-cancel">閉じる</button></div>';
     sheetOpenView(html);
@@ -3251,9 +3360,47 @@ function fxPhaseClearSeated() { // duel reset: no seated phase, no hairline
   const pi = $('phaseinfo'); if (pi) pi.classList.remove('fx-seated');
   if (fxPhaseHairlineEl) { try { fxPhaseHairlineEl.remove(); } catch (e) {} fxPhaseHairlineEl = null; }
 }
+// BU-44: a phase banner must never paint over a decision UI or
+// the board's stat plates. Three guards, one seat:
+//  - seat: the label rides the LP band (the neutral strip between
+//    the fields), not 38% down the screen over the monster rows.
+//  - defer: if a decision UI is already open when the transition
+//    lands, the banner waits for it to close (cap ~2.6s, then it
+//    settles silently into the header readout, no banner).
+//  - cut: if a decision UI opens mid-banner, the banner settles
+//    instantly (fxPhaseBannerCut, called from the UI openers).
+let fxPhasePending = null;
+function fxDecisionUiOpen() {
+  const sw = $('sheetwrap'), dk = $('dock'), cu = $('chainui');
+  return !!((sw && sw.classList.contains('on')) || (dk && dk.className === 'on') || (cu && cu.classList.contains('on')) || placeCtx);
+}
+function fxPhaseSettleSilent() {
+  const hair = fxPhaseHairline(); if (hair) hair.style.opacity = '0.30';
+  const pi = $('phaseinfo'); if (pi) pi.classList.add('fx-seated');
+}
+function fxPhaseBannerCut() {
+  if (fxPhasePending) { try { clearInterval(fxPhasePending.timer); } catch (e) {} fxPhasePending = null; fxPhaseSettleSilent(); }
+  if (fxBannerScene && !fxBannerScene.dead) {
+    fxBannerScene.dead = true; fxBannerScene = null;
+    if (fxBannerEl) { try { fxBannerEl.remove(); } catch (e) {} fxBannerEl = null; }
+    if (fxPhaseSweepEl) { try { fxPhaseSweepEl.remove(); } catch (e) {} fxPhaseSweepEl = null; }
+    fxPhaseSettleSilent();
+  }
+}
 function fxPhaseBanner(fam) {
   const info = FX_PHASES[fam]; if (!info) return;
   const layer = fxLayerEl(); if (!layer) return;
+  if (fxDecisionUiOpen()) {
+    if (fxPhasePending) { fxPhasePending.fam = fam; fxPhasePending.since = performance.now(); return; }
+    const pend = { fam, since: performance.now(), timer: null };
+    pend.timer = setInterval(() => {
+      if (fxPhasePending !== pend) { try { clearInterval(pend.timer); } catch (e) {} return; }
+      if (!fxDecisionUiOpen()) { clearInterval(pend.timer); fxPhasePending = null; fxPhaseBanner(pend.fam); }
+      else if (performance.now() - pend.since > 2600) { clearInterval(pend.timer); fxPhasePending = null; fxPhaseSettleSilent(); }
+    }, 120);
+    fxPhasePending = pend;
+    return;
+  }
   if (fxBannerEl) { try { fxBannerEl.remove(); } catch (e) {} fxBannerEl = null; }
   if (fxBannerScene && !fxBannerScene.dead) fxBannerScene.dead = true;
   if (fxPhaseSweepEl) { try { fxPhaseSweepEl.remove(); } catch (e) {} fxPhaseSweepEl = null; }
@@ -3269,6 +3416,14 @@ function fxPhaseBanner(fam) {
   d.style.opacity = '0';
   layer.appendChild(d);
   fxBannerEl = d;
+  // BU-44 seat: centre the label on the LP band. The band's deck
+  // names are covered for the banner's 820 ms; the LP numerals
+  // ride the plates' right edge, clear of the glyphs, and the
+  // phase name seats into the header readout when it settles.
+  // No measurable band (jsdom) keeps the CSS seat.
+  const lpR = $('lpband') ? fxRel($('lpband')) : null;
+  const lpSeat = !!(lpR && lpR.h > 0);
+  if (lpSeat) d.style.top = Math.round(lpR.y + lpR.h / 2) + 'px';
   // ---- the sweep segment: a 2px gold line (gradient + bright
   // leading tip, CSS .fx-phase-sweep) that runs left -> right
   // across the TOP of the header (prototype offset: bar top + 3px,
@@ -3300,7 +3455,9 @@ function fxPhaseBanner(fam) {
       const inU = FXE.snap(fxSeg(t, 0, 160));
       const outU = FXE.inQuad(fxSeg(t, 700, 820));
       d.style.opacity = String(Math.min(inU, 1 - outU));
-      d.style.transform = 'translateY(' + ((1 - inU) * 4).toFixed(2) + 'px)';
+      d.style.transform = lpSeat
+        ? 'translateY(calc(-50% + ' + ((1 - inU) * 4).toFixed(2) + 'px))'
+        : 'translateY(' + ((1 - inU) * 4).toFixed(2) + 'px)';
       if (sweep) {
         const u = FXE.outCubic(fxSeg(t, 0, 650));
         sweep.style.transform = 'translateX(' + (-segW + travel * u).toFixed(1) + 'px)';
@@ -4858,6 +5015,15 @@ function fxAtkBanner() {
   d.className = 'fx-atkbanner';
   d.textContent = '直接攻撃';
   layer.appendChild(d);
+  // BU-54: straddle the LP band's bottom edge instead of the old
+  // top:30% full-width seat, which painted over the attacker's
+  // monster row and its ATK/DEF plates. Here the banner's glyphs
+  // sit between the fields: it touches the lower sliver of the
+  // LP band and the top edge of the far field's art — no stat
+  // plate and no LP numeral (both ride clear of the centre) is
+  // covered. No measurable band (jsdom) keeps the CSS seat.
+  const lpR = $('lpband') ? fxRel($('lpband')) : null;
+  if (lpR && lpR.h > 0) d.style.top = Math.round(lpR.y + lpR.h - 16) + 'px';
   fxAnim(d, [{ opacity: 0 }, { opacity: 1, offset: 0.2 }, { opacity: 1, offset: 0.75 }, { opacity: 0 }], { duration: 900, easing: 'ease-out' });
   fxKill(d, 940);
 }
@@ -5112,9 +5278,47 @@ function fxNoticeShow(text, sub, noBeat) {
      over the pile row (measured in the wild, bottom 94 vs
      pile top 80). */
   const hb = document.getElementById('header');
+  /* bigfix-1115 (the BU-83 tradeoff, revisited): a long notice
+     used to span the header's full width and, growing up from
+     its bottom anchor, covered the turn readout and the chips
+     for its whole dwell — the header's own information went
+     unreadable exactly while events were flying. DESIGN
+     DECISION (recorded in bigfix-1115/RECORD.md): the strip
+     keeps its bottom anchor and its full K5 text, but its
+     horizontal span is confined to the LOGLINE's column — the
+     notice temporarily replaces the latest-event line (the same
+     information channel), while the turn readout, the phase
+     name and buttons, the auto-pass chip, the opponent-hand
+     chip and the FX button stay visible. If the confined text
+     would grow past the logline's top edge, the font steps down
+     (12.5 -> 10px floor) before any of row 1 is covered; only a
+     text that still overflows at 10px may rise into row 1, and
+     even then only inside the logline's column. */
+  const lg = document.getElementById('logline');
+  let fitKey = '';
   const anchorNotice = () => {
     if (!hb) { d.style.top = '2px'; return; }
     const lr = layer.getBoundingClientRect(), hr = hb.getBoundingClientRect();
+    if (lg && lr.width) {
+      const gr = lg.getBoundingClientRect();
+      if (gr.width > 0) {
+        d.style.left = Math.max(0, Math.round(gr.left - lr.left)) + 'px';
+        d.style.right = Math.max(0, Math.round(lr.right - gr.right)) + 'px';
+        const key = Math.round(gr.width) + 'x' + Math.round(hr.height);
+        if (key !== fitKey) { // re-fit only when the seat changed (the anchor below still runs per frame)
+          fitKey = key;
+          const nt = d.querySelector('.nt'), ns = d.querySelector('.ns');
+          let fs = 12.5;
+          if (nt) nt.style.fontSize = '';
+          if (ns) ns.style.fontSize = '';
+          while (nt && d.offsetHeight > Math.max(0, hr.bottom - gr.top) && fs > 9) {
+            fs -= 0.5;
+            nt.style.fontSize = fs + 'px';
+            if (ns) ns.style.fontSize = Math.max(8, fs - 1.5) + 'px';
+          }
+        }
+      }
+    }
     d.style.top = Math.max(0, Math.round(hr.bottom - lr.top - 2 - d.offsetHeight)) + 'px';
   };
   anchorNotice();
@@ -5630,9 +5834,16 @@ function fxSetActivate(code, linkNo, targetKey, deckKey, con) {
   // write) sits over the flipped card's own tile. The frame is over
   // the face-up tile, so it does not depend on the card-back art.
   if (linkNo >= 2) {
-    const bar = $('chainbar');
-    let wx = ar.cx, wy = ar.y + ar.h * 0.36 - 70; // fallback: above the tilted pop
-    if (bar) { const br = fxRel(bar); if (br.w > 0 || br.h > 0) { wx = br.cx; wy = br.y - 16; } }
+    // setact word seat (bigfix-1115, defect confirmed by the
+    // triage round): the word used to stand 16px above the chain
+    // bar — but in the current layout the bar itself sits at the
+    // very top of the screen (y=0), so the word landed at
+    // y −30..−1 and never appeared (measured on the published
+    // build, CDP cast + DOM sampling). The word now follows the
+    // normal activation grammar (fxChainSceneV3): it stands above
+    // the presentation card itself — here the tilted pop (74x96
+    // at 36% height) — clamped so it can never leave the screen.
+    const wx = ar.cx, wy = Math.max(14, ar.y + ar.h * 0.36 - 96 / 2 - 40);
     fxChainWord(wx, wy, 820, beatStart);
     if (!targetKey && duelState && duelState.players) { // fallback: locate the tile from the standing state by code
       for (let con = 0; con < 2 && !targetKey; con++) {
@@ -6623,12 +6834,17 @@ function openLogHistory() {
       '<div class="loghistrow"><span class="lt">T' + Math.max(1, e.turn) + '</span>' + e.text + '</div>').join('');
     sub = '直近 ' + Math.min(30, logHist.length) + ' 件（新しい順）';
   }
-  sheetOpenView('<div class="ttl">対戦の履歴</div><div class="sub">' + sub + '</div>' + rows +
+  // BU-62 (rest): the history is a flex sheet — title + count stay
+  // pinned at the top, ONLY the entries scroll, and the close row
+  // is always on screen. The old single-scroll sheet opened at the
+  // newest entry with its own title scrolled out of sight.
+  sheetOpenView('<div class="ttl">対戦の履歴</div><div class="sub">' + sub + '</div><div class="sheet-scroll">' + rows + '</div>' +
     '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">閉じる</button></div>');
+  $('sheet').classList.add('flexsheet');
   $('sheet-cancel').addEventListener('click', () => { playClick(); sheetClose(); });
   // Open at the newest entry (the bottom of the chronological list).
-  const sh = $('sheet');
-  requestAnimationFrame(() => { try { sh.scrollTop = sh.scrollHeight; } catch (e) {} });
+  const sc = $('sheet').querySelector('.sheet-scroll');
+  requestAnimationFrame(() => { try { if (sc) sc.scrollTop = sc.scrollHeight; } catch (e) {} });
 }
 // BU-78: the hand bar's scroll cue (see the .hcard note in
 // index.html). jsdom reports 0 widths — the cue simply stays
@@ -6689,7 +6905,11 @@ function render(state) {
   me.hand.forEach(c => { if (c.code != null) handCounts[c.code] = (handCounts[c.code] || 0) + 1; });
   $('hand').innerHTML = me.hand.map((c, i) => {
     const key = HP + ':' + E.LOC.HAND + ':' + i;
-    const act = (actionMap.has(key) ? ' actionable' : '') + (lastPlaceCard && lastPlaceCard.key === key ? ' placing' : '') + (cmdPromptOpen && !actionMap.has(key) ? ' dim' : '');
+    // BU-39: on the opponent's turn (no prompt of mine live) the
+    // hand greys too, so the tap reason below reads as a state,
+    // not as a dead tap.
+    const act = (actionMap.has(key) ? ' actionable' : '') + (lastPlaceCard && lastPlaceCard.key === key ? ' placing' : '') +
+      ((cmdPromptOpen && !actionMap.has(key)) || (!currentPrompt && state.winner == null && state.turnPlayer !== HP && !actionMap.has(key)) ? ' dim' : '');
     const big5 = c.code != null && isMonster(c.code) && (Math.abs(cardData(c.code).atk) >= 10000 || Math.abs(cardData(c.code).def) >= 10000);
     // the band is the NAME's (name + stats on one 16px line
     // measured wider than the card in live play — the name was
@@ -6861,14 +7081,38 @@ function placeSheetBtns() {
   const wrap = $('sheetwrap'), sheet = $('sheet');
   const pk = $('peekbtn'), sx = $('sheetx');
   if (!wrap || !sheet || !wrap.classList.contains('on')) return;
-  if (wrap.classList.contains('peek')) { if (pk) pk.style.bottom = ''; if (sx) sx.style.bottom = ''; return; }
+  // BU-36: the two buttons must never cover the header's controls
+  // (phase / history buttons, turn and log readouts). A tall
+  // sheet's top edge reaches into the header, and in peek the CSS
+  // seat is the screen's top — both put the buttons over the
+  // header. The header's bottom edge is the hard limit: in peek
+  // the buttons sit just below it; otherwise a button whose
+  // natural seat (8px above the sheet's top edge) would cross it
+  // slides down over the sheet's own top edge instead.
+  const hdr = $('header');
+  const hdrB = hdr && hdr.getBoundingClientRect ? hdr.getBoundingClientRect().bottom : 0;
+  if (wrap.classList.contains('peek')) {
+    const t = hdrB ? Math.round(hdrB + 4) + 'px' : '';
+    if (pk) { pk.style.bottom = ''; pk.style.top = t; }
+    if (sx) { sx.style.bottom = ''; sx.style.top = t; }
+    return;
+  }
+  if (pk) pk.style.top = '';
+  if (sx) sx.style.top = '';
   // layout-fix5 M1: the sheet can be lifted by ensureSheetFits
   // (inline bottom) when its anchor sits below the visible area —
   // the buttons ride on the sheet's lifted top edge, not the wrap's.
   const lift = parseFloat(sheet.style.bottom) || 0;
-  const b = (sheet.offsetHeight + lift + 8) + 'px';
-  if (pk) pk.style.bottom = b;
-  if (sx) sx.style.bottom = b;
+  const b = sheet.offsetHeight + lift + 8;
+  const wrapH = wrap.offsetHeight || 0;
+  if (wrapH && hdrB) {
+    // button top (= wrapH - bottom - height) must stay >= hdrB + 4
+    if (pk) pk.style.bottom = Math.min(b, wrapH - Math.round(hdrB) - 4 - 52) + 'px';
+    if (sx) sx.style.bottom = Math.min(b, wrapH - Math.round(hdrB) - 4 - 48) + 'px';
+    return;
+  }
+  if (pk) pk.style.bottom = b + 'px';
+  if (sx) sx.style.bottom = b + 'px';
 }
 // layout-fix5 M1: post-open fit self-check for sheets. The budget
 // is re-measured at open (sheetOpen), but a WebView whose dvh /
@@ -6898,7 +7142,18 @@ function ensureSheetFits() {
     // path cannot be exercised in Chrome — the layout viewport
     // always equals the window there — so it is recorded here and
     // confirmed by real-play re-verification, not by the rig.)
-    if (r.bottom > vh.visibleBottom + 1) {
+    // BU-86: a peeked sheet's bottom is SUPPOSED to sit below the visible area —
+    // the peek transform slides it down on purpose (translateY(calc(100% - 44px))).
+    // The lift below reads that off-screen bottom as a defect and lifts the sheet
+    // back up by exactly the peek distance, cancelling the peek while the peek
+    // class, peekbar and button seats all stay peeked (measured in the mirror:
+    // a peek tap inside the 360ms window after sheetOpen leaves the sheet at
+    // y=108 with transform 468 at +650ms — the 045 half-state). The 360ms timer
+    // from sheetOpen fires after a fast peek tap, so the defect bites exactly
+    // when the player peeks quickly. Skip the lift while peeked; the scroller
+    // path below still runs, and an unpeeked sheet is checked as before.
+    const peeked = $('sheetwrap').classList.contains('peek');
+    if (!peeked && r.bottom > vh.visibleBottom + 1) {
       const excess = r.bottom - vh.visibleBottom;
       sheet.style.maxHeight = Math.max(120, vh.visibleBottom - 108) + 'px';
       sheet.style.bottom = excess + 'px';
@@ -6929,6 +7184,7 @@ function ensureSheetFits() {
 }
 function sheetOpen(html, kind) {
   sheetKind = kind || 'prompt';
+  fxPhaseBannerCut(); // BU-44: a decision UI opening settles any live phase banner
   closeInfoPop();
   const wrap = $('sheetwrap'), sheet = $('sheet');
   // layout-fix5 M1: the sheet's height budget (--appvh) was frozen
@@ -7161,6 +7417,7 @@ function showChainTray(prompt, cause, liveIdx, openDock) {
     chainTrayDefer = { timer };
     return;
   }
+  fxPhaseBannerCut(); // BU-44: the tray opening settles any live phase banner
   const shown = liveIdx.slice(0, 4).map(i => prompt.entries[i]);
   const more = liveIdx.length - shown.length;
   const wcls = shown.length >= 4 ? ' w32' : shown.length === 3 ? ' w40' : '';
@@ -7175,6 +7432,19 @@ function showChainTray(prompt, cause, liveIdx, openDock) {
   const ap = document.getElementById('app'); if (ap) ap.classList.remove('traypeek');
   const pk = $('ctpeek'); if (pk) pk.textContent = '盤面を見る';
   host.classList.add('on');
+  // BU-74 (rest): a floating card's name steps its font down
+  // (10px -> 8px floor) before it ever truncates — at the wider
+  // card most names now stand whole. jsdom measures 0 widths and
+  // the loop simply never runs there.
+  tray.querySelectorAll('.ct-name').forEach(el => {
+    let fs = 10;
+    while (el.scrollWidth > el.clientWidth + 1 && fs > 8) { fs -= 0.5; el.style.fontSize = fs + 'px'; }
+    // The longest pool names (11+ chars, e.g. 教導の騎士フルルドリス
+    // measured 88px at the 8px floor against the 72px card) still
+    // overflow after the shrink — those wrap to two lines instead
+    // of truncating. Short names never reach this branch.
+    if (el.scrollWidth > el.clientWidth + 1) el.classList.add('wrap2');
+  });
   chainTrayCtx = { draw: openDock };
   fxRecord('chaintray', { action: 'show', count: liveIdx.length, forced: !!prompt.forced });
   const yes = tray.querySelector('.ct-yes');
@@ -7233,6 +7503,20 @@ function syncFxBtnInert() {
   const inert = !!currentPrompt;
   b.classList.toggle('inert', inert);
   b.setAttribute('aria-disabled', inert ? 'true' : 'false');
+  syncChipInert();
+}
+// BU-37 (rest, confirmed a defect by the triage round): the
+// auto-pass chip had the same silent-return path the FX button
+// had — openDismissManager stands down during a prompt, and a
+// tap only clicked. Give the chip the same inert look while a
+// prompt is open. The chip's class list is owned by
+// updateAutoPassChip / flashAutoPass (on / flash), so the flag
+// is re-applied from there as well as from here.
+function syncChipInert() {
+  const el = $('autopass'); if (!el) return;
+  const inert = !!currentPrompt;
+  el.classList.toggle('inert', inert);
+  el.setAttribute('aria-disabled', inert ? 'true' : 'false');
 }
 function uiAnswer(prompt, state) {
   return new Promise((resolve) => {
@@ -7266,6 +7550,7 @@ function uiAnswer(prompt, state) {
     // the peeked detail stayed up behind the chain dock).
     { const sw = $('sheetwrap'); if (sw && sw.classList.contains('on') && sw.dataset.kind === 'view') sheetClose(); }
     currentPrompt = { prompt, resolve };
+    if (lastConfirm) lastConfirm.promptsAgo++; // BU-58: the reveal window is the first prompt after the batch
     syncFxBtnInert();
     // The 攻撃 action's target choice is the SELECT_CARD that
     // immediately follows it; bind the attacker to that one prompt
@@ -7342,6 +7627,11 @@ function dispatchPrompt(prompt, state) {
   // prompt that is about to render.
   closeInfoPop();
   if (prompt.name !== 'SELECT_PLACE' && prompt.name !== 'SELECT_DISFIELD' && prompt.name !== 'SELECT_POSITION') lastPlaceCard = null;
+  // BU-21: the recorded placement survives exactly one step — the
+  // SELECT_POSITION that directly follows the place answer. Any
+  // other prompt in between means the position question belongs
+  // to a different summon, and the line must not be shown.
+  if (prompt.name !== 'SELECT_POSITION') lastPlaceSel = null;
   switch (prompt.name) {
     case 'SELECT_IDLECMD': case 'SELECT_BATTLECMD': return uiCmd(prompt, state);
     case 'SELECT_CHAIN': return uiChain(prompt, state);
@@ -7521,7 +7811,11 @@ function openActionSheet(key) {
     ? offeredFx.map(n => { const seg = effectSegments(zoneCode).find(s => s.n === n); return seg ? fxBlockHTML(zoneCode, seg) : ''; }).join('')
     : '';
   const atkRow = atkReason ? '<div class="optbtn disabled">攻撃<span class="reason">' + atkReason + '</span></div>' : '';
-  sheetOpenView('<div class="ttl">' + title + '</div><div class="sub">' + locLabel({ con, loc, seq }) + (meta ? '／' + meta : '') + '</div>' +
+  // BU-38: the action sheet leads with the card's big art, the
+  // same seat the detail pop gives it — the sheet was the last
+  // card surface still opening on bare text.
+  const artBand = zoneCode != null ? '<div class="actart"' + artInline(zoneCode, true, deckKeyOfSeat(con)) + '>' + marksChipHTML(zoneCode) + '</div>' : '';
+  sheetOpenView('<div class="ttl">' + title + '</div><div class="sub">' + locLabel({ con, loc, seq }) + (meta ? '／' + meta : '') + '</div>' + artBand +
     acts.map((a, i) => '<button class="optbtn" data-action-idx="' + i + '">' + a.label + '</button>').join('') +
     atkRow +
     unusable +
@@ -7533,6 +7827,12 @@ function openActionSheet(key) {
   $('sheet').querySelectorAll('[data-action-idx]').forEach(b => b.addEventListener('click', () => {
     const a = acts[+b.dataset.actionIdx];
     if (a.label === '通常召喚' || a.label === '特殊召喚' || a.label === 'モンスターをセット' || a.label === '魔法・罠をセット') lastPlaceCard = { key, code: a.code };
+    // BU-53: activating a spell/trap FROM THE HAND is always
+    // followed by that card's own SELECT_PLACE, so the place
+    // banner can name it exactly like a summon/set does. A hand
+    // MONSTER's activation is excluded on purpose: the place it
+    // may ask for belongs to whatever it summons, not to itself.
+    if (a.activate && loc === E.LOC.HAND && a.code != null) { const d = cardData(a.code); if (d && (d.type & 0x6)) lastPlaceCard = { key, code: a.code }; }
     if (a.label === '攻撃') pendingAttacker = { code: a.code };
     playClick(); finishPrompt(a.bytes);
   }));
@@ -7727,6 +8027,7 @@ function chainPassDecision(prompt, state) {
 function updateAutoPassChip() {
   const el = $('autopass'); if (!el) return;
   if (Date.now() < autoPassFlashUntil) return; // flash text still showing
+  const hd = $('header'); if (hd) hd.classList.remove('apflash'); // BU-85: flash over, the log line wraps normally again
   if (dismissedDuel.size) {
     // BU-32: in 毎回 mode the dismissals are inert by design; the
     // chip must say so instead of implying suppression is active.
@@ -7736,11 +8037,29 @@ function updateAutoPassChip() {
     el.className = 'on';
   }
   else { el.className = ''; el.textContent = ''; }
+  syncChipInert(); // BU-37: className was just rewritten — re-apply the inert flag
 }
 function flashAutoPass(names) {
   const el = $('autopass'); if (!el) return;
+  // BU-85: the suppressed card's name gets its own line — one line truncated it
+  // (measured: 「自動パス：帝王の烈旋」 cut to 「自動パス：帝王の」 at 103px).
+  // The name is set via textContent, never HTML. The span is appended after a
+  // plain-text label; if the element cannot hold children (a minimal stub whose
+  // querySelector/appendChild are no-ops), the plain full text is restored so
+  // the flash still names the card (DK12) instead of throwing mid-flash.
   el.textContent = '自動パス：' + names;
+  try {
+    const sp = document.createElement('span');
+    sp.className = 'ap-name'; sp.textContent = names;
+    el.textContent = '自動パス：';
+    el.appendChild(sp);
+    if (!sp.isConnected) el.textContent = '自動パス：' + names;
+  } catch (e) {
+    el.textContent = '自動パス：' + names;
+  }
   el.className = 'on flash';
+  const hd = $('header'); if (hd) hd.classList.add('apflash'); // BU-85: keep the log line one line while flashing
+  syncChipInert(); // BU-37: same re-apply as updateAutoPassChip
   autoPassFlashUntil = Date.now() + 2600;
   setTimeout(updateAutoPassChip, 2700);
 }
@@ -7871,6 +8190,7 @@ function uiChain(prompt, state) {
                   : '<b>《' + (trig.code ? cardName(trig.code) : 'モンスター') + '》</b>の' + (trig.verb === 62 ? '特殊召喚' : trig.verb === 64 ? '反転召喚' : '召喚') + 'にチェーンできます' }
         : null;
   const draw = () => {
+    fxPhaseBannerCut(); // BU-44: the dock opening settles any live phase banner
     const peeked = document.getElementById('app').classList.contains('dockpeek');
     $('dock').innerHTML =
       // layout redesign: the header carries the 盤面を見る
@@ -7887,6 +8207,17 @@ function uiChain(prompt, state) {
       // name inside a sentence. Tapping it floats its detail
       // (the data-topinfo wiring below), answering nothing.
       (cause && cause.code ? '<div class="cause" data-topinfo="1"><span class="causeart"' + artInline(cause.code, false, deckKeyOfSeat(cause.con)) + '></span><span><span class="causename">《' + cardName(cause.code) + '》</span><br><span class="causesub">' + (cause.con === HP ? '自分のカード' : '相手のカード') + '｜タップで詳細</span></span></div>' : '') +
+      // BU-24: the whole chain, listed inside the dock — with 2+
+      // links the cause row alone cannot show what is already
+      // stacked under the link being answered. The link this
+      // prompt answers is marked (cur), the one resolving is
+      // marked (solving), mirroring the header chain bar's facts.
+      (state.chain.length >= 2 ? '<div class="chainlist">' + state.chain.map((l, i) => {
+        const n = i + 1;
+        const isSolving = state.solvingLink === n;
+        const isCur = !!(ctxLink && ctxLink.link === n);
+        return '<span class="cl-chip' + (isSolving ? ' solving' : '') + (isCur ? ' cur' : '') + '">' + n + ' 《' + cardName(l.code) + '》' + (isSolving ? '（解決中）' : '') + (l.negated || l.disabled ? '（無効）' : '') + (l.solved ? ' ✓' : '') + '</span>';
+      }).join('') + '</div>' : '') +
       '<div class="cands">' + prompt.entries.map((e, i) => {
         if (!noDismiss && dismissedDuel.has(duelKey(e))) return ''; // duel-dismissed: hidden here, managed in the section below
         const disChain = dismissedChains.has(chainKey(e));
@@ -8042,6 +8373,11 @@ function availZones(prompt) {
   const add = (con, loc, seq) => out.push({ con, loc, seq });
   for (let s = 0; s < 7; s++) if (avail & (1 << s)) add(prompt.player, E.LOC.MZONE, s);
   for (let s = 0; s < 5; s++) if (avail & (0x100 << s)) add(prompt.player, E.LOC.SZONE, s);
+  // bigfix-1115: the field zone (flag 0x2000 -> SZONE seq 5, the
+  // board's fzone slot) was missing here — the bot's placeAnswer
+  // has always had it, so a human offered ONLY the field zone
+  // (every field spell) had no tappable tile. Root cause, fixed.
+  if (avail & 0x2000) add(prompt.player, E.LOC.SZONE, 5);
   if (avail & 0x4000) add(prompt.player, E.LOC.SZONE, 6);
   if (avail & 0x8000) add(prompt.player, E.LOC.SZONE, 7);
   for (let s = 0; s < 7; s++) if (avail & (0x10000 << s)) add(1 - prompt.player, E.LOC.MZONE, s);
@@ -8057,6 +8393,7 @@ function renderPlaceHint() {
     (placeCtx.retry ? '<div class="retry">その場所には置けません。光っている場所から選んでください。</div>' : '');
 }
 function uiPlace(prompt, state) {
+  fxPhaseBannerCut(); // BU-44: the place hint is decision UI too
   const zones = availZones(prompt);
   let title;
   if (prompt.name === 'SELECT_PLACE') {
@@ -8088,6 +8425,19 @@ function uiPlace(prompt, state) {
 }
 
 // ---- position ----
+// BU-21: name a just-committed placement zone. SZONE seq 5 is the
+// field zone (the board's fzone slot); seq 6/7 have no board name
+// of their own and stay generic rather than inventing one.
+function placeZoneLabel(z) {
+  const who = z.con === HP ? '自分' : '相手';
+  if (z.loc === E.LOC.MZONE) return who + 'のモンスターゾーン' + (z.seq + 1);
+  if (z.loc === E.LOC.SZONE) {
+    if (z.seq === 5) return who + 'のフィールドゾーン';
+    if (z.seq <= 4) return who + 'の魔法・罠ゾーン' + (z.seq + 1);
+    return who + 'の魔法・罠ゾーン';
+  }
+  return locLabel(z);
+}
 function uiPosition(prompt, state) {
   const defs = [
     { bit: E.POS.FU_ATK, label: '表側攻撃表示', cls: '' },
@@ -8095,7 +8445,11 @@ function uiPosition(prompt, state) {
     { bit: E.POS.FD_ATK, label: '裏側攻撃表示', cls: 'back' },
     { bit: E.POS.FD_DEF, label: '裏側守備表示', cls: 'def back' },
   ].filter(d => prompt.mask & d.bit);
-  sheetOpen('<div class="ttl">' + cardName(prompt.code) + ' の表示形式</div><div class="sub">表示形式を選んでください。タップした表示形式で即確定し、取り消すことはできません。</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
+  sheetOpen('<div class="ttl">' + cardName(prompt.code) + ' の表示形式</div><div class="sub">表示形式を選んでください。タップした表示形式で即確定し、取り消すことはできません。</div>' +
+    // BU-21: name the zone the (irreversible) place answer just
+    // committed, so the sheet never pretends the place is still
+    // open to change.
+    (lastPlaceSel ? '<div class="sub">置く場所：' + placeZoneLabel(lastPlaceSel) + '（場所は変更できません）</div>' : '') + contextLineHTML(prompt) + retryWarn(prompt) +
     '<div class="posrow">' + defs.map(d => '<div class="posbtn" data-pos="' + d.bit + '"><div class="glyph ' + d.cls + '"></div>' + d.label + '</div>').join('') + '</div>');
   $('sheet').querySelectorAll('[data-pos]').forEach(b => b.addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(+b.dataset.pos)); }));
 }
@@ -8133,10 +8487,15 @@ function gridSheet(o) {
   const draw = () => {
     // Hidden candidates (opponent's face-down / hand / deck cards)
     // render as the card back with a public-only label: no name, no
-    // art, no stats, no text, no detail button.
-    const hidOf = (c) => selCardHidden(c.ref || c, o.prompt);
-    const nameOf = (c) => hidOf(c) ? hiddenCardLabel(c.ref || c) : cardName(c.code);
-    const tray = [...o.selected].map(i => '<span class="chip" data-chip="' + i + '">' + nameOf(o.cards[i]) + ' ✕</span>').join('') +
+    // art, no stats, no text, no detail button. BU-58 exception:
+    // a candidate the game itself just confirmed to this player
+    // (exact set match, see confirmRevealIdx) is shown face-up —
+    // its identity is already public to the player by the rules.
+    const revealIdx = confirmRevealIdx(o);
+    const hidOf = (c, i) => selCardHidden(c.ref || c, o.prompt) && !(i != null && revealIdx.has(i));
+    const effCode = (c, i) => revealIdx.has(i) ? revealIdx.get(i) : c.code; // BU-58: a revealed candidate's identity comes from the confirm set (its own code may be masked)
+    const nameOf = (c, i) => hidOf(c, i) ? hiddenCardLabel(c.ref || c) : cardName(effCode(c, i));
+    const tray = [...o.selected].map(i => '<span class="chip" data-chip="' + i + '">' + nameOf(o.cards[i], i) + ' ✕</span>').join('') +
       (o.locked || []).map(c => '<span class="chip locked">' + (selCardHidden(c, o.prompt) ? hiddenCardLabel(c) : cardName(c.code)) + '（固定）</span>').join('');
     const subTxt = typeof o.sub === 'function' ? o.sub() : o.sub;
     // layout-fix J1: draw() rebuilds the sheet per toggle — keep
@@ -8158,10 +8517,10 @@ function gridSheet(o) {
       // uniform size so candidates compare at a glance. The full
       // text lives in the detail modal (詳細) and nowhere else.
       '<div class="sheet-scroll"><div class="grid">' + o.cards.map((c, i) => {
-        const hid = hidOf(c);
-        return '<div class="gcard' + (hid ? ' back' : '') + (o.selected.has(i) ? ' sel' : '') + '" data-grid="' + i + '"' + (hid ? '' : artInline(c.code, false, c.ref && c.ref.con != null ? deckKeyOfSeat(c.ref.con) : deckKeyOfSeat(HP))) + '>' +
-        '<div class="loc">' + c.locLabel + '</div>' + (hid ? '' : marksChipHTML(c.code)) + '<div class="nm' + (hid ? '' : kindCls(c.code)) + '">' + (hid ? hiddenCardLabel(c.ref || c) : '<span class="nmtext">' + cardName(c.code) + (c.extra ? ' ' + c.extra : '') + '</span><button class="gdetail" data-gdetail="' + i + '">詳細</button>') + '</div>' +
-        (hid ? '' : (statsLine(c.code) ? '<div class="stats">' + statsLine(c.code) + '</div>' : '')) + '</div>';
+        const hid = hidOf(c, i), ec = effCode(c, i);
+        return '<div class="gcard' + (hid ? ' back' : '') + (o.selected.has(i) ? ' sel' : '') + '" data-grid="' + i + '"' + (hid ? '' : artInline(ec, false, c.ref && c.ref.con != null ? deckKeyOfSeat(c.ref.con) : deckKeyOfSeat(HP))) + '>' +
+        '<div class="loc">' + c.locLabel + '</div>' + (hid ? '' : marksChipHTML(ec)) + '<div class="nm' + (hid ? '' : kindCls(ec)) + '">' + (hid ? hiddenCardLabel(c.ref || c) : '<span class="nmtext">' + cardName(ec) + (c.extra ? ' ' + c.extra : '') + '</span><button class="gdetail" data-gdetail="' + i + '">詳細</button>') + '</div>' +
+        (hid ? '' : (statsLine(ec) ? '<div class="stats">' + statsLine(ec) + '</div>' : '')) + '</div>';
       }).join('') + '</div></div>' +
       // F7: the scroll cue rides INSIDE the button row as a
       // full-width first line — shown only while the candidate
@@ -8180,7 +8539,7 @@ function gridSheet(o) {
       draw(); }));
     // R-SEL-1: detail opens over the sheet; the selection (held
     // in o's closure) is untouched by opening or closing it.
-    $('sheet').querySelectorAll('[data-gdetail]').forEach(b => b.addEventListener('click', (ev) => { ev.stopPropagation(); playClick(); openInfoPop(o.cards[+b.dataset.gdetail].code, o.cards[+b.dataset.gdetail].ref || null); }));
+    $('sheet').querySelectorAll('[data-gdetail]').forEach(b => b.addEventListener('click', (ev) => { ev.stopPropagation(); playClick(); const gi = +b.dataset.gdetail; openInfoPop(revealIdx.has(gi) ? revealIdx.get(gi) : o.cards[gi].code, o.cards[gi].ref || null); }));
     $('sheet').querySelectorAll('[data-chip]').forEach(ch => ch.addEventListener('click', () => { playClick(); o.onToggle(+ch.dataset.chip); draw(); }));
     $('grid-confirm').addEventListener('click', () => { playClick(); o.onConfirm([...o.selected]); });
     const cancel = $('grid-cancel');
@@ -8288,6 +8647,15 @@ function uiSelectCards(prompt, state) {
   const isTrib = prompt.name === 'SELECT_TRIBUTE';
   const atk = !isTrib && promptAttacker ? promptAttacker : null;
   const isHandLimit = !isTrib && !atk && inferSelectPurpose(prompt, state) === 'handlimit';
+  // BU-58: when every candidate sits in one (controller, location),
+  // the sheet names whose cards these are («相手のデッキから …») —
+  // derivable from the candidates themselves, never guessed for a
+  // mixed selection.
+  const sharedLoc = (() => {
+    if (!prompt.cards.length) return null;
+    const c0 = prompt.cards[0];
+    return prompt.cards.every(c => c.con === c0.con && c.loc === c0.loc) ? locLabel(c0) : null;
+  })();
   const selected = new Set();
   const sum = () => [...selected].reduce((a, i) => a + (prompt.cards[i].releaseParam || 0), 0);
   gridSheet({
@@ -8300,7 +8668,7 @@ function uiSelectCards(prompt, state) {
     sub: () => isTrib ? '合計 ' + prompt.min + ' 以上になるよう選んでください（現在 ' + sum() + '）'
                       : atk ? '攻撃する相手を選んでください'
                       : isHandLimit ? '手札が上限（6枚）を超えています。捨てるカードを ' + prompt.min + ' 枚選んでください（現在 ' + selected.size + ' 枚）'
-                      : prompt.min + '〜' + prompt.max + ' 枚選んでください（現在 ' + selected.size + ' 枚）',
+                      : (sharedLoc ? sharedLoc + 'から ' : '') + prompt.min + '〜' + prompt.max + ' 枚選んでください（現在 ' + selected.size + ' 枚）',
     confirmLabel: atk ? 'この相手を攻撃する' : isHandLimit ? 'このカードを捨てる' : undefined,
     cards: prompt.cards.map(c => ({ code: c.code, locLabel: locLabel(c), extra: isTrib ? '（リリース値 ' + c.releaseParam + '）' : '', ref: c })),
     selected,
@@ -8444,9 +8812,12 @@ function uiCounter(prompt, state) {
 // ---- sort ----
 function uiSort(prompt, state) {
   let order = prompt.cards.map((_, i) => i); // order[pos] = original index
+  // BU-58: same confirm-reveal as the selection grids (a sort over
+  // cards the game just showed the player names them).
+  const revealIdx = confirmRevealIdx({ cards: prompt.cards.map(c => ({ ref: c })), prompt });
   const draw = () => {
     sheetOpen('<div class="ttl">' + (prompt.name === 'SORT_CHAIN' ? 'チェーンの順番' : 'カードの順番') + '</div><div class="sub">' + (prompt.name === 'SORT_CHAIN' ? '上から順に処理される順番です。並べ替えて「この順番で決定」を押してください。' : '上から順に、次に使う順番に並べてください。') + '</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
-      order.map((ci, pos) => '<div class="sortrow"><span>' + (pos + 1) + '. ' + (selCardHidden(prompt.cards[ci], prompt) ? hiddenCardLabel(prompt.cards[ci]) : cardName(prompt.cards[ci].code)) + '</span><span class="mv">' +
+      order.map((ci, pos) => '<div class="sortrow"><span>' + (pos + 1) + '. ' + (selCardHidden(prompt.cards[ci], prompt) && !revealIdx.has(ci) ? hiddenCardLabel(prompt.cards[ci]) : cardName(revealIdx.has(ci) ? revealIdx.get(ci) : prompt.cards[ci].code)) + '</span><span class="mv">' +
         '<button data-up="' + pos + '">↑</button><button data-down="' + pos + '">↓</button></span></div>').join('') +
       '<div class="btnrow"><button class="bigbtn" id="sort-ok">この順番で決定</button><button class="bigbtn sub" id="sort-keep">元の順番のままにする</button></div>');
     $('sheet').querySelectorAll('[data-up]').forEach(b => b.addEventListener('click', () => { const p = +b.dataset.up; if (p > 0) { [order[p-1], order[p]] = [order[p], order[p-1]]; } playClick(); draw(); }));
@@ -8495,6 +8866,10 @@ window.__oppinfo = { boardCardAt, peekInfoTap };
 // requirement notes and the BU-28 truncation flag, so
 // test-clarity.js can pin them without a live duel.
 window.__clarity = { syncPeekBar, gridReqNote, announceDupNote, fxTruncated };
+// Test surface (bigfix-1115): this round's pure helpers, pinned by
+// test-bigfix.js without driving whole duels.
+window.__bigfix = { qName, contextLineHTML, handTapReason, confirmRevealIdx, deckThumbSrc, availZones, placeZoneLabel,
+  setLastConfirm: (cards, turn) => { lastConfirm = { cards, turn: turn == null ? null : turn, promptsAgo: 0 }; } };
 function uiYesNo(prompt, state) {
   const isEff = prompt.name === 'SELECT_EFFECTYN';
   // WHICH card and WHICH effect is being asked must be readable on
@@ -8541,10 +8916,10 @@ function uiYesNo(prompt, state) {
     const parentFx = (fx.n ? fx : null) || resolveEffect(ctx.code, ctx.desc) || scopedEffect(ctx.code, ctx.desc, ctx.loc, 'chain');
     const clause = (parentFx && parentFx.n ? stepClause(ctx.code, parentFx.n) : '')
       || followUpClause(ctx.code);
-    sub = '「' + cardName(ctx.code) + '」の効果の続きです。' + (clause ? '次も行いますか？' : 'この効果の処理を続けますか？');
+    sub = qName(cardName(ctx.code)) + 'の効果の続きです。' + (clause ? '次も行いますか？' : 'この効果の処理を続けますか？');
     block = fxBlockHTML(ctx.code, parentFx && parentFx.n ? parentFx : fx);
   } else if (named) {
-    sub = '「' + cardName(named.code) + '」' + (fx && fx.n ? 'の効果' + CIRCLED_NUM[fx.n - 1] : 'の効果') + 'について確認です。この効果を進めますか？';
+    sub = qName(cardName(named.code)) + (fx && fx.n ? 'の効果' + CIRCLED_NUM[fx.n - 1] : 'の効果') + 'について確認です。この効果を進めますか？';
     block = fxBlockHTML(named.code, fx);
   } else {
     // No card could be pinned to this question: say what the
@@ -8603,7 +8978,7 @@ function uiAnnounceBits(prompt, state) {
   const bits = table.filter(([bit]) => isRace ? (prompt.availLo & bit) !== 0 : (prompt.avail & bit) !== 0);
   const selected = new Set();
   const draw = () => {
-    sheetOpen('<div class="ttl">' + (isRace ? '種族' : '属性') + 'の宣言</div><div class="sub">' + (prompt.context && prompt.context.code ? '「' + cardName(prompt.context.code) + '」の効果で宣言する' + (isRace ? '種族' : '属性') + 'を ' : '') + prompt.count + ' つ選んでください（現在 ' + selected.size + '）</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
+    sheetOpen('<div class="ttl">' + (isRace ? '種族' : '属性') + 'の宣言</div><div class="sub">' + (prompt.context && prompt.context.code ? qName(cardName(prompt.context.code)) + 'の効果で宣言する' + (isRace ? '種族' : '属性') + 'を ' : '') + prompt.count + ' つ選んでください（現在 ' + selected.size + '）</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
       '<div class="grid">' + bits.map(([bit, nm]) => '<div class="gcard' + (selected.has(bit) ? ' sel' : '') + '" data-bit="' + bit + '"><div class="nm">' + nm + '</div></div>').join('') + '</div>' +
       '<div class="btnrow"><button class="bigbtn" id="ann-confirm" ' + (selected.size === prompt.count ? '' : 'disabled') + '>決定</button></div>' +
       // P2-3: the declaring card's own text rides the sheet, so
@@ -8625,7 +9000,7 @@ function uiAnnounceBits(prompt, state) {
 }
 function uiAnnounceNumber(prompt, state) {
   sheetOpen('<div class="ttl">数値の宣言</div>' + contextLineHTML(prompt) +
-    (prompt.context && prompt.context.code ? '<div class="sub">「' + cardName(prompt.context.code) + '」の効果で宣言する数を選んでください。タップするとその数で確定します。</div>' : '') + retryWarn(prompt) +
+    (prompt.context && prompt.context.code ? '<div class="sub">' + qName(cardName(prompt.context.code)) + 'の効果で宣言する数を選んでください。タップするとその数で確定します。</div>' : '') + retryWarn(prompt) +
     prompt.options.map((o, i) => '<button class="optbtn" data-num="' + i + '">' + o + '</button>').join('') +
     (prompt.context && prompt.context.code ? fxBlockHTML(prompt.context.code, null) : ''));
   $('sheet').querySelectorAll('[data-num]').forEach(b => b.addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(+b.dataset.num)); }));
@@ -8660,10 +9035,15 @@ function uiAnnounceCard(prompt, state) {
   // convention) and the named confirm button declares.
   let chosen = null;
   const draw = () => {
+    // BU-41: flex sheet, like the selection grids — the candidate
+    // grid scrolls inside the sheet and the declare row is a fixed
+    // flex child (it used to ride at the very end of a 165-card
+    // flow, over the grid's last row at short heights).
     sheetOpen('<div class="ttl">カードの宣言</div>' + contextLineHTML(prompt) +
       '<div class="sub">宣言するカードをタップで選び、「宣言する」を押してください。（必須）' + (announceDupNote(pool) ? ' ' + announceDupNote(pool) : '') + '</div>' + retryWarn(prompt) +
-      '<div class="grid">' + pool.map(code => '<div class="gcard' + (chosen === code ? ' sel' : '') + '" data-code="' + code + '"' + artInline(code, false, deckKeyOfCode(code)) + '>' + marksChipHTML(code) + '<div class="nm' + kindCls(code) + '">' + '<span class="nmtext">' + cardName(code) + '</span><button class="gdetail" data-acinfo="' + code + '">詳細</button></div></div>').join('') + '</div>' +
+      '<div class="sheet-scroll"><div class="grid">' + pool.map(code => '<div class="gcard' + (chosen === code ? ' sel' : '') + '" data-code="' + code + '"' + artInline(code, false, deckKeyOfCode(code)) + '>' + marksChipHTML(code) + '<div class="nm' + kindCls(code) + '">' + '<span class="nmtext">' + cardName(code) + '</span><button class="gdetail" data-acinfo="' + code + '">詳細</button></div></div>').join('') + '</div></div>' +
       '<div class="btnrow"><button class="bigbtn" id="announce-ok" ' + (chosen == null ? 'disabled' : '') + '>' + (chosen == null ? '宣言する' : '《' + cardName(chosen) + '》を宣言する') + '</button></div>');
+    $('sheet').classList.add('flexsheet');
     $('sheet').querySelectorAll('[data-code]').forEach(g => g.addEventListener('click', (ev) => {
       if (ev.target.closest('[data-acinfo]')) return;
       playClick(); chosen = +g.dataset.code; draw();
@@ -8726,14 +9106,11 @@ document.addEventListener('click', (ev) => {
   // not placing) — it never consumes the tap, the handlers below still run
   const handEl = ev.target.closest('#hand .hcard');
   if (handEl && handEl.dataset.code) {
-    // BU-02: state only the reason that is mechanically certain
-    let reason = null;
-    if (handEl.classList.contains('dim') && currentPrompt && currentPrompt.prompt.name === 'SELECT_BATTLECMD' && isMonster(+handEl.dataset.code))
-      reason = 'バトルフェイズ中は通常召喚できません';
-    // brushup round 2: a spent card-name activation limit is the
-    // other mechanically certain reason a dimmed hand card can state
-    if (!reason && handEl.classList.contains('dim')) reason = nameLimitReason(+handEl.dataset.code);
-    setPreview(+handEl.dataset.code, null, reason);
+    // BU-02 -> BU-39: state only the reasons that are mechanically
+    // certain (handTapReason derives them from the live state:
+    // battle-phase lock, spent name limit, full zone row,
+    // opponent's turn). A card that can be played gets no reason.
+    setPreview(+handEl.dataset.code, null, handTapReason(+handEl.dataset.code, handEl.dataset.act));
   }
   const zoneEl = ev.target.closest('[data-zone]');
   if (zoneEl && placeCtx) {
@@ -8743,6 +9120,12 @@ document.addEventListener('click', (ev) => {
       const [con, loc, seq] = key.split(':').map(Number);
       placeCtx.chosen.set(key, { con, loc, seq });
       if (placeCtx.chosen.size >= placeCtx.count) {
+        // BU-21: a "back" button on the position sheet is
+        // impossible (the place answer is already with the core,
+        // which never re-asks) — instead the position sheet names
+        // the zone just committed. Single-zone answers only: a
+        // multi-zone disfield has no single "the place" to name.
+        if (placeCtx.chosen.size === 1) { const z = [...placeCtx.chosen.values()][0]; lastPlaceSel = { con: z.con, loc: z.loc, seq: z.seq }; }
         finishPrompt(E.placeResp([...placeCtx.chosen.values()]));
         return;
       }
@@ -9639,6 +10022,7 @@ function wireSeg(id, apply) {
     duelNoConfirm = new Set(); // C-27 suppression restarts with the duel
     confirmTurn = -1; confirmSeq = 0; // per-turn confirmation counter restarts with the duel
     pendingConfirms = []; // unshown card confirmations restart with the duel
+    lastConfirm = null; // BU-58: so does the confirm-reveal batch
     updateAutoPassChip();
     fxResetDuel(); // FX snapshot/layers restart with the duel (stale overlays must not survive)
     bgmWantedRank = -1; bgmSeenKeys.clear(); // BGM stage ladder restarts with the duel
