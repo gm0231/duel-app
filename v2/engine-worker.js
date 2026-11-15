@@ -9,7 +9,7 @@
        engine.js are require()d (same style as test-node.js).
    Protocol:
      in : {type:'start', data, opts:{seed, pace, deckP0, deckP1, humanTeam,
-                                     fast?, digest?, rngSeed?}}
+                                     fast?, digest?, rngSeed?, watch?}}
           {type:'answer', id, bytes:Uint8Array}
           {type:'refresh'}                    (only while a prompt waits)
      out: {type:'update', state}              (per message batch)
@@ -155,7 +155,14 @@ async function startSession(msg) {
       post({ type: 'update', state: snapshot(state) });
       state.events.length = 0; // client drains per update: deliver once
     },
-    humanAnswerer: async (prompt, state) => {
+    // watchmode-1116: with opts.watch the Duel gets NO
+    // humanAnswerer, so its driver routes BOTH seats through the
+    // bot path (pace, live-stat refresh, the Gravekeeper's Trap
+    // oracle, botAnswer) and no 'prompt' message ever crosses to
+    // the main thread — the client only renders the update
+    // stream. Without the flag this is exactly the pre-existing
+    // main-thread answerer.
+    humanAnswerer: opts.watch ? undefined : async (prompt, state) => {
       try { duel.refreshFieldStats(); } catch (e) {}
       const id = ++promptSeq;
       post({ type: 'prompt', id, prompt, state: snapshot(state) });

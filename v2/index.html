@@ -80,6 +80,14 @@
   .hd-row1{display:flex;align-items:center;gap:4px;}
   .hd-phase{flex:1 1 auto;min-width:0;display:flex;align-items:baseline;gap:6px;padding-left:2px;}
   .hd-row2{display:flex;align-items:flex-start;gap:6px;}
+  /* watchmode-1116: developer watch-mode bar (both seats CPU).
+     Hidden unless a watch duel is running (the .on class is set
+     by the start handler, in watch mode only); the header's
+     growth is absorbed by layoutFit like the notice growth. */
+  #watchbar{display:none;align-items:center;gap:8px;padding:3px 2px 2px;border-top:1px solid var(--gold-dim);}
+  #watchbar.on{display:flex;}
+  #watchbar .wb-label{font-size:12px;color:var(--gold);letter-spacing:.04em;white-space:nowrap;}
+  #watchstop{margin-left:auto;flex:0 0 auto;background:linear-gradient(#e6c877,var(--gold));color:#191104;border:1px solid #e6c877;border-radius:8px;font-size:12px;font-weight:700;padding:6px 12px;cursor:pointer;}
   #lpband{position:relative;flex:none;display:flex;flex-direction:column;background:var(--panel);border-top:1px solid var(--tile-edge);border-bottom:1px solid var(--tile-edge);padding:1px 4px;}
   .lpplate{position:relative;display:flex;align-items:center;gap:6px;border-radius:4px;padding:0 6px;}
   .lpplate.turn-on{background:linear-gradient(#241c10,#1b1409);box-shadow:inset 0 0 0 1px var(--gold-dim);}
@@ -1399,6 +1407,7 @@
       <button id="fxbtn" aria-label="演出設定">♪</button>
     </div>
     <div id="chainbar"></div>
+    <div id="watchbar"><span class="wb-label">観戦中（開発者用・両席CPU）</span><button id="watchstop" type="button">観戦をやめる</button></div>
   </div>
   <div id="placehint"></div>
   <div class="field" id="oppField">
