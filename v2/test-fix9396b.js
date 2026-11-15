@@ -12,11 +12,11 @@
  * live notice when one is up), positioned per frame, and the header
  * grows to hold it; the notice's anchor reads the header bottom
  * EXCLUDING the tag's band so the tag never pushes the notice down
- * into it. The residual notice-vs-row-1 overlap (max 800 px2 over
- * the history button) was a 1-frame stale top: the anchor set top
- * from the pre-growth header. The growth is now applied BEFORE the
- * top is set. Pinned here by source; the overlap proof is the
- * Chromium rig's re-run on the fixed build.
+ * (fix9396c-1115 revises the notice seat: the notice now sits in
+ * its own band BELOW row 2 — the bottom anchor covered the
+ * latest-event line for the whole dwell — and the font fit is
+ * gone. See test-fix9396c.js C94a..; the B94 pins below are
+ * updated to the new seat, not loosened.)
  *
  * obs-1 (new, from the same re-verification): the battle-start
  * chain question appeared twice with the identical text. The core
@@ -41,6 +41,10 @@
  * nowrap now and its type steps down to the 8px floor in sheetOpen
  * (the 12-char label fits a 390px tile at 8px). Pinned here by
  * source + a live sheet check; the 1-line proof is the rig.
+ * (fix9396c-1115: the 8px fit was not enough on a narrow sheet —
+ * the label still ellipsized to 「相手のモンスターゾー…」 and
+ * hid the number. The badge is now split: a truncatable text
+ * part + a never-clipped number part. See test-fix9396c.js.)
  *
  * BU-99 remainder: the re-presented identical chain question (see
  * obs-1 and the probe's prompt log: identical trigger + entries
@@ -79,10 +83,11 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 ok(!html.includes('.fx-oppnametag{position:absolute;top:47px;'), 'B94a: the tag no longer has a fixed top:47px (row 2 band)');
 ok(clientSrc.includes('function fxOppTagPosition()'), 'B94b: fxOppTagPosition positions the tag per frame');
 ok(clientSrc.includes('tagTopVp = nr.bottom + 2'), 'B94c: with a notice up the tag stacks below the notice');
-ok(clientSrc.includes('let row2Bottom = hr.top + 71;'), 'B94d: with no notice the tag starts below row 2');
-ok(clientSrc.includes('const effBottom = hr.bottom - fxTagGrowPx;'), 'B94e: the notice anchor reads the header bottom excluding the tag band');
-ok(clientSrc.includes('while (nt && d.offsetHeight > Math.max(0, effBottom - gr.top) && fs > 9)'), 'B94f: the notice font fit measures against the tag-excluded bottom');
-ok(clientSrc.includes('const hr2 = hb.getBoundingClientRect();'), 'B94g: the notice top is set from the header re-read AFTER the growth');
+ok(clientSrc.includes('function fxRow2Bottom()'), 'B94d: the row-2 edge is a shared helper (tag and notice use the same seat)');
+ok(clientSrc.includes('let bottom = hr.top + 71;'), 'B94d2: the row-2 edge starts at the nominal row-2 bottom');
+ok(clientSrc.includes('const seatTop = fxRow2Bottom() + 2;'), 'B94e: the notice seats below row 2 (no longer bottom-anchored over the logline)');
+ok(clientSrc.includes('fxNoticeGrowHeader(need)'), 'B94f: the notice grows the header by its own height below row 2');
+ok(clientSrc.includes("d.style.top = Math.max(0, Math.round(seatTop - lr.top)) + 'px';"), 'B94g: the notice top is set from the row-2 seat');
 ok(clientSrc.includes('function fxTagRestoreHeader()'), 'B94h: the tag restores only its own growth when it leaves');
 ok(clientSrc.includes('if (fxOppTagEl) {'), 'B94i: the notice restore preserves a live tag band');
 ok(clientSrc.includes("hb.style.minHeight = (base + fxTagGrowPx) + 'px';"), 'B94j: the notice restore keeps base + tag growth while the tag lives');
@@ -94,13 +99,17 @@ ok(clientSrc.includes('function phaseTrigText(ph)'), 'O1d: phaseTrigText names t
 ok(clientSrc.includes("if (ph === 'BATTLE_STEP_END') return 'バトルステップ終了時';"), 'O1e: the Battle Step End window reads 終了時');
 ok(clientSrc.includes("if (ph === 'BATTLE') return 'バトルフェイズ終了時';"), 'O1f: the Battle End Step window reads 終了時');
 ok(clientSrc.includes('phaseTrigText(trig.phase)'), 'O1g: the tray and the dock label both use phaseTrigText');
-// obs-3: tile location badge
-ok(html.includes('.gcard .loc{') && html.includes('white-space:nowrap;max-width:calc(100% - 6px);overflow:hidden;text-overflow:ellipsis;'), 'O3a: the tile location badge is nowrap with a tile-bounded clip');
+// obs-3: tile location badge — split so the zone number never clips (fix9396c-1115)
+ok(html.includes('.gcard .loc{') && html.includes('display:flex;'), 'O3a: the tile location badge is a flex row (text + number)');
+ok(html.includes('.gcard .loc .loc-num{') && html.includes('flex:0 0 auto;'), 'O3a2: the number part never shrinks or clips');
+ok(html.includes('.gcard .loc .loc-txt{') && html.includes('text-overflow:ellipsis;'), 'O3a3: the text part truncates with an ellipsis');
+ok(clientSrc.includes('function locBadgeHTML(label)'), 'O3a4: locBadgeHTML splits the label into text + number');
+ok(clientSrc.includes("'<span class=\"loc-txt\">' + m[1] + '</span><span class=\"loc-num\">' + m[2] + '</span>'"), 'O3a5: the split keeps the wording unchanged');
 ok(clientSrc.includes("sheet.querySelectorAll('.gcard .loc').forEach"), 'O3b: sheetOpen fits every tile location badge');
-ok(clientSrc.includes('while (el.scrollWidth > el.clientWidth + 1 && fs > 8)'), 'O3c: the badge type steps down to the 8px floor before clipping');
+ok(clientSrc.includes('while (txt.scrollWidth > txt.clientWidth + 1 && fs > 8)'), 'O3c: the TEXT part steps down to the 8px floor before clipping (the number is never shrunk)');
 // BU-94 single-notice growth still intact (fix9396 pins, kept)
 ok(clientSrc.includes('function fxNoticeGrowHeader(over)'), 'B94k: fxNoticeGrowHeader still exists');
-ok(clientSrc.includes('fxNoticeGrowHeader(cap - topVp)'), 'B94l: the notice anchor still grows the header by the exact deficit');
+ok(clientSrc.includes('fxNoticeGrowHeader(need)'), 'B94l: the notice anchor grows the header by its own height below row 2');
 
 // ---------- live behaviour in jsdom ----------
 async function boot() {

@@ -16,6 +16,10 @@
  * restores it when it leaves; the font-fit key is the seat width
  * only, so the growth does not re-run the font fit mid-dwell.
  * Pinned here by source; the overlap proof is the Chromium rig.
+ * (fix9396c-1115 revises the seat: the notice now sits in its own
+ * band BELOW row 2 and the font fit is gone — see
+ * test-fix9396c.js C94a.. and the F94 pins below, updated to the
+ * new seat.)
  *
  * BU-95: a detail pop opened from the tray's cause row survived
  * into the dock (measured: 126,124 px2 over the dock, 22,106 px2
@@ -72,13 +76,16 @@ function srcOf(fnName, from) {
   ok(!atk.includes("ctx.clip('evenodd')") || atk.indexOf("ctx.clip('evenodd')") > atk.indexOf('drawLow(ctx, t)'),
     'F93d: the clip lives inside drawLow (the low-canvas pass only)');
 }
-// BU-94
+// BU-94 (seat revised fix9396c-1115: the notice sits in its own
+// band below row 2 — see test-fix9396c.js — and no longer steps
+// its type down; the old bottom-anchor / row-1-cap pins are
+// retired, not loosened)
 ok(clientSrc.includes('function fxNoticeGrowHeader(over)'), 'F94a: fxNoticeGrowHeader exists');
 ok(clientSrc.includes('function fxNoticeRestoreHeader()'), 'F94b: fxNoticeRestoreHeader exists');
-ok(clientSrc.includes('fxNoticeGrowHeader(cap - topVp)'), 'F94c: the anchor grows the header by the exact deficit');
-ok(clientSrc.includes('onDone() { try { d.remove(); } catch (e) {} fxNoticeRestoreHeader();'), 'F94d: the notice restores the header when it leaves');
-ok(clientSrc.includes('const key = Math.round(colRight - gr.left);'), 'F94e: the font-fit key is the seat width only (no header-height churn)');
-ok(clientSrc.includes("for (const id of ['phaseinfo', 'phasebtn', 'loghistbtn'])"), 'F94f: the cap covers the row-1 content overlapping the notice (incl. the fixed history button)');
+ok(clientSrc.includes('fxNoticeGrowHeader(need)'), 'F94c: the anchor grows the header by the notice height below row 2');
+ok(clientSrc.includes('onDone() { try { d.remove(); } catch (e) {} if (logMo) { try { logMo.disconnect(); } catch (e) {} } fxNoticeRestoreHeader();'), 'F94d: the notice restores the header when it leaves (and disconnects the logline observer)');
+ok(!clientSrc.includes("nt.style.fontSize = fs + 'px';"), 'F94e: the notice no longer steps its type down mid-dwell (full 12.5px, header absorbs the height)');
+ok(clientSrc.includes('const seatTop = fxRow2Bottom() + 2;'), 'F94f: the notice seats below row 2 (fxRow2Bottom + 2)');
 // BU-95
 {
   const tray = srcOf('showChainTray', 'function showChainTray(');

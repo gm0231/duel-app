@@ -1359,6 +1359,19 @@ function locLabel(e) {
     default: return who;
   }
 }
+// fix9396c-1115 (obs-3): the sheet tile's location badge splits
+// the label into a truncatable text part and a never-clipped
+// number part — a narrow sheet used to ellipsize
+// 「相手のモンスターゾーン3」 to 「相手のモンスターゾー…」
+// and hide the 3 (the number is the part the player chooses
+// by). The wording is unchanged; only the markup is split.
+// Labels with no trailing digit (墓地, 手札, EXデッキ) render
+// as plain text, exactly as before.
+function locBadgeHTML(label) {
+  const m = /^(.*?)(\d+)$/.exec(label);
+  if (!m) return label;
+  return '<span class="loc-txt">' + m[1] + '</span><span class="loc-num">' + m[2] + '</span>';
+}
 // ---- hidden candidates in selection prompts (user report
 // 2026-11-04: a target-selection grid showed the opponent's set
 // cards with their names and art). The engine strips the code of
@@ -5312,9 +5325,8 @@ function fxAtkBanner() {
 let fxOppTagEl = null, fxOppTagTimer = null, fxTagRaf = 0;
 // fix9396b-1115 (BU-94 remainder): the extra header height (px)
 // the opponent-name tag has currently added on top of the
-// notice's own growth. anchorNotice subtracts it when it reads
-// the header's bottom, so the tag's band never pushes the notice
-// down into the tag; the tag's own loop recomputes it per frame.
+// notice's own growth. The notice's seat is fxRow2Bottom-based
+// and ignores this; the tag's own loop recomputes it per frame.
 let fxTagGrowPx = 0;
 function fxOppNameTag(text, detail) {
   fxRecord('oppnametag', detail);
@@ -5372,6 +5384,22 @@ function fxOppNameTag(text, detail) {
 // the deficit (sticky, like the notice's growth); the loop runs
 // per frame, so a notice arriving or leaving mid-dwell, or the
 // event line wrapping to a third row, re-stacks it at once.
+// fix9396c-1115 (BU-94): the lowest row-2 content edge (turn
+// readout / event line / chips) — the seat every floating band
+// (notice, name tag) stacks BELOW. Shared by fxOppTagPosition
+// and the notice anchor so the two can never drift apart.
+function fxRow2Bottom() {
+  const hb = document.getElementById('header'); if (!hb) return 0;
+  const hr = hb.getBoundingClientRect();
+  let bottom = hr.top + 71; // row 2's nominal bottom (47 + 24)
+  for (const id of ['turninfo', 'logline', 'oppHandChip', 'autopass']) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) bottom = Math.max(bottom, r.bottom);
+  }
+  return bottom;
+}
 function fxOppTagPosition() {
   const d = fxOppTagEl; if (!d) return;
   const layer = fxLayerEl(); const hb = document.getElementById('header');
@@ -5379,13 +5407,7 @@ function fxOppTagPosition() {
   const lr = layer.getBoundingClientRect(), hr = hb.getBoundingClientRect();
   if (!lr.width || !hr.height) return;
   // lowest row-2 content edge (only visible elements count)
-  let row2Bottom = hr.top + 71; // row 2's nominal bottom (47 + 24)
-  for (const id of ['turninfo', 'logline', 'oppHandChip', 'autopass']) {
-    const el = document.getElementById(id);
-    if (!el) continue;
-    const r = el.getBoundingClientRect();
-    if (r.width > 0 && r.height > 0) row2Bottom = Math.max(row2Bottom, r.bottom);
-  }
+  let row2Bottom = fxRow2Bottom();
   const n = layer.querySelector('.fx-notice');
   let tagTopVp = row2Bottom + 2;
   if (n) {
@@ -5613,20 +5635,19 @@ function fxNoticePump() {
   const n = fxNoticeQ.shift();
   if (n) fxNoticeShow(n.text, n.sub, n.noBeat);
 }
-// BU-94 (fix9396-1115): the notice must never cover the header's own
-// information. The font steps down to its 9px floor first (the fit
-// loop below), but a long text at the floor still rose into row 1:
-// measured 349 px2 of the phase readout covered by a 4-name move
-// notice (top 29 vs phaseinfo bottom 33.4), and the attack notice sat
-// 2px from the same fate. The notice now grows the header instead of
-// rising past the row-1 text: while a notice is up, the header's
-// minHeight is raised by exactly the deficit, the same mechanism the
-// logline's third line already uses (BU-73 — the header grows and
-// layoutFit absorbs it). The cap is the bottom of the row-1 content
-// that horizontally overlaps the notice (#phaseinfo / #phasebtn); the
-// harmless 2-6px rise into row 1's EMPTY band is still allowed, so a
-// normal 2-line attack notice grows nothing. The growth is restored
-// (and layoutFit re-run) when the notice leaves.
+// BU-94 (fix9396-1115, seat revised fix9396c-1115): the notice
+// must never cover the header's own information. The old seat
+// anchored the notice's bottom to the header bottom, which put
+// it over the logline for the whole dwell (a 2-line notice spans
+// y43-77 over row 2's y47-78). The notice now sits in its own
+// band BELOW row 2 (fxRow2Bottom + 2, name tag stacked under
+// it), and the header grows by exactly the notice's height —
+// the same mechanism the logline's third line already uses
+// (BU-73 — the header grows and layoutFit absorbs it). The
+// growth is restored (and layoutFit re-run) when the notice
+// leaves. A normal 2-line notice now always grows the header
+// by its height; the board shrinks transiently for the dwell,
+// which is the price of the event line staying readable.
 let fxNoticeHdrPrevMinH = null; // the header's minHeight before this notice grew it (null = none recorded yet)
 let fxNoticeHdrGrew = false; // whether this notice grew the header at all
 function fxNoticeGrowHeader(over) {
@@ -5714,16 +5735,28 @@ function fxNoticeShow(text, sub, noBeat, deferrals) {
      text that still overflows at 10px may rise into row 1, and
      even then only inside the logline's column. */
   const lg = document.getElementById('logline');
-  let fitKey = '';
   const anchorNotice = () => {
     if (!hb) { d.style.top = '2px'; return; }
     const lr = layer.getBoundingClientRect(), hr = hb.getBoundingClientRect();
-    // fix9396b-1115 (BU-94 remainder): the header bottom the
-    // notice anchors to EXCLUDES the tag's band (fxTagGrowPx) —
-    // the tag stacks BELOW the notice, so the notice's home is
-    // the natural header bottom, not the tag-grown one. With no
-    // tag up this is 0 and the arithmetic is exactly as before.
-    const effBottom = hr.bottom - fxTagGrowPx;
+    // fix9396c-1115 (BU-94): the notice no longer anchors its
+    // BOTTOM to the header bottom — that seat put it over the
+    // logline for the whole dwell (a 2-line notice spans y43-77
+    // over row 2's y47-78, so the latest-event line was covered
+    // 100% of the time while any notice was up; the "same
+    // channel" rationale from bigfix-1115 failed because the
+    // notice lingers ~2-3s while the line moves on to newer
+    // events). The notice now sits in its own band BELOW row 2
+    // (the row-2 edge from fxRow2Bottom), and the header grows
+    // to hold it — the same growth discipline the name tag
+    // already uses. Stack order is fixed: notice directly below
+    // row 2, tag below the notice (the tag's own loop stacks it
+    // under a live notice), so the two per-frame loops cannot
+    // chase each other. The font fit is gone with the old seat:
+    // the notice no longer competes with row 1 for height, so
+    // it stays at full 12.5px and the header absorbs its whole
+    // height (the K5 name grouping bounds the text, so the
+    // growth stays small). Zero-geometry environments (jsdom)
+    // skip the growth entirely.
     if (lg && lr.width) {
       const gr = lg.getBoundingClientRect();
       if (gr.width > 0) {
@@ -5746,59 +5779,31 @@ function fxNoticeShow(text, sub, noBeat, deferrals) {
         }
         d.style.left = Math.max(0, Math.round(gr.left - lr.left)) + 'px';
         d.style.right = Math.max(0, Math.round(lr.right - colRight)) + 'px';
-        // BU-94: the fit key is the seat WIDTH only. The old key also
-        // carried the header height, so growing the header (below)
-        // re-ran the font fit and reset the type mid-dwell; the font
-        // is fitted by the seat it sits in, the header growth below
-        // handles the height.
-        const key = Math.round(colRight - gr.left);
-        if (key !== fitKey) { // re-fit only when the seat changed (the anchor below still runs per frame)
-          fitKey = key;
-          const nt = d.querySelector('.nt'), ns = d.querySelector('.ns');
-          let fs = 12.5;
-          if (nt) nt.style.fontSize = '';
-          if (ns) ns.style.fontSize = '';
-          while (nt && d.offsetHeight > Math.max(0, effBottom - gr.top) && fs > 9) {
-            fs -= 0.5;
-            nt.style.fontSize = fs + 'px';
-            if (ns) ns.style.fontSize = Math.max(8, fs - 1.5) + 'px';
-          }
-        }
       }
     }
-    // BU-94: grow the header instead of rising past the row-1 text.
-    // The cap is the bottom of the row-1 content that horizontally
-    // overlaps the notice (#phaseinfo / #phasebtn / #loghistbtn — the
-    // two buttons both reach down to y=47, and the history button is
-    // the fixed one: the phase button's left edge moves with its
-    // label, so without #loghistbtn the cap could fall to 33.4 and
-    // the notice would cover the history button's bottom 13px);
-    // the notice may still rise into row 1's empty band, which
-    // covers nothing. Zero-geometry environments (jsdom) skip this
-    // entirely.
-    // fix9396b-1115: the growth is applied BEFORE the top is set
-    // (the old order set top from the pre-growth header, so the
-    // notice sat up to 20px into row 1 for a frame — measured in
-    // the wild as 800 px2 over the history button). Re-read the
-    // header after growing so the top lands on the grown bottom.
+    const seatTop = fxRow2Bottom() + 2;
     if (d.offsetHeight > 0 && hr.height > 0) {
-      const nr = d.getBoundingClientRect();
-      let cap = null;
-      for (const id of ['phaseinfo', 'phasebtn', 'loghistbtn']) {
-        const el = document.getElementById(id);
-        if (!el) continue;
-        const r = el.getBoundingClientRect();
-        if (r.width > 0 && r.right > nr.left && r.left < nr.right) cap = cap == null ? r.bottom : Math.max(cap, r.bottom);
-      }
-      if (cap != null) {
-        const topVp = effBottom - 2 - d.offsetHeight;
-        if (topVp < cap - 0.5) fxNoticeGrowHeader(cap - topVp);
-      }
+      const need = Math.round(seatTop + d.offsetHeight + 2 - hr.bottom);
+      if (need > 0) fxNoticeGrowHeader(need);
     }
-    const hr2 = hb.getBoundingClientRect();
-    d.style.top = Math.max(0, Math.round((hr2.bottom - fxTagGrowPx) - lr.top - 2 - d.offsetHeight)) + 'px';
+    d.style.top = Math.max(0, Math.round(seatTop - lr.top)) + 'px';
   };
   anchorNotice();
+  // fix9396c-1115 (BU-94): the per-frame anchor lags a logline
+  // growth by ~2 frames — the logline grows when a new event
+  // arrives, between anchor frames (measured in one duel: a
+  // 3-line logline overlapped the notice for 2 sampler ticks /
+  // 3,837 px2 while the notice sat at its old seat). Re-anchor
+  // synchronously when the logline's text changes, so the notice
+  // moves before the next paint. Disconnected when the notice
+  // leaves (onDone below). The name tag shares the per-frame
+  // design but measured zero overlaps in the same duel, so it is
+  // left alone.
+  let logMo = null;
+  if (lg && window.MutationObserver) {
+    logMo = new MutationObserver(() => anchorNotice());
+    logMo.observe(lg, { childList: true, characterData: true, subtree: true });
+  }
   const hold = fxReadMs(text + (sub || ''));
   // layout-fix3 K5 (test-fx attribution): the high-frequency
   // move/attack notices present on the notice track only — they
@@ -5814,7 +5819,7 @@ function fxNoticeShow(text, sub, noBeat, deferrals) {
       const a = t < 160 ? t / 160 : (t > hold + 130 ? Math.max(0, 1 - (t - hold - 130) / 350) : 1);
       d.style.opacity = String(a);
     },
-    onDone() { try { d.remove(); } catch (e) {} fxNoticeRestoreHeader(); fxNoticeBusy = false; fxNoticePump(); },
+    onDone() { try { d.remove(); } catch (e) {} if (logMo) { try { logMo.disconnect(); } catch (e) {} } fxNoticeRestoreHeader(); fxNoticeBusy = false; fxNoticePump(); },
   };
   if (!noBeat) def.beat = hold + 200;
   fxAddScene(def);
@@ -7716,15 +7721,18 @@ function sheetOpen(html, kind) {
   // fix9396b-1115 (obs-3): a tile's location badge used to wrap
   // mid-word (「相手のモンスターゾー ン3」, 2 lines, 30.5px) —
   // the longest label (相手のモンスターゾーンN, 12 chars) is
-  // wider than a tile at 9.5px. The badge is nowrap now, and its
-  // type steps down to the 8px floor before it ever clips (the
-  // 12-char label fits a 390px tile at 8px; jsdom measures 0
+  // wider than a tile at 9.5px. The badge is nowrap now, and the
+  // TEXT part steps down to the 8px floor before it ever clips
+  // (the 12-char label fits a 390px tile at 8px; jsdom measures 0
   // widths and the loop simply never runs there, as with the
-  // tray's name fit). Runs in sheetOpen so every sheet builder
-  // gets it, including redraws.
+  // tray's name fit). The number part (.loc-num) is never shrunk
+  // or clipped — it is the part the player chooses by
+  // (fix9396c-1115, obs-3). Runs in sheetOpen so every sheet
+  // builder gets it, including redraws.
   sheet.querySelectorAll('.gcard .loc').forEach(el => {
+    const txt = el.querySelector('.loc-txt') || el;
     let fs = 9.5;
-    while (el.scrollWidth > el.clientWidth + 1 && fs > 8) { fs -= 0.5; el.style.fontSize = fs + 'px'; }
+    while (txt.scrollWidth > txt.clientWidth + 1 && fs > 8) { fs -= 0.5; txt.style.fontSize = fs + 'px'; }
   });
   clearPeekBar(); // a fresh sheet resets peek (className above); its mirrors die with the old content
   wrap.dataset.kind = sheetKind;
@@ -7903,6 +7911,7 @@ function dockClose() { $('dock').className = ''; $('dock').innerHTML = ''; const
 // same finishPrompt path.
 let chainTrayCtx = null; // { draw } while a tray is up
 let chainTrayDefer = null; // BU-84: { timer } while a tray waits out a cut-in
+let lastChainQ = null; // fix9396c-1115 (BU-99/BU-105): { key, n } — the last SHOWN chain question, for the re-ask ordinal
 let chainTrayForce = false; // BU-84: the defer failsafe's one-shot bypass (never defer twice)
 function fxCutinActive() { const h = $('fxcutin'); return !!h && h.className === 'on'; }
 function showChainTray(prompt, cause, liveIdx, openDock) {
@@ -8714,6 +8723,35 @@ function uiChain(prompt, state) {
                   ? phaseTrigText(trig.phase) + 'にチェーンできます'
                   : '<b>《' + (trig.code ? cardName(trig.code) : 'モンスター') + '》</b>の' + (trig.verb === 62 ? '特殊召喚' : trig.verb === 64 ? '反転召喚' : '召喚') + 'にチェーンできます' }
         : null;
+  // fix9396c-1115 (BU-99/BU-105): the engine asks the same
+  // question twice at one timing — the phase-start window and
+  // the draw-event window (and, after a resolution, the phase
+  // window again and the point-event window) carry the identical
+  // wording, identical trigger and identical entries (measured:
+  // 40 in-process duels, 4,851 human chain prompts — 594
+  // byte-identical re-asks and 1,331 same-label re-asks at the
+  // same turn+phase, 594/594 and 1,329/1,331 with a PASS as the
+  // first answer, MSG_RETRY 0: the first tap IS accepted, the
+  // engine asks again). The player reads the re-ask as a
+  // swallowed tap — at DRAW, 66% of draw phases ask 2+ times
+  // and the re-verification saw 13/13 first taps "fail". The
+  // second window is a real, rule-correct window (a fresh chance
+  // to chain), so it must not be suppressed; instead the
+  // question is numbered: the Nth time the same wording arrives
+  // in one turn+phase it reads （N回目）. Counted here on SHOWN
+  // questions only (auto-passed zero-option prompts never reach
+  // uiChain, so they never number a question the player has not
+  // seen). The key is the cause label — the wording the player
+  // reads — so a new chain link (a new cause) correctly resets
+  // the count. The ordinal rides on both the tray text and the
+  // dock context line, since the tray is where しない is tapped.
+  let reaskN = 1;
+  {
+    const qkey = state.turnCount + '|' + state.phaseName + '|' + (cause ? cause.label : '効果への応答');
+    if (lastChainQ && lastChainQ.key === qkey) reaskN = lastChainQ.n + 1;
+    lastChainQ = { key: qkey, n: reaskN };
+  }
+  if (cause && reaskN > 1) { const sfx = '（' + reaskN + '回目）'; cause.label += sfx; cause.tray += sfx; }
   const draw = () => {
     fxPhaseBannerCut(); fxTurnBannerCut(); // BU-44/BU-92: the dock opening settles any live phase banner and releases the turn lock
     const peeked = document.getElementById('app').classList.contains('dockpeek');
@@ -9111,7 +9149,7 @@ function gridSheet(o) {
       '<div class="sheet-scroll"><div class="grid">' + o.cards.map((c, i) => {
         const hid = hidOf(c, i), ec = effCode(c, i);
         return '<div class="gcard' + (hid ? ' back' : '') + (o.selected.has(i) ? ' sel' : '') + '" data-grid="' + i + '"' + (hid ? '' : artInline(ec, false, c.ref && c.ref.con != null ? deckKeyOfSeat(c.ref.con) : deckKeyOfSeat(HP))) + '>' +
-        '<div class="loc">' + c.locLabel + '</div>' + (hid ? '' : marksChipHTML(ec)) + '<div class="nm' + (hid ? '' : kindCls(ec)) + '">' + (hid ? hiddenCardLabel(c.ref || c) : '<span class="nmtext">' + cardName(ec) + (c.extra ? ' ' + c.extra : '') + '</span><button class="gdetail" data-gdetail="' + i + '">詳細</button>') + '</div>' +
+        '<div class="loc">' + locBadgeHTML(c.locLabel) + '</div>' + (hid ? '' : marksChipHTML(ec)) + '<div class="nm' + (hid ? '' : kindCls(ec)) + '">' + (hid ? hiddenCardLabel(c.ref || c) : '<span class="nmtext">' + cardName(ec) + (c.extra ? ' ' + c.extra : '') + '</span><button class="gdetail" data-gdetail="' + i + '">詳細</button>') + '</div>' +
         (hid ? '' : (statsLine(ec) ? '<div class="stats">' + statsLine(ec) + '</div>' : '')) + '</div>';
       }).join('') + '</div><div class="search-none" style="display:none"></div></div>' +
       // F7: the scroll cue rides INSIDE the button row as a
@@ -9355,7 +9393,7 @@ function uiUnselect(prompt, state) {
     '<div class="grid">' + combined.map((x, k) => {
       const hid = selCardHidden(x.c, prompt);
       return '<div class="gcard' + (hid ? ' back' : '') + (x.sel ? ' sel' : '') + '" data-unselect="' + x.idx + '"' + (hid ? '' : artInline(x.c.code, false, deckKeyOfSeat(x.c.con))) + '>' +
-      '<div class="loc">' + locLabel(x.c) + '</div>' + (hid ? '' : marksChipHTML(x.c.code)) + '<div class="nm' + (hid ? '' : kindCls(x.c.code)) + '">' + (hid ? hiddenCardLabel(x.c) : '<span class="nmtext">' + cardName(x.c.code) + '</span><button class="gdetail" data-uinfo="' + k + '">詳細</button>') + '</div>' +
+      '<div class="loc">' + locBadgeHTML(locLabel(x.c)) + '</div>' + (hid ? '' : marksChipHTML(x.c.code)) + '<div class="nm' + (hid ? '' : kindCls(x.c.code)) + '">' + (hid ? hiddenCardLabel(x.c) : '<span class="nmtext">' + cardName(x.c.code) + '</span><button class="gdetail" data-uinfo="' + k + '">詳細</button>') + '</div>' +
       (hid ? '' : (statsLine(x.c.code) ? '<div class="stats">' + statsLine(x.c.code) + '</div>' : '')) + '</div>';
     }).join('') + '</div><div class="search-none" style="display:none"></div>' +
     '<div class="btnrow">' +
@@ -10686,6 +10724,7 @@ function wireSeg(id, apply) {
     dismissedDuel = new Map();
     duelNoConfirm = new Set(); // C-27 suppression restarts with the duel
     confirmTurn = -1; confirmSeq = 0; // per-turn confirmation counter restarts with the duel
+    lastChainQ = null; // fix9396c-1115 (BU-99): the re-ask ordinal restarts with the duel
     pendingConfirms = []; // unshown card confirmations restart with the duel
     lastConfirm = null; // BU-58: so does the confirm-reveal batch
     updateAutoPassChip();
