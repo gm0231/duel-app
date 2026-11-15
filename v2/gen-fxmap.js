@@ -303,6 +303,42 @@ const OVERRIDES = {
   // ライトロード・パラディン ジェイン: idx0=end-phase mill=②
   //   (① is the undescribed continuous ATK gain).
   96235275: { 0: 2 },
+  // Classic decks round 5-7 (2026-11-15), each hand-audited
+  // against the bundled script's registration order:
+  // 真六武衆－カゲキ: idx0=summon trigger=① (② is the
+  //   undescribed continuous ATK gain).
+  2511717: { 0: 1 },
+  // 天空の使者 ゼラディアス: idx0=ignition search=① (② is the
+  //   undescribed self-destroy continuous).
+  12171659: { 0: 1 },
+  // 甲虫装機 センチピード／ダンセル: idx0=equip ignition=①,
+  //   idx1=leave-field trigger=③ (② is the undescribed equip
+  //   continuous stat/level grant).
+  21790410: { 0: 1, 1: 3 },
+  68184115: { 0: 1, 1: 3 },
+  // 甲虫装機 ホーネット: idx0=equip ignition=①, idx1=equip
+  //   ignition destroy=③ (② is the undescribed equip stat boost).
+  69207766: { 0: 1, 1: 3 },
+  // 甲虫装機 ギガマンティス: idx0=equip ignition=①, idx1=to-GY
+  //   special-summon trigger=③ (② is the undescribed equip
+  //   base-ATK continuous).
+  94573223: { 0: 1, 1: 3 },
+  // 真六武衆－シエン: idx0=quick negate=① (② is the undescribed
+  //   destroy-replace continuous).
+  29981921: { 0: 1 },
+  // マスター・ヒュペリオン: idx0=ignition destroy=① (② is the
+  //   undescribed continuous battle protection).
+  55794644: { 0: 1 },
+  // ダーク・アームド・ドラゴン: idx2=ignition destroy=① (idx1
+  //   is the special-summon procedure description — see
+  //   KNOWN_NON_ACTIVATABLE).
+  65192027: { 2: 1 },
+  // 六武衆の結束: idx0=ignition draw=① (② is the undescribed
+  //   counter-placement continuous; the activation is undescribed).
+  72345736: { 0: 1 },
+  // 六武衆の師範: idx0=destroyed trigger=③ (① is the undescribed
+  //   unique-on-field continuous, ② the summon procedure).
+  83039729: { 0: 3 },
   // Monarch deck additions (2026-11-11), each hand-audited
   // against the bundled script's registration order:
   // 帝王の轟毅: idx0=GY ignition=② (① is the card activation).
@@ -382,6 +418,14 @@ const BARE = {
 // hint for the SET card, never a prompt desc of Kaldan itself.
 const KNOWN_NON_ACTIVATABLE = {
   35026117: [0], 86605515: [2],
+  // Classic decks round 5-7 (2026-11-15):
+  // 天空の宝札 idx1 = the CLIENT_HINT oath effect its cost
+  //   registers (no special summon / no battle phase) — a hint,
+  //   never an activation prompt of this card.
+  54977057: [1],
+  // ダーク・アームド・ドラゴン idx1 = its special-summon
+  //   procedure's description (a procedure, never a prompt).
+  65192027: [1],
   // Super Quant deck additions (2026-11-08):
   // タイフーン idx0 = the description of its EFFECT_TRAP_ACT_IN_HAND
   //   grant (the hand-activation permission); the activation itself

@@ -118,8 +118,14 @@ const reason = (code, con, seq, state) => AB.reason(code, con, MZONE, seq, state
   // the self-imposed attack lock of their own banish effect
   // (「この効果を発動するターン、このカードは攻撃できない」),
   // core-enforced continuous — likewise not a summon-turn block.
-  ok(JSON.stringify(barring) === JSON.stringify([TANK, SHADOW, 36898537, 78625592, 85252081, 11646785, 57031794, 57450198, 24092792, 9596126, 72989439].sort((a, b) => a - b)),
-    'B1: pool-wide attack-barring clauses == exactly the 11 enumerated cards');
+  // 《甲虫装機 ホッパー》 joined with the Inzektor classic deck
+  // (2026-11-15): its bar locks the controller's OTHER monsters
+  // for the turn its direct-attack effect is used (「この効果を
+  // 発動するターン、装備モンスター以外のモンスターは攻撃できない」),
+  // registered by the effect itself — likewise not a summon-turn
+  // block.
+  ok(JSON.stringify(barring) === JSON.stringify([TANK, SHADOW, 36898537, 78625592, 85252081, 11646785, 57031794, 57450198, 24092792, 9596126, 72989439, 52601736].sort((a, b) => a - b)),
+    'B1: pool-wide attack-barring clauses == exactly the 12 enumerated cards');
   const pend = Object.values(data.cards).filter(c => (c.type & 0x1000000) !== 0).length;
   ok(pend === 0, 'B2: pool holds zero Pendulum monsters (Horus rider branch unreachable)');
   const ggAll = [...data.decks.gg.main, ...data.decks.gg.extra];

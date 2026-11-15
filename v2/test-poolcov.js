@@ -5,11 +5,13 @@
    patches; anything uncovered is enumerated here, with counts).
    Loads the REAL client.js (vm + stub DOM, same technique as
    test-fxidentify) against the REAL data.json / fxmap.json and
-   asserts, for all 234 cards (63 -> 89 with the Super Quant deck,
+   asserts, for all 290 cards (63 -> 89 with the Super Quant deck,
    89 -> 144 with the Elfennotes / White Forest decks, 2026-11-08;
    144 -> 147 with the v12/v13 additions; 147 -> 165 with the
    Monarch deck, 2026-11-11; 165 -> 234 with the classic decks
-   Lightsworn / Fire King / Chaos, 2026-11-15):
+   Lightsworn / Fire King / Chaos, 2026-11-15; 234 -> 290 with
+   the classic decks Six Samurai / Inzektor / The Agents,
+   2026-11-15):
      A. every fxmap target (map / pmap / yn / bare) names an
         existing printed segment of that card;
      B. every described activatable desc idx resolves (via
@@ -174,6 +176,34 @@ const EXCEPTIONS = {
   '7183277|0': '公式テキストに効果番号が存在しない（旧書式）',
   '94381039|0': '公式テキストに効果番号が存在しない（旧書式）',
   '22201234|1': '公式テキストに効果番号が存在しない（旧書式）',
+  // Classic decks round 5-7 (2026-11-15): old-style official
+  // texts carry NO circled numbers at all (full text is shown) —
+  // Six Samurai / Inzektor additions whose current official
+  // printing is still the unnumbered format
+  '1498130|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '2461031|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '2461031|1': '公式テキストに効果番号が存在しない（旧書式）',
+  '2766877|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '16550875|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '21977828|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '21977828|1': '公式テキストに効果番号が存在しない（旧書式）',
+  '26211048|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '27782503|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '37926346|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '38643567|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '44505297|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '44505297|1': '公式テキストに効果番号が存在しない（旧書式）',
+  '48505422|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '52601736|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '52601736|1': '公式テキストに効果番号が存在しない（旧書式）',
+  '64398890|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '65844845|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '74094021|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '75116619|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '78792195|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '90397998|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '95395761|0': '公式テキストに効果番号が存在しない（旧書式）',
+  '95519486|0': '公式テキストに効果番号が存在しない（旧書式）',
 };
 // ---------- C: undescribed blocks knowingly not prompt-bearing ----------
 const NON_PROMPT = {
@@ -234,11 +264,26 @@ const NON_PROMPT = {
   '88240808': '①持続（お互いの墓地のカードを除外できない）。発動エントリにならない',
   '97077563': '①の連動破壊機構（このカード／特殊召喚したモンスターが離れた時の処理）。発動ではない',
   '10719350': '②持続（獣戦士族の攻撃力アップ）。発動エントリにならない',
+  // Classic decks round 5-7 (2026-11-15): continuous / machinery
+  // blocks of the Six Samurai / Inzektor / Agents additions,
+  // hand-audited against the bundled scripts
+  '10002346': '②の破壊身代わり処理（X素材を取り除く持続）。発動ではない（本文は2024年再録の番号付きPSCTが現行公式文。①も持続で発動エントリにならない）',
+  '27782503': '六武衆の身代わり破壊持続（別の「六武衆」を破壊する適用処理）。発動ではない',
+  '27821104': '解決時に特殊召喚したモンスターへ登録されるエンドフェイズ自壊処理。発動ではない',
+  '29981921': '②持続（破壊の身代わり処理）。発動ではない',
+  '52601736': '直接攻撃効果の解決時に登録される他モンスターへの攻撃禁止持続。発動ではない',
+  '55794644': '特殊召喚手続きブロック。発動ではない',
+  '56433456': '持続（天使族の戦闘ダメージを0にする適用）。発動エントリにならない',
+  '64398890': '六武衆の身代わり破壊持続（別の「六武衆」を破壊する適用処理）。発動ではない',
+  '72345736': '②持続（召喚・特殊召喚成功時に武士道カウンターを置く処理）。発動エントリにならない',
+  '90397998': '六武衆の身代わり破壊持続（別の「六武衆」を破壊する適用処理）。発動ではない',
+  '95395761': '装備側の身代わり破壊持続（装備モンスターの代わりに破壊される適用処理）。発動ではない',
+  '95519486': '六武衆の身代わり破壊持続（別の「六武衆」を破壊する適用処理）。発動ではない',
 };
 
 // ---------- A + B + classification table ----------
 const clsCount = { '番号特定': 0, '番号特定（スコープ/yn/bare）': 0, '単一効果/発動慣例': 0, '番号対象なし': 0, '未カバー': 0 };
-console.log('---- pool classification (234) ----');
+console.log('---- pool classification (290) ----');
 for (const code of Object.keys(data.cards)) {
   const fx = fxmap[code];
   const segs = T.effectSegments(+code);
@@ -287,7 +332,7 @@ for (const code of Object.keys(data.cards)) {
   console.log(code + ' | ' + data.names[code] + ' | segs=' + segs.length + ' | desc=' + [...desc].join(',') + ' | ' + cls);
 }
 console.log('classification counts:', JSON.stringify(clsCount));
-ok(Object.keys(data.cards).length === 234, 'pool is 234 cards');
+ok(Object.keys(data.cards).length === 290, 'pool is 290 cards');
 ok(clsCount['未カバー'] === 0, 'no card is left unclassified/uncovered without an enumerated reason');
 
 // ---------- D: lingering-restriction scan ----------

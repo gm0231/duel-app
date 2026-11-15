@@ -62,7 +62,7 @@ NeuronLib.setData(genesys);
 // ---------- 3. the 18 new cards are fully implemented ----------
 const NEW_CODES = [...new Set(mo.main)];
 ok(NEW_CODES.length === 18, 'M7: the recipe spans 18 distinct cards');
-ok(Object.keys(data.cards).length === 234, 'M8: the pool is now 234 cards (147 + the 18 Monarch implementations + the 69 classic-deck implementations)');
+ok(Object.keys(data.cards).length === 290, 'M8: the pool is now 290 cards (147 + the 18 Monarch implementations + the 69 classic-deck implementations + the 56 classic round 5-7 implementations)');
 for (const pc of NEW_CODES) {
   const c = data.cards[pc];
   ok(!!c && !!data.scripts['c' + pc + '.lua'] && !!data.names[pc] && !!data.texts[pc] && !!data.texts[pc].text,
