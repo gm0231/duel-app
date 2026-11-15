@@ -813,7 +813,15 @@
   /* attack declaration: thin cyan line + impact (round B, MD-style) */
   .fx-line{height:3px;background:linear-gradient(90deg,#aef3ff,#59d8f2);box-shadow:0 0 8px #59d8f2cc;border-radius:2px;transform-origin:0 50%;}
   .fx-impact{transform:translate(-50%,-50%);border-radius:50%;}
-  .fx-atkbanner{position:absolute;left:0;right:0;top:30%;text-align:center;font-size:17px;font-weight:700;letter-spacing:.3em;padding:7px 0 7px .3em;color:#dff8ff;background:linear-gradient(90deg,transparent,#0e2a3acc 18%,#0e2a3acc 82%,transparent);pointer-events:none;}
+  /* BU-54 residue (bigfix2-1115): the banner is a centred plaque,
+     not a full-width band — the band's gradient tail painted over
+     the lower half of the LP numerals at the plates' right edge
+     (mirror-measured: the element covered the numeral's full
+     width for its lower 14px). The plaque keeps the BU-54 seat
+     (straddling the LP band's bottom edge, set from JS) and the
+     lapis gradient, faded at its own edges; its box ends far
+     short of the numerals on both sides. */
+  .fx-atkbanner{position:absolute;left:50%;right:auto;top:30%;transform:translateX(-50%);width:max-content;max-width:94%;text-align:center;font-size:17px;font-weight:700;letter-spacing:.3em;padding:7px 26px 7px calc(26px + .3em);color:#dff8ff;background:linear-gradient(90deg,transparent,#0e2a3acc 16%,#0e2a3acc 84%,transparent);pointer-events:none;}
   /* ace cut-in (round B): darkened field, big card, name/ATK/DEF banner;
      LP/HUD stay visible because the scrim is translucent */
   #fxcutin .scrim{position:absolute;inset:0;background:radial-gradient(circle at 50% 42%,#1a1430cc,#050308e8 75%);}
@@ -870,7 +878,8 @@
      height is taken, tile size is untouched. */
   .fx-notice{position:absolute;left:6px;right:6px;z-index:8;background:linear-gradient(180deg,rgba(19,14,6,.95),rgba(7,5,2,.97));border:1px solid rgba(201,162,39,.7);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.6);padding:3px 8px;pointer-events:none;}
   .fx-notice .nt{font-size:12.5px;font-weight:800;color:#ffe9a8;line-height:1.3;letter-spacing:.02em;}
-  .fx-notice .ns{display:inline;font-size:11px;font-weight:400;color:var(--txt-dim);margin-right:7px;line-height:1.3;}
+  .fx-notice .ns{display:inline;font-size:11px;font-weight:400;color:var(--txt-dim);margin-right:5px;line-height:1.3;}
+  .fx-notice .nsep{font-size:11px;font-weight:700;color:var(--gold);margin-right:5px;line-height:1.3;}
   /* Redesign F -> BU-72 (2026-11-13): the LP chip is now ONLY the
      LP-cost stamp. Effect damage and heals used to be chips too;
      the unified grammar presents them as the big ± numerals on
@@ -1085,6 +1094,31 @@
   #deckpage.dp-compact .settings{margin-top:3px;padding-top:3px;}
   #deckpage.dp-compact .srow{margin-bottom:2px;}
   #deckpage.dp-compact .srow .seg button{min-height:38px;}
+  /* BU-82 residue (bigfix2-1115): the tight tier — engaged from
+     client.js (dpTightUpdate) only while the settings region
+     overflows, which a picked deck's third description line can
+     cause at 620 (Monarch: +27px, the sound row arrived as a
+     5px sliver). It buys back ~30px of vertical rhythm; the
+     arrival fit and taller screens never see it. */
+  #deckpage.dp-tight .deck{min-height:44px;padding-top:5px;padding-bottom:5px;}
+  #deckpage.dp-tight .deck .dd{line-height:1.35;}
+  #deckpage.dp-tight .segrow{margin:3px 0 1px;}
+  #deckpage.dp-tight .seg3 button{min-height:40px;}
+  #deckpage.dp-tight .settings{margin-top:2px;padding-top:2px;}
+  #deckpage.dp-tight .srow{margin-bottom:1px;}
+  #deckpage.dp-tight .srow .seg button{min-height:36px;}
+  #deckpage.dp-tight #decksum{margin:5px 0;}
+  /* BU-91: above the compact tier the deck page's slack used to
+     sit as one void in the middle (the settings' auto margin
+     pins them to the bottom; measured 208px at 844, 362px at
+     998). The slack is now split three ways — over the opponent
+     section, over the turn-order row and over the settings — so
+     the page reads as spaced groups. Auto margins collapse to
+     0 when the region overflows, so the BU-82 fit and the
+     scroll behaviour are untouched; at compact heights there
+     is no slack to split (measured gap 3px). */
+  #deckpage:not(.dp-compact) .dp-sec + .dp-sec{margin-top:auto;}
+  #deckpage:not(.dp-compact) .dp-main > .segrow{margin-top:auto;}
   /* BU-82 scroll cue: below the compact tier's reach (e.g. the
      in-app webview's shorter band) the region still scrolls —
      now it SAYS so: a fade at the region's lower edge plus a
