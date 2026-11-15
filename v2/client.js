@@ -567,14 +567,25 @@ function deckDisplayName(k) {
 // 'classic'); saved (imported) decks form the last category, own
 // side only.
 const DECK_BLURB = {
+  // BU-51 residue (bigfix2-1115): some blurbs carry a zero-width
+  // space (\u200b) at a phrase joint. In the deck modal the
+  // description column is narrower (~230px), and a blurb with no
+  // break opportunity at all was split mid-word by the last-
+  // resort overflow wrap (measured: 「エルフェンノーツデ／ッキ」
+  // and 「クラシッ／クデッキ」). The joint gives the line a
+  // clean place to break; where the line is wide enough the
+  // blurb still stands whole.
   ishizu: 'イシズ・墓地を入れ替える逆転のデッキ',
   gg: '三魔神の合体と壁のデッキ',
-  superquant: '超量を重ねてグレート・マグナスを呼ぶデッキ',
+  // BU-51 residue (bigfix2-1115): shortened by 3 chars — with the
+  // name protected (see deckMetaLine), the blurb + pt suffix must
+  // still fit the second line whole, or the pt orphans to a third.
+  superquant: '超量を重ねてグレート・マグナスを呼ぶ',
   // BU-51: the pt total is appended by deckMetaLine itself, so the
   // blurbs no longer repeat it — shorter lines, fewer mid-name wraps.
-  elfennotes: 'Genesys環境テーマのエルフェンノーツデッキ',
-  whiteforest: 'Genesys環境テーマの白き森デッキ',
-  monarch: '従騎から帝をアドバンス召喚するクラシックデッキ（領域なし）',
+  elfennotes: 'Genesys環境テーマの\u200bエルフェンノーツデッキ',
+  whiteforest: 'Genesys環境テーマの\u200b白き森デッキ',
+  monarch: '従騎から帝を\u200bアドバンス召喚する\u200bクラシックデッキ（領域なし）',
 };
 const DECK_CATEGORIES = [
   { id: 'character', label: 'キャラクターデッキ' },
@@ -616,7 +627,14 @@ function deckMetaLine(k) {
   const d = DATA && DATA.decks ? DATA.decks[k] : null;
   if (!d) return '';
   let s = 'メイン' + d.main.length + '枚／EX' + d.extra.length + '枚';
-  if (DECK_BLURB[k]) s += '／' + DECK_BLURB[k];
+  // BU-51 residue (bigfix2-1115): a word joiner (U+2060, invisible)
+  // rides both sides of every ・ inside a blurb, so a proper noun
+  // containing one (グレート・マグナス) can never split at it —
+  // under word-break:keep-all the dot was the only break
+  // opportunity inside the name (mirror-measured split:
+  // 「グレート・／マグナス」; with the joiners the line breaks at
+  // the ／ before the blurb instead and the name stands whole).
+  if (DECK_BLURB[k]) s += '／' + DECK_BLURB[k].replace(/・/g, '\u2060・\u2060');
   if (deckPtCache.has(k)) s += '・' + deckPtCache.get(k) + 'pt';
   return s;
 }
@@ -649,6 +667,7 @@ function refreshDeckMeta() {
     if (dd && w.dataset.key) dd.textContent = deckMetaLine(w.dataset.key);
   });
   renderDeckCurrents();
+  dpTightUpdate(); // BU-82 residue: the pt suffix can grow a row after arrival
 }
 // ----------------------------------------------------------------
 // Neuron import (Phase 1): decks the user imported and saved live
@@ -708,6 +727,25 @@ function updateDeckSum() {
   refreshStartGate();
   renderDeckCurrents();
   dpCueUpdate(); // BU-82: a selection change can grow the settings stack
+  dpTightUpdate(); // BU-82 residue: and can push it past the region (dp-tight)
+}
+// BU-82 residue (bigfix2-1115): picking a deck whose current-row
+// description wraps to a third line (Monarch is the worst case:
+// +27px at 390x620, mirror-measured) pushed the settings stack
+// past the region again — the sound row arrived as a 5px sliver
+// behind the scroll cue. A third tier, dp-tight, buys back the
+// vertical rhythm ONLY while the region actually overflows:
+// the update measures with the tier off, then engages it if the
+// stack still does not fit, so the arrival state and taller
+// screens keep the compact rhythm untouched. If even the tight
+// tier overflows (a WebView band shorter than any current
+// phone), the BU-82 scroll cue remains as the floor.
+function dpTightUpdate() {
+  const dp = $('deckpage'); if (!dp) return;
+  const m = dp.querySelector('.dp-main'); if (!m) return;
+  if (dp.classList.contains('dp-tight')) dp.classList.remove('dp-tight');
+  // jsdom reports 0 heights — reads as "fits", tier stays off.
+  dp.classList.toggle('dp-tight', m.scrollHeight > m.clientHeight + 1);
 }
 // BU-82: the deck page's scroll cue (see the CSS note in
 // index.html). The class lives on #deckpage; it is on exactly
@@ -720,7 +758,7 @@ function dpCueUpdate() {
   if (!dpCueWired) {
     dpCueWired = true;
     m.addEventListener('scroll', () => dpCueUpdate(), { passive: true });
-    window.addEventListener('resize', () => dpCueUpdate());
+    window.addEventListener('resize', () => { dpCueUpdate(); dpTightUpdate(); });
     if (window.MutationObserver) new MutationObserver(() => dpCueUpdate()).observe(dp, { attributes: true, attributeFilter: ['style', 'class'] });
   }
   // BU-82: the compact tier for this page rides on the same
@@ -3424,6 +3462,32 @@ function fxPhaseBanner(fam) {
   const lpR = $('lpband') ? fxRel($('lpband')) : null;
   const lpSeat = !!(lpR && lpR.h > 0);
   if (lpSeat) d.style.top = Math.round(lpR.y + lpR.h / 2) + 'px';
+  // BU-88: the wide labels reach the LP numerals at the plates'
+  // right edge and hide the leading digit (mirror-measured on the
+  // round-3 build: メインフェイズ 1's plaque is 296px wide and
+  // covers 20px of the 57px numeral — LP 8000 read as 3000;
+  // スタンバイフェイズ is 324px wide, 34px over). The seat stays
+  // the LP band's centre (BU-44); instead the label steps its
+  // font down until the plaque clears BOTH numerals with a 4px
+  // margin. Short labels never intersect and keep the full
+  // 23px — their look is untouched. The t=0 transform is applied
+  // up front so the measurement reads the seated geometry (the
+  // scene render rewrites the same formula every frame).
+  d.style.transform = lpSeat ? 'translateY(calc(-50% + 4px))' : 'translateY(4px)';
+  const lblEl = d.querySelector('.lbl');
+  if (lblEl) {
+    const lpEls = [$('oppLp'), $('myLp')].filter(Boolean);
+    const hitsLp = () => {
+      const lr = lblEl.getBoundingClientRect();
+      if (!(lr.width > 0)) return false;
+      return lpEls.some(el => {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && lr.left < r.right + 4 && r.left - 4 < lr.right && lr.top < r.bottom && r.top < lr.bottom;
+      });
+    };
+    let fs = 23;
+    while (fs > 15 && hitsLp()) { fs -= 1; lblEl.style.fontSize = fs + 'px'; }
+  }
   // ---- the sweep segment: a 2px gold line (gradient + bright
   // leading tip, CSS .fx-phase-sweep) that runs left -> right
   // across the TOP of the header (prototype offset: bar top + 3px,
@@ -5022,6 +5086,10 @@ function fxAtkBanner() {
   // LP band and the top edge of the far field's art — no stat
   // plate and no LP numeral (both ride clear of the centre) is
   // covered. No measurable band (jsdom) keeps the CSS seat.
+  // bigfix2-1115 (BU-54 residue): the banner element itself is
+  // now a centred plaque (see the .fx-atkbanner CSS note) — the
+  // full-width band's gradient tail still veiled the LP
+  // numerals' lower half; the plaque's box never reaches them.
   const lpR = $('lpband') ? fxRel($('lpband')) : null;
   if (lpR && lpR.h > 0) d.style.top = Math.round(lpR.y + lpR.h - 16) + 'px';
   fxAnim(d, [{ opacity: 0 }, { opacity: 1, offset: 0.2 }, { opacity: 1, offset: 0.75 }, { opacity: 0 }], { duration: 900, easing: 'ease-out' });
@@ -5258,12 +5326,29 @@ function fxNoticePump() {
   const n = fxNoticeQ.shift();
   if (n) fxNoticeShow(n.text, n.sub, n.noBeat);
 }
-function fxNoticeShow(text, sub, noBeat) {
+function fxNoticeShow(text, sub, noBeat, deferrals) {
+  // BU-89 (bigfix2-1115): while the auto-pass flash owns the
+  // header (2.6s), the log line's column collapses (mirror-
+  // measured 11px wide) and a notice squeezed into it becomes a
+  // tall 9px strip that collides with the chip. Hold the notice
+  // until the flash settles — bounded: after ~2.7s of retries it
+  // shows regardless. The busy flag stays up across the hold so
+  // the queue behind it keeps its order.
+  const hd0 = document.getElementById('header');
+  if (hd0 && hd0.classList.contains('apflash') && (deferrals || 0) < 6) {
+    fxNoticeBusy = true;
+    setTimeout(() => fxNoticeShow(text, sub, noBeat, (deferrals || 0) + 1), 450);
+    return;
+  }
   const layer = fxLayerEl(); if (!layer) return;
   const old = layer.querySelector('.fx-notice'); if (old) old.remove();
   fxNoticeBusy = true;  const d = document.createElement('div');
   d.className = 'fx-notice';
-  d.innerHTML = '<div class="nt">' + (sub ? '<span class="ns">' + sub + '</span>' : '') + text + '</div>';
+  // BU-89: a gold separator stands between the label and the
+  // body — with only the label's 7px margin the two ran together
+  // on one line (mirror text: 「…デッキ→手札相手のカードが…」)
+  // and the junction was unreadable at a glance.
+  d.innerHTML = '<div class="nt">' + (sub ? '<span class="ns">' + sub + '</span><span class="nsep">｜</span>' : '') + text + '</div>';
   d.style.opacity = '0';
   layer.appendChild(d);
   /* BU-83 residue (2026-11-14): bottom-anchor the strip inside
@@ -5302,9 +5387,26 @@ function fxNoticeShow(text, sub, noBeat) {
     if (lg && lr.width) {
       const gr = lg.getBoundingClientRect();
       if (gr.width > 0) {
+        // BU-89 (bigfix2-1115): with the auto-pass chip up, the
+        // log line's own column starves (mirror-measured 69px)
+        // and the confined notice still turned into a tall 9px
+        // strip crowding the chip. While the chip is up (not
+        // flashing — the flash defers the notice above), the
+        // notice temporarily takes the chip's seat too: the same
+        // channel replacement the round-3 decision applied to
+        // the log line itself. The chip is a passive indicator
+        // and returns when the notice leaves; the turn readout,
+        // the opponent-hand chip and the FX button stay clear.
+        let colRight = gr.right;
+        const chip = document.getElementById('autopass');
+        if (chip && chip.classList.contains('on') && !chip.classList.contains('flash')) {
+          const hc = document.getElementById('oppHandChip');
+          const hcr = hc ? hc.getBoundingClientRect() : null;
+          if (hcr && hcr.left > gr.left) colRight = Math.max(colRight, hcr.left - 6);
+        }
         d.style.left = Math.max(0, Math.round(gr.left - lr.left)) + 'px';
-        d.style.right = Math.max(0, Math.round(lr.right - gr.right)) + 'px';
-        const key = Math.round(gr.width) + 'x' + Math.round(hr.height);
+        d.style.right = Math.max(0, Math.round(lr.right - colRight)) + 'px';
+        const key = Math.round(colRight - gr.left) + 'x' + Math.round(hr.height);
         if (key !== fitKey) { // re-fit only when the seat changed (the anchor below still runs per frame)
           fitKey = key;
           const nt = d.querySelector('.nt'), ns = d.querySelector('.ns');
