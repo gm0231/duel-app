@@ -8043,9 +8043,20 @@ function flashAutoPass(names) {
   const el = $('autopass'); if (!el) return;
   // BU-85: the suppressed card's name gets its own line — one line truncated it
   // (measured: 「自動パス：帝王の烈旋」 cut to 「自動パス：帝王の」 at 103px).
-  // The name is set via textContent, never HTML.
-  el.innerHTML = '自動パス：<span class="ap-name"></span>';
-  el.querySelector('.ap-name').textContent = names;
+  // The name is set via textContent, never HTML. The span is appended after a
+  // plain-text label; if the element cannot hold children (a minimal stub whose
+  // querySelector/appendChild are no-ops), the plain full text is restored so
+  // the flash still names the card (DK12) instead of throwing mid-flash.
+  el.textContent = '自動パス：' + names;
+  try {
+    const sp = document.createElement('span');
+    sp.className = 'ap-name'; sp.textContent = names;
+    el.textContent = '自動パス：';
+    el.appendChild(sp);
+    if (!sp.isConnected) el.textContent = '自動パス：' + names;
+  } catch (e) {
+    el.textContent = '自動パス：' + names;
+  }
   el.className = 'on flash';
   const hd = $('header'); if (hd) hd.classList.add('apflash'); // BU-85: keep the log line one line while flashing
   syncChipInert(); // BU-37: same re-apply as updateAutoPassChip
