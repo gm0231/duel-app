@@ -267,7 +267,7 @@ const NON_PROMPT = {
   // Classic decks round 5-7 (2026-11-15): continuous / machinery
   // blocks of the Six Samurai / Inzektor / Agents additions,
   // hand-audited against the bundled scripts
-  '10002346': '破壊の身代わり処理（X素材を取り除く持続）。発動ではない',
+  '10002346': '②の破壊身代わり処理（X素材を取り除く持続）。発動ではない（本文は2024年再録の番号付きPSCTが現行公式文。①も持続で発動エントリにならない）',
   '27782503': '六武衆の身代わり破壊持続（別の「六武衆」を破壊する適用処理）。発動ではない',
   '27821104': '解決時に特殊召喚したモンスターへ登録されるエンドフェイズ自壊処理。発動ではない',
   '29981921': '②持続（破壊の身代わり処理）。発動ではない',
