@@ -2971,17 +2971,46 @@ function fxHandFromPt(con, code, anchorPt) {
   }
   return anchorPt;
 }
-function fxFly(code, faceDown, fromPt, toPt, w, h, dur, delay, deckKey) {
+function fxFly(code, faceDown, fromPt, toPt, w, h, dur, delay, deckKey, via) {
   const d = fxPlaceGhost(code, faceDown, fromPt, w, h, deckKey); if (!d) return;
   const dl = delay || 0;
   if (dl > 0) d.style.opacity = '0'; // held until the delayed animation takes over (fill:backwards shows frame 0)
   const dx = toPt.cx - fromPt.cx, dy = toPt.cy - fromPt.cy;
-  fxAnim(d, [
-    { transform: 'translate(0px,0px)', opacity: 1 },
-    { transform: 'translate(' + (dx * 0.5) + 'px,' + (dy * 0.5 - 16) + 'px)', opacity: 1, offset: 0.55 },
-    { transform: 'translate(' + dx + 'px,' + dy + 'px) scale(.72)', opacity: 0.9 },
-  ], { duration: dur || 430, easing: 'ease-in-out', delay: dl, fill: dl > 0 ? 'backwards' : 'none' });
+  // fix9396d-1115 (BU-106): `via` bends the flight through an
+  // absolute layer point — the opponent-draw flight used to cut
+  // straight across the header (measured in the wild: the
+  // card-back ghost covered the logline by up to 1,236 px2 on
+  // every opponent draw). With a via the ghost drops below the
+  // header first, slides across, then rises to the hand chip,
+  // so the logline is never under it. Without a via the flight
+  // is exactly as before (the -16px mid-flight lift).
+  const frames = via
+    ? [ { transform: 'translate(0px,0px)', opacity: 1 },
+        { transform: 'translate(' + (via.cx - fromPt.cx) + 'px,' + (via.cy - fromPt.cy) + 'px)', opacity: 1, offset: 0.55 },
+        { transform: 'translate(' + dx + 'px,' + dy + 'px) scale(.72)', opacity: 0.9 } ]
+    : [ { transform: 'translate(0px,0px)', opacity: 1 },
+        { transform: 'translate(' + (dx * 0.5) + 'px,' + (dy * 0.5 - 16) + 'px)', opacity: 1, offset: 0.55 },
+        { transform: 'translate(' + dx + 'px,' + dy + 'px) scale(.72)', opacity: 0.9 } ];
+  fxAnim(d, frames, { duration: dur || 430, easing: 'ease-in-out', delay: dl, fill: dl > 0 ? 'backwards' : 'none' });
   fxKill(d, dl + (dur || 430) + 40);
+}
+// fix9396d-1115 (BU-106, second instance): a flight that leaves
+// the opponent's hand chip starts inside the header band — the
+// zone-sized ghost angles down-left while still high and covers
+// the logline's tail (probe post: 161 px2 on opponent sets; the
+// draw flight was the same defect at 1,236 px2). Bend it: drop
+// vertically at the chip's x to below the header, then angle to
+// the zone. Returns null when the flight starts below the header
+// already (own-seat flights from the handbar), so those keep the
+// straight flight. The draw flight does NOT use this — its start
+// is the deck pile, which needs the start itself shifted down
+// (see the draw call site), not just a bend.
+function fxChipVia(fromPt, w, h) {
+  const hb = document.getElementById('header');
+  const hbR = hb ? fxRel(hb) : null;
+  const hbBottom = hbR ? hbR.y + hbR.h : 0;
+  if (fromPt.cy - h / 2 >= hbBottom) return null;
+  return { cx: fromPt.cx, cy: hbBottom + h / 2 + 2 };
 }
 function fxZoneGlow(key, ms) {
   const el = fxSlotEl(key); if (!el) return;
@@ -4393,7 +4422,7 @@ function fxProcessInner(evs, state) {
         const bStart = fxBookBeat(con !== HP ? 960 : 740);
         const bDelay = Math.max(0, bStart - fxTimeMs);
         const fromPt = fxHandFromPt(con, code, handPt(con)), toPt = ptOf(ar.key);
-        if (fromPt && toPt) { fxFly(isNormal ? code : null, !isNormal, fromPt, toPt, toPt.w - 2, toPt.h - 24, 400, bDelay, deckKeyOfSeat(con)); fxRecord('flight', { to: 'field', from: 'hand', code }); }
+        if (fromPt && toPt) { fxFly(isNormal ? code : null, !isNormal, fromPt, toPt, toPt.w - 2, toPt.h - 24, 400, bDelay, deckKeyOfSeat(con), fxChipVia(fromPt, toPt.w - 2, toPt.h - 24)); fxRecord('flight', { to: 'field', from: 'hand', code }); }
         fxRecord('place', { how: isNormal ? 'summon' : 'set', code });
         if (isNormal && (ar.entry.pos & E.POS_FACEUP) !== 0) {
           fxSummonCallout(ar.key, code, con, ar.entry.pos, bStart + 180);
@@ -4428,7 +4457,7 @@ function fxProcessInner(evs, state) {
       const bDelay = Math.max(0, bStart - fxTimeMs);
       const fromPt = fxHandFromPt(con, code, handPt(con)), toPt = ptOf(ar.key);
       const faceDown = (ar.entry.pos & E.POS_FACEUP) === 0;
-      if (fromPt && toPt) { fxFly(faceDown ? null : code, faceDown, fromPt, toPt, toPt.w - 2, toPt.h - 24, 380, bDelay, deckKeyOfSeat(con)); fxRecord('flight', { to: 'field', from: 'hand', code }); }
+      if (fromPt && toPt) { fxFly(faceDown ? null : code, faceDown, fromPt, toPt, toPt.w - 2, toPt.h - 24, 380, bDelay, deckKeyOfSeat(con), fxChipVia(fromPt, toPt.w - 2, toPt.h - 24)); fxRecord('flight', { to: 'field', from: 'hand', code }); }
       fxPortal(ar.key, method, 600, bStart + 150);
       fxRecord('portal', { method, code });
       if (!faceDown) {
@@ -4455,7 +4484,7 @@ function fxProcessInner(evs, state) {
       if (fxHandOrigin(ar.key.split(':').map(Number)[0], ar.entry.code, prev, cur)) {
         const con2 = ar.key.split(':').map(Number)[0];
         const fromPt = fxHandFromPt(con2, ar.entry.code, handPt(con2)), toPt = ptOf(ar.key);
-        if (fromPt && toPt) { fxFly(null, true, fromPt, toPt, toPt.w - 2, toPt.h - 24, 380, 0, deckKeyOfSeat(con2)); fxRecord('flight', { to: 'field', from: 'hand', code: ar.entry.code }); }
+        if (fromPt && toPt) { fxFly(null, true, fromPt, toPt, toPt.w - 2, toPt.h - 24, 380, 0, deckKeyOfSeat(con2), fxChipVia(fromPt, toPt.w - 2, toPt.h - 24)); fxRecord('flight', { to: 'field', from: 'hand', code: ar.entry.code }); }
         fxRecord('place', { how: 'set', code: ar.entry.code });
       } else { fxPuff(ar.key); fxRecord('place', { how: 'set', code: ar.entry.code }); }
       consumedArr.add(ar.key);
@@ -4655,7 +4684,26 @@ function fxProcessInner(evs, state) {
     // identity is hidden information, so it registers anonymous
     // (the emission words it as a count, never a name).
     for (let i = 0; i < Math.min(5, cur.handLen[opp] - prev.handLen[opp]); i++) noteMove(opp, 'deck', 'hand', null, false);
-    if (fromPt && toPt) fxFly(null, true, fromPt, toPt, 40, 52);
+    // fix9396d-1115 (BU-106): the draw ghost used to fly
+    // straight from the deck pile to the hand chip — across the
+    // header, over the logline (probe-fix9396d pre: up to
+    // 1,236 px2, every opponent draw; the re-verification saw
+    // the card-back icon hide 「ロー」 of 「相手：1枚ドロー」).
+    // The ghost now starts below the header (its top edge sits
+    // 2px under the header's live bottom — a notice grows it,
+    // so the bottom is read live) and bends at the chip's x:
+    // drop below the header, slide across, rise to the chip.
+    // The rise runs at the chip's x, right of the logline's
+    // right edge, so the logline (and the notice band, which
+    // shares its column) is never under the ghost.
+    if (fromPt && toPt) {
+      const hb = document.getElementById('header');
+      const hbR = hb ? fxRel(hb) : null;
+      const hbBottom = hbR ? hbR.y + hbR.h : 0;
+      const belowY = Math.max(fromPt.cy + 26, hbBottom + 28); // 26 = half the ghost's 52px height
+      const startPt = { cx: fromPt.cx, cy: belowY, w: fromPt.w, h: fromPt.h };
+      fxFly(null, true, startPt, toPt, 40, 52, undefined, undefined, undefined, { cx: toPt.cx, cy: belowY });
+    }
   }
   // ---- deck -> grave (redesign I(1)): cards an effect sends
   // straight from the deck to the graveyard (《おろかな副葬》's
@@ -8751,7 +8799,13 @@ function uiChain(prompt, state) {
     if (lastChainQ && lastChainQ.key === qkey) reaskN = lastChainQ.n + 1;
     lastChainQ = { key: qkey, n: reaskN };
   }
-  if (cause && reaskN > 1) { const sfx = '（' + reaskN + '回目）'; cause.label += sfx; cause.tray += sfx; }
+  // fix9396d-1115 (BU-104 remainder): the ordinal is one
+  // unbreakable unit on the TRAY — the re-verification saw
+  // 「（2回／目）」 split across lines. It rides as a nowrap
+  // span in cause.tray (raw innerHTML there); cause.label stays
+  // plain text because the dock runs it through nbHTML, which
+  // escapes markup and already glues the suffix into its unit.
+  if (cause && reaskN > 1) { const sfx = '（' + reaskN + '回目）'; cause.label += sfx; cause.tray += '<span class="reask-n">' + sfx + '</span>'; }
   const draw = () => {
     fxPhaseBannerCut(); fxTurnBannerCut(); // BU-44/BU-92: the dock opening settles any live phase banner and releases the turn lock
     const peeked = document.getElementById('app').classList.contains('dockpeek');

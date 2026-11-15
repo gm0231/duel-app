@@ -416,6 +416,18 @@
      .ctx line is already split into nowrap units by nbHTML, so
      this rule is a no-op there and guards the rest. */
   #dock .ctx,#dock .causename,#dock .cand .cname,#dock .cand .fxline,#dock .sub,#dock .duelsection{word-break:keep-all;overflow-wrap:anywhere;}
+  /* fix9396d-1115 (BU-104 remainder): the fix9396c rule covered
+     the DOCK, but the breaking words live in the TRAY
+     (#chaintray .ct-cause-txt) — the small dish at bottom-right
+     (measured in the wild: 「シャド／ウ」「ガーディア／ン」
+     「チェ／ーン」). Same keep-all / anywhere pair here, and on
+     the floating card names' two-line fallback (.ct-name.wrap2,
+     which drops the nowrap). The name inside <b> is one nowrap
+     unit, and the re-ask ordinal rides as one nowrap unit too,
+     so （2回目） never splits as （2回／目）. */
+  #chaintray .ct-cause-txt,#chaintray .ct-name{word-break:keep-all;overflow-wrap:anywhere;}
+  #chaintray .ct-cause-txt b{white-space:nowrap;}
+  .ct-cause-txt .reask-n{white-space:nowrap;}
   #dock .cause{display:flex;align-items:center;gap:9px;background:var(--panel2);border:1px solid var(--tile-edge);border-radius:8px;padding:6px 8px;margin-bottom:9px;cursor:pointer;}
   #dock .causeart{flex:0 0 auto;width:38px;height:52px;border-radius:4px;border:1px solid var(--gold-dim);background:#3a2f1d url('../assets/card-art-placeholder-s.jpg') center/cover;}
   #dock .causename{font-size:15.5px;font-weight:700;color:var(--txt);}
@@ -949,7 +961,11 @@
      any zone, at any text length. Overlay only: no board
      height is taken, tile size is untouched. */
   .fx-notice{position:absolute;left:6px;right:6px;z-index:8;background:linear-gradient(180deg,rgba(19,14,6,.95),rgba(7,5,2,.97));border:1px solid rgba(201,162,39,.7);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.6);padding:3px 8px;pointer-events:none;}
-  .fx-notice .nt{font-size:12.5px;font-weight:800;color:#ffe9a8;line-height:1.3;letter-spacing:.02em;}
+  /* fix9396d-1115 (BU-107): notice text broke long names
+     mid-word (「ゲ／ート」「シャド／ウ」「墓／地」 — 17 of 18
+     notices in one wild duel). Same keep-all / anywhere pair
+     as the dock and tray. */
+  .fx-notice .nt{font-size:12.5px;font-weight:800;color:#ffe9a8;line-height:1.3;letter-spacing:.02em;word-break:keep-all;overflow-wrap:anywhere;}
   .fx-notice .ns{display:inline;font-size:11px;font-weight:400;color:var(--txt-dim);margin-right:5px;line-height:1.3;}
   .fx-notice .nsep{font-size:11px;font-weight:700;color:var(--gold);margin-right:5px;line-height:1.3;}
   /* Redesign F -> BU-72 (2026-11-13): the LP chip is now ONLY the

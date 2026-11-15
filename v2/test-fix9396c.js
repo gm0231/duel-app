@@ -87,7 +87,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 ok(clientSrc.includes('let lastChainQ = null;'), 'C99a: the last shown chain question is remembered (lastChainQ)');
 ok(clientSrc.includes("const qkey = state.turnCount + '|' + state.phaseName + '|' + (cause ? cause.label : '効果への応答');"), 'C99b: the re-ask key is turn + phase + cause label (the wording the player reads)');
 ok(clientSrc.includes("const sfx = '（' + reaskN + '回目）';"), 'C99c: the Nth re-ask reads （N回目）');
-ok(clientSrc.includes('cause.label += sfx; cause.tray += sfx;'), 'C99d: the ordinal rides on both the dock label and the tray text');
+ok(clientSrc.includes("cause.label += sfx; cause.tray += '<span class=\"reask-n\">' + sfx + '</span>';"), 'C99d: the ordinal rides on both the dock label and the tray text (fix9396d-1115: the tray side is a nowrap span so （2回目） never splits as （2回／目）)');
 {
   const iChain = clientSrc.indexOf('function uiChain(');
   const iCount = clientSrc.indexOf('lastChainQ = { key: qkey, n: reaskN };');
@@ -112,7 +112,7 @@ ok(clientSrc.includes('if (logMo) { try { logMo.disconnect(); } catch (e) {} }')
 ok(html.includes('#dock .ctx,#dock .causename,#dock .cand .cname,#dock .cand .fxline,#dock .sub,#dock .duelsection{word-break:keep-all;overflow-wrap:anywhere;}'), 'C104a: the dock text rule holds words together (keep-all / anywhere)');
 // BU-105: the ordinal is attached before the tray is shown, so both stages carry it
 {
-  const iSfx = clientSrc.indexOf('cause.label += sfx; cause.tray += sfx;');
+  const iSfx = clientSrc.indexOf("cause.label += sfx; cause.tray += '<span class=\"reask-n\">' + sfx + '</span>';");
   const iTray = clientSrc.indexOf('showChainTray(prompt, cause', iSfx);
   ok(iSfx > 0 && iTray > iSfx, 'C105a: the ordinal is baked into the cause before the tray is shown (tray and dock share it)');
 }
