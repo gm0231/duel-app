@@ -264,6 +264,45 @@ const OVERRIDES = {
   // 聖アザミナ: idx0=QUICK_O special summon=② (① is the
   //   undescribed FIELD protection).
   85065943: { 0: 2 },
+  // Classic decks round 2-4 (2026-11-15), each hand-audited
+  // against the bundled script's registration order:
+  // カオス・ソーサラー／カオス・ソルジャー －開闢の使者－／混沌帝龍:
+  //   idx0 is the special-summon PROCEDURE description (see the
+  //   poolcov exceptions); the activation effects follow it.
+  9596126: { 1: 1 },
+  72989439: { 1: 1, 2: 2 },
+  82301904: { 1: 1 },
+  // 裁きの龍: idx0 is the procedure (undescribed as activatable);
+  //   idx1=ignition=①, idx2=end-phase mill=②.
+  57774843: { 1: 1, 2: 2 },
+  // 混沌の黒魔術師: idx0=end-phase salvage=①, idx1=battle
+  //   banish=② (③ is the undescribed leave-field redirect).
+  40737112: { 0: 1, 1: 2 },
+  // 魔導戦士 ブレイカー: idx0=summon counter trigger=①,
+  //   idx1=counter-removal ignition=③ (② is the undescribed
+  //   continuous ATK gain).
+  71413901: { 0: 1, 1: 3 },
+  // 魂を削る死霊: idx0=battle-damage discard trigger=② (①③ are
+  //   undescribed continuous / machinery).
+  23205979: { 0: 2 },
+  // 月読命: idx0=summon/flip trigger=① (the end-phase return is a
+  //   description-less clone of it in the script).
+  34853266: { 0: 1 },
+  // サウザンド・アイズ・サクリファイス: idx0=equip ignition=②
+  //   (① is the undescribed FIELD attack/change lock).
+  63519819: { 0: 2 },
+  // 霊滅術師 カイクウ: idx0=battle-damage banish trigger=② (① is
+  //   the undescribed continuous banish lock).
+  88240808: { 0: 2 },
+  // No.101 S・H・Ark Knight: idx0=detach ignition=① (② is the
+  //   undescribed destruction-replacement machinery).
+  48739166: { 0: 1 },
+  // 炎舞－「天枢」: idx0=the extra-summon grant=① (② is the
+  //   undescribed continuous ATK boost).
+  10719350: { 0: 1 },
+  // ライトロード・パラディン ジェイン: idx0=end-phase mill=②
+  //   (① is the undescribed continuous ATK gain).
+  96235275: { 0: 2 },
   // Monarch deck additions (2026-11-11), each hand-audited
   // against the bundled script's registration order:
   // 帝王の轟毅: idx0=GY ignition=② (① is the card activation).
