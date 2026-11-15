@@ -443,7 +443,16 @@
      so the FX arrival measurements are untouched. */
   #chainui{position:absolute;right:10px;bottom:10px;width:252px;z-index:40;display:none;flex-direction:column;align-items:flex-end;gap:6px;}
   #chainui.on{display:flex;animation:ctin .24s ease-out;}
-  @keyframes ctin{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:none;}}
+  /* BU-99 (fix9396-1115): the entrance was opacity + translateY(10px).
+     A press-and-hold tap near the しない button's bottom edge, started
+     inside the 240 ms entrance, had the button translate away from the
+     press point before release — mouseup landed on the tray background
+     and the click never reached the button (measured: 3 of 9 hold-taps
+     absorbed in the first 150 ms, 0 of 2 after the animation). The
+     entrance is opacity ONLY now: a decision button never moves under
+     the finger. The floating treatment stays on the .ct-card minis,
+     which are not tap targets. */
+  @keyframes ctin{from{opacity:0;}to{opacity:1;}}
   #chainui.peek{pointer-events:none;}
   #chainui.peek #ctpeek{pointer-events:auto;}
   #chainui.peek #chaintray{visibility:hidden;}
@@ -466,7 +475,7 @@
   .ct-name.wrap2{white-space:normal;overflow:visible;}
   .ct-more{align-self:center;font-size:11px;color:var(--gold);border:1px solid var(--gold-dim);border-radius:999px;padding:4px 8px;white-space:nowrap;}
   .ct-badges{display:flex;gap:6px;justify-content:flex-end;align-items:stretch;}
-  .ct-yes{min-height:52px;background:linear-gradient(#e6c877,var(--gold));color:#191104;border:1px solid #e6c877;border-radius:999px;font-size:15px;font-weight:700;padding:12px 14px;white-space:nowrap;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.5);animation:ctfloat 2.4s ease-in-out infinite;animation-delay:-.3s;}
+  .ct-yes{min-height:52px;background:linear-gradient(#e6c877,var(--gold));color:#191104;border:1px solid #e6c877;border-radius:999px;font-size:15px;font-weight:700;padding:12px 14px;white-space:nowrap;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.5);} /* BU-99: no ctfloat here — チェーンする is a decision button and must not drift under the finger; the float stays on the .ct-card minis only. */
   .ct-no{min-height:52px;background:#241a0e;color:#cbbd97;border:1px solid var(--gold-dim);border-radius:999px;font-size:14px;padding:12px 12px;white-space:nowrap;cursor:pointer;}
   @keyframes ctfloat{0%,100%{transform:translateY(-2.5px);}50%{transform:translateY(2.5px);}}
   /* ---------- sheet (modal selections) ---------- */

@@ -1,12 +1,16 @@
 'use strict';
 /* test-fxround4.js — fx-ui round 4 (H1/H2/H3), deterministic checks
    in jsdom, harness as test-fxround3:
-     H1 — the dock's arrival animation must carry NO opacity
-     keyframes. Round 3 made the dock ground fully opaque, but the
-     arrival WAAPI faded the whole element (opacity .25 → 1), so for
-     300ms the board showed through the ground. Verified by capturing
-     the keyframes the client actually passes to animate(), plus a
-     source contract that the fade literal is gone.
+     H1 — SUPERSEDED by BU-99 (fix9396-1115): the dock's arrival
+     animation is GONE, not just fade-free. Round 4 chose a
+     translateY slide over an opacity fade so the ground stayed
+     opaque — but the slide moved the パス button under a
+     press-and-hold tap (measured: 2 of 3 hold-taps absorbed at
+     0/100 ms after チェーンする, the same failure as the tray's
+     ctin). The dock appears as the direct consequence of tapping
+     チェーンする, so no arrival motion is needed; it appears at
+     once with its ground opaque at every frame, as H1 required.
+     The pins below now assert NO entrance animation on the dock.
      H2 — delivered-CSS contract: .cand grows to fill the dock row
      (flex:1 1 0) with the established 172px floor and no 172px cap;
      a 1-candidate prompt still renders exactly its candidate (the
@@ -114,16 +118,18 @@ async function boot() {
     return window.eval('window.__fx4done') === true;
   };
 
-  // ---------- H1: arrival animation carries no fade ----------
+  // ---------- H1 successor (BU-99, fix9396-1115): NO arrival animation ----------
+  // The round-4 slide is gone (see the header note): the dock
+  // appears at once. The WAAPI capture above now proves the
+  // ABSENCE of an entrance — no calls on the dock at first draw —
+  // and the source pins keep both the slide and the fade literals out.
   dispatchChain({ code: MUDORA, con: 0, loc: 8, seq: 0, desc: MUDORA * 1048576 });
-  ok(await waitDock(), 'FX4-1: the chain dock dispatched (first draw — arrival animation fires)');
-  ok(window.__animCalls.length >= 1, 'FX4-2: H1 — the arrival animation ran on the dock');
-  const frames = window.__animCalls[0] || [];
-  ok(frames.length >= 2 && frames.every(f => !('opacity' in f)),
-    'FX4-3: H1 — no keyframe touches opacity (the ground cannot fade; before the fix: opacity .25 -> 1)');
-  ok(frames.some(f => String(f.transform || '').includes('translateY')),
-    'FX4-4: H1 — the arrival is carried by the slide (translateY) alone');
-  ok(!/opacity:\s*\.25/.test(clientSrc), 'FX4-5: H1 — the element-fade literal is gone from client.js');
+  ok(await waitDock(), 'FX4-1: the chain dock dispatched (first draw — no arrival animation fires)');
+  ok(window.__animCalls.length === 0, 'FX4-2: H1 successor (BU-99) — no WAAPI entrance runs on the dock at first draw');
+  ok(!/translateY\(14px\)/.test(clientSrc), 'FX4-3: H1 successor (BU-99) — the dock slide literal is gone from client.js');
+  const dockDraw = clientSrc.slice(clientSrc.indexOf("    $('dock').className = 'on';"));
+  ok(!dockDraw.slice(0, 600).includes('.animate('), 'FX4-4: H1 successor (BU-99) — no WAAPI call in the dock draw at all');
+  ok(!/opacity:\s*\.25/.test(clientSrc), 'FX4-5: H1 successor (BU-99) — the element-fade literal stays gone from client.js');
   // H2 behavioural anchor: the single candidate renders as exactly one .cand
   ok(doc.querySelectorAll('#dock .cand').length === 1, 'FX4-6: H2 — the 1-candidate prompt renders exactly one candidate');
   ok(await answerPass(), 'FX4-7: the chain prompt still answers normally');

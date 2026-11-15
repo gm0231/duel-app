@@ -5147,6 +5147,24 @@ function fxAttackSceneV3(o) {
   fxSpawnBurst('low', { add: 1, seed: (Math.random() * 1e9) | 0, o: [tPt.cx, tPt.cy], n: 26, t0: atkStart + 280, life: [300, 560], speed: [110, 330], ang: [0, Math.PI * 2], grav: 520, dragK: 2.6, size: [2.5, 6], cols: [col, '#ffffff', col], alpha: .95 });
   if (o.destroyed) fxSpawnBurst('low', { add: 1, seed: (Math.random() * 1e9) | 0, o: [tPt.cx, tPt.cy], n: 8, t0: atkStart + 410, life: [320, 520], speed: [16, 54], ang: [-Math.PI / 2, 0.9], grav: -60, size: [2.5, 5], cols: ['#ffffff', '#ffe9a8'], alpha: .9 });
   const atkCues = [{ at: 280, fn: () => fxHitStop(70) }]; // L4: the world stops at the collision
+  // BU-93 (fix9396-1115): for a DIRECT attack the impact point IS the
+  // defender's LP numerals (tPt = fxRel of the .lp span). The impact
+  // white core (r=34, alpha .95) sat exactly on the digits: continuous
+  // sampling showed 64-80% of the numerals' pixels over luminance 200
+  // for ~180 ms at the peak, so the leading digit read as covered.
+  // The scene's low-canvas light must never paint over the numerals
+  // themselves: drawLow is clipped around the numerals' rect (+4px),
+  // so the comet, bloom and rings stop at the digits' box while the
+  // blow still lands on the LP plate. The burst particles ride a
+  // separate pass and still cross the digits as sparse moving dots;
+  // they cannot white the glyphs out. Non-direct attacks keep their
+  // monster target and are unclipped. (The layer box is the clip's
+  // outer rect; fxRel coords are app coords and the layer is inset 0
+  // of #app, so the two share an origin.)
+  const layerEl0 = fxLayerEl();
+  const directClip = (o.direct && layerEl0 && layerEl0.clientWidth > 0)
+    ? { x: tPt.x - 4, y: tPt.y - 4, w: tPt.w + 8, h: tPt.h + 8, lw: layerEl0.clientWidth, lh: layerEl0.clientHeight }
+    : null;
   if (fxPendingBattleSe && performance.now() - fxPendingBattleSe.at < 1500) {
     const p = fxPendingBattleSe; fxPendingBattleSe = null;
     if (p.atk) atkCues.push({ at: 5, fn: () => playSe(p.atk) });
@@ -5160,6 +5178,16 @@ function fxAttackSceneV3(o) {
     // impact bloom, L6 soft rings, L9 rising streaks. The DOM keeps
     // only the two card rims and the ghost stack (transform/opacity).
     drawLow(ctx, t) {
+      // BU-93: keep the scene's light off the LP numerals (direct only).
+      let directClipped = false;
+      if (directClip) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, 0, directClip.lw, directClip.lh);
+        ctx.rect(directClip.x, directClip.y, directClip.w, directClip.h);
+        ctx.clip('evenodd');
+        directClipped = true;
+      }
       const halo = t < 300 ? fxSeg(t, 0, 300) : 1 - fxSeg(t, 300, 640);
       if (halo > 0) fxDrawGlow(ctx, aPt.cx, aPt.cy, 64, col, .5 * halo);
       if (t > 0 && t < 170) { // rim light runs once around the attacker's edge
@@ -5198,6 +5226,7 @@ function fxAttackSceneV3(o) {
         }
         ctx.restore();
       }
+      if (directClipped) ctx.restore(); // BU-93: release the numerals clip
     },
     render(t) {
       if (emph) { // L1: 1 -> 1.06 with the settle curve's own overshoot; gone by ~640 (the glow itself is canvas now)
@@ -5497,6 +5526,39 @@ function fxNoticePump() {
   const n = fxNoticeQ.shift();
   if (n) fxNoticeShow(n.text, n.sub, n.noBeat);
 }
+// BU-94 (fix9396-1115): the notice must never cover the header's own
+// information. The font steps down to its 9px floor first (the fit
+// loop below), but a long text at the floor still rose into row 1:
+// measured 349 px2 of the phase readout covered by a 4-name move
+// notice (top 29 vs phaseinfo bottom 33.4), and the attack notice sat
+// 2px from the same fate. The notice now grows the header instead of
+// rising past the row-1 text: while a notice is up, the header's
+// minHeight is raised by exactly the deficit, the same mechanism the
+// logline's third line already uses (BU-73 — the header grows and
+// layoutFit absorbs it). The cap is the bottom of the row-1 content
+// that horizontally overlaps the notice (#phaseinfo / #phasebtn); the
+// harmless 2-6px rise into row 1's EMPTY band is still allowed, so a
+// normal 2-line attack notice grows nothing. The growth is restored
+// (and layoutFit re-run) when the notice leaves.
+let fxNoticeHdrPrevMinH = null; // the header's minHeight before this notice grew it (null = none recorded yet)
+let fxNoticeHdrGrew = false; // whether this notice grew the header at all
+function fxNoticeGrowHeader(over) {
+  const hb = document.getElementById('header'); if (!hb || !(over > 0)) return;
+  if (fxNoticeHdrPrevMinH == null) fxNoticeHdrPrevMinH = hb.style.minHeight || '';
+  const want = (hb.offsetHeight + over) + 'px';
+  if (hb.style.minHeight !== want) {
+    hb.style.minHeight = want;
+    fxNoticeHdrGrew = true;
+    try { layoutFit(false); } catch (e) {}
+  }
+}
+function fxNoticeRestoreHeader() {
+  if (!fxNoticeHdrGrew) return;
+  const hb = document.getElementById('header');
+  if (hb) hb.style.minHeight = fxNoticeHdrPrevMinH || '';
+  fxNoticeHdrPrevMinH = null; fxNoticeHdrGrew = false;
+  try { layoutFit(false); } catch (e) {}
+}
 function fxNoticeShow(text, sub, noBeat, deferrals) {
   // BU-89 (bigfix2-1115): while the auto-pass flash owns the
   // header (2.6s), the log line's column collapses (mirror-
@@ -5512,7 +5574,7 @@ function fxNoticeShow(text, sub, noBeat, deferrals) {
     return;
   }
   const layer = fxLayerEl(); if (!layer) return;
-  const old = layer.querySelector('.fx-notice'); if (old) old.remove();
+  const old = layer.querySelector('.fx-notice'); if (old) { fxNoticeRestoreHeader(); old.remove(); }
   fxNoticeBusy = true;  const d = document.createElement('div');
   d.className = 'fx-notice';
   // BU-89: a gold separator stands between the label and the
@@ -5577,7 +5639,12 @@ function fxNoticeShow(text, sub, noBeat, deferrals) {
         }
         d.style.left = Math.max(0, Math.round(gr.left - lr.left)) + 'px';
         d.style.right = Math.max(0, Math.round(lr.right - colRight)) + 'px';
-        const key = Math.round(colRight - gr.left) + 'x' + Math.round(hr.height);
+        // BU-94: the fit key is the seat WIDTH only. The old key also
+        // carried the header height, so growing the header (below)
+        // re-ran the font fit and reset the type mid-dwell; the font
+        // is fitted by the seat it sits in, the header growth below
+        // handles the height.
+        const key = Math.round(colRight - gr.left);
         if (key !== fitKey) { // re-fit only when the seat changed (the anchor below still runs per frame)
           fitKey = key;
           const nt = d.querySelector('.nt'), ns = d.querySelector('.ns');
@@ -5593,6 +5660,30 @@ function fxNoticeShow(text, sub, noBeat, deferrals) {
       }
     }
     d.style.top = Math.max(0, Math.round(hr.bottom - lr.top - 2 - d.offsetHeight)) + 'px';
+    // BU-94: grow the header instead of rising past the row-1 text.
+    // The cap is the bottom of the row-1 content that horizontally
+    // overlaps the notice (#phaseinfo / #phasebtn / #loghistbtn — the
+    // two buttons both reach down to y=47, and the history button is
+    // the fixed one: the phase button's left edge moves with its
+    // label, so without #loghistbtn the cap could fall to 33.4 and
+    // the notice would cover the history button's bottom 13px);
+    // the notice may still rise into row 1's empty band, which
+    // covers nothing. Zero-geometry environments (jsdom) skip this
+    // entirely.
+    if (d.offsetHeight > 0 && hr.height > 0) {
+      const nr = d.getBoundingClientRect();
+      let cap = null;
+      for (const id of ['phaseinfo', 'phasebtn', 'loghistbtn']) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.right > nr.left && r.left < nr.right) cap = cap == null ? r.bottom : Math.max(cap, r.bottom);
+      }
+      if (cap != null) {
+        const topVp = hr.bottom - 2 - d.offsetHeight;
+        if (topVp < cap - 0.5) fxNoticeGrowHeader(cap - topVp);
+      }
+    }
   };
   anchorNotice();
   const hold = fxReadMs(text + (sub || ''));
@@ -5610,7 +5701,7 @@ function fxNoticeShow(text, sub, noBeat, deferrals) {
       const a = t < 160 ? t / 160 : (t > hold + 130 ? Math.max(0, 1 - (t - hold - 130) / 350) : 1);
       d.style.opacity = String(a);
     },
-    onDone() { try { d.remove(); } catch (e) {} fxNoticeBusy = false; fxNoticePump(); },
+    onDone() { try { d.remove(); } catch (e) {} fxNoticeRestoreHeader(); fxNoticeBusy = false; fxNoticePump(); },
   };
   if (!noBeat) def.beat = hold + 200;
   fxAddScene(def);
@@ -7701,6 +7792,13 @@ function showChainTray(prompt, cause, liveIdx, openDock) {
     return;
   }
   fxPhaseBannerCut(); fxTurnBannerCut(); // BU-44/BU-92: the tray opening settles any live phase banner and releases the turn lock
+  // BU-95 (fix9396-1115): a detail pop left open when the tray shows
+  // (e.g. opened from the preview during a BU-84 defer wait) would
+  // float above the tray (z55 over z40). The tray is a decision UI;
+  // a stale view must not cover it. (The dock stage closes it again
+  // on first draw — see draw() — so a tray-cause detail cannot leak
+  // into the dock either.)
+  closeInfoPop();
   const shown = liveIdx.slice(0, 4).map(i => prompt.entries[i]);
   const more = liveIdx.length - shown.length;
   const wcls = shown.length >= 4 ? ' w32' : shown.length === 3 ? ' w40' : '';
@@ -8560,15 +8658,16 @@ function uiChain(prompt, state) {
       // exactly that scope.
       (prompt.forced ? '' : '<div class="sub">パス＝この確認では発動しません。相手がチェーンを重ねたり場面が変わると、新しい確認が来ることがあります。</div>');
     $('dock').className = 'on'; // exact class is a contract (tests/tools match on it) — do not append state classes here
-    if (firstDraw && $('dock').animate) { // a NEW prompt visibly arrives, even if its text matches the previous one
-      // ROUND 4 (H1): transform ONLY — no opacity keyframes. Round 3 made the
-      // dock ground fully opaque, but an element-level opacity fade fades the
-      // BACKGROUND with the content: for the 300ms of arrival the board behind
-      // showed through the ground and its text doubled up with the dock's own.
-      // The slide alone carries the arrival; the ground stays opaque at every
-      // frame of the transition.
-      try { $('dock').animate([{ transform: 'translateY(14px)' }, { transform: 'none' }], { duration: 300, easing: 'ease-out' }); } catch (e) {}
-    }
+    // BU-99 (fix9396-1115): the first-draw slide (translateY 14px over
+    // 300 ms) is REMOVED. Round 4 (H1) chose the slide over an opacity
+    // fade so the ground stayed opaque — but a translating dock moves
+    // the パス button under the finger exactly like the tray's ctin
+    // did: press-and-hold taps on パス at 0/100 ms after チェーンする
+    // were absorbed (measured 2 of 3), succeeding only from ~200 ms.
+    // The dock appears as the direct consequence of tapping
+    // チェーンする, so no arrival motion is needed; it appears at once
+    // with its ground opaque at every frame, as H1 required.
+    if (firstDraw) closeInfoPop(); // BU-95: a detail opened from the TRAY's cause row must not survive into the dock stage — it floated above the dock (z55 over z40) and covered the context line (22,106 px2) and the 盤面を見る button (5,772 px2). Gated on firstDraw: a detail opened FROM the dock (R-SEL-1) only exists after the first draw, so it is untouched.
     firstDraw = false;
     $('dock').querySelectorAll('[data-chain]').forEach(c => c.addEventListener('click', (ev) => {
       if (ev.target.dataset.dismiss != null || ev.target.dataset.dueldismiss != null || ev.target.dataset.info != null || ev.target.dataset.chainact != null) return;
