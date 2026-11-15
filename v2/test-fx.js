@@ -144,7 +144,12 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     // baseline: two materials on my field
     let st = fakeState(s => { s.players[0].mzone[0] = mon(NORMAL); s.players[0].mzone[1] = mon(NORMAL2); });
     step(st);
-    ok(fx.log.length === 0, 'FX1: first snapshot is a silent baseline');
+    // BU-98: the baseline is silent for diff events, but the
+    // opening turn banners (pinned in test-turnfx TF1) — exactly
+    // one turnbanner record and nothing else. Cut it so the pins
+    // below measure their own machinery in isolation.
+    ok(fx.log.length === 1 && fx.log[0].kind === 'turnbanner', 'FX1: first snapshot records only the opening turn banner (BU-98)');
+    fx.turnCut();
 
     // fusion summon: materials -> grave, boss appears
     st = fakeState(s => { s.players[0].mzone[2] = mon(FUSION); s.players[0].grave = [NORMAL, NORMAL2]; });
@@ -938,6 +943,7 @@ async function playDuel(window, opts) { // compact clicker, same discipline as t
     fx.reset();
     before = FS(s => { s.turnCount = 2; s.phaseName = ''; });
     render(before); fx.process([], before);
+    fx.turnCut(); // BU-98: retire the baseline's opening turn banner so the phase pins below measure the phase machinery alone (the phase banner defers behind a live turn banner by rank)
     ok(!fx.phaseSeated(), 'FXI-E0: no seated phase before any transition');
     after = FS(s => { s.turnCount = 2; s.phaseName = 'BATTLE'; });
     render(after);

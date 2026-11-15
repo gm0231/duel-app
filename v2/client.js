@@ -3563,9 +3563,26 @@ function fxPhaseBanner(fam) {
 //    pointer-events:none #fxlayer, so the element's lifetime IS
 //    the lock's lifetime. Decision UIs live above #fxlayer and
 //    their openers call fxTurnBannerCut() (the same four sites
-//    that cut the phase banner), so the moment a prompt is
-//    presented the banner dies and the lock releases — a pending
-//    prompt can never be starved or deadlocked by the lock.
+//    that cut the phase banner).
+//  - BU-98 (turnfxfix-1115): the cut-on-prompt rule above made
+//    the HUMAN's own turn banner invisible in real play. The
+//    engine asks its draw-phase prompt in the same relay step
+//    right after the state update that flips the turn, so the
+//    prompt's opener cut the banner within a frame of its birth
+//    — before its 220 ms in-animation could paint it (the
+//    opponent's flips survived because the prompt that follows
+//    them is usually an auto-passed zero-option chain check,
+//    which opens no UI). Fix: prompt presentation itself now
+//    waits out the banner — humanAnswerer awaits
+//    fxTurnBannerHold() before showPendingConfirms / uiAnswer,
+//    so at a turn change the banner always runs its full span
+//    and the prompt is presented right after it retires. The
+//    prompt is delayed, never eaten: the banner retires on its
+//    own clock, the pending wait caps at ~2.6 s and the safety
+//    timer force-cuts at 3000 ms, and the hold itself caps at
+//    4200 ms and proceeds regardless — no starvation path. The
+//    cut wiring stays for every non-prompt opener (views and
+//    other programmatic sheets keep the old priority).
 //  - defer: if a decision UI is already open at the flip, the
 //    banner waits on a 120 ms poll (cap ~2.6 s, then dropped
 //    silently — the header readout always shows whose turn it
@@ -3575,6 +3592,22 @@ function fxPhaseBanner(fam) {
 //    tab; a lock-bearing element must never be able to stick.
 let fxTurnEl = null, fxTurnScene = null, fxTurnPending = null, fxTurnSafety = null;
 function fxTurnBannerBusy() { return !!fxTurnEl; }
+function fxTurnBannerActive() { return !!(fxTurnEl || fxTurnPending); }
+// BU-98: resolves once no turn banner is live or waiting. The
+// prompt funnel (humanAnswerer) awaits this at a turn change so
+// the banner completes before any decision UI is presented.
+// Capped above every retirement path (pending drop ~2.6 s +
+// span 1.3 s; safety cut 3000 ms), then proceeds regardless —
+// the hold can delay a prompt, never swallow it.
+function fxTurnBannerHold() {
+  if (!fxTurnBannerActive()) return Promise.resolve();
+  return new Promise((res) => {
+    const t0 = performance.now();
+    const iv = setInterval(() => {
+      if (!fxTurnBannerActive() || performance.now() - t0 > 4200) { clearInterval(iv); res(); }
+    }, 40);
+  });
+}
 function fxTurnBannerCut() {
   if (fxTurnPending) { try { clearInterval(fxTurnPending.timer); } catch (e) {} fxTurnPending = null; }
   if (fxTurnSafety) { try { clearTimeout(fxTurnSafety); } catch (e) {} fxTurnSafety = null; }
@@ -4121,7 +4154,17 @@ function fxProcessInner(evs, state) {
   const cur = fxSnap(state);
   const prev = fxPrev;
   fxPrev = cur;
-  if (!prev) return; // first update of the duel is the baseline, nothing "happened" yet
+  if (!prev) {
+    // First update of the duel is the baseline: no diff events
+    // "happened" yet. The opening turn still gets its banner
+    // (BU-98: the opening turn is a turn start like any other
+    // for the player reading the board — the VS curtain has
+    // already lifted before the duel is created, so nothing
+    // covers it; every later turn start banners, so the first
+    // one staying silent read as the same invisibility defect).
+    if (cur.tp != null && cur.turn > 0 && cur.winner == null) fxTurnBanner(cur.tp === HP, Math.max(1, cur.turn));
+    return;
+  }
   // redesign B (p2b): a chain that emptied or shrank (ended /
   // rebuilt) takes its landed flags with it — the next chain
   // starts un-absorbed and re-earns the gold on its own landings
@@ -6758,6 +6801,10 @@ window.__fx = {
   // exercise the same release the decision-UI openers trigger.
   turnBannerText: () => { const el = document.querySelector('#fxlayer .fx-turn'); return el ? el.textContent : null; },
   turnCut: () => fxTurnBannerCut(),
+  // BU-98: the prompt funnel's hold, exposed so a harness can
+  // stand in for humanAnswerer and verify a prompt presented at
+  // the flip waits out the banner's full span.
+  turnHold: () => fxTurnBannerHold(),
   clearChainLanded: () => fxChainLanded.clear(),
   // V3 stage 1 foundation surface: the shared clock, the scene
   // registry, the particle budget and the hit-stop — so harnesses
@@ -10256,7 +10303,11 @@ function wireSeg(id, apply) {
         fxProcess(fxEvs, state); // presentation FX overlays (read-only; board geometry is final now)
         maybeSettleLayout(); // round 3: first render done, first prompt not yet delivered (engine order)
       },
-      humanAnswerer: async (prompt, state) => { maybeSettleLayout(); render(state); await showPendingConfirms(); return uiAnswer(prompt, state); },
+      // BU-98: at a turn change the banner runs first — prompt
+      // presentation (the confirm sheet included) waits out the
+      // turn banner via fxTurnBannerHold, then proceeds. Away
+      // from a turn change the hold resolves immediately.
+      humanAnswerer: async (prompt, state) => { maybeSettleLayout(); render(state); await fxTurnBannerHold(); await showPendingConfirms(); return uiAnswer(prompt, state); },
     });
     const stats = await duel.run();
     const st = duel.state;
