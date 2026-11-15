@@ -8734,10 +8734,74 @@ function gridScrollCueUpdate() {
   const more = sc.scrollHeight - sc.scrollTop - sc.clientHeight > 24;
   cue.style.display = more ? '' : 'none';
 }
+// ---- BU-100: card-name word search on the declare grid and
+// the card-selection sheets (user instruction 2026-11-15). The
+// declare prompt (《墓守の罠》③ and every other ANNOUNCE_CARD)
+// offers the whole pool by name — finding one card by eye in a
+// 165-name grid is the pain the user named; the selection
+// sheets (deck / grave / banished picks) get the same field
+// secondarily. The search is a DISPLAY filter only: it never
+// touches selection state, so a chosen card stays chosen — and
+// confirmable — while filtered out of view. Matching is a
+// substring test on the DISPLAYED name after NFKC / case /
+// whitespace normalization, and a hidden candidate answers
+// with its public label, so a real name can never leak
+// through the filter.
+function cardSearchNorm(s) { return String(s == null ? '' : s).normalize('NFKC').toLowerCase().replace(/\s+/g, ''); }
+function cardNameMatches(name, query) { const q = cardSearchNorm(query); return q === '' || cardSearchNorm(name).includes(q); }
+function cardSearchEsc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function cardSearchHTML(query, hidden) {
+  return '<div class="cardsearch"' + (hidden ? ' style="display:none"' : '') + '><input class="cardsearch-input" type="search" placeholder="カード名で検索" autocomplete="off" value="' + cardSearchEsc(query) + '"></div>';
+}
+// Applies a query to already-rendered tiles: items are
+// {el, name} pairs. Also drives the sheet's 0-hit line.
+// Returns the visible count.
+function applyCardSearch(root, query, items) {
+  let vis = 0;
+  for (const it of items) {
+    const show = cardNameMatches(it.name, query);
+    it.el.style.display = show ? '' : 'none';
+    if (show) vis++;
+  }
+  const none = root.querySelector('.search-none');
+  if (none) {
+    const showNone = cardSearchNorm(query) !== '' && vis === 0;
+    none.style.display = showNone ? '' : 'none';
+    if (showNone) none.textContent = '「' + query + '」に一致するカードがありません';
+  }
+  return vis;
+}
+// Typing must not rebuild the sheet (a rebuild would drop the
+// field, its focus and the on-screen keyboard mid-word), so
+// the input event only re-filters the tiles already in the
+// DOM. Rebuilds (a tile tap redraws the sheet) re-apply the
+// stored query, and focus goes back to the field when it had
+// it — a tap on a tile never summons the keyboard by itself.
+function wireCardSearch(root, apply) {
+  const inp = root.querySelector('.cardsearch-input');
+  if (inp) inp.addEventListener('input', () => apply(inp.value));
+}
+function cardSearchWasFocused(root) { const inp = root && root.querySelector('.cardsearch-input'); return !!(inp && document.activeElement === inp); }
+function cardSearchFocusRestore(root, wasFocused) {
+  if (!wasFocused) return;
+  const inp = root.querySelector('.cardsearch-input');
+  if (!inp) return;
+  inp.focus();
+  try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (e) {}
+}
 function gridSheet(o) {
   // o: {title, purpose?, sub, cards:[{code,locLabel,extra,locked}], selected:Set(idx), valid:fn, confirmLabel, cancelable, onToggle}
   // purpose: the plain-words purpose line (selectPurposeText), rendered
   // under the title when present; absent = the sheet renders as before.
+  let searchQuery = ''; // BU-100: display-only filter, survives redraws
+  // BU-100: on the selection sheets the field starts CLOSED
+  // behind a toggle in the button row. The 620px fit budget of
+  // these sheets is measured to the last pixels (layout-fix5:
+  // a 4-candidate sheet's last tile centre sits 10px inside
+  // the scroller) — an always-open field row would push the
+  // candidates down and out of first-render reach. The declare
+  // grid (165 names, always scrolled) keeps its field open.
+  let searchOpen = false;
   const draw = () => {
     // Hidden candidates (opponent's face-down / hand / deck cards)
     // render as the card back with a public-only label: no name, no
@@ -8756,10 +8820,12 @@ function gridSheet(o) {
     // the candidate region's scroll position across rebuilds.
     const prevSc = $('sheet') ? $('sheet').querySelector('.sheet-scroll') : null;
     const keepScroll = prevSc ? prevSc.scrollTop : 0;
+    const searchWasFocused = cardSearchWasFocused($('sheet')); // BU-100
     sheetOpen('<div class="ttl">' + o.title + '</div>' + (o.purpose ? '<div class="purpose">' + o.purpose + '</div>' : '') + '<div class="sub" id="gsub">' + subTxt + gridReqNote(o) + '</div>' + contextLineHTML(o.prompt) + retryWarn(o.prompt) +
       // (W-24: a retry used to repeat the sub as a 「条件：」 line
       // under the warning — the same sentence twice. The shortfall
       // already lives on the disabled confirm button's label.)
+      cardSearchHTML(searchQuery, !searchOpen) +
       (tray ? '<div id="tray">' + tray + '</div>' : '<div id="tray"></div>') +
       // layout-fix J1: the candidates live in their own scroller
       // (the dock discipline) — header and the confirm row below
@@ -8775,13 +8841,14 @@ function gridSheet(o) {
         return '<div class="gcard' + (hid ? ' back' : '') + (o.selected.has(i) ? ' sel' : '') + '" data-grid="' + i + '"' + (hid ? '' : artInline(ec, false, c.ref && c.ref.con != null ? deckKeyOfSeat(c.ref.con) : deckKeyOfSeat(HP))) + '>' +
         '<div class="loc">' + c.locLabel + '</div>' + (hid ? '' : marksChipHTML(ec)) + '<div class="nm' + (hid ? '' : kindCls(ec)) + '">' + (hid ? hiddenCardLabel(c.ref || c) : '<span class="nmtext">' + cardName(ec) + (c.extra ? ' ' + c.extra : '') + '</span><button class="gdetail" data-gdetail="' + i + '">詳細</button>') + '</div>' +
         (hid ? '' : (statsLine(ec) ? '<div class="stats">' + statsLine(ec) + '</div>' : '')) + '</div>';
-      }).join('') + '</div></div>' +
+      }).join('') + '</div><div class="search-none" style="display:none"></div></div>' +
       // F7: the scroll cue rides INSIDE the button row as a
       // full-width first line — shown only while the candidate
       // region can still scroll (gridScrollCueUpdate), so it is
       // always in view without ever covering buttons or tiles.
       '<div class="btnrow"><div id="gridmore" style="display:none">▼ まだ下にカードがあります</div><button class="bigbtn" id="grid-confirm" ' + (o.valid() ? '' : 'disabled') + '>' + (o.valid() ? (o.confirmLabel || '決定') : (o.needLabel ? o.needLabel() : (o.confirmLabel || '決定'))) + '</button>' +
-      (o.cancelable ? '<button class="bigbtn sub" id="grid-cancel">選ばずにやめる</button>' : '') + '</div>');
+      (o.cancelable ? '<button class="bigbtn sub" id="grid-cancel">選ばずにやめる</button>' : '') +
+      '<button class="searchtoggle" id="grid-search-toggle">' + (searchOpen ? '検索を閉じる' : 'カード名で検索') + '</button></div>');
     // layout-fix J1: engage the flex structure for this sheet and
     // wire the candidate scroller (a fresh element per draw).
     $('sheet').classList.add('flexsheet');
@@ -8798,6 +8865,26 @@ function gridSheet(o) {
     $('grid-confirm').addEventListener('click', () => { playClick(); o.onConfirm([...o.selected]); });
     const cancel = $('grid-cancel');
     if (cancel) cancel.addEventListener('click', () => { playClick(); finishPrompt(E.cancelResp()); });
+    // BU-100: the word-search field. Typing filters the tiles
+    // in place (nameOf answers with the public label for a
+    // hidden candidate, so nothing leaks); every redraw
+    // re-applies the stored query. o.selected is never touched.
+    const applySearch = () => applyCardSearch($('sheet'), searchQuery,
+      [...$('sheet').querySelectorAll('[data-grid]')].map(el => ({ el, name: nameOf(o.cards[+el.dataset.grid], +el.dataset.grid) })));
+    wireCardSearch($('sheet'), (q) => { searchQuery = q; applySearch(); });
+    applySearch();
+    cardSearchFocusRestore($('sheet'), searchWasFocused);
+    // BU-100: the toggle opens the field (and focuses it);
+    // closing it clears the query, so a closed field never
+    // leaves an invisible filter behind.
+    const searchTog = $('grid-search-toggle');
+    if (searchTog) searchTog.addEventListener('click', () => {
+      playClick();
+      searchOpen = !searchOpen;
+      if (!searchOpen) searchQuery = '';
+      draw();
+      if (searchOpen) { const inp = $('sheet').querySelector('.cardsearch-input'); if (inp) inp.focus(); }
+    });
     requestAnimationFrame(() => { gridScrollCueUpdate(); placeSheetBtns(); }); // F7: size the cue to this draw; J1: and the buttons ride the settled height
   };
   const sh0 = $('sheet');
@@ -8941,6 +9028,8 @@ function uiUnselect(prompt, state) {
   const combined = prompt.select.map((c, i) => ({ c, idx: i, sel: false }))
     .concat(prompt.unselect.map((c, i) => ({ c, idx: prompt.select.length + i, sel: true })));
   const selCount = prompt.unselect.length;
+  let searchQuery = ''; // BU-100: display-only name filter (this sheet renders once)
+  let searchOpen = false; // BU-100: field starts closed behind the button-row toggle, as on the grid sheets
   // Both buttons below send the same wire reply (-1), and the core
   // reads it by state (playerop.cpp SelectUnselectCard, operations
   // SelectTribute case 3): with a finishable selection of >= min it
@@ -8990,23 +9079,54 @@ function uiUnselect(prompt, state) {
     ? '《' + cardName(mf.code) + '》のエクシーズ素材 ' + (mf.max == null ? mf.min + ' 枚以上' : (mf.min === mf.max ? mf.min + ' 枚' : mf.min + '〜' + mf.max + ' 枚')) + '（現在 ' + selCount + ' 枚選択中' + (selCount < mf.min ? '、あと ' + (mf.min - selCount) + ' 枚' : '') + '）'
     : prompt.min + '〜' + prompt.max + ' 枚（現在 ' + selCount + ' 枚選択中）';
   sheetOpen('<div class="ttl">カードの選択</div>' + (purpose ? '<div class="purpose">' + purpose + '</div>' : '') + '<div class="sub">' + countU + '。タップで選択／解除します。' + reqNoteU + (hint ? ' ' + hint : '') + '</div>' + contextLineHTML(prompt) + retryWarn(prompt) +
+    cardSearchHTML(searchQuery, !searchOpen) +
     '<div class="grid">' + combined.map((x, k) => {
       const hid = selCardHidden(x.c, prompt);
       return '<div class="gcard' + (hid ? ' back' : '') + (x.sel ? ' sel' : '') + '" data-unselect="' + x.idx + '"' + (hid ? '' : artInline(x.c.code, false, deckKeyOfSeat(x.c.con))) + '>' +
       '<div class="loc">' + locLabel(x.c) + '</div>' + (hid ? '' : marksChipHTML(x.c.code)) + '<div class="nm' + (hid ? '' : kindCls(x.c.code)) + '">' + (hid ? hiddenCardLabel(x.c) : '<span class="nmtext">' + cardName(x.c.code) + '</span><button class="gdetail" data-uinfo="' + k + '">詳細</button>') + '</div>' +
       (hid ? '' : (statsLine(x.c.code) ? '<div class="stats">' + statsLine(x.c.code) + '</div>' : '')) + '</div>';
-    }).join('') + '</div>' +
+    }).join('') + '</div><div class="search-none" style="display:none"></div>' +
     '<div class="btnrow">' +
     (prompt.finishable && selCount >= prompt.min ? '<button class="bigbtn" id="unselect-finish">決定</button>' : '') +
     (cancelTruthful ? '<button class="bigbtn sub" id="unselect-cancel">選ばずにやめる</button>' : '') +
     // layout-fix2 J1': never leave the footer an empty strip —
     // when neither button exists (non-finishable, mid-selection)
     // the row itself carries the instruction.
-    (!(prompt.finishable && selCount >= prompt.min) && !cancelTruthful ? '<div class="btnnote">タップで選ぶと進みます</div>' : '') + '</div>');
+    (!(prompt.finishable && selCount >= prompt.min) && !cancelTruthful ? '<div class="btnnote">タップで選ぶと進みます</div>' : '') +
+    '<button class="searchtoggle" id="unselect-search-toggle">カード名で検索</button></div>');
   $('sheet').querySelectorAll('[data-unselect]').forEach(g => g.addEventListener('click', (ev) => { if (ev.target.closest('[data-uinfo]')) return; playClick(); finishPrompt(E.unselectToggleResp(+g.dataset.unselect)); }));
   $('sheet').querySelectorAll('[data-uinfo]').forEach(b => b.addEventListener('click', (ev) => { ev.stopPropagation(); playClick(); const x = combined[+b.dataset.uinfo]; openInfoPop(x.c.code, x.c); }));
   const fin = $('unselect-finish'); if (fin) fin.addEventListener('click', () => { playClick(); finishPrompt(E.cancelResp()); });
   const can = $('unselect-cancel'); if (can) can.addEventListener('click', () => { playClick(); finishPrompt(E.cancelResp()); });
+  // BU-100: the same word-search field as the grid sheets,
+  // behind the same button-row toggle (this sheet renders
+  // once, so the toggle just flips the row's display). Tiles
+  // answer with their public label when hidden, so a real
+  // name never leaks through the filter; toggling a tile
+  // answers the prompt immediately, so the filter is purely
+  // visual here too. Closing the field clears the query.
+  const applySearch = () => applyCardSearch($('sheet'), searchQuery, [...$('sheet').querySelectorAll('[data-unselect]')].map((el, k) => {
+    const x = combined[k];
+    return { el, name: selCardHidden(x.c, prompt) ? hiddenCardLabel(x.c) : cardName(x.c.code) };
+  }));
+  wireCardSearch($('sheet'), (q) => { searchQuery = q; applySearch(); });
+  const searchTog = $('unselect-search-toggle');
+  if (searchTog) searchTog.addEventListener('click', () => {
+    playClick();
+    searchOpen = !searchOpen;
+    const row = $('sheet').querySelector('.cardsearch');
+    if (row) row.style.display = searchOpen ? '' : 'none';
+    searchTog.textContent = searchOpen ? '検索を閉じる' : 'カード名で検索';
+    if (!searchOpen) {
+      searchQuery = '';
+      const inp = $('sheet').querySelector('.cardsearch-input');
+      if (inp) inp.value = '';
+      applySearch();
+    } else {
+      const inp = $('sheet').querySelector('.cardsearch-input');
+      if (inp) inp.focus();
+    }
+  });
 }
 function uiSelectSum(prompt, state) {
   const selected = new Set();
@@ -9110,6 +9230,11 @@ window.__chain = { open: (prompt, state) => uiChain(prompt, state) };
 // Test surface: render the SELECT_CARD grid sheet for a synthetic
 // prompt (same seam as __unselect), for test-facedown-select.js.
 window.__select = { open: (prompt) => uiSelectCards(prompt, null) };
+// Test surface (BU-100): render the ANNOUNCE_CARD declare sheet
+// for a synthetic prompt, and the word-search matcher itself,
+// for test-cardsearch.js.
+window.__announce = { open: (prompt) => uiAnnounceCard(prompt, null) };
+window.__cardsearch = { matches: cardNameMatches, norm: cardSearchNorm };
 // Test surface (opponent-info round): the board info-tap guard
 // and the peek info tap, so test-oppinfo.js can pin the
 // visibility rule and the selection-untouched contract without
@@ -9288,14 +9413,17 @@ function uiAnnounceCard(prompt, state) {
   // only SELECTS (with a detail button per candidate, the tray
   // convention) and the named confirm button declares.
   let chosen = null;
+  let query = ''; // BU-100: display-only name filter, survives redraws
   const draw = () => {
+    const searchWasFocused = cardSearchWasFocused($('sheet')); // BU-100
     // BU-41: flex sheet, like the selection grids — the candidate
     // grid scrolls inside the sheet and the declare row is a fixed
     // flex child (it used to ride at the very end of a 165-card
     // flow, over the grid's last row at short heights).
     sheetOpen('<div class="ttl">カードの宣言</div>' + contextLineHTML(prompt) +
       '<div class="sub">宣言するカードをタップで選び、「宣言する」を押してください。（必須）' + (announceDupNote(pool) ? ' ' + announceDupNote(pool) : '') + '</div>' + retryWarn(prompt) +
-      '<div class="sheet-scroll"><div class="grid">' + pool.map(code => '<div class="gcard' + (chosen === code ? ' sel' : '') + '" data-code="' + code + '"' + artInline(code, false, deckKeyOfCode(code)) + '>' + marksChipHTML(code) + '<div class="nm' + kindCls(code) + '">' + '<span class="nmtext">' + cardName(code) + '</span><button class="gdetail" data-acinfo="' + code + '">詳細</button></div></div>').join('') + '</div></div>' +
+      cardSearchHTML(query) +
+      '<div class="sheet-scroll"><div class="grid">' + pool.map(code => '<div class="gcard' + (chosen === code ? ' sel' : '') + '" data-code="' + code + '"' + artInline(code, false, deckKeyOfCode(code)) + '>' + marksChipHTML(code) + '<div class="nm' + kindCls(code) + '">' + '<span class="nmtext">' + cardName(code) + '</span><button class="gdetail" data-acinfo="' + code + '">詳細</button></div></div>').join('') + '</div><div class="search-none" style="display:none"></div></div>' +
       '<div class="btnrow"><button class="bigbtn" id="announce-ok" ' + (chosen == null ? 'disabled' : '') + '>' + (chosen == null ? '宣言する' : '《' + cardName(chosen) + '》を宣言する') + '</button></div>');
     $('sheet').classList.add('flexsheet');
     $('sheet').querySelectorAll('[data-code]').forEach(g => g.addEventListener('click', (ev) => {
@@ -9307,6 +9435,17 @@ function uiAnnounceCard(prompt, state) {
     }));
     const ok = $('announce-ok');
     if (ok) ok.addEventListener('click', () => { if (chosen != null) { playClick(); finishPrompt(E.i32resp(chosen)); } });
+    // BU-100: the word-search field — the primary fix. Typing
+    // filters the rendered name tiles in place (no rebuild, so
+    // focus and the keyboard survive); a tile tap redraws the
+    // sheet through the same stored query. `chosen` is never
+    // touched: a pick stays picked while filtered out of view,
+    // and the declare button keeps naming it.
+    const applySearch = () => applyCardSearch($('sheet'), query,
+      [...$('sheet').querySelectorAll('[data-code]')].map(el => ({ el, name: cardName(+el.dataset.code) })));
+    wireCardSearch($('sheet'), (q) => { query = q; applySearch(); });
+    applySearch();
+    cardSearchFocusRestore($('sheet'), searchWasFocused);
   };
   draw();
 }
