@@ -103,15 +103,20 @@ async function boot() {
   doc.getElementById('deckback').click();
 
   // ---- BU-45: confirm-sheet thumbnails ----
+  // lightconfirm-1116: 1-2 card confirms no longer take the sheet
+  // (they float, see test-lightconfirm), so the sheet's thumbnail
+  // guarantee is pinned here with a 3-card batch — the sheet path
+  // itself is unchanged.
   window.__confirm.push({ kind: 'confirm', shown: 0, cards: [
     { code: 45409943, con: 0, loc: 1, seq: 0 },
     { code: kel, con: 0, loc: 1, seq: 1 },
+    { code: mc, con: 0, loc: 1, seq: 2 },
   ] });
   const shown = window.__confirm.show();
   await sleep(30);
   const rows = doc.querySelectorAll('#sheet .sortrow');
-  ok(rows.length === 2, 'BF8 (BU-45): confirm sheet lists both cards');
-  ok(rows.length === 2 && [...rows].every(r => { const t = r.querySelector('.cthumb'); return t && (t.getAttribute('style') || '').includes('card-art-'); }),
+  ok(rows.length === 3, 'BF8 (BU-45): confirm sheet lists all three cards (3+ keep the sheet)');
+  ok(rows.length === 3 && [...rows].every(r => { const t = r.querySelector('.cthumb'); return t && (t.getAttribute('style') || '').includes('card-art-'); }),
     'BF8b (BU-45): every confirm row carries its card art thumbnail');
   doc.getElementById('sheet-cancel').click();
   await shown;

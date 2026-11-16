@@ -1368,11 +1368,31 @@
   #vsoverlay .br{right:-10%;background:linear-gradient(270deg,transparent,#ff9a57);transform:rotate(-9deg);}
   #vsoverlay .vst{font-size:30px;font-weight:900;color:#ffe9a8;letter-spacing:.3em;z-index:2;}
   #vsoverlay .vss{font-size:13px;color:#c9b586;margin-top:12px;z-index:2;line-height:1.7;}
-  .resultbtns{display:flex;gap:12px;}
+  .resultbtns{display:flex;gap:8px;width:100%;max-width:350px;justify-content:center;}
   /* Result buttons keep their labels on one line (both wrapped to
-     two lines at 390 wide — design audit frame 06-duel-late). */
-  .resultbtns .startbtn{min-height:53px;font-size:15px;padding:14px 12px;white-space:nowrap;}
-  .resultbtns .subbtn{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:14px;padding:14px 12px;cursor:pointer;white-space:nowrap;}
+     two lines at 390 wide — design audit frame 06-duel-late).
+     BU-111 (lightconfirm-1116): at 390 wide the old form (15/14px,
+     padding 14px 12px, gap 12px) measured ~390px of buttons against
+     the overlay's 350px content box (padding 20px), so both end
+     buttons touched the screen edge with 0px margin and their
+     corners were clipped. The row now fits the content box:
+     gap 8px and padding 14px 8px, start 14px / sub 13px — the
+     three labels, their order and their meanings are unchanged. */
+  .resultbtns .startbtn{min-height:53px;font-size:14px;padding:14px 8px;white-space:nowrap;}
+  .resultbtns .subbtn{background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:8px;font-size:13px;padding:14px 8px;cursor:pointer;white-space:nowrap;}
+  /* lightconfirm-1116: the 1-2 card confirm float. It lives in
+     #fxlayer (absolute, pointer-events re-enabled on the cards
+     only via the container), centred over the board, and never
+     enters the flow — the frozen board layout cannot move. Card
+     art is LARGE (the 2026-11-12 rule: needed information stands
+     big at the moment it is needed; board art size is untouched). */
+  .fx-confirm-light{position:absolute;left:50%;top:16%;transform:translateX(-50%);z-index:9;pointer-events:auto;background:linear-gradient(180deg,rgba(19,14,6,.97),rgba(7,5,2,.98));border:1.5px solid var(--gold);border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.65);padding:10px 12px 12px;max-width:94%;text-align:center;}
+  .fx-confirm-light .fcl-head{font-size:13px;font-weight:700;color:var(--gold);letter-spacing:.08em;margin-bottom:4px;}
+  .fx-confirm-light .fcl-label{font-size:12px;color:var(--txt-dim);margin:2px 0 6px;}
+  .fx-confirm-light .fcl-cards{display:flex;gap:10px;justify-content:center;}
+  .fx-confirm-light .fcl-card{width:132px;cursor:pointer;}
+  .fx-confirm-light .fcl-art{position:relative;width:132px;height:150px;border-radius:6px;border:1px solid var(--gold-dim);background:#3a2f1d url('../assets/card-art-placeholder.jpg') center top/cover;overflow:hidden;}
+  .fx-confirm-light .fcl-name{font-size:12.5px;line-height:1.35;color:var(--txt);margin-top:5px;word-break:keep-all;overflow-wrap:anywhere;}
   /* ---- card-kind colors (user pick 2026-11-03: variant A — the whole
      name band takes the kind color; variant B was prototyped and not
      adopted). The kind class only ever rides on elements that already

@@ -2843,6 +2843,75 @@ function confirmGroupLabel(con, loc) {
   if (loc === E.LOC.EXTRA) return whose + 'のEXデッキ';
   return 'カード';
 }
+// lightconfirm-1116: 1-2 card confirms no longer take the blocking
+// sheet. They are public information the player must READ (not a
+// notice — fxSettings.notice does NOT gate them, exactly as the
+// sheet was never gated), but at ~5 per duel, 57 of 61 of them
+// directly before a chain prompt, the sheet's close tap was pure
+// friction. The light form floats large art + name + group label
+// in #fxlayer (absolute, board layout untouched), dwells long
+// enough to read, then advances on its own. 3+ cards keep the
+// sheet: Zolga's two deck tops, a full hand reveal and the like
+// are read at the player's own pace.
+const CONFIRM_LIGHT_MS = { 1: 2000, 2: 2600 };
+const CONFIRM_LIGHT_AFTER_POP_MS = 800;
+let confirmLightState = null; // { el, total, duration } while a light confirm is up (test surface)
+function confirmLightDuration(total) { return CONFIRM_LIGHT_MS[total] || 2600; }
+function isInfoPopOpen() {
+  const p = $('infopop'); if (!p) return false;
+  if (p.classList && typeof p.classList.contains === 'function') return p.classList.contains('on');
+  return p.className === 'on';
+}
+function showLightConfirms(groups, total) {
+  const duration = confirmLightDuration(total);
+  return new Promise((resolve) => {
+    const layer = (typeof fxLayerEl === 'function' ? fxLayerEl() : null) || $('app') || document.body;
+    const el = document.createElement('div');
+    el.className = 'fx-confirm-light';
+    el.setAttribute('data-count', String(total));
+    el.setAttribute('data-duration', String(duration));
+    let html = '<div class="fcl-head">カードの確認</div>';
+    for (const g of groups) {
+      const sorted = g.cards.slice().sort((a, b) => g.loc === E.LOC.DECK ? b.seq - a.seq : a.seq - b.seq);
+      html += '<div class="fcl-group"><div class="fcl-label">' + confirmGroupLabel(g.con, g.loc) + '</div><div class="fcl-cards">' +
+        sorted.map((c, i) => '<div class="fcl-card" data-info="' + c.code + '">' +
+          '<div class="fcl-art"' + artInline(c.code, true, deckKeyOfSeat(c.con)) + '>' + marksChipHTML(c.code) + '</div>' +
+          '<div class="fcl-name">' + (g.loc === E.LOC.DECK ? (i + 1) + '枚目：' : '') + cardName(c.code) + '</div></div>').join('') +
+        '</div></div>';
+    }
+    el.innerHTML = html;
+    layer.appendChild(el);
+    try { fxRecord('confirmlight', { count: total, duration }); } catch (e) {}
+    el.querySelectorAll('[data-info]').forEach(cardEl => cardEl.addEventListener('click', () => {
+      if (cardEl.dataset.info) { playClick(); openInfoPop(+cardEl.dataset.info); }
+    }));
+    confirmLightState = { el, total, duration };
+    // Countdown that PAUSES while the detail pop is open: the
+    // player reading a card must never be advanced past. Poll on
+    // a short interval, decrement only while no pop is open, and
+    // when a pop that was open closes, guarantee at least
+    // CONFIRM_LIGHT_AFTER_POP_MS of dwell remains.
+    let remaining = duration;
+    let lastTick = Date.now();
+    let popWasOpen = false;
+    let finished = false;
+    const finish = () => {
+      if (finished) return; finished = true;
+      clearInterval(iv);
+      try { el.remove(); } catch (e) {}
+      if (confirmLightState && confirmLightState.el === el) confirmLightState = null;
+      resolve();
+    };
+    const iv = setInterval(() => {
+      const now = Date.now();
+      const dt = now - lastTick; lastTick = now;
+      if (isInfoPopOpen()) { popWasOpen = true; return; }
+      if (popWasOpen) { popWasOpen = false; remaining = Math.max(remaining, CONFIRM_LIGHT_AFTER_POP_MS); }
+      remaining -= dt;
+      if (remaining <= 0) finish();
+    }, 50);
+  });
+}
 function showPendingConfirms() {
   if (!pendingConfirms.length) return Promise.resolve();
   const evs = pendingConfirms; pendingConfirms = [];
@@ -2855,6 +2924,8 @@ function showPendingConfirms() {
     g.cards.push(c);
   }
   if (!groups.length) return Promise.resolve();
+  const totalCards = groups.reduce((n, g) => n + g.cards.length, 0);
+  if (totalCards <= 2) return showLightConfirms(groups, totalCards);
   return new Promise((resolve) => {
     confirmSheetResolve = resolve;
     let html = '<div class="ttl">カードの確認</div>';
@@ -2886,6 +2957,11 @@ window.__confirm = {
   queue: () => pendingConfirms.slice(),
   push: (ev) => { pendingConfirms.push(ev); },
   show: showPendingConfirms,
+  queueEvents: (evs) => queueConfirmEvents(evs),
+  last: () => lastConfirm,
+  light: () => document.querySelector('.fx-confirm-light'),
+  lightState: () => confirmLightState,
+  lightDuration: (n) => confirmLightDuration(n),
 };
 
 // ---------------------------------------------------------------- presentation FX (rounds A/B)
@@ -8077,12 +8153,27 @@ function finishPrompt(bytes) {
   if (cp) { currentPrompt = null; cp.resolve(bytes); }
   syncFxBtnInert();
 }
-// BU-25: while a prompt is open the FX settings sheet cannot open
-// (openFxSettings stands down) — say so on the button itself
+// BU-110 (lightconfirm-1116): idle prompts (SELECT_IDLECMD /
+// SELECT_BATTLECMD) stay open for the player's WHOLE turn and are
+// not modal — the board, pile sheets and history all stay usable
+// under them. View sheets (FX settings, the auto-pass manager)
+// therefore open under an idle prompt exactly like a pile sheet
+// does; only a MODAL prompt (SELECT_CHAIN, SELECT_CARD, ...) owns
+// the screen and keeps them closed. An arriving modal prompt
+// reclaims the sheet through uiAnswer's existing view-sheet path
+// (sheetClose on a kind==='view' sheet), so a settings sheet left
+// open is closed/replaced by the next real prompt, never stranded.
+function isIdlePromptName(name) { return name === 'SELECT_IDLECMD' || name === 'SELECT_BATTLECMD'; }
+function promptBlocksViewSheets() {
+  return !!currentPrompt && !(currentPrompt.prompt && isIdlePromptName(currentPrompt.prompt.name));
+}
+// BU-25: while a MODAL prompt is open the FX settings sheet cannot
+// open (openFxSettings stands down) — say so on the button itself
 // (dimmed + not-pressed look) instead of silently ignoring taps.
+// BU-110: an idle prompt no longer makes the button inert.
 function syncFxBtnInert() {
   const b = $('fxbtn'); if (!b) return;
-  const inert = !!currentPrompt;
+  const inert = promptBlocksViewSheets();
   b.classList.toggle('inert', inert);
   b.setAttribute('aria-disabled', inert ? 'true' : 'false');
   syncChipInert();
@@ -8096,7 +8187,7 @@ function syncFxBtnInert() {
 // is re-applied from there as well as from here.
 function syncChipInert() {
   const el = $('autopass'); if (!el) return;
-  const inert = !!currentPrompt;
+  const inert = promptBlocksViewSheets();
   el.classList.toggle('inert', inert);
   el.setAttribute('aria-disabled', inert ? 'true' : 'false');
 }
@@ -8646,7 +8737,7 @@ function flashAutoPass(names) {
   setTimeout(updateAutoPassChip, 2700);
 }
 function openDismissManager() {
-  if (currentPrompt) return; // during a prompt the dock itself carries the controls
+  if (promptBlocksViewSheets()) return; // during a MODAL prompt the dock itself carries the controls (BU-110: idle prompts do not block)
   const rows = [...dismissedDuel.entries()].map(([k, v]) =>
     '<div class="sortrow"><span>' + dismissalName(v) + '</span><span class="mv"><button data-undismiss="' + k + '">解除</button></span></div>').join('');
   sheetOpenView('<div class="ttl">自動パスの設定（このデュエル）</div>' +
@@ -8672,7 +8763,7 @@ function syncFxSegs() {
   mark('seg-notice', fxSettings.notice ? 'on' : 'off'); // layout-fix3 K5
 }
 function openFxSettings() {
-  if (currentPrompt) return; // during a prompt the dock/sheet carries the interaction
+  if (promptBlocksViewSheets()) return; // during a MODAL prompt the dock/sheet carries the interaction (BU-110: idle prompts do not block)
   const draw = () => {
     sheetOpenView('<div class="ttl">演出・応答の設定</div>' +
       '<div class="sub">見せ方と確認の仕方だけの設定です。対戦の処理には影響しません。</div>' +
