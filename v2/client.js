@@ -2277,6 +2277,256 @@ function optUsedReason(code) {
   const spent = cov.shared ? cands.some(n => rec.n.has(n)) : cands.every(n => rec.n.has(n));
   return spent ? 'このターン既に使用済みです' : null;
 }
+// ---- hand-activation reasons (fix-handreason-1117) ----
+// Triage triage-1116-obs found the hand sheet silent when an
+// activation was not offered: the prompt was correct (offering
+// tracks target / condition availability exactly) but nothing
+// said WHY, so a correct ruling read as a bug. The hand sheet
+// previously stated only a spent card-name limit (nameLimitReason).
+// This round extends it to every reason the client can derive
+// mechanically from the live state — and stays silent otherwise
+// (no generic row: when nothing is derivable, no reason is
+// stated, never a guessed one).
+// Measured first (probe-handreason.js, 60 headless duels Ishizu
+// vs GG, 2,902 idle prompts): 1,309 sightings of a hand card
+// that HAS a hand-activatable effect but is not offered. The
+// buckets below explain 1,279 of them; the residual 30 are
+// 丘と芽吹の春化精 ① (7 — the deck holds no 春化精 monster to
+// add, and deck contents are not live-known) and 天至る叛逆 ①
+// (23 — the grave holds 3+ fiend/angel monsters yet the effect
+// is not offered; the likely cause is EX-side, e.g. every
+// ルーチェ copy already summoned, which the client cannot
+// track — see RECORD). Everything else is pinned by the buckets
+// and by test-fixhandreason.js.
+// handCandidates: numbered effects activatable from the hand,
+// text-derived like fieldCandidates. Monsters: ignition segments
+// with hand-range evidence (a trigger is a past-tense event —
+// 「送られた場合、」 — not a state condition such as 「存在する
+// 場合」; the distinction matters for シルキィ / ゾルガ). Spells:
+// the activation itself (segment 1 even when the wording omits
+// 発動できる — normal / quick-play spells state the effect
+// without the verb, and a continuous / field / equip ① is the
+// placement itself) plus any hand-ranged ignition. Traps: only
+// an explicit 「手札から発動できる」 segment — a set-first trap
+// has no hand activation to explain. Validated empirically: in
+// the 60-duel probe every card the engine ever offered from the
+// hand was predicted, and every predicted card was offered at
+// least once (no false positives in the two decks played).
+const HAND_TRIGGER_RE = /[ただ](場合|時)[に、]/;
+// Hand-range evidence must tie the HAND to the activation
+// itself — not to a summon source: 《旧神ヌトス》① activates
+// on the FIELD and summons a level 4 from the hand ("手札から
+// レベル４モンスター１体を特殊召喚する"), so a bare 手札から
+// would misclassify it. What counts: this card sitting in the
+// hand, this card being discarded / banished / sent from the
+// hand as the cost, or another card discarded from the hand as
+// the cost (ケルドウ / ムドラ).
+const HAND_RANGE_RE = /手札のこのカード|このカードが手札に存在|手札・墓地に存在|このカードを手札から|手札から[^。]*?(捨てて|除外して|墓地へ送って)発動できる/;
+const HAND_OTHER_LOC_RE = /墓地のこのカード|このカードが墓地に存在|除外状態のこのカード|このカードが除外状態|自分の墓地から[^。]*?発動できる|自分の墓地のこのカードを除外して/;
+function handCandidates(code) {
+  const d = cardData(code);
+  if (!d) return [];
+  const segs = effectSegments(code);
+  if (!segs.length) return [];
+  if (d.type & 0x4) { // Trap: only an explicit hand activation
+    return segs.filter(s => /発動できる/.test(s.body) && /手札から発動できる/.test(s.body)).map(s => s.n);
+  }
+  if (d.type & 0x2) { // Spell: the activation itself + hand-ranged ignitions
+    // A field / continuous / equip spell is PLACED from the hand
+    // (segment ①); its ②+ are effects that activate on the FIELD
+    // after placement, so they are never hand candidates.
+    const placed = (d.type & 0xE0000) !== 0;
+    return segs.filter(s => {
+      if (placed && s.n !== 1) return false;
+      const at = s.body.indexOf('発動できる');
+      if (at >= 0) {
+        if (HAND_TRIGGER_RE.test(s.body.slice(0, at))) return false;
+        // A hand-ranged segment beats the other-location check:
+        // アイテール② banishes from the GY as the COST of a hand
+        // effect ("このカードが手札に存在する場合"), while a bare
+        // "自分の墓地から…発動できる" is a grave effect.
+        if (!HAND_RANGE_RE.test(s.body) && HAND_OTHER_LOC_RE.test(s.body)) return false;
+        return true;
+      }
+      if (s.n !== 1) return false;
+      if (HAND_TRIGGER_RE.test(s.body)) return false;
+      if (!HAND_RANGE_RE.test(s.body) && HAND_OTHER_LOC_RE.test(s.body)) return false;
+      return true;
+    }).map(s => s.n);
+  }
+  // Monster: hand-range ignition segments. The hand-range wording
+  // itself establishes the activation location, so no separate
+  // other-location check is needed here (and it would wrongly
+  // exclude アイテール②, whose GY banish is a cost).
+  return segs.filter(s => {
+    const at = s.body.indexOf('発動できる');
+    if (at < 0) return false;
+    if (HAND_TRIGGER_RE.test(s.body.slice(0, at))) return false;
+    if (!HAND_RANGE_RE.test(s.body)) return false;
+    return true;
+  }).map(s => s.n);
+}
+// Hand analogue of optUsedReason: every hand candidate is covered
+// by the card's once-per-turn clause AND the clause is spent.
+// This is NOT subsumed by nameLimitReason — that only covers the
+// 「このカード名のカードは１ターンに１枚しか発動できない」 form,
+// while most hand effects carry the 「このカード名の①の効果は
+// １ターンに１度しか使用できない」 form (花 / 森 / ケルドウ /
+// ムドラ / シルキィ), which nameLimitCards() never lists.
+function handUsedReason(code) {
+  const cands = handCandidates(code);
+  if (!cands.length) return null;
+  const cov = optCoverage(code);
+  if (!cov || !cands.every(n => cov.set.has(n))) return null;
+  const rec = usedFxByCode.get(code);
+  if (!rec) return null;
+  const spent = cov.shared ? cands.some(n => rec.n.has(n)) : cands.every(n => rec.n.has(n));
+  return spent ? 'このターン既に使用済みです' : null;
+}
+const HAND_ATTR_BIT = { '地': 0x1, '水': 0x2, '炎': 0x4, '風': 0x8, '光': 0x10, '闇': 0x20 };
+function handRaceBit(token) {
+  for (const [bit, name] of E.RACES) if (token === name + '族') return bit;
+  return 0;
+}
+function handIsVernusylph(code) {
+  const c = cardData(code);
+  if (!c) return false;
+  if ((c.setcodes || []).includes(387)) return true;
+  return (cardName(code) || '').indexOf('春化精') >= 0;
+}
+// The target / condition / cost reason for a hand card whose
+// activation is not offered — one reason, in a fixed order, when
+// it is mechanically certain from the live state (state defaults
+// to duelState). Deck contents are NOT live-known, so anything
+// that turns on what is left in the deck (丘①'s add target,
+// 森①'s send target, おろかな副葬's send target) stays silent.
+// Order: targets first (what the effect needs on the board / in
+// the grave), then costs, then zones. A reason is returned only
+// when the card HAS a hand-activatable effect; anything else
+// returns null and the sheet stays as it was.
+function handTargetReason(code, state) {
+  const cands = handCandidates(code);
+  if (!cands.length) return null;
+  const st = state || duelState;
+  if (!st || !st.players || !st.players[HP]) return null;
+  const me = st.players[HP], opp = st.players[1 - HP];
+  const segs = effectSegments(code);
+  const body = segs.filter(s => cands.includes(s.n)).map(s => s.body).join(' / ');
+  const mons = (P) => (P.mzone || []).filter(c => c && c.code != null);
+  const faceUp = (P) => mons(P).some(c => (c.pos & E.POS_FACEUP) !== 0);
+  const faceDown = (P) => mons(P).some(c => (c.pos & 0xA) !== 0);
+  const grave = (P) => (P.grave || []).filter(x => x != null);
+  const gyMon = (P) => grave(P).filter(cd => { const c = cardData(cd); return c && (c.type & 0x1); });
+  const hand = (me.hand || []).filter(h => h && h.code != null);
+  const fw = (s) => +String(s).replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+  // targets on the field
+  if (/裏側.*表示モンスター.*を対象として/.test(body) && !faceDown(me) && !faceDown(opp)) return '対象になる裏側表示モンスターがいません';
+  if (/自分及び相手フィールドの表側表示モンスターを１体ずつ対象/.test(body)) {
+    if (!faceUp(me) || !faceUp(opp)) return '両方のフィールドに表側表示モンスターがいません';
+  } else if (/表側表示モンスター.*を対象として/.test(body) && !faceUp(me) && !faceUp(opp)) return '対象になる表側表示モンスターがいません';
+  if (/相手フィールドのモンスター/.test(body) && !mons(opp).length) return '相手フィールドにモンスターがいません';
+  // targets in the grave
+  if (/自分か相手の墓地のモンスター１体を対象として/.test(body) && !gyMon(me).length && !gyMon(opp).length) return '自分か相手の墓地にモンスターがいません';
+  // A grave selection the effect MUST make to activate. An optional
+  // follow-up ("選んで特殊召喚できる") is not a requirement: 丘①
+  // may activate with an empty grave (the deck-add is the effect),
+  // while 花① may not (the salvage has no できる). Only a mandatory
+  // clause may produce a reason. Proven in the probe: 丘's 26
+  // noAttrGYMonster cases all overlapped a real blocker
+  // (noValidDiscard x25, optSpent x1), while 花's 91 were explained
+  // by this bucket alone.
+  function mandatoryGYSelection(body) {
+    const re = /自分の墓地から[^。]*?(選んで[^。]*)/g;
+    let m;
+    while ((m = re.exec(body))) {
+      if (!/できる/.test(m[1])) return m[0];
+    }
+    return null;
+  }
+  const gySel = mandatoryGYSelection(body);
+  const attrGYM = gySel ? (gySel.match(/(地|水|炎|風|光|闇)属性モンスター/) || [])[1] : null;
+  if (attrGYM) {
+    const n = gyMon(me).filter(cd => cd !== code && (cardData(cd).attribute & HAND_ATTR_BIT[attrGYM]) !== 0).length;
+    if (!n) return '自分の墓地に' + attrGYM + '属性モンスターがいません';
+  } else if (gySel && /モンスター/.test(gySel) && !gyMon(me).length) return '自分の墓地にモンスターがいません';
+  const bothGYM = body.match(/お互いの墓地のカードを合計([０-９]+)枚対象として/);
+  if (bothGYM && grave(me).length + grave(opp).length < fw(bothGYM[1])) return 'お互いの墓地にカードが' + fw(bothGYM[1]) + '枚ありません';
+  // a field condition the effect itself states (ゾルガ①: another
+  // earth-angel on the field) — attribute / race parsed from the
+  // clause, checked against the live face-up field
+  const fcM = body.match(/自分フィールドに(.+?)が存在する場合に発動できる/);
+  if (fcM) {
+    const am = fcM[1].match(/(地|水|炎|風|光|闇)属性/);
+    const rm = fcM[1].match(/(戦士族|魔法使い族|天使族|悪魔族|アンデット族|機械族|水族|炎族|岩石族|鳥獣族|植物族|昆虫族|雷族|ドラゴン族|獣族|獣戦士族|恐竜族|魚族|海竜族|爬虫類族|サイキック族|幻神獣族|創造神族|幻竜族|サイバース族|幻想魔族)/);
+    const ok = mons(me).some(c => {
+      if ((c.pos & E.POS_FACEUP) === 0) return false;
+      const cc = cardData(c.code); if (!cc) return false;
+      if (am && (cc.attribute & HAND_ATTR_BIT[am[1]]) === 0) return false;
+      if (rm && (cc.race & handRaceBit(rm[1])) === 0) return false;
+      return true;
+    });
+    if (!ok) return 'フィールドに' + (rm ? rm[1] + '・' : '') + (am ? am[1] + '属性' : '') + 'モンスターがいません';
+  }
+  // discard costs — the OTHER card must be a valid discard, not
+  // just any card (花 / 森: a monster or a 春化精 card;
+  // ケルドウ / ムドラ: another earth-angel monster)
+  if (/このカードと、モンスター１体または「春化精」カード１枚を手札から捨てて/.test(body)) {
+    const ok = hand.some(h => h.code !== code && ((cardData(h.code).type & 0x1) !== 0 || handIsVernusylph(h.code)));
+    if (!ok) return '手札に捨てるモンスターまたは「春化精」カードがありません';
+  } else if (/このカードと、.*を手札から捨てて/.test(body) && hand.length <= 1) return '手札に捨てるカードがありません';
+  const discM = body.match(/手札から他の(.+?)モンスター１体を捨てて/);
+  if (discM) {
+    const am = discM[1].match(/(地|水|炎|風|光|闇)属性/);
+    const rm = discM[1].match(/(戦士族|魔法使い族|天使族|悪魔族|アンデット族|機械族|水族|炎族|岩石族|鳥獣族|植物族|昆虫族|雷族|ドラゴン族|獣族|獣戦士族|恐竜族|魚族|海竜族|爬虫類族|サイキック族|幻神獣族|創造神族|幻竜族|サイバース族|幻想魔族)/);
+    const ok = hand.some(h => {
+      if (h.code === code) return false;
+      const cc = cardData(h.code); if (!cc || !(cc.type & 0x1)) return false;
+      if (am && (cc.attribute & HAND_ATTR_BIT[am[1]]) === 0) return false;
+      if (rm && (cc.race & handRaceBit(rm[1])) === 0) return false;
+      return true;
+    });
+    if (!ok) return '手札に捨てる' + (rm ? rm[1] + '・' : '') + (am ? am[1] + '属性' : '') + 'モンスターがありません';
+  }
+  // fusion material (天至る叛逆 ①): the grave must hold enough
+  // fiend / angel monsters for SOME fusion in the human's EX
+  // recipe. The minimum material count is derived from the
+  // recipe's own texts (ルーチェ: ×３); a fusion whose count
+  // cannot be parsed counts as 2 (no fusion summons on fewer).
+  // When the deck is unknown (no seat key) nothing is claimed;
+  // when the known recipe holds no fiend / angel fusion at all,
+  // that itself is the reason.
+  if (/自分の墓地の悪魔族・天使族モンスターを融合素材として/.test(body)) {
+    const d = deckListOf(deckKeyOfSeat(HP));
+    if (d && d.extra) {
+      let minN = null;
+      for (const ec of d.extra) {
+        const cd = cardData(ec);
+        if (!cd || !(cd.type & 0x40)) continue;
+        if ((cd.race & 0x4) === 0 && (cd.race & 0x8) === 0) continue;
+        const m = cardText(ec).match(/モンスター×([０-９]+)/);
+        const n = m ? fw(m[1]) : 2;
+        if (minN == null || n < minN) minN = n;
+      }
+      if (minN == null) return 'EXデッキに悪魔族・天使族の融合モンスターがありません';
+      const have = gyMon(me).filter(cd => { const c = cardData(cd); return c && ((c.race & 0x4) !== 0 || (c.race & 0x8) !== 0); }).length;
+      if (have < minN) return '墓地に融合素材が足りません（現在' + have + '体／必要' + minN + '体）';
+    }
+  }
+  // both players must have a card to discard (墓穴の道連れ ①)
+  if (/お互いは、それぞれ相手の手札を確認し/.test(body)) {
+    if (!((opp.hand || []).length)) return '相手の手札がありません';
+    if (hand.length <= 1) return '自分の手札に捨てるカードがありません';
+  }
+  // LP cost
+  const lpM = body.match(/([０-９]+)LPを払って/);
+  if (lpM && fw(lpM[1]) > (me.lp || 0)) return 'LPが足りません';
+  // zones the activation itself needs
+  if (/このカードを(手札から)?特殊召喚する/.test(body) && (me.mzone || []).slice(0, 5).every(c => c)) return 'モンスターゾーンに空きがありません';
+  const cd = cardData(code);
+  if (cd && (cd.type & 0x80000) && me.szone && me.szone[5]) return 'フィールドゾーンに空きがありません';
+  if (cd && (cd.type & 0x6) && !(cd.type & 0x80000) && me.szone && [0, 1, 2, 3, 4].every(i => me.szone[i])) return '魔法・罠ゾーンに空きがありません';
+  return null;
+}
 // The revive rider («この効果で特殊召喚したモンスターは攻撃できず、
 // その効果は発動できない») is DERIVED from the pool's texts, like
 // the lock / name-limit sets — not hardcoded to one card. No card
@@ -2414,6 +2664,11 @@ function handTapReason(code, key) {
   if (cmdPromptOpen && !hasAct) {
     if (currentPrompt && currentPrompt.prompt.name === 'SELECT_BATTLECMD' && isMonster(code)) return 'バトルフェイズ中は通常召喚できません';
     const nl = nameLimitReason(code); if (nl) return nl;
+    // fix-handreason-1117: the preview states the same reasons
+    // the sheet does (per-effect spend, targets / conditions /
+    // costs) — the preview is the surface a tap reaches first.
+    const hu = handUsedReason(code); if (hu) return hu;
+    const ht = handTargetReason(code); if (ht) return ht;
     const me = duelState.players[HP];
     if (isMonster(code) && me.mzone.slice(0, 5).every(c => c)) return 'モンスターゾーンに空きがありません';
     if (d.type & 0x6) {
@@ -2515,6 +2770,7 @@ function exLockReason(lock) {
 // Test surface for the pool-coverage checks (same spirit as __mlock).
 window.__poolcov = {
   resolveYesNo, scopedEffect, optCovered, optCoverage, fieldCandidates, optUsedReason,
+  handCandidates, handUsedReason, handTargetReason,
   trackUsedFx,
   usedFx() { return [...usedFxByCode.entries()].map(([code, r]) => ({ code, n: [...r.n], any: r.any })); },
   noteRevive(evs, state) { noteReviveFromEvents(evs, state); },
@@ -8577,7 +8833,10 @@ function uiCmd(prompt, state) {
       if (actionMap.has(pt.key)) openActionSheet(pt.key);
       else {
         const [con2, loc2, seq2] = pt.key.split(':').map(Number);
-        if (con2 === HP && loc2 === E.LOC.MZONE && duelState) {
+        if (con2 === HP && loc2 === E.LOC.HAND && duelState) {
+          const c = duelState.players[con2].hand[seq2];
+          if (c && c.code != null) openActionSheet(pt.key);
+        } else if (con2 === HP && loc2 === E.LOC.MZONE && duelState) {
           const c = duelState.players[con2].mzone[seq2];
           if (c && c.code != null && (c.pos & E.POS_FACEUP) !== 0) openActionSheet(pt.key);
         }
@@ -8593,7 +8852,7 @@ function openActionSheet(key) {
   let zoneCode = acts.length ? acts[0].code : null;
   if (zoneCode == null && duelState) {
     const P = duelState.players[con];
-    const c = loc === E.LOC.MZONE ? P.mzone[seq] : loc === E.LOC.SZONE ? P.szone[seq] : null;
+    const c = loc === E.LOC.MZONE ? P.mzone[seq] : loc === E.LOC.SZONE ? P.szone[seq] : loc === E.LOC.HAND ? P.hand[seq] : null;
     zoneCode = c ? c.code : null;
   }
   if (zoneCode == null && !acts.length) return;
@@ -8637,11 +8896,14 @@ function openActionSheet(key) {
   // so matching the bare label text missed them.)
   let unusable = '';
   if (zoneCode != null && con === HP && loc === E.LOC.HAND && !acts.some(a => a.activate)) {
-    // brushup round 2 (the hand surface): a card-name activation
-    // limit that is already spent is the one reason that fully
-    // explains a missing activation from the hand — the same
-    // greyed row, on the sheet the hand card itself opens.
-    const hReason = nameLimitReason(zoneCode);
+    // fix-handreason-1117 (the hand surface): a spent card-name
+    // limit is only one of the reasons a hand activation can be
+    // missing. The per-effect once-per-turn spend and every
+    // mechanically derivable target / condition / cost reason
+    // (handUsedReason / handTargetReason) ride the same greyed
+    // row; when none is derivable the row stays absent — never a
+    // guessed reason, and no generic row.
+    const hReason = nameLimitReason(zoneCode) || handUsedReason(zoneCode) || handTargetReason(zoneCode);
     if (hReason) unusable = '<div class="optbtn disabled">効果を発動<span class="reason">' + hReason + '</span></div>';
   }
   if (zoneCode != null && con === HP && (loc === E.LOC.MZONE || loc === E.LOC.SZONE) && !acts.some(a => a.activate)) {
@@ -10291,9 +10553,16 @@ document.addEventListener('click', (ev) => {
     else {
       // no offered actions: my face-up field monsters still open
       // the sheet as an info view, so an unusable effect can say
-      // why instead of the tap going nowhere (Minerva item)
+      // why instead of the tap going nowhere (Minerva item).
+      // fix-handreason-1117: the same for my HAND cards — a card
+      // with no offered action at all (no summon, no set, no
+      // activation) is exactly the card whose missing activation
+      // needs a reason, so its tap must open the info view too.
       const [con2, loc2, seq2] = key.split(':').map(Number);
-      if (con2 === HP && loc2 === E.LOC.MZONE && duelState) {
+      if (con2 === HP && loc2 === E.LOC.HAND && duelState) {
+        const c = duelState.players[con2].hand[seq2];
+        if (c && c.code != null) { playClick(); openActionSheet(key); }
+      } else if (con2 === HP && loc2 === E.LOC.MZONE && duelState) {
         const c = duelState.players[con2].mzone[seq2];
         if (c && c.code != null && (c.pos & E.POS_FACEUP) !== 0) { playClick(); openActionSheet(key); }
       }
