@@ -648,7 +648,67 @@ class GameState {
     const res = classifyMoveReason({ reason, from: from.loc & ~LOC.OVERLAY, to: to.loc & ~LOC.OVERLAY,
       fromOverlay: !!(from.loc & LOC.OVERLAY), neg: lf.neg, dis: lf.dis, pend: !!pend });
     if (res && res.cls === 'R1' && pend) res.pendKind = pend.kind;
+    // fix-destroyreason-1117: name the destroyer when it is
+    // mechanically certain, so the history line (and the band
+    // mirror) says WHY the card died instead of only that it
+    // died — the triage-1116-obs3 observation. The destroyer is
+    // the card of the link currently solving (effect destructions
+    // R10/R24 and negated cards destroyed by the negating effect
+    // R1/R2/R4), or the attacker for battle destruction (R7,
+    // snapshotted at ATTACK time). Rule / lost-target
+    // destructions (R8/R9) have no card destroyer, and when no
+    // link is solving / no attack is on record the destroyer is
+    // unknown — the old wording is kept, never a guess.
+    if (res && (res.cls === 'R1' || res.cls === 'R2' || res.cls === 'R4' || res.cls === 'R10' || res.cls === 'R24')) {
+      const d = this._solvingDestroyer(from);
+      if (d) { res.dCode = d.code; res.dSelf = d.self; }
+    } else if (res && res.cls === 'R7') {
+      const d = this._battleDestroyer(from);
+      if (d) res.dCode = d;
+    }
     return res;
+  }
+  // The card whose effect is resolving right now — the destroyer
+  // for effect destructions. Only the link actually solving: the
+  // newest-link fallback of chainContext() is not an attribution
+  // (when no link is solving, no effect is destroying anything).
+  // Returns {code, self} or null. self: the solving card IS the
+  // card leaving (same slot) — its own effect destroyed it.
+  _solvingDestroyer(from) {
+    if (this.solvingLink <= 0) return null;
+    const l = this.chain[this.solvingLink - 1];
+    if (!l || !l.code) return null;
+    return { code: l.code, self: l.con === from.con && l.loc === from.loc && l.seq === from.seq };
+  }
+  // The destroyer of a battle destruction — resolved from the
+  // ATTACK-time snapshot (case 110), because by the time the
+  // MOVEs arrive either combatant's mirror slot may already be
+  // cleared (mutual destruction), and the code would be
+  // unresolvable then. Which combatant died decides the name:
+  // the defender's line names the attacker, the attacker's own
+  // line (mutual destruction) names the defender. Same-turn
+  // only: a stale record from an earlier turn never names a
+  // destroyer, and a card that is neither combatant gets none.
+  _battleDestroyer(from) {
+    const la = this.lastAttack;
+    if (!la || la.turn !== this.turnCount) return null;
+    const at = (x) => x && x.con === from.con && x.loc === from.loc && x.seq === from.seq;
+    if (at(la.attacker)) return la.targetCode || null;
+    if (at(la.target)) return la.attackerCode || null;
+    return null;
+  }
+  // fix-destroyreason-1117: the destroyer's clause for a
+  // destruction line. _dEff: "《Y》の効果で" / "自身の効果で"
+  // (effect destructions); _dBtl: "《Y》との戦闘で" (battle).
+  // '' when the destroyer is not mechanically known — the
+  // caller then keeps the previous wording verbatim.
+  _dEff(mc) {
+    if (!mc || !mc.dCode) return '';
+    return mc.dSelf ? '自身の効果で' : '《' + this.nameOf(mc.dCode) + '》の効果で';
+  }
+  _dBtl(mc) {
+    if (!mc || !mc.dCode) return '';
+    return '《' + this.nameOf(mc.dCode) + '》との戦闘で';
   }
   _summonKindName(kind) { return kind === 62 ? '特殊召喚' : kind === 64 ? '反転召喚' : '召喚'; }
   // History verb phrases (the part after the card name) for a
@@ -657,16 +717,24 @@ class GameState {
   // phrasing (deck/extra origins, cost sends) are composed by the
   // caller. Returns null when the class has no grave phrase.
   _clsGraveVerb(mc) {
+    // fix-destroyreason-1117: when the destroyer is known the
+    // history line names it ("《Y》の効果で" / "《Y》との戦闘で" /
+    // "自身の効果で"); when unknown the wording is byte-identical
+    // to before — a reason is never guessed. The negation part
+    // of R1/R2/R4 stays un-named: the solving link is the
+    // destroyer, and naming it there would misattribute the
+    // negation itself when a different link destroyed the card.
+    const eff = this._dEff(mc), btl = this._dBtl(mc);
     switch (mc.cls) {
-      case 'R1': return ' は' + this._summonKindName(mc.pendKind) + 'が無効化され、破壊されて墓地へ送られた';
-      case 'R2': return ' の発動が無効化され、破壊されて墓地へ送られた';
+      case 'R1': return ' は' + this._summonKindName(mc.pendKind) + 'が無効化され、' + (eff ? eff + '破壊されて墓地へ送られた' : '破壊されて墓地へ送られた');
+      case 'R2': return ' の発動が無効化され、' + (eff ? eff + '破壊されて墓地へ送られた' : '破壊されて墓地へ送られた');
       case 'R3': return ' の発動が無効化され、墓地へ送られた（破壊はされていない）';
-      case 'R4': return ' の効果が無効化され、破壊されて墓地へ送られた';
+      case 'R4': return ' の効果が無効化され、' + (eff ? eff + '破壊されて墓地へ送られた' : '破壊されて墓地へ送られた');
       case 'R5': return ' の効果が無効化され、墓地へ送られた（破壊はされていない）';
-      case 'R7': return ' は戦闘で破壊され、墓地へ送られた';
+      case 'R7': return btl ? ' は' + btl + '破壊され、墓地へ送られた' : ' は戦闘で破壊され、墓地へ送られた';
       case 'R8': return ' は対象を失い、破壊されて墓地へ送られた';
       case 'R9': return ' はルール処理で破壊され、墓地へ送られた';
-      case 'R10': return ' は効果で破壊され、墓地へ送られた';
+      case 'R10': return eff ? ' は' + eff + '破壊され、墓地へ送られた' : ' は効果で破壊され、墓地へ送られた';
       case 'R11': return ' はシンクロ素材として墓地へ送られた';
       case 'R12': return ' は儀式召喚の素材として墓地へ送られた';
       case 'R14': return ' は召喚のためにリリースされ、墓地へ送られた';
@@ -682,14 +750,18 @@ class GameState {
   // design §6. Returns null for classes with no redirect phrase.
   _clsRedirectVerb(mc) {
     const tail = '、墓地へは行かず除外された';
+    // fix-destroyreason-1117: same destroyer naming as
+    // _clsGraveVerb (see there); unknown destroyer keeps the
+    // previous wording verbatim.
+    const eff = this._dEff(mc), btl = this._dBtl(mc);
     switch (mc.cls) {
-      case 'R1': return ' は' + this._summonKindName(mc.pendKind) + 'が無効化され、破壊され' + tail;
-      case 'R2': return ' の発動が無効化され、破壊され' + tail;
-      case 'R4': return ' の効果が無効化され、破壊され' + tail;
-      case 'R7': return ' は戦闘で破壊され' + tail;
+      case 'R1': return ' は' + this._summonKindName(mc.pendKind) + 'が無効化され、' + (eff ? eff + '破壊され' : '破壊され') + tail;
+      case 'R2': return ' の発動が無効化され、' + (eff ? eff + '破壊され' : '破壊され') + tail;
+      case 'R4': return ' の効果が無効化され、' + (eff ? eff + '破壊され' : '破壊され') + tail;
+      case 'R7': return btl ? ' は' + btl + '破壊され' + tail : ' は戦闘で破壊され' + tail;
       case 'R8': return ' は対象を失い、破壊され' + tail;
       case 'R9': return ' はルール処理で破壊され' + tail;
-      case 'R10': return ' は効果で破壊され' + tail;
+      case 'R10': return eff ? ' は' + eff + '破壊され' + tail : ' は効果で破壊され' + tail;
       case 'R11': return ' はシンクロ素材として送られ' + tail;
       case 'R12': return ' は儀式召喚の素材として送られ' + tail;
       case 'R13': return ' は融合素材として送られ' + tail;
@@ -937,7 +1009,7 @@ class GameState {
               else if (to.loc === LOC.REMOVED) {
                 const rv = mc && mc.redirect ? this._clsRedirectVerb(mc) : null;
                 if (rv) s = this.who(from.con) + '：' + nm + rv;
-                else if (mc && mc.cls === 'R24') s = this.who(from.con) + '：' + nm + ' は効果で破壊され、除外された（墓地へは送られていない）';
+                else if (mc && mc.cls === 'R24') s = this.who(from.con) + '：' + nm + ' は' + (this._dEff(mc) || '効果で') + '破壊され、除外された（墓地へは送られていない）';
                 else if (mc && mc.cls === 'R23') s = this.who(from.con) + '：' + nm + ' は効果で一時的に除外された';
                 else if (mc && mc.cls === 'R13') s = this.who(from.con) + '：' + nm + ' は融合素材として除外された';
                 else if (mc && mc.cls === 'R17') s = this.who(from.con) + '：' + nm + ' をコストとして除外した';
@@ -966,7 +1038,7 @@ class GameState {
             } else if (from.loc === LOC.HAND) {
               if (to.loc === LOC.GRAVE) {
                 if (mc && mc.cls === 'R6') s = this.who(from.con) + '：' + nm + ' を手札上限（6枚）のため捨てた';
-                else if (mc && mc.cls === 'R2') s = this.who(from.con) + '：' + nm + ' の発動が無効化され、破壊されて墓地へ送られた（手札から発動）';
+                else if (mc && mc.cls === 'R2') s = this.who(from.con) + '：' + nm + ' の発動が無効化され、' + (this._dEff(mc) ? this._dEff(mc) + '破壊されて墓地へ送られた' : '破壊されて墓地へ送られた') + '（手札から発動）';
                 else if (mc && mc.cls === 'R17') s = this.who(from.con) + '：' + nm + (mc.discard ? ' を手札からコストで捨てた' : ' をコストとして墓地へ送った');
                 else if (mc && mc.cls === 'R18') s = this.who(from.con) + '：' + nm + ' は効果で手札から捨てられた';
                 else { const v = mc ? this._clsGraveVerb(mc) : null;
@@ -1411,9 +1483,16 @@ class GameState {
       case 74: this.chain = []; this.solvingLink = 0; this.pendingSummons = []; break; // CHAIN_END (BU-71: pending summon announcements end with the chain episode too — design §4)
       case 110: { // ATTACK: attacker loc_info, target loc_info (zeroed = direct)
         const a = r.locInfo(); const tg = r.locInfo();
-        this.lastAttack = { attacker: a, target: tg.loc === 0 ? null : tg };
         const az = a.loc === LOC.MZONE ? this.players[a.con].mzone[a.seq] : null;
         const tz = tg.loc === LOC.MZONE ? this.players[tg.con].mzone[tg.seq] : null;
+        // fix-destroyreason-1117: snapshot BOTH combatants' codes
+        // and the turn here — either side's battle-destruction
+        // MOVE may arrive after its own mirror slot was cleared
+        // (mutual destruction). The existing shape is kept
+        // (client/bot read attacker/target only); the new fields
+        // are additive.
+        this.lastAttack = { attacker: a, target: tg.loc === 0 ? null : tg,
+          attackerCode: az ? az.code : 0, targetCode: tz ? tz.code : 0, turn: this.turnCount };
         // The log names attacker and target (W-16): a bare 「攻撃宣言」
         // left nothing searchable in the history after the fact.
         // layout-fix J4: an attack declaration is a chain-window

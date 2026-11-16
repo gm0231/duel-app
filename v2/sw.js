@@ -46,7 +46,7 @@
  * Cross-origin requests (the neuron import relay) and non-GET
  * requests are not intercepted at all.
  */
-const VERSION = '4f57621182d0';
+const VERSION = '00f7ea85d9b4';
 const CACHE = 'md-' + VERSION;
 const PRECACHE = ['build/ocgcore.wasm', 'data.json', 'fxmap.json'];
 const DATA_SET = new Set(['build/ocgcore.wasm', 'data.json', 'genesys-data.json', 'fxmap.json']);
