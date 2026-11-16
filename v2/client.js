@@ -735,24 +735,34 @@ function refreshStartGate() {
 function updateDeckSum() {
   const el = $('decksum'); if (!el) return;
   const turn = firstChoice === 'first' ? '先攻' : firstChoice === 'second' ? '後攻' : '先攻・後攻ランダム';
-  let txt = '自分：' + deckDisplayName(myDeckKey) + ' ／ 相手：' + deckDisplayName(opDeckKey) + ' ／ ' + turn;
+  const decks = '自分：' + deckDisplayName(myDeckKey) + ' ／ 相手：' + deckDisplayName(opDeckKey);
   const rec = SAVED_DECKS[myDeckKey];
+  let turnLine = turn;
   if (rec && !rec.poolOk && rec.unsupported && rec.unsupported.length)
-    txt += ' ／ 未対応：' + rec.unsupported.join('、');
+    turnLine += ' ／ 未対応：' + rec.unsupported.join('、');
   // BU-67: the summary used to be one plain text node, so the
   // line broke wherever the glyphs landed — including inside
   // 先攻 (measured: 先 on one line, 攻 on the next). Render it
   // with the band's unbreakable-unit treatment (nbHTML): the
   // text content is identical, the break opportunities now sit
   // only between units.
-  el.innerHTML = nbHTML(txt);
+  // fix-oldbu-1116 (BU-47): the turn rides its own line. The
+  // one-line summary wrapped after the last ／ and left 「先攻」
+  // alone on line 2 — a wrap orphan, not a label. Two lines
+  // make the orphan impossible by construction: line 1 ends
+  // with a complete deck name (no dangling ／), line 2 is the
+  // turn. (The textContent round-trip to v3 loses the <br>,
+  // so v3 reads the summary as one line — its own rendering,
+  // out of scope here.)
+  el.innerHTML = nbHTML(decks) + '<br>' + nbHTML(turnLine);
   // BU-47: shrink-to-fit — step the font down (floor 10.5px)
-  // while the summary still needs a second line, so the common
-  // deck pairings stand on one line. jsdom reports height 0,
-  // which reads as "fits" and leaves the size untouched.
+  // while the summary needs a THIRD line (two lines at 12px /
+  // 1.5 = 36px + slack), so a long line 1 still fits. jsdom
+  // reports height 0, which reads as "fits" and leaves the
+  // size untouched.
   el.style.fontSize = '';
   let fs = 12;
-  while (el.scrollHeight > 20 && fs > 10.5) { fs -= 0.5; el.style.fontSize = fs + 'px'; }
+  while (el.scrollHeight > 38 && fs > 10.5) { fs -= 0.5; el.style.fontSize = fs + 'px'; }
   refreshStartGate();
   renderDeckCurrents();
   dpCueUpdate(); // BU-82: a selection change can grow the settings stack
@@ -5564,6 +5574,21 @@ function fxTagRestoreHeader() {
   if (!hb || !grew) return;
   const base = parseFloat(fxNoticeHdrPrevMinH || '0') || 0;
   const cur = parseFloat(hb.style.minHeight || '0') || 0;
+  // fix-oldbu-1116 (BU-46): if a notice is live, do NOT take the
+  // tag's share back. The notice's grow absorbed it (its want was
+  // measured while the tag was up: want = offsetHeight + need),
+  // so cur - grew is less than the notice still needs — the
+  // header shrinks below the notice until the notice's next rAF
+  // anchor re-grows it (measured: 3 dips in 5 duels, up to
+  // 9,072px2, 1-7 sampler ticks; the notice's visibility gate
+  // cannot catch them because at anchor time the grow has
+  // already fixed the containment — the dip lives BETWEEN
+  // anchors). The growth stays until the notice leaves; the
+  // notice's own restore then takes back everything (its base
+  // record is the pre-growth base, and fxTagGrowPx is already 0).
+  // The shared base record is kept while the notice lives, as
+  // the line below already does.
+  if (document.querySelector('#fxlayer .fx-notice')) return;
   const want = Math.max(base, cur - grew);
   if (hb.style.minHeight !== want + 'px') hb.style.minHeight = want ? want + 'px' : (fxNoticeHdrPrevMinH || '');
   try { layoutFit(false); } catch (e) {}
@@ -5926,6 +5951,36 @@ function fxNoticeShow(text, sub, noBeat, deferrals) {
       if (need > 0) fxNoticeGrowHeader(need);
     }
     d.style.top = Math.max(0, Math.round(seatTop - lr.top)) + 'px';
+    // fix-oldbu-1116 (BU-46): the growth can land AFTER the
+    // notice is already visible. Measured (probe-bu46.js, 5
+    // duels, 113 notices): 4 dips where the header SHRANK
+    // mid-dwell — minHeight 179px -> 96px (and 156px -> 41px)
+    // — while the notice stayed put, covering the opponent
+    // pile row by up to 9,072px2 for ~24-70ms. The shrink is
+    // the shared-minHeight ledger: the name tag leaves on a
+    // setTimeout (fxOppNameTag) and its restore subtracts its
+    // own growth (fxTagRestoreHeader: cur - grew), but the
+    // notice's grow had absorbed the tag's share into its own
+    // minHeight (want = offsetHeight + need, measured while
+    // the tag was up) — so the remainder is less than the
+    // notice still needs. The notice's per-frame anchor
+    // re-grows it on the next rAF tick, but the tag's restore
+    // is timer-driven, so the dip lasts until that tick
+    // (headless rAF is sparse, hence 24-70ms; on a real
+    // phone it is at most one frame). Until the header has
+    // actually grown to contain the notice, keep the notice
+    // invisible — the per-frame anchor re-checks, so it
+    // appears the moment the growth lands. The fresh rect
+    // below is measured AFTER the grow, so a synchronous
+    // growth shows the notice on its very first frame.
+    // Zero-geometry environments (jsdom) report no heights
+    // and skip the gate entirely, as the growth does.
+    if (d.offsetHeight > 0 && hr.height > 0) {
+      const contained = seatTop + d.offsetHeight + 2 <= hb.getBoundingClientRect().bottom + 0.5;
+      d.style.visibility = contained ? '' : 'hidden';
+    } else {
+      d.style.visibility = '';
+    }
   };
   anchorNotice();
   // fix9396c-1115 (BU-94): the per-frame anchor lags a logline
@@ -7582,13 +7637,36 @@ function render(state) {
   // the art's top-left corner, same seat as on the board.
   const handCounts = {};
   me.hand.forEach(c => { if (c.code != null) handCounts[c.code] = (handCounts[c.code] || 0) + 1; });
+  // fix-oldbu-1116 (BU-39): while a chain question is open (tray
+  // or dock), the hand cards that are not chain candidates are
+  // dimmed — the same grey the idle/opponent-turn rule already
+  // uses. The entry keys (con:loc:seq) are the hand keys
+  // (HP:LOC.HAND:index), so membership is exact, not a name
+  // match; a card that IS a candidate is never dimmed. The
+  // dock/tray-open guard keeps a stale dim from surviving the
+  // question: finishPrompt clears the interaction before its
+  // render, so the guard is off there. Dim is look-only — the
+  // tap is not blocked, matching the existing grey-out rule.
+  // (Cost reasons are NOT attempted here: the only LP-cost card
+  // playable from the hand in the pool is 《洗脳－ブレイン
+  // コントロール》, and LP shortage is never the uniquely
+  // provable cause — targets and timing can fail at once — so
+  // under 「憶測の文言は出さない」 no reason line is shown.)
+  const chainDimKeys = (() => {
+    if (!currentPrompt || !currentPrompt.prompt || currentPrompt.prompt.name !== 'SELECT_CHAIN') return null;
+    const dock = document.getElementById('dock'), tray = document.getElementById('chainui');
+    const open = (dock && dock.className === 'on') || (tray && tray.classList.contains('on'));
+    if (!open) return null;
+    return new Set((currentPrompt.prompt.entries || []).map(e => e.con + ':' + e.loc + ':' + e.seq));
+  })();
   $('hand').innerHTML = me.hand.map((c, i) => {
     const key = HP + ':' + E.LOC.HAND + ':' + i;
     // BU-39: on the opponent's turn (no prompt of mine live) the
     // hand greys too, so the tap reason below reads as a state,
     // not as a dead tap.
     const act = (actionMap.has(key) ? ' actionable' : '') + (lastPlaceCard && lastPlaceCard.key === key ? ' placing' : '') +
-      ((cmdPromptOpen && !actionMap.has(key)) || (!currentPrompt && state.winner == null && state.turnPlayer !== HP && !actionMap.has(key)) ? ' dim' : '');
+      ((cmdPromptOpen && !actionMap.has(key)) || (!currentPrompt && state.winner == null && state.turnPlayer !== HP && !actionMap.has(key)) ? ' dim' : '') +
+      (chainDimKeys && !chainDimKeys.has(key) ? ' dim' : '');
     const big5 = c.code != null && isMonster(c.code) && (Math.abs(cardData(c.code).atk) >= 10000 || Math.abs(cardData(c.code).def) >= 10000);
     // the band is the NAME's (name + stats on one 16px line
     // measured wider than the card in live play — the name was
@@ -9130,6 +9208,7 @@ function uiChain(prompt, state) {
     // The dock appears as the direct consequence of tapping
     // チェーンする, so no arrival motion is needed; it appears at once
     // with its ground opaque at every frame, as H1 required.
+    const isFirstDraw = firstDraw; // fix-oldbu-1116 (BU-39): the dock-open render below runs once
     if (firstDraw) closeInfoPop(); // BU-95: a detail opened from the TRAY's cause row must not survive into the dock stage — it floated above the dock (z55 over z40) and covered the context line (22,106 px2) and the 盤面を見る button (5,772 px2). Gated on firstDraw: a detail opened FROM the dock (R-SEL-1) only exists after the first draw, so it is untouched.
     firstDraw = false;
     $('dock').querySelectorAll('[data-chain]').forEach(c => c.addEventListener('click', (ev) => {
@@ -9198,6 +9277,16 @@ function uiChain(prompt, state) {
       const on = document.getElementById('app').classList.toggle('dockpeek');
       pk.textContent = on ? 'ドックに戻る' : '盤面を見る';
     });
+    // fix-oldbu-1116 (BU-39): the dock is open now — re-render
+    // so the hand dims the non-candidates (humanAnswerer's
+    // render ran before this prompt existed, and the tray-stage
+    // render at the end of uiChain only covers the non-deferred
+    // path). Gated on the first draw: re-draws (dismiss
+    // toggles) change the dock's candidates, not the hand's
+    // chain membership. The players guard is for the stub-DOM
+    // rigs (test-chainpass drives uiChain with a players-less
+    // state); the real engine always ships players.
+    if (isFirstDraw && state.players) render(state);
   };
   // BU-74: the first stage is the badge tray, not the dock. The
   // candidates that float on it are exactly the ones the dock
@@ -9211,6 +9300,17 @@ function uiChain(prompt, state) {
     return true;
   });
   showChainTray(prompt, cause, liveIdx, draw);
+  // fix-oldbu-1116 (BU-39): the tray is up now (unless deferred
+  // behind a cut-in — then neither tray nor dock is open and the
+  // render's open-guard keeps the hand undimmed). Re-render so
+  // the hand dims the non-candidates while the question is
+  // visible; humanAnswerer's render ran before this prompt
+  // existed, so without this the dim would never appear.
+  // (uiCmd already renders after its own setup — same pattern.)
+  // The players guard is for the stub-DOM rigs (test-chainpass
+  // drives uiChain with a players-less state); the real engine
+  // always ships players.
+  if (state.players) render(state);
 }
 // ---- place / disfield: tap the actual zones ----
 function availZones(prompt) {
