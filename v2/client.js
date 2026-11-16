@@ -7705,48 +7705,46 @@ let sheetKind = 'prompt';
 let sheetAnimGen = 0, sheetCloseTimer = null, sheetBlockerOn = false;
 function sheetAnimCancel(el) { if (el && el.getAnimations) { try { for (const a of el.getAnimations()) a.cancel(); } catch (e) {} } }
 function sheetOpenView(html) { sheetOpen(html, 'view'); }
-// layout-fix J1: the peek / close buttons ride on the sheet's own
-// top edge. They were positioned from the old 62dvh cap in CSS;
-// the sheet's height is now content- and budget-driven, so their
-// offset is the sheet's measured height (offsetHeight is immune
-// to the entrance transform). In peek state the stylesheet moves
-// them to the top — the inline offset must then be cleared.
+// BU-36: where the peek / close buttons sit.
+// The old seat (8px above the sheet's top edge, clamped only
+// against the header) put them over the board above the sheet —
+// the opponent zones, the pile row and the LP band — whenever
+// the sheet was short or tall (mirror-measured up to ~5900px²),
+// and in peek the clamp's anchor itself moved: the header grows
+// to hold notices (77→171px), so header-bottom+4 landed on the
+// pile row / S-zone. Both seats are gone:
+//  - open: the buttons ride INSIDE the sheet's own reserved top
+//    strip (#sheet::before, 60px). The sheet is a modal over the
+//    board, so nothing inside it can cover the board; the header's
+//    bottom edge is still a floor, so a grown header slides the
+//    buttons down over the sheet's own top rows instead of over
+//    the header. The seat is the sheet's measured top edge + 8px
+//    (offsetHeight is immune to the entrance transform); the lift
+//    (ensureSheetFits) shifts the sheet up, so it counts too.
+//  - peek: the buttons live IN the fold band (#peekbar, built by
+//    syncPeekBar) — the floating elements are hidden and there is
+//    nothing to place here; stale inline seats are cleared so
+//    un-peeking re-seats from scratch.
 function placeSheetBtns() {
   const wrap = $('sheetwrap'), sheet = $('sheet');
   const pk = $('peekbtn'), sx = $('sheetx');
   if (!wrap || !sheet || !wrap.classList.contains('on')) return;
-  // BU-36: the two buttons must never cover the header's controls
-  // (phase / history buttons, turn and log readouts). A tall
-  // sheet's top edge reaches into the header, and in peek the CSS
-  // seat is the screen's top — both put the buttons over the
-  // header. The header's bottom edge is the hard limit: in peek
-  // the buttons sit just below it; otherwise a button whose
-  // natural seat (8px above the sheet's top edge) would cross it
-  // slides down over the sheet's own top edge instead.
+  if (wrap.classList.contains('peek')) {
+    if (pk) { pk.style.top = ''; pk.style.bottom = ''; }
+    if (sx) { sx.style.top = ''; sx.style.bottom = ''; }
+    return;
+  }
   const hdr = $('header');
   const hdrB = hdr && hdr.getBoundingClientRect ? hdr.getBoundingClientRect().bottom : 0;
-  if (wrap.classList.contains('peek')) {
-    const t = hdrB ? Math.round(hdrB + 4) + 'px' : '';
-    if (pk) { pk.style.bottom = ''; pk.style.top = t; }
-    if (sx) { sx.style.bottom = ''; sx.style.top = t; }
-    return;
-  }
-  if (pk) pk.style.top = '';
-  if (sx) sx.style.top = '';
-  // layout-fix5 M1: the sheet can be lifted by ensureSheetFits
-  // (inline bottom) when its anchor sits below the visible area —
-  // the buttons ride on the sheet's lifted top edge, not the wrap's.
   const lift = parseFloat(sheet.style.bottom) || 0;
-  const b = sheet.offsetHeight + lift + 8;
   const wrapH = wrap.offsetHeight || 0;
-  if (wrapH && hdrB) {
-    // button top (= wrapH - bottom - height) must stay >= hdrB + 4
-    if (pk) pk.style.bottom = Math.min(b, wrapH - Math.round(hdrB) - 4 - 52) + 'px';
-    if (sx) sx.style.bottom = Math.min(b, wrapH - Math.round(hdrB) - 4 - 48) + 'px';
-    return;
-  }
-  if (pk) pk.style.bottom = b + 'px';
-  if (sx) sx.style.bottom = b + 'px';
+  const sheetTop = wrapH - (sheet.offsetHeight + lift);
+  const top = Math.max(sheetTop + 8, hdrB ? Math.round(hdrB) + 4 : 0);
+  // bottom:'auto' (not ''): the stylesheet still carries the old
+  // bottom:calc(62dvh+8px) seat, and top+bottom+auto-height would
+  // stretch the button vertically. The inline auto kills it.
+  if (pk) { pk.style.top = top + 'px'; pk.style.bottom = 'auto'; }
+  if (sx) { sx.style.top = top + 'px'; sx.style.bottom = 'auto'; }
 }
 // layout-fix5 M1: post-open fit self-check for sheets. The budget
 // is re-measured at open (sheetOpen), but a WebView whose dvh /
@@ -7789,7 +7787,7 @@ function ensureSheetFits() {
     const peeked = $('sheetwrap').classList.contains('peek');
     if (!peeked && r.bottom > vh.visibleBottom + 1) {
       const excess = r.bottom - vh.visibleBottom;
-      sheet.style.maxHeight = Math.max(120, vh.visibleBottom - 108) + 'px';
+      sheet.style.maxHeight = Math.max(120, vh.visibleBottom - 84) + 'px';
       sheet.style.bottom = excess + 'px';
       fit = 'clamped';
       try { placeSheetBtns(); } catch (e) {}
@@ -7827,9 +7825,11 @@ function sheetOpen(html, kind) {
   // budgeted taller than the screen — its bottom and detail buttons
   // fell outside the visible area and the scroller could not reach
   // them. Re-measure the conservative visible height on every open,
-  // so max-height: min(100dvh-108, appvh-108) tracks the live
+  // so max-height: min(100dvh-84, appvh-84) tracks the live
   // viewport. A stale inline clamp from a previous fit-check is
   // cleared here and re-derived below if still needed.
+  // (BU-36: the 84px reserve — was 108 — pays for the 60px
+  // button strip inside the sheet; see the #sheet rule.)
   try { document.documentElement.style.setProperty('--appvh', viewportHeights().baseH + 'px'); } catch (e) {}
   sheet.style.maxHeight = '';
   sheet.style.bottom = '';
@@ -7933,6 +7933,24 @@ function syncPeekBar() {
   clearPeekBar();
   const wrap = $('sheetwrap');
   if (!wrap.classList.contains('on') || !wrap.classList.contains('peek')) return;
+  // BU-36: the floating × / 選択に戻る used to sit at
+  // header-bottom+4, over the opponent pile row and S-zone
+  // whenever the header grew to hold a notice. They now ride in
+  // this band — the sheet's own reserved fold band — so they can
+  // never cover the board, the header or the chain bar. The band
+  // therefore shows whenever the sheet is peeked, even with no
+  // answer to mirror: it always holds at least 選択に戻る (and ×
+  // on view sheets, the same visibility rule the floating seats
+  // had). Both chrome buttons drive the original controls, so the
+  // toggle and the close keep their exact behaviour.
+  if (wrap.dataset.kind === 'view') {
+    const x = document.createElement('button');
+    x.className = 'bigbtn pb-x';
+    x.textContent = '×';
+    x.setAttribute('aria-label', '閉じる');
+    x.addEventListener('click', () => { const sx = $('sheetx'); if (sx) sx.click(); });
+    bar.appendChild(x);
+  }
   const srcs = $('sheet').querySelectorAll('button.bigbtn:not(#sheet-cancel), button.optbtn, .posbtn');
   srcs.forEach(el => {
     const b = document.createElement('button');
@@ -7942,7 +7960,12 @@ function syncPeekBar() {
     b.addEventListener('click', () => { el.click(); });
     bar.appendChild(b);
   });
-  if (bar.children.length) bar.classList.add('onbar');
+  const back = document.createElement('button');
+  back.className = 'bigbtn pb-back';
+  back.textContent = '選択に戻る';
+  back.addEventListener('click', () => { const pk = $('peekbtn'); if (pk) pk.click(); });
+  bar.appendChild(back);
+  bar.classList.add('onbar');
 }
 // R-SEL-1: a read-only detail that floats OVER whatever selection
 // is in progress — opening or closing it never answers, toggles
@@ -10842,9 +10865,23 @@ function wireSeg(id, apply) {
     playClick();
     const w = $('sheetwrap'); const on = w.classList.toggle('peek');
     $('peekbtn').textContent = on ? '選択に戻る' : '盤面を見る';
-    placeSheetBtns(); // layout-fix J1: peek moves the buttons to the top (CSS); un-peek restores the sheet-top offset
+    placeSheetBtns(); // BU-36: peek hides the floating seats (the buttons ride in #peekbar now); un-peek re-seats them in the sheet's top strip
     syncPeekBar(); // BU-22: the answer band follows the peek state
   });
+  // BU-36: the header grows and shrinks with notices / log rows
+  // and the sheet buttons' seat is floored by its bottom edge —
+  // re-seat them whenever the header's height changes, so a
+  // notice arriving (or leaving) mid-sheet cannot strand the
+  // buttons over the header or leave them slid down over the
+  // sheet's top rows. placeSheetBtns is a no-op with no sheet
+  // open, so the observer is cheap the rest of the time.
+  // Guarded: jsdom and old engines have no ResizeObserver.
+  if (window.ResizeObserver && $('header')) {
+    try {
+      const hdrRO = new ResizeObserver(() => { try { placeSheetBtns(); } catch (e) {} });
+      hdrRO.observe($('header'));
+    } catch (e) {}
+  }
   // BU-74: the chain tray's peek chip — the tray retreats, the
   // chip stays in its seat and reads 選択に戻る (the approved
   // mock's behaviour); the state rides on #chainui + #app.traypeek

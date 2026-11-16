@@ -69,10 +69,10 @@ const clientSrc = fs.readFileSync(path.join(V2, 'client.js'), 'utf8');
     'LF5-M1b: the candidate scroller is flex:1 1 auto with min-height:0 (basis 0 collapses it to 0px in this content-sized sheet — measured)');
   ok(clientSrc.includes('function ensureSheetFits()') &&
      clientSrc.includes('setTimeout(ensureSheetFits, 360)') &&
-     clientSrc.includes("sheet.style.maxHeight = Math.max(120, vh.visibleBottom - 108) + 'px'") &&
+     clientSrc.includes("sheet.style.maxHeight = Math.max(120, vh.visibleBottom - 84) + 'px'") &&
      clientSrc.includes("sc.style.flex = 'none'") &&
      clientSrc.includes("sheet.dataset.fit = fit || 'ok'"),
-    'LF5-M1c: ensureSheetFits exists, runs at the 360 ms settle point, clamps an overflowing sheet into the live visible area and pins a scroller that cannot move');
+    'LF5-M1c: ensureSheetFits exists, runs at the 360 ms settle point, clamps an overflowing sheet into the live visible area and pins a scroller that cannot move (BU-36 2026-11-16: the clamp reserve is 84px, was 108 — it pays for the 60px button strip)');
   ok(clientSrc.includes("sheet.style.maxHeight = ''") && clientSrc.includes("sheet.style.bottom = ''") && clientSrc.includes('delete sheet.dataset.fit;'),
     'LF5-M1d: a stale inline clamp / lift / fit verdict is cleared on every open and re-derived');
 }
