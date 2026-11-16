@@ -45,11 +45,11 @@ const ruleDecls = (re) => {
   const wrap = ruleDecls(/#sheetwrap\{([^}]*)\}/);
   ok(!!wrap && wrap.position === 'fixed', 'LF-J1a: #sheetwrap is viewport-fixed (the sheet can no longer anchor below the visible fold)');
   const sheet = ruleDecls(/#sheet\{([^}]*)\}/);
-  ok(!!sheet && /var\(--appvh/.test(sheet['max-height'] || '') && /100dvh - 108px/.test(sheet['max-height'] || ''),
-    'LF-J1b: #sheet height budget = dock discipline (100dvh-108) capped by the conservative --appvh');
+  ok(!!sheet && /var\(--appvh/.test(sheet['max-height'] || '') && /100dvh - 84px/.test(sheet['max-height'] || ''),
+    'LF-J1b: #sheet height budget = dock discipline (100dvh-84) capped by the conservative --appvh (BU-36 2026-11-16: was 108; 84 keeps the 60px button strip inside the sheet and the M1e first-render margin at 620h)');
   ok(/#sheet\.flexsheet\{[^}]*display:flex/.test(html) && /#sheet \.sheet-scroll\{[^}]*overflow-y:auto/.test(html) &&
-     /#sheet\.flexsheet \.btnrow\{[^}]*position:static/.test(html),
-    'LF-J1c: flex sheets exist — column flex, candidate-only scroller, in-flow button row');
+     /#sheet\.flexsheet \.btnrow\{[^}]*position:relative/.test(html),
+    'LF-J1c: flex sheets exist — column flex, candidate-only scroller, in-flow button row (relative, so the F7 cue can anchor above it; BU-36 2026-11-16: was static)');
   ok(clientSrc.includes("classList.add('flexsheet')") && clientSrc.includes('<div class="sheet-scroll">') &&
      clientSrc.includes("setProperty('--appvh'"),
     'LF-J1d: gridSheet engages the flex structure inside a .sheet-scroll; --appvh is published from viewportHeights()');
