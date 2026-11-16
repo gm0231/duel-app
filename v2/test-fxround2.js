@@ -7,11 +7,13 @@
      under stale detail text. Reproduces the parent observation:
      a chain dock arriving while a detail view was still open.
      F2 — the SELECT_CARD grid's delivered CSS contract on the real
-     rendered sheet: 3-column minmax(106px) grid, tiles >= 150px,
-     effect text at 11px (ROUND 5 / I2: the sheet grid is auto-fit
-     and the effect text is 12px — see FXR8/FXR10 notes), and the
-     location label as an absolutely positioned corner chip (out of
-     the name/text flow).
+     rendered sheet: flex rows centred, tiles >= 150px at the
+     standard width (smallfix3 BU-90 supersedes the old 3-column
+     minmax(106px) grid — see FXR8 note), effect text at 11px
+     (ROUND 5 / I2: the sheet grid is auto-fit and the effect
+     text is 12px — see FXR8/FXR10 notes), and the location
+     label as an absolutely positioned corner chip (out of the
+     name/text flow).
    Live geometry + screenshots: fxround2/ capture rig. */
 const fs = require('fs');
 const path = require('path');
@@ -115,7 +117,13 @@ async function boot() {
   const g = doc.querySelector('.grid'), card = doc.querySelector('.gcard'),
         itext = doc.querySelector('.gcard .itext'), loc = doc.querySelector('.gcard .loc');
   const cs = (el) => window.getComputedStyle(el);
-  ok(g && cs(g).gridTemplateColumns.includes('106px'), 'FXR8: F2 — grid columns are minmax(106px,1fr) (3 across at 390px), got: ' + (g ? cs(g).gridTemplateColumns : 'none'));
+  // smallfix3-1116 (BU-90) supersedes the minmax-grid contract:
+  // the grid is flex with centred rows and the tile carries its
+  // own standard width (flex-basis 106px, capped at one third
+  // of the row minus the gaps) — 3 across at 390px, same as the
+  // old 117px tracks (measured 116.7px, TF-B8/B9).
+  ok(g && cs(g).display === 'flex' && cs(g).justifyContent === 'center' && cs(card).flexBasis === '106px',
+    'FXR8: F2 successor (smallfix3 BU-90) — the grid is flex with centred rows, tiles at the standard width (3 across at 390px), got: ' + (g ? cs(g).display + '/' + cs(g).justifyContent + ', basis ' + cs(card).flexBasis : 'none'));
   ok(card && parseFloat(cs(card).minHeight) >= 150, 'FXR9: F2 — candidate tiles are at least 150px tall, got: ' + (card ? cs(card).minHeight : 'none'));
   ok(!itext, 'FXR10: F2 successor (layout-fix3 K4, user decision 2026-11-12) — candidate tiles carry NO inline effect text at all; tiles are compact and uniform, the full text lives in the detail modal (got: ' + (itext ? 'an .itext element' : 'none') + ')');
   ok(loc && cs(loc).position === 'absolute', 'FXR11: F2 — the location label is a positioned corner chip, out of the text flow, got: ' + (loc ? cs(loc).position : 'none'));

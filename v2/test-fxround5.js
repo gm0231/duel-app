@@ -77,8 +77,13 @@ async function main() {
   // display:none search filter kept hidden tiles in the DOM,
   // slipped past BU-79's :has() override, and stretched a
   // filtered 1-2 visible tiles to 366/179px — measured).
-  ok(!!grid && /auto-fill/.test(grid['grid-template-columns'] || '') && !/auto-fit/.test(grid['grid-template-columns'] || ''),
-    'FX5-4: I2 successor (BU-101) — the selection grid keeps phantom tracks (auto-fill); tiles are the standard width at any visible count');
+  // smallfix3-1116 (BU-90) supersedes the mechanism once more:
+  // the grid is flex with centred rows and the tile carries its
+  // own standard width (flex-basis 106px, capped at one third
+  // of the row minus the gaps) — the same guarantee, pinned in
+  // its new form (full pins: test-smallfix3 SF3-90).
+  ok(!!grid && grid['display'] === 'flex' && grid['justify-content'] === 'center' && !('grid-template-columns' in grid),
+    'FX5-4: I2 successor (BU-90/smallfix3) — the grid is flex with centred rows; standard width comes from the tile cap, not phantom tracks');
   const itext = ruleDecls(/\.gcard \.itext\{([^}]*)\}/);
   // layout-fix3 K4 supersedes J1 (user decision 2026-11-12): the
   // full-text-in-tile design was rejected in real play ("a wall

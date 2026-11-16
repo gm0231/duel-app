@@ -5881,7 +5881,22 @@ function fxNoticeShow(text, sub, noBeat, deferrals) {
     // height (the K5 name grouping bounds the text, so the
     // growth stays small). Zero-geometry environments (jsdom)
     // skip the growth entirely.
-    if (lg && lr.width) {
+    // smallfix3-1116 (BU-89 residual): a flash that starts MID-DWELL
+    // collapses the logline's column to ~11px (bigfix2 mirror
+    // measurement) and the per-frame re-anchor squeezes the live
+    // notice into a one-character column — its offsetHeight then
+    // grows the header to ~594px and pushes the board off-screen
+    // (measured on mainline 8fd5a18 and on this build, single-name
+    // flash included). The deferral in fxNoticeShow only holds
+    // notices that ARRIVE during a flash. While the flash owns
+    // the header, seat the live strip full-width in its own band
+    // below row 2 instead: it cannot cover row 2's chips there,
+    // and the next frame after the flash ends re-confines it to
+    // the restored logline column.
+    if (hb && hb.classList.contains('apflash')) {
+      d.style.left = '6px';
+      d.style.right = '6px';
+    } else if (lg && lr.width) {
       const gr = lg.getBoundingClientRect();
       if (gr.width > 0) {
         // BU-89 (bigfix2-1115): with the auto-pass chip up, the
@@ -8739,7 +8754,9 @@ function flashAutoPass(names) {
   const el = $('autopass'); if (!el) return;
   // BU-85: the suppressed card's name gets its own line — one line truncated it
   // (measured: 「自動パス：帝王の烈旋」 cut to 「自動パス：帝王の」 at 103px).
-  // The name is set via textContent, never HTML. The span is appended after a
+  // smallfix3-1116: a 2-3 name join (199/279px) cannot fit the 148px line,
+  // so .ap-name wraps at '・' (keep-all) instead of truncating — the full
+  // joined text stays in the DOM and in view. The span is appended after a
   // plain-text label; if the element cannot hold children (a minimal stub whose
   // querySelector/appendChild are no-ops), the plain full text is restored so
   // the flash still names the card (DK12) instead of throwing mid-flash.

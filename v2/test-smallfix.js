@@ -6,6 +6,10 @@
    BU-79 (selection grid): 1-2 candidate grids keep the
      standard column width via the :has override (auto-fill);
      the base rule for 3+ is untouched (FX5-4 stays valid).
+     smallfix3-1116 (BU-90) supersedes this: the grid is flex
+     with centred rows and the tile carries its own standard
+     width (see test-smallfix3.js SF3-90) — the pins below
+     assert the same guarantee in its new form.
    BU-82 (deck page at 620): the .dp-compact tier tightens the
      page's vertical rhythm; #dpmore + .dp-canscroll are the
      scroll cue for shorter screens; dpCueUpdate drives both
@@ -63,8 +67,13 @@ const baseGrid = ruleDecls(/\.grid\{([^}]*)\}/);
 // stretched (measured 366px / 179px wide). The standard-width
 // guarantee moved INTO the base rule (auto-fill); the
 // override is retired. The 3+ rendering is unchanged.
-ok(!!baseGrid && /auto-fill/.test(baseGrid['grid-template-columns'] || '') && !/auto-fit/.test(baseGrid['grid-template-columns'] || ''),
-  'SF79a: successor (BU-101) — the base grid rule itself is auto-fill; standard-width columns at any visible count');
+// smallfix3-1116 (BU-90) supersedes the mechanism once more:
+// the grid is flex with centred rows and the tile carries its
+// own standard width — the guarantee below is the same one,
+// pinned in its new form (full pins: test-smallfix3 SF3-90).
+ok(!!baseGrid && baseGrid['display'] === 'flex' && baseGrid['justify-content'] === 'center'
+  && !('grid-template-columns' in baseGrid),
+  'SF79a: successor (BU-90/smallfix3) — the grid is flex with centred rows; standard width comes from the tile cap, not phantom tracks');
 ok(!/\.grid:has\(> \.gcard/.test(html),
   'SF79b: successor (BU-101) — the BU-79 :has() override is retired (the base rule carries the guarantee now)');
 

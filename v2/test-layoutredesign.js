@@ -58,8 +58,12 @@ async function main() {
   // BU-101 successor (2026-11-15) of the I2 pin: see FX5-4 —
   // auto-fit's full-width-for-few behaviour was narrowed by
   // BU-79 and retired by BU-101; the base rule is auto-fill.
-  ok(!!grid && /auto-fill/.test(grid['grid-template-columns'] || '') && !/auto-fit/.test(grid['grid-template-columns'] || ''),
-    'LR-I2a: I2 successor (BU-101) — the selection grid keeps phantom tracks (auto-fill); tiles are the standard width at any visible count');
+  // smallfix3-1116 (BU-90) supersedes the mechanism once more:
+  // the grid is flex with centred rows and the tile carries its
+  // own standard width — the same guarantee, pinned in its new
+  // form (full pins: test-smallfix3 SF3-90).
+  ok(!!grid && grid['display'] === 'flex' && grid['justify-content'] === 'center' && !('grid-template-columns' in grid),
+    'LR-I2a: I2 successor (BU-90/smallfix3) — the grid is flex with centred rows; standard width comes from the tile cap, not phantom tracks');
   const itext = ruleDecls(/\.gcard \.itext\{([^}]*)\}/);
   // layout-fix J1 superseded the clamp with full in-tile text;
   // layout-fix3 K4 (user decision) retires the in-tile text

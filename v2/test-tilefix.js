@@ -32,6 +32,9 @@
  * override is retired as redundant (the 3+ rendering is
  * unchanged, every track is filled either way); the
  * contain-intrinsic-size fallback is the true 160px.
+ * smallfix3-1116 (BU-90) supersedes the auto-fill mechanism with
+ * flex (centred rows, tile-carried standard width) — see
+ * test-smallfix3.js SF3-90; TF-S1 pins the new form.
  *
  * TF-S: source pins. TF-B: real-Chromium geometry at 390x620 —
  * the standard is the many-candidate size measured in the
@@ -49,9 +52,14 @@ const html = fs.readFileSync(path.join(V2, 'index.html'), 'utf8');
 // ---------- source pins ----------
 {
   const m = html.match(/\.grid\{([^}]*)\}/);
-  const cols = m ? (m[1].match(/grid-template-columns:([^;]*);/) || [])[1] || '' : '';
-  ok(/auto-fill/.test(cols) && !/auto-fit/.test(cols),
-    'TF-S1: the base .grid rule is auto-fill (phantom tracks hold the standard column at any visible count)');
+  const decls = m ? m[1] : '';
+  // smallfix3-1116 (BU-90) supersedes the auto-fill mechanism:
+  // the grid is flex with centred rows and the tile carries its
+  // own standard width — the same guarantee (standard column at
+  // any visible count), pinned in its new form (full pins:
+  // test-smallfix3 SF3-90).
+  ok(/display:flex/.test(decls) && /justify-content:center/.test(decls) && !/grid-template-columns/.test(decls),
+    'TF-S1: the base .grid rule is flex with centred rows (the tile cap holds the standard column at any visible count)');
   ok(!/\.grid:has\(> \.gcard/.test(html),
     'TF-S2: the BU-79 :has() override is retired (it counted DOM children and missed display:none filtering)');
   const cis = html.match(/#sheet \.gcard\{content-visibility:auto;contain-intrinsic-size:auto (\d+)px;\}/);

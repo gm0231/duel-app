@@ -88,9 +88,14 @@ const name = (c) => data.names[c];
   ok(engineSrc.includes('this.pendingMatLines.push({ con: matPending.con, who: matPending.who, nm: matPending.nm, cid, sol })') &&
      !engineSrc.includes('pm.e.s =') && engineSrc.includes("(this.cardData[zc].type & 0x800000)"),
     'LF3-K3a: Extra-host material lines are HELD at MOVE time and pushed at the Xyz announcement with the announced name (layout-fix4 L2 successor; no in-place rewrite)');
-  ok(!clientSrc.includes('class="itext"') && html.includes('grid-auto-rows:1fr') &&
+  // smallfix3-1116 (BU-90) supersedes the grid-auto-rows mechanism:
+  // the grid is flex now, so row uniformity comes from the default
+  // stretch (no align-items override on .grid) plus the tiles'
+  // uniform min-height 170px content — the sweep measured every row
+  // 170px tall at 620/700/998 (see smallfix3-1116/RECORD.md).
+  ok(!clientSrc.includes('class="itext"') && /\.grid\{[^}]*display:flex[^}]*\}/.test(html) && !/\.grid\{[^}]*align-items/.test(html) &&
      /\.cand \.fxline\{[^}]*max-height:97px[^}]*overflow-y:auto/.test(html),
-    'LF3-K4a: no inline effect text on candidate tiles; uniform grid rows; the dock effect body lives in a fixed-height scrolling region');
+    'LF3-K4a: no inline effect text on candidate tiles; uniform grid rows (flex stretch, no align-items override); the dock effect body lives in a fixed-height scrolling region');
   ok(clientSrc.includes("notice: true") && clientSrc.includes("if (typeof savedFx.notice === 'boolean') fxSettings.notice = savedFx.notice") &&
      clientSrc.includes("if (!fxSettings.notice) { fxRecord('noticesuppressed', { text }); return; }") &&
      clientSrc.includes('function fxEmitMoveNotes(notes, evs)') && html.includes('id="seg-notice"') && clientSrc.includes('fxseg-notice') &&

@@ -665,14 +665,25 @@
      in the DOM, the override never fired, and a search that
      left 1-2 VISIBLE tiles stretched them again (measured at
      390x620: 1 visible = 366px wide, 2 visible = 179px, the
-     resolved template "366px 0px 0px"). The base rule is
-     auto-fill now: phantom tracks ALWAYS hold the standard
+     resolved template "366px 0px 0px"). The base rule went
+     auto-fill then: phantom tracks ALWAYS held the standard
      ~117px column, whatever the visible count and however it
-     came about, and the :has() override is retired as
-     redundant. The 3+ rendering is unchanged (every track
-     is filled under either keyword). */
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(106px,1fr));gap:8px;grid-auto-rows:1fr;}
-  .gcard{height:100%;box-sizing:border-box;}
+     came about, and the :has() override was retired as
+     redundant. The 3+ rendering was unchanged (every track
+     is filled under either keyword) — but a lone tile still
+     sat at the grid's left edge with ~2/3 of the sheet empty
+     to its right (BU-90, measured 390x620: 1 tile at x=12,
+     ~249px void; 2 tiles, ~125px void). smallfix3-1116
+     (BU-90): the grid is flex now — rows centre with
+     justify-content:center, and the standard tile width is
+     carried by the tile itself (flex-basis 106px, capped at
+     one third of the row minus the gaps), so 1-2 visible
+     tiles sit centred at ~117px whether they are the only
+     DOM children or the only ones left after a word search
+     (display:none drops out of the flex layout). Full 3-tile
+     rows render as before (116.7px vs 117px, under 1px). */
+  .grid{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;}
+  .gcard{height:100%;box-sizing:border-box;flex:1 1 106px;max-width:calc((100% - 16px)/3);}
   /* fx-ui round 2 (F7): the grid's "more below" cue — shown
      only while the sheet can still scroll (toggled from
      gridScrollCueUpdate). BU-36 (2026-11-16): it no longer
@@ -852,12 +863,16 @@
      (measured: 「自動パス：帝王の烈旋」 cut to 「自動パス：帝王の」 at 103px).
      The flash stacks two lines (label + name) at 10px, capped at 170px so the
      row never overflows (measured: the longest single name 合体魔神ゲート・ガーディアン
-     fits whole at 139px; only 3+-name joins still ellipsis on the name line).
-     The .on rule makes the chip display:flex in a row — column is what stacks
-     the two lines. While flashing, the log line stays one line (ellipsis) so a
-     squeezed log cannot wrap the header tall. */
+     fits whole at 139px). smallfix3-1116: a 2-3 name join (199/279px) cannot
+     fit the 148px name line, so the name WRAPS at '・' instead of
+     truncating — keep-all keeps each name whole, overflow-wrap:anywhere is
+     the fallback for one unbreakable name. The chip grows one line taller
+     only for joins, during the 2.6s flash. The .on rule makes the chip
+     display:flex in a row — column is what stacks the two lines. While
+     flashing, the log line stays one line (ellipsis) so a squeezed log
+     cannot wrap the header tall. */
   #autopass.flash{white-space:normal;line-height:1.25;text-align:left;flex:0 0 auto;flex-direction:column;align-items:stretch;max-width:170px;font-size:10px;}
-  #autopass.flash .ap-name{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  #autopass.flash .ap-name{display:block;white-space:normal;word-break:keep-all;overflow-wrap:anywhere;}
   #header.apflash #logline{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   #autopass.inert{opacity:.42;filter:saturate(.5);}
   /* ---------- presentation FX layer (rounds A/B) ----------

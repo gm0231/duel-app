@@ -221,7 +221,7 @@ async function boot() {
 
   // ---- BU-85: flash chip names the suppressed card on its own line ----
   ok(html.includes('#autopass.flash{white-space:normal') && html.includes('#autopass.flash .ap-name{display:block'),
-    'BF14 (BU-85): the flash chip stacks label + name (two lines, name ellipsised)');
+    'BF14 (BU-85): the flash chip stacks label + name (two lines, name wraps at ・ for joins)');
   ok(html.includes('#header.apflash #logline{white-space:nowrap'),
     'BF14b (BU-85): the log line stays one line while the flash shows');
   window.flashAutoPass('帝王の烈旋');
@@ -234,6 +234,13 @@ async function boot() {
   window.eval('autoPassFlashUntil = 0'); window.updateAutoPassChip();
   ok(!doc.getElementById('header').classList.contains('apflash'),
     'BF14e (BU-85): the header mark clears when the flash ends');
+  // smallfix3-1116: the 2-name join stays whole in .ap-name (CSS wraps it
+  // at ・; jsdom cannot measure the wrap, the probe measures it live).
+  window.flashAutoPass('帝王の烈旋・合体魔神ゲート・ガーディアン');
+  const apName2 = doc.getElementById('autopass').querySelector('.ap-name');
+  ok(!!apName2 && apName2.textContent === '帝王の烈旋・合体魔神ゲート・ガーディアン',
+    'BF14e2 (BU-85 join): the 2-name join stays whole in .ap-name (wraps, never truncates)');
+  window.eval('autoPassFlashUntil = 0'); window.updateAutoPassChip();
 
   // ---- BU-86: ensureSheetFits must not lift a peeked sheet ----
   ok(/const peeked = \$\('sheetwrap'\)\.classList\.contains\('peek'\);\s*\n\s*if \(!peeked && r\.bottom/.test(fs.readFileSync(path.join(V2, 'client.js'), 'utf8')),
