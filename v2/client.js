@@ -8294,7 +8294,7 @@ function uiAnswer(prompt, state) {
     // answer, so asking is pure friction. Resolve immediately, before
     // any prompt cycle (no currentPrompt, no stats refresh, no dock).
     if (prompt.name === 'SELECT_CHAIN' && chainPassDecision(prompt, state) === 'pass') { resolve(E.i32resp(-1)); return; }
-    if (prompt.name === 'SELECT_EFFECTYN' && duelNoConfirm.has(effectYnKey(prompt))) { flashAutoPass(cardName(prompt.code)); resolve(E.i32resp(0)); return; }
+    if (prompt.name === 'SELECT_EFFECTYN' && duelNoConfirm.has(effectYnKey(prompt))) { flashSuppressed(cardName(prompt.code)); resolve(E.i32resp(0)); return; }
     // An arriving prompt takes the sheet back from any open view
     // (round B took it from the FX settings sheet; fx-ui round 2
     // F4 generalises): a card detail / pile / log view left open
@@ -8790,6 +8790,7 @@ function updateAutoPassChip() {
   const el = $('autopass'); if (!el) return;
   if (Date.now() < autoPassFlashUntil) return; // flash text still showing
   const hd = $('header'); if (hd) hd.classList.remove('apflash'); // BU-85: flash over, the log line wraps normally again
+  let ap1 = null, ap2 = null;
   if (dismissedDuel.size) {
     // BU-32: in 毎回 mode the dismissals are inert by design; the
     // chip must say so instead of implying suppression is active.
@@ -8798,8 +8799,21 @@ function updateAutoPassChip() {
     // truncating (measured: 88px wide, only 「自動パス設定」
     // visible). textContent is unchanged, so the CL9a / FX3-11
     // pins on the label text still hold.
-    const ap1 = fxSettings.resp === 'on' ? '自動パス：' + dismissedDuel.size + ' 件' : '自動パス設定中：' + dismissedDuel.size + ' 件';
-    const ap2 = fxSettings.resp === 'on' ? '（毎回モードでは無効）' : '（タップで管理）';
+    ap1 = fxSettings.resp === 'on' ? '自動パス：' + dismissedDuel.size + ' 件' : '自動パス設定中：' + dismissedDuel.size + ' 件';
+    ap2 = fxSettings.resp === 'on' ? '（毎回モードでは無効）' : '（タップで管理）';
+  } else if (duelNoConfirm.size) {
+    // fix-obs2-1116: the manager (and its omitted-effects list)
+    // is reachable only through this pill, and the pill only
+    // appeared for auto-pass entries — a suppression-only duel
+    // left the manager unreachable (the pill is display:none
+    // without .on). Show the pill for suppression alone, with its
+    // own label so the two mechanisms stay visually distinct;
+    // when both exist the auto-pass count wins (pinned by CL9a /
+    // FX3-11) and the suppression count lives in the manager.
+    ap1 = '省略中：' + duelNoConfirm.size + ' 件';
+    ap2 = '（タップで管理）';
+  }
+  if (ap1) {
     el.textContent = '';
     const sp1 = document.createElement('span'); sp1.className = 'ap-p1'; sp1.textContent = ap1;
     const sp2 = document.createElement('span'); sp2.className = 'ap-p2'; sp2.textContent = ap2;
@@ -8809,7 +8823,14 @@ function updateAutoPassChip() {
   else { el.className = ''; el.textContent = ''; }
   syncChipInert(); // BU-37: className was just rewritten — re-apply the inert flag
 }
-function flashAutoPass(names) {
+function flashAutoPass(names) { flashChip(names, '自動パス：'); }
+// fix-obs2-1116: the C-27 suppression auto-answer used to ride the
+// same flash as auto-pass, so a suppressed effect looked like an
+// auto-passed one while never appearing in the manager (triage
+// 1116-obs2 observation E). Suppression gets its own label; the
+// chip mechanics (2-line wrap, 2600ms dwell, header flash) are shared.
+function flashSuppressed(names) { flashChip(names, '省略中：'); }
+function flashChip(names, label) {
   const el = $('autopass'); if (!el) return;
   // BU-85: the suppressed card's name gets its own line — one line truncated it
   // (measured: 「自動パス：帝王の烈旋」 cut to 「自動パス：帝王の」 at 103px).
@@ -8819,15 +8840,15 @@ function flashAutoPass(names) {
   // plain-text label; if the element cannot hold children (a minimal stub whose
   // querySelector/appendChild are no-ops), the plain full text is restored so
   // the flash still names the card (DK12) instead of throwing mid-flash.
-  el.textContent = '自動パス：' + names;
+  el.textContent = label + names;
   try {
     const sp = document.createElement('span');
     sp.className = 'ap-name'; sp.textContent = names;
-    el.textContent = '自動パス：';
+    el.textContent = label;
     el.appendChild(sp);
-    if (!sp.isConnected) el.textContent = '自動パス：' + names;
+    if (!sp.isConnected) el.textContent = label + names;
   } catch (e) {
-    el.textContent = '自動パス：' + names;
+    el.textContent = label + names;
   }
   el.className = 'on flash';
   const hd = $('header'); if (hd) hd.classList.add('apflash'); // BU-85: keep the log line one line while flashing
@@ -8839,10 +8860,26 @@ function openDismissManager() {
   if (promptBlocksViewSheets()) return; // during a MODAL prompt the dock itself carries the controls (BU-110: idle prompts do not block)
   const rows = [...dismissedDuel.entries()].map(([k, v]) =>
     '<div class="sortrow"><span>' + dismissalName(v) + '</span><span class="mv"><button data-undismiss="' + k + '">解除</button></span></div>').join('');
-  sheetOpenView('<div class="ttl">自動パスの設定（このデュエル）</div>' +
+  // fix-obs2-1116: the C-27 suppression list (duelNoConfirm) was
+  // invisible — the pill counts dismissedDuel only, and the manager
+  // showed only that map (triage 1116-obs2 observation E). The
+  // suppressed effects are listed here so the player can see what
+  // they silenced; there is no 解除 for them, matching the button
+  // wording 「このデュエル中は省略する」 (a duel-long decision).
+  // Keys are code|desc (effectYnKey), so the row re-derives the
+  // effect number the same way dismissalName does for chain entries.
+  const supRows = [...duelNoConfirm].map(k => {
+    const i = k.indexOf('|');
+    const v = { code: +k.slice(0, i), desc: +k.slice(i + 1) };
+    return '<div class="sortrow"><span>' + dismissalName(v) + '</span><span class="mv">省略中</span></div>';
+  }).join('');
+  sheetOpenView('<div class="ttl">自動パスと省略の確認（このデュエル）</div>' +
     (fxSettings.resp === 'on' ? '<div class="sub" style="color:#f0c08a">いまの応答モードは「毎回」のため、下の設定は効いていません（「おまかせ」で有効になります）。</div>' : '') +
     '<div class="sub">ここにある「カードの効果」だけが残ったチェーン確認は、自動でパスされます。同じカードの同じ効果なら、置かれた場所・コピー・場面が変わっても聞きません。他に候補がある確認は通常どおり表示されます。</div>' +
-    (rows || '<div class="sub">設定中のカードはありません</div>') +
+    (rows || (supRows ? '' : '<div class="sub">設定中のカードはありません</div>')) +
+    '<div class="segrow">省略中の確認（このデュエル）</div>' +
+    '<div class="sub">ここにある効果の確認は、このデュエル中は出ません。自動で「発動しない」として進みます。取り消しはできません。</div>' +
+    (supRows || '<div class="sub">省略中の確認はありません</div>') +
     '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">閉じる</button></div>');
   $('sheet').querySelectorAll('[data-undismiss]').forEach(b => b.addEventListener('click', () => {
     playClick(); dismissedDuel.delete(b.dataset.undismiss); updateAutoPassChip(); openDismissManager();
@@ -9876,7 +9913,7 @@ function uiYesNo(prompt, state) {
   $('yn-yes').addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(1)); });
   $('yn-no').addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(0)); });
   const sup = $('yn-suppress');
-  if (sup) sup.addEventListener('click', () => { playClick(); duelNoConfirm.add(effectYnKey(prompt)); finishPrompt(E.i32resp(0)); });
+  if (sup) sup.addEventListener('click', () => { playClick(); duelNoConfirm.add(effectYnKey(prompt)); updateAutoPassChip(); finishPrompt(E.i32resp(0)); });
 }
 function uiOption(prompt, state) {
   // C-24: option entries are the same desc string ids as everywhere
