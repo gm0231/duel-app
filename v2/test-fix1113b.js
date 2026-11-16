@@ -122,8 +122,13 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   ok(/#preview\.compact \.pv-art \.marks\{display:none;\}/.test(html),
     'F66h: the compact strip (thumbnail ~0 wide) suppresses the chip');
   // F5: the summary line uses unbreakable units
+  // (fix-oldbu2-1116: the pinned expression is stale — since
+  // fix-oldbu-1116 the summary is two lines, so each line goes
+  // through nbHTML separately. The property F67a guards — the
+  // summary renders through nbHTML, never as a plain text node
+  // — is unchanged; the pin now asserts it for both lines.)
   const uds = clientSrc.slice(clientSrc.indexOf('function updateDeckSum()'));
-  ok(uds.slice(0, uds.indexOf('refreshStartGate();')).includes('el.innerHTML = nbHTML(txt);'),
+  ok(uds.slice(0, uds.indexOf('refreshStartGate();')).includes("el.innerHTML = nbHTML(line1) + '<br>' + nbHTML(line2);"),
     'F67a: updateDeckSum renders the summary through nbHTML');
 }
 

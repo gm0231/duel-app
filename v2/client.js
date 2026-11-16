@@ -735,26 +735,28 @@ function refreshStartGate() {
 function updateDeckSum() {
   const el = $('decksum'); if (!el) return;
   const turn = firstChoice === 'first' ? '先攻' : firstChoice === 'second' ? '後攻' : '先攻・後攻ランダム';
-  const decks = '自分：' + deckDisplayName(myDeckKey) + ' ／ 相手：' + deckDisplayName(opDeckKey);
   const rec = SAVED_DECKS[myDeckKey];
-  let turnLine = turn;
+  // fix-oldbu2-1116 (BU-47, redo): the fix-oldbu-1116 two-line
+  // split (decks on line 1, turn alone on line 2) FAILED the
+  // live re-verification — the screen still read 「先攻」 alone
+  // on line 2, the exact orphan the item was about. A lone word
+  // on its own line IS the orphan, whether the <br> was wrapped
+  // or deliberate. The turn now rides MY line (it is my turn
+  // order: 自分：<deck> ／ 先攻), and line 2 carries the whole
+  // opponent entry, so neither line is a single word. The
+  // unsupported-cards note (my deck's) rides line 1 with the
+  // turn, as before.
+  let line1 = '自分：' + deckDisplayName(myDeckKey) + ' ／ ' + turn;
   if (rec && !rec.poolOk && rec.unsupported && rec.unsupported.length)
-    turnLine += ' ／ 未対応：' + rec.unsupported.join('、');
+    line1 += ' ／ 未対応：' + rec.unsupported.join('、');
+  const line2 = '相手：' + deckDisplayName(opDeckKey);
   // BU-67: the summary used to be one plain text node, so the
   // line broke wherever the glyphs landed — including inside
   // 先攻 (measured: 先 on one line, 攻 on the next). Render it
   // with the band's unbreakable-unit treatment (nbHTML): the
   // text content is identical, the break opportunities now sit
   // only between units.
-  // fix-oldbu-1116 (BU-47): the turn rides its own line. The
-  // one-line summary wrapped after the last ／ and left 「先攻」
-  // alone on line 2 — a wrap orphan, not a label. Two lines
-  // make the orphan impossible by construction: line 1 ends
-  // with a complete deck name (no dangling ／), line 2 is the
-  // turn. (The textContent round-trip to v3 loses the <br>,
-  // so v3 reads the summary as one line — its own rendering,
-  // out of scope here.)
-  el.innerHTML = nbHTML(decks) + '<br>' + nbHTML(turnLine);
+  el.innerHTML = nbHTML(line1) + '<br>' + nbHTML(line2);
   // BU-47: shrink-to-fit — step the font down (floor 10.5px)
   // while the summary needs a THIRD line (two lines at 12px /
   // 1.5 = 36px + slack), so a long line 1 still fits. jsdom
@@ -8205,6 +8207,22 @@ let chainTrayDefer = null; // BU-84: { timer } while a tray waits out a cut-in
 let lastChainQ = null; // fix9396c-1115 (BU-99/BU-105): { key, n } — the last SHOWN chain question, for the re-ask ordinal
 let chainTrayForce = false; // BU-84: the defer failsafe's one-shot bypass (never defer twice)
 function fxCutinActive() { const h = $('fxcutin'); return !!h && h.className === 'on'; }
+// fix-oldbu2-1116 (BU-39 follow-up): render() dereferences
+// .hand/.mzone/.szone on both players, so "players present" is
+// not a sufficient guard for calling it — the stub rigs
+// (test-layoutfix3, test-clarity) drive uiChain with
+// players:[{},{}], and the fix-oldbu-1116 uiChain-end render
+// crashed on them (pre-existing on main 5df70cc, found by the
+// full suite). The real engine always ships full players; a
+// state without them skips the board render (the dock/tray DOM
+// is what those callers need). Used by uiChain's two renders and
+// by the deferred-tray re-render below.
+function renderableState(s) {
+  return !!(s && s.players && s.players[0] && s.players[1] &&
+    Array.isArray(s.players[0].hand) && Array.isArray(s.players[1].hand) &&
+    Array.isArray(s.players[0].mzone) && Array.isArray(s.players[1].mzone) &&
+    Array.isArray(s.players[0].szone) && Array.isArray(s.players[1].szone));
+}
 function showChainTray(prompt, cause, liveIdx, openDock) {
   const host = $('chainui'), tray = $('chaintray');
   if (!host || !tray) { openDock(); return; } // no tray DOM: the dock owns the question directly
@@ -8230,6 +8248,18 @@ function showChainTray(prompt, cause, liveIdx, openDock) {
         chainTrayCtx = { draw: openDock };
         if (fxCutinActive()) chainTrayForce = true; // failsafe path: show even under a stuck cut-in
         showChainTray(prompt, cause, liveIdx, openDock);
+        // fix-oldbu2-1116 (BU-39): the deferred re-show arrives
+        // AFTER uiChain returned, so the render at the end of
+        // uiChain ran while the tray was still hidden (the dim
+        // guard was off) — without this render the hand stays
+        // undimmed for the whole tray lifetime (measured in
+        // live Chromium: 9 tray moments / 5 duels with every
+        // hand card lit, 26 cards). The tray is the stage where
+        // the hand is actually visible (the dock covers it), so
+        // this is the hole the live re-verification saw.
+        // duelState is the last rendered board state; the
+        // prompt is still open, so the guard applies.
+        if (renderableState(duelState)) render(duelState);
       }
     }, 100);
     chainTrayDefer = { timer };
@@ -9283,10 +9313,11 @@ function uiChain(prompt, state) {
     // render at the end of uiChain only covers the non-deferred
     // path). Gated on the first draw: re-draws (dismiss
     // toggles) change the dock's candidates, not the hand's
-    // chain membership. The players guard is for the stub-DOM
-    // rigs (test-chainpass drives uiChain with a players-less
-    // state); the real engine always ships players.
-    if (isFirstDraw && state.players) render(state);
+    // chain membership. The renderable guard is for the
+    // stub-DOM rigs (test-chainpass drives uiChain with a
+    // players-less state, test-layoutfix3 / test-clarity with
+    // players:[{},{}]); the real engine always ships players.
+    if (isFirstDraw && renderableState(state)) render(state);
   };
   // BU-74: the first stage is the badge tray, not the dock. The
   // candidates that float on it are exactly the ones the dock
@@ -9307,10 +9338,11 @@ function uiChain(prompt, state) {
   // visible; humanAnswerer's render ran before this prompt
   // existed, so without this the dim would never appear.
   // (uiCmd already renders after its own setup — same pattern.)
-  // The players guard is for the stub-DOM rigs (test-chainpass
-  // drives uiChain with a players-less state); the real engine
-  // always ships players.
-  if (state.players) render(state);
+  // The renderable guard is for the stub-DOM rigs (test-chainpass
+  // drives uiChain with a players-less state, test-layoutfix3 /
+  // test-clarity with players:[{},{}]); the real engine always
+  // ships full players.
+  if (renderableState(state)) render(state);
 }
 // ---- place / disfield: tap the actual zones ----
 function availZones(prompt) {

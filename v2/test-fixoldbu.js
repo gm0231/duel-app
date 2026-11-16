@@ -71,9 +71,15 @@ const T = sandbox.__T;
 T.setDATA(data);
 T.setFXMAP(fxmap);
 
-// ---- BU-47: the turn rides its own line ----
-ok(clientSrc.includes("el.innerHTML = nbHTML(decks) + '<br>' + nbHTML(turnLine);"),
-  'F47a: the summary splits decks and turn with a <br>');
+// ---- BU-47: the turn rides MY line (fix-oldbu2-1116 redo) ----
+// The fix-oldbu-1116 split (decks / turn-alone) FAILED the live
+// re-verification: line 2 read 「先攻」 alone, the exact orphan
+// the item was about. The new layout is pinned instead, and the
+// pin is STRICTER than the old one: neither line may be a single
+// word — line 1 carries my deck + the turn, line 2 the whole
+// opponent entry.
+ok(clientSrc.includes("el.innerHTML = nbHTML(line1) + '<br>' + nbHTML(line2);"),
+  'F47a: the summary splits my-line (deck + turn) and opponent-line with a <br>');
 ok(clientSrc.includes('while (el.scrollHeight > 38 && fs > 10.5)'),
   'F47d: the shrink-to-fit loop is retargeted to two lines (38px)');
 {
@@ -82,10 +88,11 @@ ok(clientSrc.includes('while (el.scrollHeight > 38 && fs > 10.5)'),
   const el = T.decksumEl();
   const parts = el.innerHTML.split('<br>');
   ok(parts.length === 2, 'F47b: the summary has exactly two lines (got ' + parts.length + ')');
-  ok(parts[0].includes('ゲート・ガーディアン') && !parts[0].trimEnd().endsWith('／') && !parts[0].includes('／</span>$'),
-    'F47b: line 1 ends with a complete deck name, no dangling ／');
-  ok(parts[1].replace(/<[^>]+>/g, '').trim() === '先攻',
-    'F47b: line 2 is the turn alone (got ' + JSON.stringify(parts[1]) + ')');
+  const strip = (s) => s.replace(/<[^>]+>/g, '');
+  ok(strip(parts[0]).includes('MILLENNIUM PROPHECY') && strip(parts[0]).includes('先攻') && !strip(parts[0]).trimEnd().endsWith('／'),
+    'F47b: line 1 carries my deck AND the turn, no dangling ／');
+  ok(strip(parts[1]).trim() === '相手：ゲート・ガーディアン',
+    'F47b: line 2 is the whole opponent entry, not a lone word (got ' + JSON.stringify(parts[1]) + ')');
   // the stub DOM does not sync innerHTML -> textContent (a real
   // DOM does); strip the tags to read the text instead
   const text = el.innerHTML.replace(/<[^>]+>/g, '');
@@ -96,11 +103,13 @@ ok(clientSrc.includes('while (el.scrollHeight > 38 && fs > 10.5)'),
   T.setDecks('ishizu', 'gg', 'second');
   T.updateDeckSum();
   const parts = T.decksumEl().innerHTML.split('<br>');
-  ok(parts[1].replace(/<[^>]+>/g, '').trim() === '後攻', 'F47c: 後攻 rides its own line');
+  ok(parts[0].replace(/<[^>]+>/g, '').includes('後攻'), 'F47c: 後攻 rides my line');
+  ok(parts[1].replace(/<[^>]+>/g, '').trim() === '相手：ゲート・ガーディアン', 'F47c: opponent line unchanged for 後攻');
   T.setDecks('ishizu', 'gg', 'random');
   T.updateDeckSum();
   const partsR = T.decksumEl().innerHTML.split('<br>');
-  ok(partsR[1].replace(/<[^>]+>/g, '').trim() === '先攻・後攻ランダム', 'F47c: 先攻・後攻ランダム rides its own line');
+  ok(partsR[0].replace(/<[^>]+>/g, '').includes('先攻・後攻ランダム'), 'F47c: 先攻・後攻ランダム rides my line');
+  ok(partsR[1].replace(/<[^>]+>/g, '').trim() === '相手：ゲート・ガーディアン', 'F47c: opponent line unchanged for ランダム');
 }
 
 // ---- BU-16: no change — the scope IS duel-long (2026-11-05 ruling) ----
