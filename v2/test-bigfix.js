@@ -222,15 +222,19 @@ async function boot() {
   // ---- BU-85: flash chip names the suppressed card on its own line ----
   ok(html.includes('#autopass.flash{white-space:normal') && html.includes('#autopass.flash .ap-name{display:block'),
     'BF14 (BU-85): the flash chip stacks label + name (two lines, name wraps at ・ for joins)');
-  ok(html.includes('#header.apflash #logline{white-space:nowrap'),
-    'BF14b (BU-85): the log line stays one line while the flash shows');
+  // flashnotice-1116: the old one-line rule is gone — during a flash
+  // it squeezed the log line to 40px and showed only 「相手：」 of a
+  // 21-char event (measured 620/700). While the chip is up the log
+  // line now takes its own full-width line and wraps normally.
+  ok(html.includes('#header:has(#autopass.on) #logline{flex:1 1 100%') && !html.includes('#header.apflash #logline{white-space:nowrap'),
+    'BF14b (BU-85, flashnotice-1116): the log line drops to its own full-width line while the chip is up (no squeezed one-line ellipsis)');
   window.flashAutoPass('帝王の烈旋');
   const apChip = doc.getElementById('autopass');
   const apName = apChip.querySelector('.ap-name');
   ok(apChip.classList.contains('flash') && !!apName && apName.textContent === '帝王の烈旋',
     'BF14c (BU-85): flashAutoPass puts the full card name on its own line');
   ok(doc.getElementById('header').classList.contains('apflash'),
-    'BF14d (BU-85): flashing marks the header so the log line holds one line');
+    'BF14d (BU-85): flashing still marks the header (the fxNoticeShow deferral and the anchorNotice guard read apflash; the log line itself now takes its own line, see BF14b)');
   window.eval('autoPassFlashUntil = 0'); window.updateAutoPassChip();
   ok(!doc.getElementById('header').classList.contains('apflash'),
     'BF14e (BU-85): the header mark clears when the flash ends');

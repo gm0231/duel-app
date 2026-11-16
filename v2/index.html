@@ -79,7 +79,17 @@
   #header{position:relative;flex:none;background:linear-gradient(#241c10,#171208);border-bottom:1px solid var(--gold-dim);padding:1px 4px;}
   .hd-row1{display:flex;align-items:center;gap:4px;}
   .hd-phase{flex:1 1 auto;min-width:0;display:flex;align-items:baseline;gap:6px;padding-left:2px;}
-  .hd-row2{display:flex;align-items:flex-start;gap:6px;}
+  .hd-row2{display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;}
+  /* flashnotice-1116 (BU-89 residual): row 2 may wrap — the log line
+     drops to its own full-width line while the auto-pass chip is up
+     (see the :has() rule below). With the chip up, the five row-2
+     items cannot all fit one 382px line; without the wrap the flex
+     shrink split the overflow between the log line and the chip and
+     BOTH truncated (measured 620/700: log line 40px wide showing
+     only 「相手：」 during a flash; the persistent pill 88px wide
+     showing only 「自動パス設定」). The wrap costs a transient
+     ~16-30px of header height while the chip is up — the same
+     growth discipline the notice band already uses. */
   /* watchmode-1116: developer watch-mode bar (both seats CPU).
      Hidden unless a watch duel is running (the .on class is set
      by the start handler, in watch mode only); the header's
@@ -264,6 +274,15 @@
   #sheet .btnnote{flex:1 1 auto;text-align:center;font-size:12.5px;color:var(--txt-dim);padding:10px 4px;} /* layout-fix2 J1': the unselect footer when no button exists */
   #loghistbtn{flex:0 0 auto;height:46px;min-width:40px;font-size:12px;color:var(--gold);background:#241a0e;border:1px solid var(--gold-dim);border-radius:6px;padding:0 6px;cursor:pointer;}
   #chainbar{position:absolute;left:0;top:0;bottom:0;right:144px;display:flex;visibility:hidden;align-items:center;gap:4px;overflow-x:auto;padding:2px 6px;background:var(--panel);z-index:3;}
+  /* flashnotice-1116 (BU-89 residual, chainbar): the bar is 246px
+     wide (right:144px keeps 履歴 / the phase button clickable) and
+     scrolls, but nothing said so — a 2-link chain with a solving
+     tag measured 479px of content, link 1 cut mid-name and link 2
+     entirely off-screen right (measured 620/700). The .canscroll
+     mask (same pattern as the hand cue, BU-78) fades the right edge
+     while more content waits there; the scroll position is kept
+     across render() rebuilds (see chainbarScrollUpdate). */
+  #chainbar.canscroll{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 26px),rgba(0,0,0,.2));mask-image:linear-gradient(90deg,#000 calc(100% - 26px),rgba(0,0,0,.2));}
   #chainbar.on{visibility:visible;}
   #chainbar .chainlbl{flex:0 0 auto;font-size:10px;font-weight:700;color:#59d8f2;letter-spacing:.08em;}
   .loghistrow{font-size:12px;line-height:1.6;padding:3px 0;border-bottom:1px solid #2c2416;color:var(--txt);}
@@ -868,12 +887,40 @@
      truncating — keep-all keeps each name whole, overflow-wrap:anywhere is
      the fallback for one unbreakable name. The chip grows one line taller
      only for joins, during the 2.6s flash. The .on rule makes the chip
-     display:flex in a row — column is what stacks the two lines. While
-     flashing, the log line stays one line (ellipsis) so a squeezed log
-     cannot wrap the header tall. */
+     display:flex in a row — column is what stacks the two lines.
+     flashnotice-1116: the log line no longer stays one ellipsis line
+     while flashing (that showed only 「相手：」 in a 40px column) —
+     it drops to its own full-width line instead, see the :has() rule
+     below. */
   #autopass.flash{white-space:normal;line-height:1.25;text-align:left;flex:0 0 auto;flex-direction:column;align-items:stretch;max-width:170px;font-size:10px;}
   #autopass.flash .ap-name{display:block;white-space:normal;word-break:keep-all;overflow-wrap:anywhere;}
-  #header.apflash #logline{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  /* flashnotice-1116 (BU-89 residual): the old rule forced the log
+     line to one ellipsis line while flashing — in the chip-squeezed
+     40px column that showed only 「相手：」 of a 21-char event
+     (measured 620/700). The log line now takes its OWN full-width
+     line while the chip is up (the chip stays on the first line
+     with turninfo / the hand chip / ♪), so it wraps normally and
+     the whole event reads. Wrapping in the squeezed column would
+     have exploded the header (a 40px column turns 21 chars into
+     ~7 lines); on its own line the same text is 1 line at 378px.
+     The header grows ~16-30px for the 2.6s flash — the notice
+     growth discipline. :has() is already used in this file. */
+  #header:has(#autopass.on) #logline{flex:1 1 100%;order:1;}
+  /* order:1 puts the log line AFTER the chip row (DOM order is
+     turninfo, logline, chip — without it the chip wrapped to a
+     third line below the log line, leaving turninfo alone on the
+     first line; measured before this was added). */
+  /* flashnotice-1116 (BU-89 residual): the PERSISTENT pill gets the
+     same two-line treatment as the flash chip — it never shrinks
+     (flex:0 0 auto) and its label wraps instead of truncating
+     (measured: 88px wide, only 「自動パス設定」 visible). The two
+     spans (set in updateAutoPassChip) split the label cleanly:
+     line 1 「自動パス設定中：2 件」, line 2 「（タップで管理）」.
+     Capped at 170px so the first row-2 line (turninfo + pill +
+     hand chip + ♪) still fits 382px. textContent is unchanged,
+     so the CL9a / FX3-11 pins on the label text still hold. */
+  #autopass.on:not(.flash){white-space:normal;line-height:1.25;text-align:left;flex:0 0 auto;flex-direction:column;align-items:flex-start;max-width:170px;font-size:10px;}
+  #autopass.on:not(.flash) .ap-p1,#autopass.on:not(.flash) .ap-p2{display:block;white-space:normal;word-break:keep-all;overflow-wrap:anywhere;}
   #autopass.inert{opacity:.42;filter:saturate(.5);}
   /* ---------- presentation FX layer (rounds A/B) ----------
      All duel presentation lives in #fxlayer as absolutely positioned

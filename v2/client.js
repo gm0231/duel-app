@@ -7485,6 +7485,40 @@ function handCueUpdate() {
   const more = hel.scrollWidth > hel.clientWidth + 1 && (hel.scrollLeft + hel.clientWidth < hel.scrollWidth - 1);
   hel.classList.toggle('canscroll', !!more);
 }
+// flashnotice-1116 (BU-89 residual, chainbar): the bar is 246px
+// wide and scrolls, but render() rebuilds its innerHTML on every
+// call, which resets scrollLeft to 0 — a 2-link chain with a
+// solving tag is ~479px, so the default position cuts link 1
+// mid-name and hides link 2 entirely (measured 620/700). When the
+// chain's signature changes (new link / new solving link), bring
+// the foreground link fully into view; otherwise restore the
+// position the bar had before the rebuild, so a manual swipe is
+// not yanked back. The cue is the hand's BU-78 fade pattern.
+let fxChainScrollSig = null; // chain signature the bar was last scrolled for
+function chainbarCueUpdate() {
+  const cb = $('chainbar'); if (!cb) return;
+  const more = cb.scrollWidth > cb.clientWidth + 1 && (cb.scrollLeft + cb.clientWidth < cb.scrollWidth - 1);
+  cb.classList.toggle('canscroll', !!more);
+}
+function chainbarScrollUpdate(state, savedScroll) {
+  const cb = $('chainbar'); if (!cb) return;
+  if (!cb.dataset.cueWired) {
+    cb.dataset.cueWired = '1';
+    cb.addEventListener('scroll', () => chainbarCueUpdate(), { passive: true });
+  }
+  const sig = state.chain.map((l) => (l.code || '') + ':' + (l.solved ? 1 : 0) + ':' + (l.negated ? 1 : 0)).join('|') + '#' + (state.solvingLink || 0);
+  if (sig !== fxChainScrollSig) {
+    fxChainScrollSig = sig;
+    const t = cb.querySelector('.link.solving') || cb.querySelector('.link:last-child');
+    if (t) {
+      const need = t.offsetLeft + t.offsetWidth - cb.clientWidth;
+      if (need > 0) cb.scrollLeft = need;
+    }
+  } else if (savedScroll != null) {
+    cb.scrollLeft = savedScroll;
+  }
+  chainbarCueUpdate();
+}
 function render(state) {
   duelState = state;
   const me = state.players[HP], op = state.players[1 - HP];
@@ -7566,6 +7600,7 @@ function render(state) {
   // a landed number drops that flag) — the bar below then paints
   // the absorbed gold straight from the surviving flags
   fxChainPruneLanded(state.chain);
+  const chainScrollSaved = cb ? cb.scrollLeft : 0;
   if (state.chain.length) {
     cb.className = 'on';
     // round B (B8): with 2+ links the bundle carries a CHAIN label
@@ -7577,6 +7612,7 @@ function render(state) {
         (l.solved ? ' done' : '') + (fxChainLanded.has(n) ? ' landed' : '') + (!state.solvingLink && i === state.chain.length - 1 ? ' newest' : '');
       return '<span class="' + cls + '"><span class="no">' + n + '</span> ' + cardName(l.code) + (state.solvingLink === n ? '<span class="solvingtag">解決中</span>' : '') + (l.solved ? ' ✓' : '') + '</span>';
     }).join('');
+    chainbarScrollUpdate(state, chainScrollSaved);
   } else {
     // layout redesign: the chain bar is an overlay on the mid
     // band and simply absent while no chain is up — the latest
@@ -7584,6 +7620,7 @@ function render(state) {
     // idle band; the previous event lives in the history sheet.
     cb.className = '';
     cb.innerHTML = '';
+    fxChainScrollSig = null;
   }
   // phase button
   const pb = $('phasebtn');
@@ -8742,9 +8779,17 @@ function updateAutoPassChip() {
   if (dismissedDuel.size) {
     // BU-32: in 毎回 mode the dismissals are inert by design; the
     // chip must say so instead of implying suppression is active.
-    el.textContent = fxSettings.resp === 'on'
-      ? '自動パス：' + dismissedDuel.size + ' 件（毎回モードでは無効）'
-      : '自動パス設定中：' + dismissedDuel.size + ' 件（タップで管理）';
+    // flashnotice-1116: two spans so the label wraps cleanly at
+    // 170px (line 1 the count, line 2 the hint) instead of
+    // truncating (measured: 88px wide, only 「自動パス設定」
+    // visible). textContent is unchanged, so the CL9a / FX3-11
+    // pins on the label text still hold.
+    const ap1 = fxSettings.resp === 'on' ? '自動パス：' + dismissedDuel.size + ' 件' : '自動パス設定中：' + dismissedDuel.size + ' 件';
+    const ap2 = fxSettings.resp === 'on' ? '（毎回モードでは無効）' : '（タップで管理）';
+    el.textContent = '';
+    const sp1 = document.createElement('span'); sp1.className = 'ap-p1'; sp1.textContent = ap1;
+    const sp2 = document.createElement('span'); sp2.className = 'ap-p2'; sp2.textContent = ap2;
+    el.appendChild(sp1); el.appendChild(sp2);
     el.className = 'on';
   }
   else { el.className = ''; el.textContent = ''; }
