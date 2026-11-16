@@ -463,12 +463,41 @@
      the tray rides the 盤面を見る chip — BU-76: every peek
      toggle in the app is this same primary grade (52px, gold),
      so going and returning read as the same weight of action.
+     ctpeek-1116: the chip rode ABOVE the tray (column order),
+     so its seat floated with the tray height over my monster /
+     S zones and the LP band (measured: 468 ticks at 620h,
+     478 at 700h, max 5876px² = the whole chip). It now rides
+     BELOW the tray (column-reverse): one fixed seat at the
+     bottom-right corner in both states, over the handbar's
+     right end — the same strip the tray already covers, and
+     the same corner the sheet's peek band uses. The tray
+     itself is unchanged in size.
+     ctpeek-1116 (second half, measured and rejected): the host
+     was tried as position:fixed against the viewport, so a
+     notice-grown header could not push the tray and the chip
+     below the fold. It kept the chip visible, but the board
+     slides under a viewport-anchored chip: in the most-grown
+     states the chip covered my pilebar (measured after the
+     fixed try: 73 ticks at 620h, max 2147px² — the pilebar's
+     bottom edge sliding into the chip's top edge). The pile
+     bar is in the required set, so the fixed try is rejected
+     and the host stays absolute against #app: the chip then
+     covers only the handbar's right end (the strip the tray
+     already covers) and never the required set, at the price
+     that in the most-grown header states it slides partly
+     below the fold (620h: 42% of tray-open ticks partly
+     below, 24% less than half visible, 2.7% fully below;
+     700h: 0). That slide is the pre-existing header-growth
+     overflow (the hand is cut off in the same states, and
+     the tray's own badges were cut off the same way BEFORE
+     this round); the page scrolls, so the chip stays
+     reachable by scrolling.
      Peeked, the tray itself retreats (visibility) and the chip
      stays in its seat reading 選択に戻る; board taps become
      info taps via the document delegate, exactly as for the
      dock peek. Appearance and the float are pure CSS (no WAAPI)
      so the FX arrival measurements are untouched. */
-  #chainui{position:absolute;right:10px;bottom:10px;width:252px;z-index:40;display:none;flex-direction:column;align-items:flex-end;gap:6px;}
+  #chainui{position:absolute;right:10px;bottom:10px;width:252px;z-index:40;display:none;flex-direction:column-reverse;align-items:flex-end;gap:6px;}
   #chainui.on{display:flex;animation:ctin .24s ease-out;}
   /* BU-99 (fix9396-1115): the entrance was opacity + translateY(10px).
      A press-and-hold tap near the しない button's bottom edge, started
