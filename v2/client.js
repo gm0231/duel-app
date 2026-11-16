@@ -7511,8 +7511,22 @@ function chainbarScrollUpdate(state, savedScroll) {
     fxChainScrollSig = sig;
     const t = cb.querySelector('.link.solving') || cb.querySelector('.link:last-child');
     if (t) {
+      // chainpill-1116: need alone lands the target's right edge
+      // exactly on the bar's right edge — but the bar's right
+      // padding (6px) still counts as scrollable, so the scroll
+      // stops short of max, .canscroll stays on, and the 26px fade
+      // dims the target's tail (live 2-link measured: scrollLeft
+      // 6 vs max 12, and 55 vs 65; the newest link's last
+      // character sat in the fade). Scroll 26px further so the
+      // target clears the fade zone, clamped to the max scroll —
+      // at max scroll the fade lifts (chainbarCueUpdate), so a
+      // last-link target ends at full opacity; a middle solving
+      // link ends clear of the fade with the next link peeking
+      // under it as the cue. (26 must match the fade width in
+      // #chainbar.canscroll in index.html.)
       const need = t.offsetLeft + t.offsetWidth - cb.clientWidth;
-      if (need > 0) cb.scrollLeft = need;
+      const maxScroll = cb.scrollWidth - cb.clientWidth;
+      cb.scrollLeft = Math.min(Math.max(need + 26, 0), Math.max(maxScroll, 0));
     }
   } else if (savedScroll != null) {
     cb.scrollLeft = savedScroll;

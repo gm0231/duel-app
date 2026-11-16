@@ -77,7 +77,10 @@
      compact / 61 full. The LP numerals stay at the old status-bar
      size (24 compact / 28 full — user, 2026-11-13: no larger). */
   #header{position:relative;flex:none;background:linear-gradient(#241c10,#171208);border-bottom:1px solid var(--gold-dim);padding:1px 4px;}
-  .hd-row1{display:flex;align-items:center;gap:4px;}
+  .hd-row1{display:flex;align-items:center;gap:4px;position:relative;}
+  /* chainpill-1116: row 1 is the chain bar's containing block (see
+     #chainbar below) — the bar is anchored to this row only, so it
+     can never cover row 2 again. */
   .hd-phase{flex:1 1 auto;min-width:0;display:flex;align-items:baseline;gap:6px;padding-left:2px;}
   .hd-row2{display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;}
   /* flashnotice-1116 (BU-89 residual): row 2 may wrap — the log line
@@ -274,6 +277,17 @@
   #sheet .btnnote{flex:1 1 auto;text-align:center;font-size:12.5px;color:var(--txt-dim);padding:10px 4px;} /* layout-fix2 J1': the unselect footer when no button exists */
   #loghistbtn{flex:0 0 auto;height:46px;min-width:40px;font-size:12px;color:var(--gold);background:#241a0e;border:1px solid var(--gold-dim);border-radius:6px;padding:0 6px;cursor:pointer;}
   #chainbar{position:absolute;left:0;top:0;bottom:0;right:144px;display:flex;visibility:hidden;align-items:center;gap:4px;overflow-x:auto;padding:2px 6px;background:var(--panel);z-index:3;}
+  /* chainpill-1116: the bar used to anchor to #header (top:0;
+     bottom:0 of the WHOLE header), so while a chain was up it
+     painted opaque over row 2 as well — the persistent auto-pass
+     pill vanished entirely (0/19 chars) and the log line kept only
+     its last char past the bar's right edge (1/21, measured 620/700:
+     pill overlap 120x39, log-line overlap 242x16). The bar now
+     lives inside .hd-row1 and anchors to that row only (top:0;
+     bottom:0 of row 1, ~46px): row 2 — turn readout, event line,
+     auto-pass pill, opp-hand chip, FX button — stays readable while
+     a chain resolves. The right:144px reservation is unchanged, so
+     履歴 / the phase button stay exposed and clickable. */
   /* flashnotice-1116 (BU-89 residual, chainbar): the bar is 246px
      wide (right:144px keeps 履歴 / the phase button clickable) and
      scrolls, but nothing said so — a 2-link chain with a solving
@@ -1560,6 +1574,7 @@
       <div class="hd-phase"><span id="phaseinfo">—</span></div>
       <button id="loghistbtn">履歴</button>
       <button id="phasebtn" disabled>—</button>
+      <div id="chainbar"></div>
     </div>
     <div class="hd-row2">
       <span id="turninfo">—</span>
@@ -1568,7 +1583,6 @@
       <div class="handchip" id="oppHandChip">相手の手札 <b id="oppHandN">0</b></div>
       <button id="fxbtn" aria-label="演出設定">♪</button>
     </div>
-    <div id="chainbar"></div>
     <div id="watchbar"><span class="wb-label">観戦中（開発者用・両席CPU）</span><button id="watchstop" type="button">観戦をやめる</button></div>
   </div>
   <div id="placehint"></div>

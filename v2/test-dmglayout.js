@@ -59,12 +59,17 @@ const ruleDecls = (re) => {
      band.indexOf('id="myLp"') > band.indexOf('id="myPlate"'),
     'DMG-S3: inside the band the opponent plate (with oppLp) stands ABOVE my plate (with myLp)');
   const hdr = html.slice(idx('header'), idx('placehint'));
-  const order = ['menubtn', 'phaseinfo', 'loghistbtn', 'phasebtn', 'turninfo', 'logline', 'autopass', 'oppHandChip', 'fxbtn', 'chainbar'];
+  // chainpill-1116: the chain bar moved inside row 1 (it anchors to
+  // that row only, so it can no longer cover row 2 while a chain is
+  // up) — the order list follows the DOM: menu / phase / history /
+  // phase button / chain bar (row 1), then turn / event line /
+  // auto-pass chip / opp-hand chip / fx button (row 2).
+  const order = ['menubtn', 'phaseinfo', 'loghistbtn', 'phasebtn', 'chainbar', 'turninfo', 'logline', 'autopass', 'oppHandChip', 'fxbtn'];
   ok(order.every((id, i) => hdr.indexOf('id="' + id + '"') > -1 && (i === 0 || hdr.indexOf('id="' + order[i - 1] + '"') < hdr.indexOf('id="' + id + '"'))),
-    'DMG-S4: the header carries, in order: menu / phase / history / phase button (row 1), turn / event line / auto-pass chip / opp-hand chip / fx button (row 2), and the chain bar');
+    'DMG-S4: the header carries, in order: menu / phase / history / phase button / chain bar (row 1), turn / event line / auto-pass chip / opp-hand chip / fx button (row 2)');
   const chainbar = ruleDecls(/#chainbar\{([^}]*)\}/);
   ok(!!chainbar && chainbar.right === '144px',
-    'DMG-S5: the chain bar overlays the header with its right edge at 144px (the 136px phase button stays exposed)');
+    'DMG-S5: the chain bar overlays row 1 with its right edge at 144px (the 136px phase button stays exposed)');
   const header = ruleDecls(/#header\{([^}]*)\}/);
   ok(!!header && !('height' in header) && !('min-height' in header),
     'DMG-S6: the header is not height-frozen — its 81px is by construction (46px button row + the event line\'s two lines; rect-verified in the browser pass)');
