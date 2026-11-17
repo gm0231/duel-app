@@ -2527,6 +2527,179 @@ function handTargetReason(code, state) {
   if (cd && (cd.type & 0x6) && !(cd.type & 0x80000) && me.szone && [0, 1, 2, 3, 4].every(i => me.szone[i])) return '魔法・罠ゾーンに空きがありません';
   return null;
 }
+// ---- trap-activation reasons (fix-handreason2-1117) ----
+// The hand sheet stayed silent for TRAPS: handCandidates only
+// counts a trap with an explicit 「手札から発動できる」 segment,
+// so 現世 / ロールバック got no row at all — only the set
+// button. From the player's side a hand trap with no activation
+// offered asks the same question as a spell ("why can't I fire
+// this now?"), so the sheet states two tiers on one grey row:
+//   (a) the rule, true for every set-first trap: a trap cannot
+//       be activated from the hand; it must be set first. The
+//       one pool exception is タイフーン, whose own text grants a
+//       conditional hand activation (「このカードの発動は手札から
+//       もできる」) — it never gets the blanket rule, only its
+//       condition (see trapHandReason).
+//   (b) the activation condition of segment ①, when it is
+//       mechanically derivable from the live state (grave counts,
+//       a target's existence) — the same discipline as
+//       handTargetReason: first sentence only, one reason, and
+//       silence when nothing is derivable (a trigger's event, a
+//       deck's contents, a phase window). A condition that HOLDS
+//       also stays silent — the row then carries (a) alone, which
+//       is the true blocker for a card still in the hand.
+// Two corrections to the round's brief, both from the official
+// texts (not memory): 現世の条件 is 「お互いの墓地のカードが
+// それぞれ１５枚以上」 — EACH grave 15+, not 15 total — so the
+// reason names both counts; ロールバック① targets the
+// OPPONENT's grave (「相手の墓地の通常罠カード」), not the
+// player's own. The pool audit (36 traps, pinned in
+// test-fixhandreason2.js H5) says 14 traps carry a derivable
+// (b) pattern and 22 stay (a)-only (11 triggers + 11 with no
+// derivable condition).
+const TRAP_RULE_REASON = '罠は手札からは発動できない。セットしてから発動する';
+const TRAP_TRIGGER_RE = /[ただ](場合|時)|宣言時/;
+function trapActivationBody(code) {
+  const segs = effectSegments(code);
+  const one = segs.find(s => s.n === 1);
+  if (one) return one.body.split('。')[0];
+  const t = cardText(code);
+  return t ? t.split('。')[0] : '';
+}
+// The condition of a set-first trap's ①, when mechanically
+// derivable — null when the segment is a trigger (its event is
+// the blocker, not a state), when the condition holds, or when
+// nothing in the segment matches a known pattern.
+function trapConditionReason(code, state) {
+  const st = state || duelState;
+  if (!st || !st.players || !st.players[HP]) return null;
+  const me = st.players[HP], opp = st.players[1 - HP];
+  const body = trapActivationBody(code);
+  if (!body) return null;
+  if (TRAP_TRIGGER_RE.test(body)) return null;
+  const fw = (s) => +String(s).replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+  const mons = (P) => (P.mzone || []).filter(c => c && c.code != null);
+  const faceUpM = (P) => mons(P).some(c => (c.pos & E.POS_FACEUP) !== 0);
+  const grave = (P) => (P.grave || []).filter(x => x != null);
+  const gyMon = (P) => grave(P).filter(cd => { const c = cardData(cd); return c && (c.type & 0x1); });
+  const stCards = (P) => (P.szone || []).filter(c => c && c.code != null);
+  const faceUpST = (P) => stCards(P).some(c => (c.pos & E.POS_FACEUP) !== 0);
+  const isNormalTrap = (cd) => { const c = cardData(cd); return c && (c.type & 0x4) && !(c.type & 0x120000); };
+  let m;
+  // (P1) each grave must hold N+ cards (現世)
+  m = body.match(/お互いの墓地のカードがそれぞれ([０-９]+)枚以上/);
+  if (m) {
+    const n = fw(m[1]);
+    if (grave(me).length < n || grave(opp).length < n)
+      return 'お互いの墓地のカードがそれぞれ' + n + '枚以上必要です（現在 自分' + grave(me).length + '枚／相手' + grave(opp).length + '枚）';
+  }
+  // (P2) both graves together must hold N cards (転生の予言)
+  m = body.match(/お互いの墓地のカードを合計([０-９]+)枚対象として/);
+  if (m) {
+    const n = fw(m[1]);
+    if (grave(me).length + grave(opp).length < n) return 'お互いの墓地にカードが' + n + '枚ありません';
+  }
+  // (P3) a normal trap in (own|opponent) grave to target
+  // (ロールバック① — the opponent's grave; 「『X』以外」 drops
+  // copies of the named card itself from the count)
+  m = body.match(/(自分|相手)の墓地の通常罠カード１枚を対象として/);
+  if (m) {
+    const who = m[1] === '自分' ? me : opp;
+    const excludeSelf = body.indexOf('「' + cardName(code) + '」以外') >= 0;
+    const n = grave(who).filter(cd => (!excludeSelf || cd !== code) && isNormalTrap(cd)).length;
+    if (!n) return (m[1] === '自分' ? '自分の墓地に通常罠カードがありません' : '相手の墓地に通常罠カードがありません');
+  }
+  // (P9) N named spell/trap cards in the own grave (真源の帝王①)
+  m = body.match(/自分の墓地の「(.+?)」魔法・罠カード([０-９]+)枚を対象として/);
+  if (m) {
+    const n = fw(m[2]);
+    const have = grave(me).filter(cd => { const c = cardData(cd); return c && (c.type & 0x6) && (cardName(cd) || '').indexOf(m[1]) >= 0; }).length;
+    if (have < n) return '自分の墓地に「' + m[1] + '」魔法・罠カードが' + n + '枚ありません';
+  }
+  // (P6) a monster in the own grave to target (リビングデッド①)
+  if (/自分の墓地のモンスター１体を対象として/.test(body) && !gyMon(me).length) return '自分の墓地にモンスターがいません';
+  // (P4) a face-up spell/trap on the field to target (タイフーン①)
+  if (/フィールドの表側表示の魔法・罠カード１枚を対象として/.test(body) && !faceUpST(me) && !faceUpST(opp)) return 'フィールドに表側表示の魔法・罠カードがありません';
+  // (P5) a face-up monster on the opponent field to target
+  // (ドラグマ / 破壊輪 / 巨神封じの矢① — the last also needs
+  // the target EX-summoned, which the client cannot track, so
+  // the reason fires only when NO face-up monster exists at all)
+  if (/相手フィールドの表側表示モンスター１体を対象として/.test(body) && !faceUpM(opp)) return '相手フィールドに表側表示モンスターがいません';
+  // (P7) a monster on either field to target (強制脱出装置①)
+  if (/フィールドのモンスター１体を対象として/.test(body) && !mons(me).length && !mons(opp).length) return 'フィールドにモンスターがいません';
+  // (P8) a face-up monster on the own field to target
+  // (アリスティア①)
+  if (/自分フィールドの表側表示モンスター１体を対象として/.test(body) && !faceUpM(me)) return '自分フィールドに表側表示モンスターがいません';
+  // (P10) a named Xyz monster on the own field to target
+  // (超量機神剣－マグナスレイヤー①)
+  m = body.match(/自分フィールドの「(.+?)」Xモンスター１体を対象として/);
+  if (m) {
+    const ok = mons(me).some(c => (c.pos & E.POS_FACEUP) !== 0 && cardData(c.code) && (cardData(c.code).type & 0x800000) !== 0 && (cardName(c.code) || '').indexOf(m[1]) >= 0);
+    if (!ok) return '自分フィールドに「' + m[1] + '」Xモンスターがいません';
+  }
+  // (P11) a named monster on the own field to equip to
+  // (甲虫装機の宝珠)
+  m = body.match(/自分フィールド上の「(.+?)」と名のついたモンスター１体に装備する/);
+  if (m) {
+    const ok = mons(me).some(c => (c.pos & E.POS_FACEUP) !== 0 && (cardName(c.code) || '').indexOf(m[1]) >= 0);
+    if (!ok) return '自分フィールドに「' + m[1] + '」と名のついたモンスターがいません';
+  }
+  // (P12) a face-up monster on the own field to select
+  // (ジェネレーション・チェンジ)
+  if (/自分フィールド上に表側表示で存在するモンスター１体/.test(body) && !faceUpM(me)) return '自分フィールドに表側表示モンスターがいません';
+  return null;
+}
+function trapHandReason(code, state) {
+  const d = cardData(code);
+  if (!d || !(d.type & 0x4)) return null;
+  // an explicit hand activation is the existing hand
+  // machinery's job — never the blanket rule
+  if (handCandidates(code).length) return null;
+  // タイフーン: the only pool trap whose text grants a
+  // conditional hand activation. The blanket rule would be false
+  // for it, so it gets its hand condition instead: the opponent
+  // field must hold 2+ spell/trap cards and the own field none.
+  // When the condition holds, the ① target check below decides.
+  const head = cardText(code).match(/相手フィールドに魔法・罠カードが([０-９]+)枚以上存在し、自分フィールドに魔法・罠カードが存在しない場合、このカードの発動は手札からもできる/);
+  if (head) {
+    const st = state || duelState;
+    if (st && st.players && st.players[HP]) {
+      const me = st.players[HP], opp = st.players[1 - HP];
+      const n = +String(head[1]).replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+      const oppN = (opp.szone || []).filter(c => c && c.code != null).length;
+      const ownN = (me.szone || []).filter(c => c && c.code != null).length;
+      if (oppN < n) return '相手フィールドに魔法・罠カードが' + n + '枚以上ありません（現在' + oppN + '枚）';
+      if (ownN > 0) return '自分フィールドに魔法・罠カードがあるため、手札からは発動できません';
+    }
+    return trapConditionReason(code, state);
+  }
+  const cond = trapConditionReason(code, state);
+  return TRAP_RULE_REASON + (cond ? '。' + cond : '');
+}
+// ---- field-phase reason (fix-handreason2-1117, secondary) ----
+// The generic '今は発動できません' also fires for an ignition
+// in the wrong phase — the observed case was カルボン① in
+// battle phase. Ignitions (the only thing fieldCandidates
+// returns) activate in the controller's Main Phase only, so at
+// an idle prompt on the player's own turn the phase itself is
+// the certain reason. Guards: only at an idle prompt (during a
+// chain the immediate blocker is the chain itself), only a
+// known non-main phase, and never for a segment that can fire
+// on the opponent's turn (「相手ターン」「お互いのメインフェ
+// イズ」「クイックエフェクト」 — e.g. 墓守の罠②). Anything else
+// keeps the generic form.
+const NON_MAIN_PHASES = ['DRAW', 'STANDBY', 'BATTLE_START', 'BATTLE_STEP', 'DAMAGE', 'DAMAGE_CAL', 'BATTLE', 'END'];
+function fieldPhaseReason(code) {
+  const cands = fieldCandidates(code);
+  if (!cands.length) return null;
+  if (!duelState || !duelState.players || !duelState.players[HP]) return null;
+  if (duelState.turnPlayer !== HP) return null;
+  if (!currentPrompt || !isIdlePromptName(currentPrompt.prompt && currentPrompt.prompt.name)) return null;
+  if (NON_MAIN_PHASES.indexOf(duelState.phaseName) < 0) return null;
+  const segs = effectSegments(code).filter(s => cands.includes(s.n));
+  if (segs.some(s => /相手ターン|お互いのメインフェイズ|クイックエフェクト/.test(s.body))) return null;
+  return '起動効果はメインフェイズにしか発動できません';
+}
 // The revive rider («この効果で特殊召喚したモンスターは攻撃できず、
 // その効果は発動できない») is DERIVED from the pool's texts, like
 // the lock / name-limit sets — not hardcoded to one card. No card
@@ -2675,6 +2848,11 @@ function handTapReason(code, key) {
       if (d.type & 0x80000) { if (me.szone[5]) return 'フィールドゾーンに空きがありません'; }
       else if ([0, 1, 2, 3, 4].every(i => me.szone[i])) return '魔法・罠ゾーンに空きがありません';
     }
+    // fix-handreason2-1117: the preview states the trap rule too
+    // (after the more immediate zone reasons above) — a hand trap
+    // with no offered action at all gets the same answer as its
+    // sheet.
+    const tr = trapHandReason(code); if (tr) return tr;
     return null;
   }
   if (!currentPrompt && duelState.winner == null && duelState.turnPlayer !== HP) return '相手のターンです';
@@ -2770,7 +2948,7 @@ function exLockReason(lock) {
 // Test surface for the pool-coverage checks (same spirit as __mlock).
 window.__poolcov = {
   resolveYesNo, scopedEffect, optCovered, optCoverage, fieldCandidates, optUsedReason,
-  handCandidates, handUsedReason, handTargetReason,
+  handCandidates, handUsedReason, handTargetReason, trapHandReason, trapConditionReason, fieldPhaseReason,
   trackUsedFx,
   usedFx() { return [...usedFxByCode.entries()].map(([code, r]) => ({ code, n: [...r.n], any: r.any })); },
   noteRevive(evs, state) { noteReviveFromEvents(evs, state); },
@@ -8903,7 +9081,10 @@ function openActionSheet(key) {
     // (handUsedReason / handTargetReason) ride the same greyed
     // row; when none is derivable the row stays absent — never a
     // guessed reason, and no generic row.
-    const hReason = nameLimitReason(zoneCode) || handUsedReason(zoneCode) || handTargetReason(zoneCode);
+    // fix-handreason2-1117: a hand TRAP gets the same row — the
+    // rule (set first) plus, when derivable, its ① condition
+    // (trapHandReason). The set button stays above the row.
+    const hReason = nameLimitReason(zoneCode) || handUsedReason(zoneCode) || handTargetReason(zoneCode) || trapHandReason(zoneCode);
     if (hReason) unusable = '<div class="optbtn disabled">効果を発動<span class="reason">' + hReason + '</span></div>';
   }
   if (zoneCode != null && con === HP && (loc === E.LOC.MZONE || loc === E.LOC.SZONE) && !acts.some(a => a.activate)) {
@@ -8931,6 +9112,7 @@ function openActionSheet(key) {
           else if (mill && duelState && duelState.players[con].deckCount < +mill[1]) reason = 'デッキが ' + mill[1] + ' 枚未満です';
         }
       }
+      if (!reason && fieldCandidates(zoneCode).length) reason = fieldPhaseReason(zoneCode);
       if (!reason && fieldCandidates(zoneCode).length) reason = '今は発動できません';
     }
     if (reason) unusable = '<div class="optbtn disabled">効果を発動<span class="reason">' + reason + '</span></div>';
