@@ -3253,9 +3253,82 @@ function settleConfirmSheet() {
 // counts human prompts dispatched since the batch landed; the
 // reveal is only offered to the first one.
 let lastConfirm = null;
-function queueConfirmEvents(evs) {
+// fix-a07bu19-1117 (BU-19): the one-line reason for a card
+// confirmation — WHY this card is being shown. The cause is the
+// resolving chain link the engine stamped on the confirm event
+// (or the trap ③ draw check, derived in queueConfirmEvents).
+// The line names the effect and what it did with the card. A
+// cause whose effect number cannot be pinned still names the
+// card ("《X》の効果で確認") — the card IS the resolving link,
+// a fact, not a guess — while a cause with no card at all stays
+// silent: an unlabelled confirm is better than a wrong one.
+function confirmCauseReason(code, desc, loc) {
+  if (!code || !DATA || !DATA.names[code]) return '';
+  const name = '《' + cardName(code) + '》';
+  const de = descEffect(desc);
+  let r = (de && de.code === code) ? resolveEffect(code, desc) : null;
+  if (!r && !de) {
+    // No usable description (テラ・フォーミング: desc 0 and no
+    // fxmap entry): a card with exactly one numbered segment can
+    // only be that effect. A desc that DOES decode to this card
+    // but resolveEffect cannot pin stays silent about the number
+    // — its numbering is unaudited, and a guessed number would be
+    // worse than naming the card alone.
+    const segs = effectSegments(code);
+    if (segs.length === 1) r = { n: segs[0].n, body: segs[0].body };
+  }
+  if (!r && !de && code === 98715423) {
+    // 墓守の罠 with no desc, stamped from a resolving link, can
+    // only be ②: ① is continuous and never confirms, and ③'s
+    // draw check confirms outside chain resolution (never
+    // stamped) — measured: all 20 desc-less stamped trap confirms
+    // in 60 duels were MAIN-phase hand searches. The derived draw
+    // check always carries idx 1, so it never reaches here.
+    const seg = effectSegments(code).find(s => s.n === 2);
+    if (seg) r = { n: seg.n, body: seg.body };
+  }
+  if (!r || !r.n || !r.body) return name + 'の効果で確認';
+  const n = name + CIRCLED_NUM[r.n - 1];
+  const b = r.body;
+  // the draw check: a name declared before the draw, the drawn
+  // card confirmed against it.
+  if (b.includes('宣言') && b.includes('確認')) return n + 'の宣言チェック：引いたカード';
+  // an EX monster shown to the opponent (融合派兵 / 沼地の魔道王).
+  if (loc === E.LOC.EXTRA && b.includes('見せ')) return n + 'で見せたカード';
+  // a card searched into the hand.
+  if (loc === E.LOC.HAND && b.includes('手札に加える')) return n + 'で加えたカード';
+  // a card the effect confirms while it sits in the deck.
+  if (loc === E.LOC.DECK && b.includes('確認')) return n + 'の効果で確認したカード';
+  return n + 'の効果で確認';
+}
+// One reason line per group, only when every card in the group
+// shares exactly one cause. Two causes in one group means the
+// batch mixed two effects — the line would name one of them for
+// the other's cards, so it stays off.
+function confirmGroupReason(g) {
+  if (!g.causes || g.causes.length !== 1) return '';
+  return confirmCauseReason(g.causes[0].code, g.causes[0].desc, g.loc);
+}
+// fix-a07bu19-1117 (BU-19): the trap ③ draw check resolves no
+// chain link, so the engine stamps nothing for it — but its
+// activation IS an observed event in the same draw phase. The
+// turn of the last 98715423 activation seen in DRAW phase is
+// remembered here; a link-less confirm in that turn is the check
+// that activation set up. (An activation of 98715423 in DRAW
+// phase can only be ③: ② activates in main phase only.)
+let trap3DrawCheckTurn = -1;
+function queueConfirmEvents(evs, state) {
+  const phase = state ? state.phaseName : (duelState ? duelState.phaseName : null);
+  const turn = state && state.turnCount != null ? state.turnCount : (duelState ? duelState.turnCount : null);
   for (const ev of evs || []) {
+    if (ev.kind === 'activate' && ev.code === 98715423 && phase === 'DRAW' && turn != null) trap3DrawCheckTurn = turn;
     if (ev.kind === 'confirm' && ev.shown === HP && ev.cards && ev.cards.some(c => c.code)) {
+      // The cause rides on the event so the presentation (which
+      // happens later, at the next human prompt, possibly in a
+      // different phase) reads the context of the moment the
+      // confirm arrived, not of the moment it is shown.
+      if (ev.solCode != null) { ev.causeCode = ev.solCode; ev.causeDesc = ev.solDesc; }
+      else if (turn != null && trap3DrawCheckTurn === turn) { ev.causeCode = 98715423; ev.causeDesc = 98715423 * 1048576 + 1; }
       pendingConfirms.push(ev);
       lastConfirm = { cards: ev.cards.filter(c => c.code), turn: duelState ? duelState.turnCount : null, promptsAgo: 0 };
     }
@@ -3332,7 +3405,9 @@ function showLightConfirms(groups, total) {
     let html = '<div class="fcl-head">カードの確認</div>';
     for (const g of groups) {
       const sorted = g.cards.slice().sort((a, b) => g.loc === E.LOC.DECK ? b.seq - a.seq : a.seq - b.seq);
-      html += '<div class="fcl-group"><div class="fcl-label">' + confirmGroupLabel(g.con, g.loc) + '</div><div class="fcl-cards">' +
+      const reason = confirmGroupReason(g);
+      html += '<div class="fcl-group"><div class="fcl-label">' + confirmGroupLabel(g.con, g.loc) + '</div>' +
+        (reason ? '<div class="fcl-reason">' + reason + '</div>' : '') + '<div class="fcl-cards">' +
         sorted.map((c, i) => '<div class="fcl-card" data-info="' + c.code + '">' +
           '<div class="fcl-art"' + artInline(c.code, true, deckKeyOfSeat(c.con)) + '>' + marksChipHTML(c.code) + '</div>' +
           '<div class="fcl-name">' + (g.loc === E.LOC.DECK ? (i + 1) + '枚目：' : '') + cardName(c.code) + '</div></div>').join('') +
@@ -3379,8 +3454,9 @@ function showPendingConfirms() {
   for (const ev of evs) for (const c of ev.cards) {
     if (!c.code) continue;
     let g = groups[groups.length - 1];
-    if (!g || g.con !== c.con || g.loc !== c.loc) { g = { con: c.con, loc: c.loc, cards: [] }; groups.push(g); }
+    if (!g || g.con !== c.con || g.loc !== c.loc) { g = { con: c.con, loc: c.loc, cards: [], causes: [] }; groups.push(g); }
     g.cards.push(c);
+    if (ev.causeCode != null && !g.causes.some(x => x.code === ev.causeCode && x.desc === ev.causeDesc)) g.causes.push({ code: ev.causeCode, desc: ev.causeDesc });
   }
   if (!groups.length) return Promise.resolve();
   const totalCards = groups.reduce((n, g) => n + g.cards.length, 0);
@@ -3392,7 +3468,9 @@ function showPendingConfirms() {
       // deck entries arrive in group order, not position order: the
       // top of the deck is the HIGHEST seq (the mirror's deckTop rule)
       const sorted = g.cards.slice().sort((a, b) => g.loc === E.LOC.DECK ? b.seq - a.seq : a.seq - b.seq);
+      const reason = confirmGroupReason(g);
       html += '<div class="ttl" style="margin-top:8px">' + confirmGroupLabel(g.con, g.loc) + '</div>' +
+        (reason ? '<div class="cf-reason">' + reason + '</div>' : '') +
         // BU-45: every row carries the card's face (the row tap
         // already opens the detail pop; the thumb is the same
         // small art the board tiles use, deck context included).
@@ -3416,7 +3494,8 @@ window.__confirm = {
   queue: () => pendingConfirms.slice(),
   push: (ev) => { pendingConfirms.push(ev); },
   show: showPendingConfirms,
-  queueEvents: (evs) => queueConfirmEvents(evs),
+  queueEvents: (evs, state) => queueConfirmEvents(evs, state),
+  reason: confirmCauseReason,
   last: () => lastConfirm,
   light: () => document.querySelector('.fx-confirm-light'),
   lightState: () => confirmLightState,
@@ -6519,6 +6598,27 @@ function fxFinisherGateMs() {
   // that delay or the result would resurface under the wash tail.
   return Math.max(0, Math.min(3600, remain));
 }
+// fix-a07bu19-1117 (A-07): wait until the finisher gate reads 0.
+// A single capped wait could end early twice over: the 3600 ms
+// cap truncated a late-start finisher's remain (up to ~4676 ms
+// measured), and the FX clock runs behind wall time under
+// hit-stop, so even an uncapped wait lands early (196 ms
+// measured). The gate is re-read after each wait; the total is
+// only a hang guard for a frozen FX clock (a real remain is ~5 s
+// at most), so a stuck clock still lets the result through
+// instead of freezing the duel. readGate / maxWaitMs are test
+// seams — production calls with no arguments.
+async function awaitFinisherGate(readGate, maxWaitMs) {
+  const gate = readGate || fxFinisherGateMs;
+  const maxWait = maxWaitMs != null ? maxWaitMs : 20000;
+  let ms = gate();
+  let waited = 0;
+  while (ms > 0 && waited < maxWait) {
+    await new Promise(r => setTimeout(r, ms));
+    waited += ms;
+    ms = gate();
+  }
+}
 function fxFinisherSceneV3(attr, defConArg) {
   const host = $('fxcutin'); if (!host) return;
   const la = fxLastAttackScene; if (!la || !la.aPt) return;
@@ -7683,6 +7783,7 @@ window.__fx = {
   chainLanded: () => [...fxChainLanded.keys()].sort((a, b) => a - b),
   markChainLanded: (n, code) => fxChainMarkLanded(n, code),
   finisherGateMs: () => fxFinisherGateMs(), // redesign G: the result gate, readable for verification
+  awaitFinisherGate: (readGate, maxWaitMs) => awaitFinisherGate(readGate, maxWaitMs), // fix-a07bu19-1117 (A-07): the loop-until-0 wait, testable with a scripted gate
   phaseSeated: () => { const pi = $('phaseinfo'); return !!pi && pi.classList.contains('fx-seated'); }, // redesign E: the settled phase state
   // BU-92: the live turn banner's text (main + sub), or null when
   // no banner is up — the banner element IS the input lock, so
@@ -11664,6 +11765,7 @@ function wireSeg(id, apply) {
     confirmTurn = -1; confirmSeq = 0; // per-turn confirmation counter restarts with the duel
     lastChainQ = null; // fix9396c-1115 (BU-99): the re-ask ordinal restarts with the duel
     pendingConfirms = []; // unshown card confirmations restart with the duel
+    trap3DrawCheckTurn = -1; // fix-a07bu19-1117 (BU-19): the trap ③ draw-check memory restarts with the duel
     lastConfirm = null; // BU-58: so does the confirm-reveal batch
     updateAutoPassChip();
     fxResetDuel(); // FX snapshot/layers restart with the duel (stale overlays must not survive)
@@ -11692,7 +11794,7 @@ function wireSeg(id, apply) {
       onUpdate: (state) => {
         if (duel) { try { duel.refreshFieldStats(); } catch (e) {} }
         const fxEvs = state.events ? state.events.slice() : []; // presentation queue: copied before drainSeEvents consumes it
-        queueConfirmEvents(fxEvs); // MSG_CONFIRM_CARDS -> pending reveal sheet (see the confirm block)
+        queueConfirmEvents(fxEvs, state); // MSG_CONFIRM_CARDS -> pending reveal sheet (see the confirm block)
         fxCaptureDom(); // pre-render hand geometry for the FX reflow (FLIP)
         drainSeEvents(state);
         trackUsedFx(state); // this turn's own activations, for cannot-activate reasons
@@ -11726,7 +11828,7 @@ function wireSeg(id, apply) {
     // result is never seen under an active wash (the round-B
     // defect; audit A-07 was the 2300-2400 ms tail overlap).
     const gateMs = fxFinisherGateMs();
-    if (gateMs > 0) await new Promise(r => setTimeout(r, gateMs));
+    if (gateMs > 0) await awaitFinisherGate(); // fix-a07bu19-1117 (A-07): loop until the gate reads 0 — one capped wait ended early under a late-start finisher and under hit-stop clock lag
     setBgmScene(st.winner === HP ? 'win' : 'lose', true);
     // A-05: the result explains the ending in the player's words.
     // LP is a quantity that ends the duel AT 0 — a negative final

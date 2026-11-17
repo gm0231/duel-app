@@ -1533,7 +1533,17 @@ class GameState {
         // seat 0: with the human on seat 1 the old condition tracked
         // the CPU's knowledge instead.)
         if (confirmed.length) {
-          this.pushEvent({ kind: 'confirm', shown, cards: confirmed });
+          // fix-a07bu19-1117 (BU-19): the confirm carries its cause
+          // so the client can name the checking/searching effect.
+          // Only the link actually resolving is stamped: the
+          // chainContext() fallback to the newest link is NOT an
+          // attribution (a confirm arriving between links would
+          // name the wrong effect). The trap ③ draw check resolves
+          // no link (solvingLink 0) and is derived client-side.
+          const sl = this.solvingLink > 0 ? this.chain[this.solvingLink - 1] : null;
+          const cev = { kind: 'confirm', shown, cards: confirmed };
+          if (sl && sl.code) { cev.solCode = sl.code; cev.solDesc = sl.desc; }
+          this.pushEvent(cev);
           if (shown === this.humanPlayer) {
             const names = confirmed.filter(c => c.code).map(c => this.nameOf(c.code));
             if (names.length) this.pushLog('確認：' + names.map(n => this.bn(n)).join('、'));
