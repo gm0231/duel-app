@@ -1817,6 +1817,49 @@ const SS6 = {
 const CYB_XYZ = { NOVA: 58069384, INFINITY: 10443957 };
 const AGT_XYZ = { GACHI: 10002346, PHOENIX: 2766877, HERALD: 1249315 };
 const AGT = { EARTH: 91188343, VENUS: 64734921, BALL: 39552864, JUPITER: 28573958, HYPERION: 55794644 };
+// ------------------------------------------------------------ cpu-classic3 (2026-11-17)
+// Theme profiles for the last classic decks (diagnosis in
+// cpu-classic3-1117). Lightsworn: Minerva was offered 1423 times in
+// the tuning bench and taken 88 (two Lv4 bodies out-price her 500
+// bonus); Black Rose lost all 5 diag offers to Michael on printed
+// ATK, her field-wipe arrival unpriced; Raiden (1) scored 0 in 96/96
+// offers (no mill verb in fxKinds); Judgment Dragon (1) fired 14 of
+// 31 times with 1700+ of our own board standing (the generic destroy
+// gate never looks at our side). Fire King: the whole Rank-4 shelf
+// (1868 offers / 1 summon) — Dire Wolf / Delteros / Ark Knight /
+// Cowboy all carry the 200 default against two 1800 bodies; Onslaught
+// and 真炎の爆発 are scored through verbs in their END-PHASE costs
+// (destroy / banish) instead of their effects; Yaksha (2) picks the
+// cheapest card to destroy, which is the field spell (Island (3)
+// then wipes our own monsters) in 11 of 75 picks. Chaos: the bosses
+// are offered in only 111/480 games — the grave rarely holds LIGHT
+// and DARK together (three LIGHT cards in the whole deck) while
+// Sangan / Witch fetch by raw ATK and never the Magician of Faith;
+// CED (1) scores 0 in 8/8 offers (its wipe reads as a banish through
+// the 除外 in its summon condition). Gadget: Limiter Removal scored
+// 0 in 760/760 offers (the self-destruction guard in
+// genericActivation reads its end-phase cost as the effect); Gear
+// Gigant X lost every shared offer to Castel's flat 650 (116 of 190
+// diag offers) and Emeral lost them all (96 offers / 0 picks).
+const LS = {
+  JD: 57774843, MINERVA: 30100551, MICHAEL: 4779823, BLACK_ROSE: 73580471,
+  LUMINA: 95503687, LYLA: 22624373, RAIDEN: 77558536, CHARGE: 94886282, SOLAR: 691925,
+};
+const FK = {
+  GARUNIX: 23015896, PHOENIX: 61441708, YAKSHA: 66413481, BARONG: 69000994,
+  KIRIN: 96594609, HANUMAN: 38910263, GARUNIX_JR: 54149433,
+  ISLAND: 57554544, CIRCLE: 59388357, ONSLAUGHT: 22993208, REKINDLE: 74845897,
+  DIRE_WOLF: 95169481, DELTEROS: 46772449, COWBOY: 12014404, ARK: 48739166,
+};
+const CHS = {
+  CED: 82301904, BLS: 72989439, SORCERER: 9596126, METAMORPHOSIS: 46411259,
+  THOUSAND_EYES: 63519819, SANGAN: 26202165, WITCH: 78010363, FAITH: 31560081,
+  BRAIN_CONTROL: 87910978, CHANGE_OF_HEART: 4031928,
+};
+const GDG = {
+  GIGANT: 28912357, EMERAL: 581014, CASTEL: 82633039, FORTRESS: 5556499,
+  LIMITER: 23171610, DUPLICATION: 63995093, GEARFRAME: 42940404,
+};
 // White Forest spells/traps whose graveyard effect re-sets themselves:
 // sending one to the graveyard as a cost is close to free.
 const WF_RESET = new Set([NC.WF_SIN, NC.WF_TALE, NC.WF_NOENTER, NC.WF_WOE]);
@@ -3161,6 +3204,132 @@ function activationScore(e, view, data, prompt) {
     case CC.SPHINX:
       return (deckHas(rem, CC.TAIYOU) || deckHas(rem, CC.MOON) ||
               view.grave[me].includes(CC.TAIYOU) || view.grave[me].includes(CC.MOON)) ? 750 : 0;
+    case LS.RAIDEN: {
+      // cpu-classic3: Raiden (1) mills 2 (and +200 ATK when a
+      // Lightsworn is milled). fxKinds has no mill verb, so the
+      // generic fallback scored it 0 in 96/96 diag offers — the
+      // deck's free grave stocking never fired. No cost, so price it
+      // in the engine band while the deck is not thin. (Its (2) is
+      // an end-phase trigger, answered elsewhere; the idle entry is
+      // always (1).)
+      if (deckIdOfList(view.myDeck, data) !== 'lightsworn') return 0;
+      if (e.loc !== LOC.MZONE) return 0;
+      return view.deckCount[me] > 10 ? 850 : 0;
+    }
+    case LS.LYLA: {
+      // cpu-classic3: Lyla (1) destroys an opposing Spell/Trap, but
+      // the generic destroy branch gates on the opponent's MONSTER
+      // power (22 of 49 diag offers scored 0 with a live S/T
+      // target). Price the target itself; she flips to defense, so
+      // a blind shot at a set card is worth less than a known
+      // face-up one.
+      if (deckIdOfList(view.myDeck, data) !== 'lightsworn') return 0;
+      if (e.loc !== LOC.MZONE) return 0;
+      const st = view.zones[opp].szone.filter(c => c);
+      if (!st.length) return 0;
+      if (st.some(c => c.faceUp && (cdOf(data, c.code) || {}).type & (CT.FIELD | CT.CONTINUOUS))) return 1200;
+      if (st.some(c => c.faceUp)) return 1050;
+      return 850;
+    }
+    case LS.JD: {
+      // cpu-classic3: Judgment Dragon (1) wipes every OTHER card on
+      // the field — ours included. The generic destroy branch gates
+      // only on the opponent's best monster, so it fired 14 of 31
+      // times with 1700+ of our own board standing (diag3). Price
+      // the trade: what the wipe clears minus what we lose, and
+      // never pay the 1000 LP from a thin life total.
+      if (deckIdOfList(view.myDeck, data) !== 'lightsworn') return 0;
+      if (e.loc !== LOC.MZONE) return 0;
+      if (view.lp[me] <= 1500) return 0;
+      const oppClear = faceUpMons(view, opp).reduce((s, c) => s + boardValue(c, data), 0)
+        + monList(view, opp).filter(c => !c.faceUp).length * 1000
+        + view.zones[opp].szone.filter(c => c && c.faceUp).length * 850
+        + view.zones[opp].szone.filter(c => c && !c.faceUp).length * 950;
+      const ourLoss = faceUpMons(view, me).filter(c => c.code !== LS.JD)
+        .reduce((s, c) => s + boardValue(c, data), 0)
+        + view.zones[me].szone.filter(c => c && c.faceUp).length * 500;
+      return oppClear - ourLoss >= 1200 ? 1300 : 0;
+    }
+    case FK.ONSLAUGHT: {
+      // cpu-classic3: Onslaught special summons a FIRE Beast /
+      // Beast-Warrior / Winged Beast from the deck (its effect is
+      // negated, it dies in the End Phase — which is the point: the
+      // destruction triggers Yaksha / Barong / Kirin (2)). The
+      // generic destroy branch reads the End Phase destruction as
+      // removal and gates on the opponent's board (17 of 57 diag
+      // offers scored 0). Price the summon itself.
+      if (deckIdOfList(view.myDeck, data) !== 'fireking') return 0;
+      if (!rem) return 0;
+      const hasTarget = [...rem.entries()].some(([c, n]) => {
+        if (n <= 0) return false;
+        const d = cdOf(data, c);
+        return d && isMonsterCd(d) && d.attribute === 0x04 && (d.race === 0x4000 || d.race === 0x8000 || d.race === 0x200);
+      });
+      return hasTarget ? 950 : 0;
+    }
+    case FK.REKINDLE: {
+      // cpu-classic3: 真炎の爆発 revives every DEF-200 FIRE monster
+      // from the grave for one battle phase (they are banished in
+      // the End Phase, not destroyed, so no (2) triggers). The
+      // generic banish branch reads that End Phase banish as
+      // removal and gates on the opponent's board. Price the
+      // revival by how many bodies it buys, Main 1 only — in Main 2
+      // they cannot attack and are gone by the End Phase.
+      if (deckIdOfList(view.myDeck, data) !== 'fireking') return 0;
+      if (view.phaseName !== 'MAIN1') return 0;
+      const n = view.grave[me].filter(c => { const d = cdOf(data, c); return isMonsterCd(d) && d.attribute === 0x04 && d.def === 200; }).length;
+      if (n >= 2) return 1000;
+      if (n === 1) return 700;
+      return 0;
+    }
+    case CHS.CED: {
+      // cpu-classic3: Chaos Emperor Dragon (1) sends BOTH players'
+      // hand and field to the graveyard and burns 300 per opposing
+      // card sent. The generic branch reads the 除外 in its summon
+      // condition as a banish verb and gates on the opponent's best
+      // monster — it scored 0 in 8/8 diag offers. Price the trade:
+      // fire only when we come out clearly ahead on cards, with
+      // life to pay the 1000. Firing also locks our other effects
+      // out this turn, so the bar stays high.
+      if (deckIdOfList(view.myDeck, data) !== 'chaos') return 0;
+      if (e.loc !== LOC.MZONE) return 0;
+      if (view.lp[me] <= 2000) return 0;
+      const oppTotal = view.hand[opp].length + monList(view, opp).length + view.zones[opp].szone.filter(c => c).length;
+      const myTotal = view.hand[me].length + monList(view, me).filter(c => c.code !== CHS.CED).length + view.zones[me].szone.filter(c => c).length;
+      return oppTotal - myTotal >= 2 && oppTotal >= 4 ? 1300 : 0;
+    }
+    case CHS.BRAIN_CONTROL: case CHS.CHANGE_OF_HEART: {
+      // cpu-classic3: both steal an opposing monster until the End
+      // Phase. The generic fallback prices every Spell at a flat
+      // 550, so they fired whenever offered (91/166 and 83/140 in
+      // the tuning bench) — including Main 2, where the stolen
+      // monster cannot attack, and against boards with nothing worth
+      // taking. Price the theft by the best thing it can take,
+      // Main 1 only.
+      if (deckIdOfList(view.myDeck, data) !== 'chaos') return 0;
+      if (view.phaseName !== 'MAIN1') return 0;
+      const best = Math.max(0, ...oppFU.map(c => battlePower(c, data)));
+      if (best >= 1800) return 1050;
+      if (best >= 1400) return 850;
+      if (best >= 1000) return 700;
+      return 0;
+    }
+    case GDG.LIMITER: {
+      // cpu-classic3: Limiter Removal doubles every Machine we
+      // control until the End Phase, then destroys them. The
+      // genericActivation self-destruction guard reads that End
+      // Phase destruction as the effect and returns 0 — it scored 0
+      // in 760/760 offers. It is a lethal push only: fire in Main 1
+      // when the doubled attack covers the opponent's life plus
+      // their best blocker.
+      if (deckIdOfList(view.myDeck, data) !== 'gadget') return 0;
+      if (view.phaseName !== 'MAIN1') return 0;
+      const atk = faceUpMons(view, me).filter(c => { const d = cdOf(data, c.code); return d && d.race === 0x20; })
+        .reduce((s, c) => s + atkOf(c, data), 0);
+      if (atk < 1500) return 0;
+      const oppBest = Math.max(0, ...oppFU.map(c => battlePower(c, data)));
+      return atk * 2 >= view.lp[opp] + oppBest ? 1100 : 0;
+    }
     case CC.COROLLA:
       return handCodes.some(c => c === CC.VERN_MORI || c === CC.VERN_HANA || c === CC.VERN_OKA) ? 800 : 0;
     case CC.TAIYOU: {
@@ -3527,6 +3696,76 @@ function pickSpsummon(prompt, view, data, mem) {
         if (bestGrave >= 2400) bonus = 1250; // a Hyperion-class recycle outbids the dead-effect Phoenix body
         else if (bestGrave >= 1500) bonus = 620;
         else if (bestGrave > 0) bonus = 450;
+      }
+    }
+    // cpu-classic3: Lightsworn's Extra line. Minerva is the deck's
+    // engine (mill 3, draw per Lightsworn milled) but her 500 bonus
+    // loses to two Lv4 bodies on nearly every offer (diagnosis: 1423
+    // offers / 88 picks in the tuning bench). Black Rose's arrival
+    // wipes the whole field — price the wipe by what it clears minus
+    // what we lose (the materials are consumed, not lost; any other
+    // face-up monster we control dies to it), so she only outbids
+    // Michael when the wipe is actually worth more than the banish.
+    if (deckIdOfList(view.myDeck, data) === 'lightsworn') {
+      if (e.code === LS.MINERVA) bonus = 1000;
+      else if (e.code === LS.BLACK_ROSE) {
+        const oppClear = faceUpMons(view, view.opp).reduce((s, c) => s + boardValue(c, data), 0)
+          + view.zones[view.opp].szone.filter(c => c && c.faceUp).length * 500
+          + view.zones[view.opp].szone.filter(c => c && !c.faceUp).length * 950
+          + monList(view, view.opp).filter(c => !c.faceUp).length * 1000;
+        const field = faceUpMons(view, me);
+        let comboCost = Infinity;
+        const n = field.length;
+        for (let mask = 1; mask < (1 << n); mask++) {
+          let sum = 0, hasTuner = false, c = 0;
+          for (let j = 0; j < n; j++) if (mask & (1 << j)) {
+            sum += levelOf(field[j], data);
+            const d = cdOf(data, field[j].code);
+            if (d && (d.type & CT.TUNER)) hasTuner = true;
+            c += boardValue(field[j], data);
+          }
+          if (hasTuner && sum === 7 && c < comboCost) comboCost = c;
+        }
+        const ourTotal = field.reduce((s, c) => s + boardValue(c, data), 0);
+        const ourLoss = comboCost < Infinity ? Math.max(0, ourTotal - comboCost) : ourTotal;
+        // The wipe also destroys our side, so the bar for outbidding
+        // Michael / Stardust (which convert fine today) is a clearly
+        // positive net wipe, not a marginal one.
+        bonus = 200 + Math.min(1200, Math.max(0, oppClear - ourLoss - 800) * 0.6);
+      }
+    }
+    // cpu-classic3: Fire King's Rank-4 shelf. All four carry the 200
+    // default against two 1800 bodies (diagnosis: 1868 offers / 1
+    // summon in the tuning bench). Price the arrivals: Dire Wolf
+    // destroys a card; Delteros wipes the field when the opponent
+    // holds 2+ cards (its rider zeroes damage that turn, so a
+    // one-card wipe is not worth the conversion); Ark Knight attaches
+    // a big Special Summoned monster; Cowboy is a lethal-only burn.
+    if (deckIdOfList(view.myDeck, data) === 'fireking') {
+      if (e.code === FK.DIRE_WOLF) bonus = 1200;
+      else if (e.code === FK.DELTEROS) {
+        const oppCards = monList(view, view.opp).length + view.zones[view.opp].szone.filter(c => c).length;
+        bonus = oppCards >= 2 ? Math.min(2000, 400 + 700 * oppCards) : 300;
+      } else if (e.code === FK.ARK) {
+        bonus = faceUpMons(view, view.opp).some(c => battlePower(c, data) >= 2000) ? 1300 : 500;
+      } else if (e.code === FK.COWBOY) {
+        bonus = view.lp[view.opp] <= 800 ? 2000 : 300;
+      }
+    }
+    // cpu-classic3: Gadget's Rank-4 shelf. Castel's flat 650 wins
+    // every shared offer (diagnosis: Gigant 190 offers / 26 policy
+    // picks, 116 of the losses to Castel; Emeral 96 offers / 0 picks)
+    // even when there is nothing worth bouncing. Gate Castel on a
+    // bounce target so the engine (Gigant's search, Emeral's search
+    // plus recycle) runs when the answer is not needed.
+    if (deckIdOfList(view.myDeck, data) === 'gadget') {
+      if (e.code === GDG.EMERAL) bonus = 600;
+      else if (e.code === GDG.CASTEL) {
+        const hasTarget = faceUpMons(view, view.opp).some(c => {
+          const d = cdOf(data, c.code);
+          return battlePower(c, data) >= 2000 || (d && ((d.type & CT.XYZ) || (d.type & CT.SYNCHRO) || (d.type & CT.FUSION)));
+        }) || view.zones[view.opp].szone.some(c => c && c.faceUp);
+        if (!hasTarget) bonus = 250;
       }
     }
     if (e.loc === LOC.EXTRA && (cd.type & CT.XYZ)) {
@@ -5867,6 +6106,20 @@ function selectCardAnswer(prompt, view, data, mem) {
       if (ctxCode === NC.SQ_ALPHAN) { // our reveal-3: three DIFFERENT layers (handled below)
         return hasSetC(d, SETC.SQM) ? 1000 + handValue(e.code, view, data) * 0.2 : 0;
       }
+      // cpu-classic3 (Chaos): Sangan / Witch fetch by raw ATK, so
+      // they always take D.D. Warrior Lady (1500) / Kaiku (1800) and
+      // never the Magician of Faith — while the Chaos procedures sit
+      // dead in hand for want of a LIGHT monster in the grave (the
+      // whole deck runs three LIGHT cards; boss procedures were
+      // offered in only 111/480 tuning games). When the grave holds
+      // no LIGHT monster, fetch the Magician: set, flip, salvage a
+      // spell, and die into the grave as the LIGHT the procedures
+      // need. Once LIGHT is stocked, the generic ATK order stands.
+      if ((ctxCode === CHS.SANGAN || ctxCode === CHS.WITCH) &&
+          deckIdOfList(view.myDeck, data) === 'chaos' && e.code === CHS.FAITH) {
+        const graveHasLight = view.grave[me].some(c => { const dd = cdOf(data, c); return isMonsterCd(dd) && dd.attribute === 0x10; });
+        if (!graveHasLight) return 2600;
+      }
       return isMonsterCd(d) ? d.atk + handValue(e.code, view, data) * 0.2 : handValue(e.code, view, data);
     };
     const s = entries.slice().sort((a, b) => score(b) - score(a));
@@ -5979,6 +6232,32 @@ function selectCardAnswer(prompt, view, data, mem) {
       return (ca ? boardValue(ca, data) : 600) - (cb ? boardValue(cb, data) : 600);
     });
     return take(s, Math.max(1, min));
+  }
+  // --- cpu-classic3 (Fire King): Yaksha (2) destroys one of our own
+  // hand/field cards. The generic branch prices that by cheapest
+  // loss, which is the field spell (flat 500) — but destroying the
+  // Island triggers its (3) and wipes our own monsters (diag3: 6 of
+  // 11 Island picks had monsters standing, 10 of 11 had a Fire King
+  // in hand). Rank the hand Fire Kings whose destruction triggers
+  // their own (2) first, and never take the Island while we control
+  // a monster.
+  if (ctxCode === FK.YAKSHA && deckIdOfList(view.myDeck, data) === 'fireking') {
+    const ourMons = monList(view, me).length;
+    const rank = (x) => {
+      const e = x.e;
+      if (e.loc === LOC.HAND) {
+        if (e.code === FK.GARUNIX) return 3000;
+        if (e.code === FK.BARONG) return 2600;
+        if (e.code === FK.KIRIN) return 2400;
+        if (e.code === FK.YAKSHA) return 2200;
+        if (e.code === FK.HANUMAN) return 2000;
+        if (e.code === FK.GARUNIX_JR) return 1900;
+        return -discardCost(e.code, view, data);
+      }
+      if (e.code === FK.ISLAND) return ourMons > 0 ? -5000 : 500;
+      return -locCost(x);
+    };
+    return take(entries.slice().sort((a, b) => rank(b) - rank(a)), Math.max(1, min));
   }
   // --- field targets (removal, bounce, flip): biggest threat first.
   // Book of Moon prefers high ATK / low DEF; face-down targets are judged
