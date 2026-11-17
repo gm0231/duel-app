@@ -6358,6 +6358,28 @@ function fxNoticeRestoreHeader() {
   } else { fxNoticeHdrPrevMinH = null; fxNoticeHdrGrew = false; }
   try { layoutFit(false); } catch (e) {}
 }
+// fix-bu107-1118 (BU-107 remainder): the notice body is one keep-all
+// run, so a phrase with no break opportunity was split mid-word by
+// overflow-wrap:anywhere as a last resort — the ledger case was
+// "相手のカードが手札に加わっ／た" (16-char run, fix9396d section;
+// parent re-verification: 23+ notices, 0 splits, this one case
+// unobserved). Unitize the text at render time: card names ride
+// intact inside 《》 (keep-all already confines their breaks to the
+// "－" / "・" / "～" separators, which the fix9396d verification
+// counts as NOT a mid-word split), and a <wbr> break opportunity
+// sits after every particle / punctuation mark and after an "×N"
+// count, so the line breaks BETWEEN phrase units, never inside a
+// word. Font size stays 12.5px (parent decision: no font-fit
+// revival — the readability floor is not traded for cosmetics).
+// The recorded text (fxRecord 'notice') keeps the plain string;
+// only the rendered HTML is unitized.
+function fxNoticeUnitize(text) {
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return String(text).split(/(《[^》]*》)/g).map((p) => {
+    if (/^《[^》]*》$/.test(p)) return esc(p);
+    return esc(p).replace(/([がをにでともはのやかへて、。！？」』）]|×\d+)/g, '$1<wbr>');
+  }).join('');
+}
 function fxNoticeShow(text, sub, noBeat, deferrals) {
   // BU-89 (bigfix2-1115): while the auto-pass flash owns the
   // header (2.6s), the log line's column collapses (mirror-
@@ -6380,7 +6402,7 @@ function fxNoticeShow(text, sub, noBeat, deferrals) {
   // body — with only the label's 7px margin the two ran together
   // on one line (mirror text: 「…デッキ→手札相手のカードが…」)
   // and the junction was unreadable at a glance.
-  d.innerHTML = '<div class="nt">' + (sub ? '<span class="ns">' + sub + '</span><span class="nsep">｜</span>' : '') + text + '</div>';
+  d.innerHTML = '<div class="nt">' + (sub ? '<span class="ns">' + sub + '</span><span class="nsep">｜</span>' : '') + fxNoticeUnitize(text) + '</div>';
   d.style.opacity = '0';
   layer.appendChild(d);
   /* BU-83 residue (2026-11-14): bottom-anchor the strip inside
