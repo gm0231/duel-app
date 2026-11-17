@@ -1769,7 +1769,7 @@ for (const c of [612115, 1006081, 1142880, 1546123, 2619149, 3370104, 3659803, 5
   74860293, 77642288, 78349103, 78868776, 78922939, 79229522, 84058253, 84749824, 86445415, 86686671, 90582719,
   90953320, 92373006, 96216229, 96363153, 97268402, 98891840]) NEW_CODES.add(c);
 // Setcodes (data.json `setcodes` values) for the new themes.
-const SETC = { SQ: 220, SQM: 4316, BEAST: 8412, DOGMA: 326, ELF: 464, WF: 426, SIN: 516, AZAMINA: 436, GB: 4121, INZ: 86 };
+const SETC = { SQ: 220, SQM: 4316, BEAST: 8412, DOGMA: 326, ELF: 464, WF: 426, SIN: 516, AZAMINA: 436, GB: 4121, INZ: 86, SS: 61 };
 function hasSetC(cd, s) { return !!cd && Array.isArray(cd.setcodes) && cd.setcodes.includes(s); }
 // ------------------------------------------------------------ cpu-classic1 (2026-11-17)
 // Theme profiles for the two classic decks the generic policy plays
@@ -1792,6 +1792,31 @@ const GB = {
 const GB_TAG_SOURCES = new Set([GB.BESTIARI, GB.LAQUARI, GB.DARIUS, GB.EQUITE, GB.MURMILLO,
   GB.RETIARI, GB.SAMNITE, GB.SECTLOR, GB.AUGUSTUS, GB.SLAVE_TIGER, GB.GYZARUS, GB.NEROKIUS]);
 const INZ_XYZ = { EXA_BEETLE: 44505297, EXA_STAG: 26211048, EMERAL: 581014, ROACH: 37926346 };
+// ------------------------------------------------------------ cpu-classic2 (2026-11-17)
+// Theme profiles for the next classic decks (diagnosis in
+// cpu-classic2-1117). Six Samurai: the Shi En synchro conversion was
+// never the problem (offered 9 times in the diag sample, policy-picked
+// 9) — the bridge pieces were: Kageki (ATK 200) and Kagemusha (ATK 400)
+// lost every Normal Summon to a bigger body, and Smoke Signal's
+// generic pick fetched Tsuyuharai / Mizuho duplicates instead of the
+// missing half of the Kageki + Kagemusha pair (Shi En state formed in
+// only 10 of 60 diag games). Cyber: Nova was offered 216 times in 40
+// diag games and policy-picked twice — two Lv5 bodies out-attack the
+// flat conversion price — and Infinity, offered 24 times, always died
+// at cost=null because the material model has no rank-up-over-Nova
+// procedure. Agents: Gachi Gachi (142 offers / 0 picks in the tuning
+// bench) and Herald of Pure Light (71 / 0) lost every shared offer to
+// Daigusto Phoenix, a 1500 body whose effect needs a WIND monster this
+// deck does not run; Jupiter's activation scored 0 in 28/28 offers
+// (its grave-banish COST reads as a removal verb in fxKinds and the
+// generic branch gates on the opponent's board).
+const SS6 = {
+  KIZAN: 49721904, KAGEKI: 2511717, KAGEMUSHA: 1498130, GRANDMASTER: 83039729,
+  MIZUHO: 74094021, SHINAI: 48505422, TSUYUHARAI: 78792195, SHIEN: 29981921,
+};
+const CYB_XYZ = { NOVA: 58069384, INFINITY: 10443957 };
+const AGT_XYZ = { GACHI: 10002346, PHOENIX: 2766877, HERALD: 1249315 };
+const AGT = { EARTH: 91188343, VENUS: 64734921, BALL: 39552864, JUPITER: 28573958, HYPERION: 55794644 };
 // White Forest spells/traps whose graveyard effect re-sets themselves:
 // sending one to the graveyard as a cost is close to free.
 const WF_RESET = new Set([NC.WF_SIN, NC.WF_TALE, NC.WF_NOENTER, NC.WF_WOE]);
@@ -2939,6 +2964,32 @@ function activationScore(e, view, data, prompt) {
     case CC.REBORN:
       if (bestGraveMonster >= 2100 && (myStrongestAtk(view, data) < bestGraveMonster || myMons.length <= 1)) return 1250;
       return bestGraveMonster >= 2600 ? 1100 : 0;
+    case AGT.JUPITER: {
+      // cpu-classic2: scored 0 in 28/28 diag offers. Jupiter's (1)
+      // banishes an Agent from OUR grave as a COST — fxKinds reads
+      // the "除外" verb as removal and the generic branch gates it on
+      // the opponent's strongest board value, which is 0 in exactly
+      // the mid-game states where the +800 matters. Price the two
+      // printed effects apart (fxPrinted tells them apart):
+      // (2) discards a Fairy to special summon a banished LIGHT
+      // Fairy — the offer implies The Sanctuary in the Sky is face-up
+      // and the discard is payable, so a banished Fairy in waiting
+      // makes it a clean revival. (1) is a battle trick: +800 ATK to
+      // any LIGHT Fairy we control until the End Phase — fire it in
+      // Main 1 only when it flips a battle our best Fairy would
+      // otherwise lose or tie.
+      if (deckIdOfList(view.myDeck, data) !== 'agents') return 0;
+      const printed = fxPrinted(e.code, e.desc);
+      if (printed === 2) {
+        return view.removed[me].some(c => { const d = cdOf(data, c); return isMonsterCd(d) && d.race === 0x4 && d.attribute === 0x10; }) ? 950 : 0;
+      }
+      if (view.phaseName !== 'MAIN1') return 0;
+      const myBestFairy = Math.max(0, ...faceUpMons(view, me)
+        .filter(c => { const d = cdOf(data, c.code); return d && d.race === 0x4; })
+        .map(c => battlePower(c, data)));
+      if (!myBestFairy) return 0;
+      return faceUpMons(view, opp).some(c => { const p = battlePower(c, data); return p >= myBestFairy && p <= myBestFairy + 800; }) ? 850 : 0;
+    }
     case CC.MC_REBORN: {
       // v13: Magic Card "Monster Reborn" — NOT the classic, and not
       // priced like it. The revived monster cannot attack or
@@ -3443,6 +3494,41 @@ function pickSpsummon(prompt, view, data, mem) {
       else if (e.code === GB.HERAKLINOS) bonus = 1000;
       else if (e.code === GB.NEROKIUS) bonus = 900;
     }
+    // cpu-classic2: Cyber Dragon's Xyz line was priced out by its own
+    // materials — two face-up Lv5 bodies (a 2100 Cyber Dragon among
+    // them) out-attack Nova's flat conversion price, so the bot simply
+    // attacked instead (diagnosis: Nova offered 216 times in 40 games,
+    // policy-picked 2). Nova is the deck's engine stand: it revives a
+    // Cyber Dragon from the grave by detaching, and it is the only
+    // road to Infinity, whose (2) eats an opposing attack-position
+    // monster as material and whose (3) negates an activation per
+    // turn. Price both arrivals; Infinity's rank-up cost is handled
+    // in the Xyz branch below.
+    if (deckIdOfList(view.myDeck, data) === 'cyber') {
+      if (e.code === CYB_XYZ.NOVA) bonus = 1200;
+      else if (e.code === CYB_XYZ.INFINITY) bonus = 1600;
+    }
+    // cpu-classic2: the Agents' Rank-2 shelf. Daigusto Phoenix is a
+    // 1500 body whose effect needs a WIND monster this deck never
+    // fields, yet its printed ATK won every shared offer against
+    // Gachi Gachi (142 offers / 0 picks) and Herald of Pure Light
+    // (71 / 0). Gachi's real body is the aura: +200 ATK/DEF per
+    // material to EVERY face-up monster we control (itself included),
+    // plus a destruction substitution — price the buff by how many
+    // monsters receive it (the two materials leave, the rest stay).
+    // Herald's body is the recycle: a grave monster back to hand for
+    // a hand card — price it by the best monster in our grave.
+    if (deckIdOfList(view.myDeck, data) === 'agents') {
+      if (e.code === AGT_XYZ.GACHI) {
+        const receivers = Math.max(1, faceUpMons(view, me).length - 1);
+        bonus = 450 + 420 * receivers;
+      } else if (e.code === AGT_XYZ.HERALD) {
+        const bestGrave = Math.max(0, ...view.grave[me].map(c => { const d = cdOf(data, c); return isMonsterCd(d) ? d.atk : 0; }));
+        if (bestGrave >= 2400) bonus = 1250; // a Hyperion-class recycle outbids the dead-effect Phoenix body
+        else if (bestGrave >= 1500) bonus = 620;
+        else if (bestGrave > 0) bonus = 450;
+      }
+    }
     if (e.loc === LOC.EXTRA && (cd.type & CT.XYZ)) {
       const rank = cd.level & 0xff;
       // Rank-up procedures (Armored Xyz line): the base Xyz and ALL its
@@ -3453,6 +3539,16 @@ function pickSpsummon(prompt, view, data, mem) {
         .sort((a, b) => boardValue(a, data) - boardValue(b, data))[0];
       if (e.code === NC.FORTRESS || e.code === NC.LANCER) {
         const base = e.code === NC.FORTRESS ? rankUpBase(3, 4) : rankUpBase(5, 6);
+        if (base) { cost = boardValue(base, data) - (base.materials || 0) * 120; matsOut = (base.materials || 0) + 1; }
+      } else if (e.code === CYB_XYZ.INFINITY && deckIdOfList(view.myDeck, data) === 'cyber') {
+        // cpu-classic2: Infinity's alternate procedure stacks it on a
+        // face-up Nova, carrying Nova and all its materials over. The
+        // generic path below looks for face-up Level-6 monsters, finds
+        // none (Nova is Rank 5), and leaves cost=null — every one of
+        // the 24 diag offers died there. Price it like the other
+        // rank-ups: only the base's presence above its materials.
+        const base = faceUpMons(view, me).filter(c => c.code === CYB_XYZ.NOVA)
+          .sort((a, b) => boardValue(a, data) - boardValue(b, data))[0];
         if (base) { cost = boardValue(base, data) - (base.materials || 0) * 120; matsOut = (base.materials || 0) + 1; }
       } else {
         // Material count comes from the printed text (full-width digits
@@ -4088,6 +4184,26 @@ function pickSummon(prompt, view, data) {
       if (STARTER_BONUS[e.code]) gain += STARTER_BONUS[e.code];
       if (cd.type & CT.TUNER) gain += 250;
       gain += synchroPartnerBonus(cd, view, data);
+      // cpu-classic2 (Six Samurai): the Shi En bridge pieces lose
+      // every Normal Summon on printed ATK — Kageki is a 200 body,
+      // Kagemusha a 400 — so the pair rarely stood together (diag:
+      // Kagemusha in hand in 30/60 games, face-up in 15, the Shi En
+      // state in 10). Kageki's summon special-summons a Six Samurai
+      // from the hand: with Kagemusha there it completes Shi En this
+      // turn; with any other Six Samurai it is a free second body.
+      // Kagemusha summoned onto a standing Lv3 Six Samurai completes
+      // Shi En at once; with Kageki in hand it completes next turn.
+      if (deckIdOfList(view.myDeck, data) === 'sixsam') {
+        const hand = view.hand[me];
+        if (e.code === SS6.KAGEKI) {
+          if (hand.some(x => x.code === SS6.KAGEMUSHA)) gain += 1900;
+          else if (hand.some(x => x.code !== e.code && isMonsterCd(cdOf(data, x.code)) && hasSetC(cdOf(data, x.code), SETC.SS))) gain += 1700;
+        } else if (e.code === SS6.KAGEMUSHA) {
+          const lv3Up = faceUpMons(view, me).some(c => hasSetC(cdOf(data, c.code), SETC.SS) && levelOf(c, data) === 3);
+          if (lv3Up) gain += 1100;
+          else if (hand.some(x => x.code === SS6.KAGEKI)) gain += 500;
+        }
+      }
       if (gain > 150 && (!best || gain > best.gain)) best = { kind, idx: i, gain };
     } else { // mset — a Tribute Set of a level 5+ monster costs the same
       // tributes as a Tribute Summon (the core asks SELECT_TRIBUTE for it);
@@ -5483,6 +5599,32 @@ function selectCardAnswer(prompt, view, data, mem) {
           case GB.SAMNITE: return 1000;
           case GB.ANDAL: return 950;
           default: return 1000;
+        }
+      }
+      // cpu-classic2 (Six Samurai): Smoke Signal / Reinforcement of
+      // the Army fetch the MISSING half of the combo, not the
+      // strongest body. Diagnosis: Signal picked Tsuyuharai 13 times
+      // and Mizuho 9 in the diag sample — Kageki and Kagemusha never,
+      // not even with the other half already in hand, and Mizuho was
+      // re-fetched while already in hand AND on the field. Kageki +
+      // Kagemusha is the Shi En bridge (Kageki's summon pulls the
+      // other from hand); Mizuho + Shinai is the pair that special
+      // summons itself and pops a card; Kizan is the standing power
+      // pick. Duplicates already in hand drop to the bottom.
+      if ((ctxCode === 54031490 || ctxCode === 32807846) &&
+          deckIdOfList(view.myDeck, data) === 'sixsam' && d && hasSetC(d, SETC.SS)) {
+        const handCodes = view.hand[me].map(y => y.code);
+        const fuCodes = faceUpMons(view, me).map(c => c.code);
+        const have = (c) => handCodes.includes(c) || fuCodes.includes(c);
+        const lv3SSUp = faceUpMons(view, me).some(c => hasSetC(cdOf(data, c.code), SETC.SS) && levelOf(c, data) === 3);
+        switch (e.code) {
+          case SS6.KAGEKI: return have(SS6.KAGEMUSHA) ? 2600 : 1100;
+          case SS6.KAGEMUSHA: return (have(SS6.KAGEKI) || lv3SSUp) ? 2600 : 1000;
+          case SS6.MIZUHO: return have(SS6.SHINAI) ? 2100 : 750;
+          case SS6.SHINAI: return have(SS6.MIZUHO) ? 2100 : 750;
+          case SS6.KIZAN: return 1800;
+          case SS6.TSUYUHARAI: return (handCodes.includes(SS6.KIZAN) || handCodes.includes(SS6.GRANDMASTER)) ? 1000 : 550;
+          default: return handCodes.includes(e.code) ? 500 : 900 + (d.atk || 0) * 0.2;
         }
       }
       if (ctxCode === CC.FOOLISH_GOODS) {
