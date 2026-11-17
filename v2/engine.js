@@ -1792,6 +1792,9 @@ const GB = {
 const GB_TAG_SOURCES = new Set([GB.BESTIARI, GB.LAQUARI, GB.DARIUS, GB.EQUITE, GB.MURMILLO,
   GB.RETIARI, GB.SAMNITE, GB.SECTLOR, GB.AUGUSTUS, GB.SLAVE_TIGER, GB.GYZARUS, GB.NEROKIUS]);
 const INZ_XYZ = { EXA_BEETLE: 44505297, EXA_STAG: 26211048, EMERAL: 581014, ROACH: 37926346 };
+// cpu-classic-inzektor-offer: Inzektor main-deck monsters, for the
+// offer-frequency round (Damsel NS, Grulf/Hornet/Grioll activation cases).
+const INZ = { DAMSEL: 68184115, HORNET: 69207766, CENTIPEDE: 21790410, GIGAMANTIS: 94573223, WEEVIL: 21977828, GRULF: 2461031, ARMAI: 95395761, HOPPER: 52601736, GRIOLL: 65844845 };
 // ------------------------------------------------------------ cpu-classic2 (2026-11-17)
 // Theme profiles for the next classic decks (diagnosis in
 // cpu-classic2-1117). Six Samurai: the Shi En synchro conversion was
@@ -3546,6 +3549,55 @@ function activationScore(e, view, data, prompt) {
       return oppFU.some(c => atkOf(c, data) >= 2000) ? 1000 : 0;
     case CC.MEDUSA_WORM: // flip itself face-down to re-arm the flip destruction
       return (e.loc === LOC.MZONE && oppMaxPower(view, data) > 700) ? 650 : 0;
+    case INZ.HORNET: {
+      // cpu-classic-inzektor-offer: Hornet's (1) and pop are both priced
+      // through the generic destroy branch (fxKinds reads the (3)
+      // destroy verb for the whole card), gated on the opponent's best
+      // monster — the (1) fired 31% of offers, the pop 19%. The pop
+      // (SZONE) is the engine trigger, not just removal: a Hornet equip
+      // on the field is always attached to Damsel or Centipede (only
+      // their (1)s attach Hornet), so popping always fires that host's
+      // (2) (SS from deck / search) on top of the destruction. The (1)
+      // (MZONE) equips to Hornet itself; its value is the Gigamantis
+      // line (2400-ATK host, revive when the equip is sent).
+      if (deckIdOfList(view.myDeck, data) !== 'inzektor') return genericActivation(e, view, data);
+      if (e.loc === LOC.SZONE) {
+        const oppCards = monList(view, opp).length + view.zones[opp].szone.filter(c => c).length;
+        return oppCards > 0 ? 900 : genericActivation(e, view, data);
+      }
+      if (view.hand[me].some(x => x.code === INZ.GIGAMANTIS) || view.grave[me].includes(INZ.GIGAMANTIS)) return 800;
+      return genericActivation(e, view, data);
+    }
+    case INZ.GRULF: {
+      // cpu-classic-inzektor-offer: Grulf (1) scored 0 in 379/379
+      // offers and the level-raise 0 in 479/479 — fxKinds has no equip
+      // verb and Grulf's text matches no other priced verb, so the Lv5
+      // path to Exa-Stag was dead (Stag offered 4x in 480 games).
+      // (1) equips to Grulf itself (loc MZONE); the level-raise is the
+      // equipped Grulf in the Spell/Trap zone (loc SZONE).
+      if (deckIdOfList(view.myDeck, data) !== 'inzektor') return genericActivation(e, view, data);
+      if (e.loc === LOC.MZONE) {
+        // +3-level equips (Hornet/Armai/Damsel/Centipede) make Grulf
+        // Lv5 — half the Stag pair. Gigamantis gives ATK, not levels.
+        const lvlEquip = [INZ.HORNET, INZ.ARMAI, INZ.DAMSEL, INZ.CENTIPEDE].some(c =>
+          view.hand[me].some(x => x.code === c) || view.grave[me].includes(c));
+        return lvlEquip ? 850 : 0;
+      }
+      // Level-raise: worth it when it completes the Lv5 pair.
+      const lv5Up = faceUpMons(view, me).some(c => { const d = cdOf(data, c.code); return d && hasSetC(d, SETC.INZ) && levelOf(c, data) === 5; });
+      const lv3Up = faceUpMons(view, me).some(c => { const d = cdOf(data, c.code); return d && hasSetC(d, SETC.INZ) && levelOf(c, data) === 3; });
+      return (lv5Up && lv3Up) ? 900 : 0;
+    }
+    case INZ.GRIOLL: {
+      // cpu-classic-inzektor-offer: the grave equip scored 0 in 97/97
+      // offers — the generic banish branch read its cost (banish an
+      // Insect from our grave) as removal and gated it on the
+      // opponent's board. A free equip from the grave is a (2)-trigger
+      // source for the host it lands on.
+      if (deckIdOfList(view.myDeck, data) !== 'inzektor') return genericActivation(e, view, data);
+      if (e.loc !== LOC.GRAVE) return genericActivation(e, view, data);
+      return faceUpMons(view, me).some(c => hasSetC(cdOf(data, c.code), SETC.INZ)) ? 700 : 0;
+    }
     default: {
       const nv = newThemeActivation(e, view, data, prompt,
         { myMons, oppMons, oppFU, handCodes, rem, fieldUp });
@@ -3646,7 +3698,10 @@ function pickSpsummon(prompt, view, data, mem) {
         const prey = Math.max(0, ...faceUpMons(view, view.opp).map(c => boardValue(c, data)));
         bonus = 1200 + prey * 0.8;
       }
-      else if (e.code === INZ_XYZ.EMERAL) bonus = 500;
+      // cpu-classic-inzektor-offer: Emeral lost 22/22 shared offers to
+      // Roach (Emeral 1800+500 vs Roach 1900+450 — Roach wins by 50).
+      // Emeral's leave-the-field recycle+draw is the unpriced value.
+      else if (e.code === INZ_XYZ.EMERAL) bonus = 600;
       else if (e.code === INZ_XYZ.ROACH) bonus = 450;
     }
     // cpu-classic1: Gladiator Beast contact fusions all recycle their
@@ -4405,8 +4460,14 @@ function pickSummon(prompt, view, data) {
       for (let k = 0; k < tributes; k++) cost += boardValue(weakestField[k], data);
       // setting instead when the wall clearly survives and the attacker wouldn't
       // (tuners and starters are exempt: their effect outranks the wall line)
+      // cpu-classic-inzektor-offer: Damsel is exempt too — she is the SS
+      // engine, and a set Damsel contributes nothing (she cannot
+      // activate (1), and the bot almost never flip-summons a 1000-ATK
+      // body to attack). Diagnosis: Damsel was Normal Summoned face-up
+      // 0 times in 480 games (set 250, declined 295).
       if (oppPow > cd.atk && cd.def >= oppPow && prompt.mset.some(m => m.code === e.code) &&
-          !STARTER_BONUS[e.code] && !(cd.type & CT.TUNER)) return;
+          !STARTER_BONUS[e.code] && !(cd.type & CT.TUNER) &&
+          !(deckIdOfList(view.myDeck, data) === 'inzektor' && e.code === INZ.DAMSEL)) return;
       // Round 8, item A: under the opponent's Labyrinth Wall Shadow, a
       // sub-1600 body that develops nothing face-up is set, never
       // summoned face-up (see oppShadowUp / shadowFaceUpOk). Measured
@@ -4421,6 +4482,11 @@ function pickSummon(prompt, view, data) {
           { const d = cdOf(data, c.code !== undefined ? c.code : c); return d && (d.type & CT.TRAP) && (d.type & CT.CONTINUOUS); })) gain += 250;
       if (e.code === CC.HEAVY_TANK) gain += 150;
       if (STARTER_BONUS[e.code]) gain += STARTER_BONUS[e.code];
+      // cpu-classic-inzektor-offer: a face-up Damsel is half an Xyz
+      // pair and arms the (1)->(2) chain; the set gain (1440, +250
+      // safe wall = 1690) always beat her 1000-ATK summon gain. +900
+      // puts the face-up summon ahead of the set.
+      if (deckIdOfList(view.myDeck, data) === 'inzektor' && e.code === INZ.DAMSEL) gain += 900;
       if (cd.type & CT.TUNER) gain += 250;
       gain += synchroPartnerBonus(cd, view, data);
       // cpu-classic2 (Six Samurai): the Shi En bridge pieces lose
@@ -5864,6 +5930,31 @@ function selectCardAnswer(prompt, view, data, mem) {
           case SS6.KIZAN: return 1800;
           case SS6.TSUYUHARAI: return (handCodes.includes(SS6.KIZAN) || handCodes.includes(SS6.GRANDMASTER)) ? 1000 : 550;
           default: return handCodes.includes(e.code) ? 500 : 900 + (d.atk || 0) * 0.2;
+        }
+      }
+      // cpu-classic-inzektor-offer: Grulf (1) and Hornet (1) equip an
+      // Inzektor from hand/grave to the activating monster — the pick
+      // must be a level-boosting equip, not the highest-ATK body.
+      // Gated on the candidates being OUR hand/grave cards, so the
+      // same ctxCode on a field-target pick (Hornet pop, Grulf
+      // level-raise) keeps the generic ranking.
+      if (ctxCode === INZ.GRULF && deckIdOfList(view.myDeck, data) === 'inzektor' &&
+          entries.every(y => y.e.con === me && (y.e.loc === LOC.HAND || y.e.loc === LOC.GRAVE))) {
+        switch (e.code) {
+          case INZ.HORNET: return 2600; // +3 levels AND the pop outlet
+          case INZ.ARMAI: return 2500; // +3 levels
+          case INZ.DAMSEL: return 2400; // +3 levels
+          case INZ.CENTIPEDE: return 2300; // +3 levels
+          case INZ.GIGAMANTIS: return 1200; // 2400 ATK, no levels
+          default: return 600;
+        }
+      }
+      if (ctxCode === INZ.HORNET && deckIdOfList(view.myDeck, data) === 'inzektor' &&
+          entries.every(y => y.e.con === me && (y.e.loc === LOC.HAND || y.e.loc === LOC.GRAVE))) {
+        switch (e.code) {
+          case INZ.GIGAMANTIS: return 2600; // 2400-ATK host + revive when sent
+          case INZ.HORNET: return 2200; // the pop outlet
+          default: return 600;
         }
       }
       if (ctxCode === CC.FOOLISH_GOODS) {
