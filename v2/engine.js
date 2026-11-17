@@ -3598,6 +3598,23 @@ function activationScore(e, view, data, prompt) {
       if (e.loc !== LOC.GRAVE) return genericActivation(e, view, data);
       return faceUpMons(view, me).some(c => hasSetC(cdOf(data, c.code), SETC.INZ)) ? 700 : 0;
     }
+    case CYB_XYZ.INFINITY: {
+      // cyber-hold-1118: (2) attach — the generic activation scores it
+      // 0 (fxKinds has no attach verb: the text only says "X素材と
+      // する"), so it was offered but never fired in the diagnosis
+      // (0 idle activations in 120 games), while Nova's detach-revive
+      // fired 23 times. Attach the opponent's biggest attack-position
+      // monster: it leaves the field entirely (no grave trigger, no
+      // destruction trigger) and becomes Infinity's material (+200
+      // ATK, and fuel for the (3) negate). Only worth the once-per-
+      // turn against a body Infinity cannot comfortably run over
+      // (board value 2400+ — Sphinx, Luce, the Gate Guardian forms);
+      // smaller bodies are better attacked than attached.
+      if (deckIdOfList(view.myDeck, data) !== 'cyber') return genericActivation(e, view, data);
+      const tgt = oppFU.filter(c => c.atkPos)
+        .slice().sort((a, b) => boardValue(b, data) - boardValue(a, data))[0];
+      return (tgt && boardValue(tgt, data) >= 2400) ? 1200 : 0;
+    }
     default: {
       const nv = newThemeActivation(e, view, data, prompt,
         { myMons, oppMons, oppFU, handCodes, rem, fieldUp });
@@ -3728,8 +3745,25 @@ function pickSpsummon(prompt, view, data, mem) {
     // monster as material and whose (3) negates an activation per
     // turn. Price both arrivals; Infinity's rank-up cost is handled
     // in the Xyz branch below.
+    // cyber-hold-1118: the conversion itself is now the question.
+    // Paired diagnosis on tuning seeds (same 480 games, profile vs
+    // generic hold): converting HURTS on a weak opposing board
+    // (weak/far delta -6 on n=40, holdOnly 8 vs profOnly 2 — the two
+    // 2100 bodies run everything over and the conversion halves the
+    // damage clock while the negate/attach has nothing to do), HELPS
+    // against a wall (wall/far +3 on n=68, Nova's detach-revive fired
+    // in 55/68), and is a wash on a clear or face-down board (-1
+    // each). So hold the conversion exactly on a weak board: max
+    // opposing face-up ATK under 2100 with no face-down monster.
+    // With bonus 0 Nova's gain goes negative and the bot attacks
+    // instead; every other board state keeps the classic2 price.
     if (deckIdOfList(view.myDeck, data) === 'cyber') {
-      if (e.code === CYB_XYZ.NOVA) bonus = 1200;
+      if (e.code === CYB_XYZ.NOVA) {
+        const oppFU = faceUpMons(view, view.opp);
+        const oppFD = view.zones[view.opp].mzone.some(c => c && !c.faceUp);
+        const oppMaxAtk = oppFU.length ? Math.max(...oppFU.map(c => c.curAtk || 0)) : 0;
+        bonus = (oppFU.length > 0 && !oppFD && oppMaxAtk < 2100) ? 0 : 1200;
+      }
       else if (e.code === CYB_XYZ.INFINITY) bonus = 1600;
     }
     // cpu-classic2: the Agents' Rank-2 shelf. Daigusto Phoenix is a
@@ -4621,6 +4655,23 @@ function newChainValue(e, view, data, mem, C) {
       if (!topOpp || !isMonsterCd(topCd)) return 0;
       if (chainWar) return 1500;
       return topThreat >= 1800 ? 1500 : 0;
+    }
+    case CYB_XYZ.INFINITY: { // (3) negate: the only chainable Infinity
+      // effect, and it had NO case anywhere — the generic NEW_CODES
+      // tail returns 0 (no search/draw/ss verb), so the negate was
+      // offered 142 times and chosen 0 times in the diagnosis, while
+      // Nova's detach-revive fired 23 times in the same 120 games.
+      // Price it like the other boss negates (Crystalwing/Clearwing):
+      // worth a material against a real threat, held otherwise.
+      // The negate detaches 1 material; the core only offers it while
+      // Infinity holds one, so no material check is needed here.
+      if (!topOpp) return 0;
+      if (chainWar) return 1500;
+      if (topOpp.code === CC.RAIGEKI || topOpp.code === CC.CONCEALING || topOpp.code === CC.DEMON_WIND) return 1500;
+      if (isMonsterCd(topCd) && topThreat >= 1800) return 1500;
+      if (isMonsterCd(topCd) && topThreat >= 1200) return 1350;
+      if (topCd && ((topCd.type & CT.SPELL) || (topCd.type & CT.TRAP))) return topThreat >= 800 ? 1350 : 0;
+      return 0;
     }
     case NC.CLEARWING: { // negates Lv5+ monster effects (and effects targeting them)
       if (!topOpp || !isMonsterCd(topCd)) return 0;
