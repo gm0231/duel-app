@@ -781,6 +781,17 @@ function updateDeckSum() {
 // screens keep the compact rhythm untouched. If even the tight
 // tier overflows (a WebView band shorter than any current
 // phone), the BU-82 scroll cue remains as the floor.
+// BU-112: this MUST be re-run whenever the deck page becomes
+// visible again (finishDeckPick / closeDeckCat / #todeck / the
+// boot and rematch landings all do). The selection paths call it
+// while the page is display:none — 0 heights read as "fits", so
+// the tier never engaged and the sound row stayed cut behind a
+// truthful scroll cue (390x620, GG picked: scrollH 448 against
+// clientH 421, sound row 25px cut; calling it once while visible
+// fits the stack exactly, 444 = 444, and the cue drops). It is
+// deliberately NOT called from dpCueUpdate's MutationObserver:
+// dpTightUpdate always mutates the class when engaging, which
+// would re-trigger the observer into a ping-pong.
 function dpTightUpdate() {
   const dp = $('deckpage'); if (!dp) return;
   const m = dp.querySelector('.dp-main'); if (!m) return;
@@ -911,6 +922,7 @@ function openDeckCat(side) {
 function closeDeckCat() {
   $('deckcat').style.display = 'none';
   $('deckpage').style.display = 'flex';
+  dpTightUpdate(); // BU-112: re-measure now that the page is visible again
 }
 // mid-duel exit to the deck-selection page (field report
 // 2026-11-08): the duel had NO exit of its own — the only buttons
@@ -981,6 +993,7 @@ function finishDeckPick() {
   closeDeckModal();
   $('deckcat').style.display = 'none';
   $('deckpage').style.display = 'flex';
+  dpTightUpdate(); // BU-112: re-measure now that the page is visible again
 }
 function applyDeckModalFilter() {
   if (!deckModalSide) return;
@@ -11434,6 +11447,7 @@ function wireSeg(id, apply) {
   if (todeckLanded) {
     $('start').style.display = 'none';
     $('deckpage').style.display = 'flex';
+    dpTightUpdate(); // BU-112: re-measure now that the page is visible again
   }
   renderSavedDecks();
   if (todeckLanded && SAVED_DECKS[myDeckKey]) syncDeckSelection();
@@ -11458,7 +11472,7 @@ function wireSeg(id, apply) {
     if (!audioOn && bgmEl) { try { bgmEl.pause(); } catch (e) {} }
     if (audioOn) { playClick(); setBgmScene(bgmScene || 'start', true); }
   });
-  $('todeck').addEventListener('click', () => { playClick(); $('start').style.display = 'none'; $('deckpage').style.display = 'flex'; });
+  $('todeck').addEventListener('click', () => { playClick(); $('start').style.display = 'none'; $('deckpage').style.display = 'flex'; dpTightUpdate(); /* BU-112: re-measure now that the page is visible again */ });
   $('deckback').addEventListener('click', () => { playClick(); $('deckpage').style.display = 'none'; $('start').style.display = 'flex'; });
   // deck choice flow: current-choice row -> category page -> modal
   $('deckcat').style.display = 'none';
@@ -11791,6 +11805,7 @@ function wireSeg(id, apply) {
     updateDeckSum();
     $('start').style.display = 'none';
     $('deckpage').style.display = 'flex';
+    dpTightUpdate(); // BU-112: re-measure now that the page is visible again
   }
   // A-06 rematch restore: same settings, straight back in (the VS
   // transition still plays — it is part of starting a duel).
