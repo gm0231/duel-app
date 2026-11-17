@@ -1769,8 +1769,29 @@ for (const c of [612115, 1006081, 1142880, 1546123, 2619149, 3370104, 3659803, 5
   74860293, 77642288, 78349103, 78868776, 78922939, 79229522, 84058253, 84749824, 86445415, 86686671, 90582719,
   90953320, 92373006, 96216229, 96363153, 97268402, 98891840]) NEW_CODES.add(c);
 // Setcodes (data.json `setcodes` values) for the new themes.
-const SETC = { SQ: 220, SQM: 4316, BEAST: 8412, DOGMA: 326, ELF: 464, WF: 426, SIN: 516, AZAMINA: 436 };
+const SETC = { SQ: 220, SQM: 4316, BEAST: 8412, DOGMA: 326, ELF: 464, WF: 426, SIN: 516, AZAMINA: 436, GB: 4121, INZ: 86 };
 function hasSetC(cd, s) { return !!cd && Array.isArray(cd.setcodes) && cd.setcodes.includes(s); }
+// ------------------------------------------------------------ cpu-classic1 (2026-11-17)
+// Theme profiles for the two classic decks the generic policy plays
+// structurally wrong (diagnosis in cpu-classic1-1117): Inzektor's Xyz
+// bosses print ATK 1000 / 800 — their effects ARE the body — so the
+// flat outcome model priced every conversion out of reach (Exa-Beetle
+// offered 14 times in 40 games, chosen 0); Gladiator Beast's Gyzarus
+// lost every fusion pick to the vanilla Essedarii on printed ATK
+// alone (offered 32, chosen 0, Essedarii 32), and the battle planner
+// never bought a tag-out with battle damage against a defense wall.
+const GB = {
+  BESTIARI: 41470137, LAQUARI: 78868776, DARIUS: 25924653, EQUITE: 57731460,
+  MURMILLO: 5975022, RETIARI: 612115, SAMNITE: 2619149, ANDAL: 90582719,
+  SLAVE_TIGER: 92373006, SECTLOR: 77642288, AUGUSTUS: 7573135,
+  GYZARUS: 48156348, HERAKLINOS: 27346636, ESSEDARII: 73285669, NEROKIUS: 29357956,
+};
+// Asking cards whose deck selection is a Special Summon of a GB from
+// the deck: every main-deck GB (its own tag-out), Slave Tiger (2), and
+// the two fusions with a tag-out (Gyzarus / Nerokius (2)).
+const GB_TAG_SOURCES = new Set([GB.BESTIARI, GB.LAQUARI, GB.DARIUS, GB.EQUITE, GB.MURMILLO,
+  GB.RETIARI, GB.SAMNITE, GB.SECTLOR, GB.AUGUSTUS, GB.SLAVE_TIGER, GB.GYZARUS, GB.NEROKIUS]);
+const INZ_XYZ = { EXA_BEETLE: 44505297, EXA_STAG: 26211048, EMERAL: 581014, ROACH: 37926346 };
 // White Forest spells/traps whose graveyard effect re-sets themselves:
 // sending one to the graveyard as a cost is close to free.
 const WF_RESET = new Set([NC.WF_SIN, NC.WF_TALE, NC.WF_NOENTER, NC.WF_WOE]);
@@ -2237,6 +2258,47 @@ function attackPlans(view, data, attackers, directSeqs, mem) {
     for (const t of targets) {
       const s = attackScore(view, data, at.atk, t, myValue, mem);
       if (s > -Infinity) plans.push({ seq: at.seq, atk: at.atk, targetSeq: t.seq, score: s });
+    }
+  }
+  // cpu-classic1 (Gladiator Beast): a GB that battles and SURVIVES
+  // tags out at the end of the Battle Phase into a fresh GB plus its
+  // tag-in effect, so a survivable battle is worth buying even when
+  // it removes nothing. A battle against a defense-position target
+  // can never destroy the attacker by battle — the generic scorer
+  // prices those at -Infinity (the bounce / the unknown wall), which
+  // is exactly the trade this deck makes on purpose: battle damage
+  // for a tag-out. Add those plans for GB attackers, priced as the
+  // tag-out's value minus the damage actually taken (a set monster's
+  // DEF is the flat 1400 the lethal planner assumes, or the publicly
+  // known identity's real DEF), and a small tag premium on the
+  // survivable plans that already exist (kills and directs — never
+  // an attack-position trade, where the GB dies with its target).
+  if (deckIdOfList(view.myDeck, data) === 'gladiator') {
+    const TAG = 400;
+    const have = new Set(plans.map(p => p.seq + ':' + p.targetSeq));
+    for (const at of attackers) {
+      const cell = view.zones[view.me].mzone[at.seq];
+      if (!cell || !cell.faceUp || !hasSetC(cdOf(data, cell.code), SETC.GB)) continue;
+      for (const p of plans) {
+        if (p.seq !== at.seq) continue;
+        const t = p.targetSeq >= 0 ? view.zones[view.opp].mzone[p.targetSeq] : null;
+        if (t && t.faceUp && t.atkPos && at.atk === battlePower(t, data)) continue; // trade: no survivor, no tag-out
+        p.score += 120;
+      }
+      for (const t of targets) {
+        if (have.has(at.seq + ':' + t.seq)) continue;
+        let dmg = null;
+        if (!t.faceUp) {
+          const ks = mem && mem.knownSet && mem.knownSet[t.seq];
+          const knownDef = ks && ks.code ? (cdOf(data, ks.code) || {}).def : null;
+          dmg = Math.max(0, (knownDef != null ? knownDef : 1400) - at.atk);
+        } else if (!t.atkPos) {
+          const power = battlePower(t, data);
+          if (at.atk > power) continue; // a kill: the generic plan already exists
+          dmg = power - at.atk;
+        }
+        if (dmg != null && dmg <= 1300) plans.push({ seq: at.seq, atk: at.atk, targetSeq: t.seq, score: TAG - dmg * 0.12 });
+      }
     }
   }
   return plans;
@@ -3348,6 +3410,39 @@ function pickSpsummon(prompt, view, data, mem) {
       const minervaLeft = view.extra[me].some(x => x.code === CC.MINERVA);
       if (hasNormalTrap && !minervaLeft) bonus = 1050;
     }
+    // cpu-classic1: Inzektor's Xyz bosses print ATK 1000 (Exa-Beetle)
+    // and 800 (Exa-Stag) — the printed body is a shell; the effects
+    // are the body (Beetle equips a grave monster on summon for half
+    // its stats and detaches to send one card from EACH field to the
+    // grave; Stag detaches to steal the opponent's monster as an
+    // equip). The flat table priced both at the 200 default, so every
+    // offer was declined (diagnosis: Beetle offered 14 / chosen 0 in
+    // 40 games, Stag 3 / 0). Price the effects: Beetle flat (the grave
+    // equip plus a two-card send), Stag scaled by the monster it
+    // would steal, Emeral / Roach at their utility.
+    if (deckIdOfList(view.myDeck, data) === 'inzektor') {
+      if (e.code === INZ_XYZ.EXA_BEETLE) bonus = 1900;
+      else if (e.code === INZ_XYZ.EXA_STAG) {
+        const prey = Math.max(0, ...faceUpMons(view, view.opp).map(c => boardValue(c, data)));
+        bonus = 1200 + prey * 0.8;
+      }
+      else if (e.code === INZ_XYZ.EMERAL) bonus = 500;
+      else if (e.code === INZ_XYZ.ROACH) bonus = 450;
+    }
+    // cpu-classic1: Gladiator Beast contact fusions all recycle their
+    // materials to the deck, so the flat 600 cost is roughly honest —
+    // what the table cannot see is the arrivals. Gyzarus destroys up
+    // to two cards on summon and tags out into two GBs; Heraklinos is
+    // a 3000 body that negates Spell/Trap activations for a discard;
+    // Nerokius cannot be destroyed by battle and tags out into two.
+    // The vanilla Essedarii (2500, no effects) outscored Gyzarus on
+    // printed ATK alone and took all 32 shared offers in the
+    // diagnosis. Price the arrivals so the bosses win their offers.
+    if (deckIdOfList(view.myDeck, data) === 'gladiator') {
+      if (e.code === GB.GYZARUS) bonus = 1200;
+      else if (e.code === GB.HERAKLINOS) bonus = 1000;
+      else if (e.code === GB.NEROKIUS) bonus = 900;
+    }
     if (e.loc === LOC.EXTRA && (cd.type & CT.XYZ)) {
       const rank = cd.level & 0xff;
       // Rank-up procedures (Armored Xyz line): the base Xyz and ALL its
@@ -3371,6 +3466,13 @@ function pickSpsummon(prompt, view, data, mem) {
           .filter(c => levelOf(c, data) === rank).sort((a, b) => boardValue(a, data) - boardValue(b, data));
         if (mats.length >= need) {
           cost = mats.slice(0, need).reduce((s, c) => s + boardValue(c, data), 0) * 0.78;
+          // cpu-classic1 (Inzektor): the materials are not spent the
+          // way other decks spend them — the detached materials and
+          // the hosts' equips all land in the graveyard, where this
+          // deck re-uses them (the equip (1)s equip from the grave,
+          // Gigamantis (3) revives off an equip's grave trip). Charge
+          // the conversion at a further 0.8 to price that recycling.
+          if (deckIdOfList(view.myDeck, data) === 'inzektor') cost *= 0.8;
           matsOut = need;
         }
       }
@@ -5349,6 +5451,40 @@ function selectCardAnswer(prompt, view, data, mem) {
       (monList(view, me).some(c => c.code === code) ? 1 : 0);
     const score = (x) => {
       const e = x.e, d = cdOf(data, e.code);
+      // cpu-classic1 (Gladiator Beast tag-in): when the asking card
+      // is a GB that just tagged out (or Slave Tiger converting one,
+      // or a fusion tagging out), this deck pick IS the tag-in —
+      // price what the incoming GB does on arrival, not its hand
+      // value. Gated to all-monster candidate lists: a search that
+      // can also take Spells/Traps (Samnite (1) reaching for the
+      // Chariot) keeps the generic ranking.
+      if (GB_TAG_SOURCES.has(ctxCode) && deckIdOfList(view.myDeck, data) === 'gladiator' &&
+          d && hasSetC(d, SETC.GB) && entries.every(y => isMonsterCd(cdOf(data, y.e.code)))) {
+        switch (e.code) {
+          case GB.MURMILLO: { // pops a face-up monster on arrival
+            const prey = Math.max(0, ...faceUpMons(view, opp).map(c => boardValue(c, data)));
+            return prey > 0 ? 2400 + prey * 0.3 : 700;
+          }
+          case GB.BESTIARI: { // pops a Spell/Trap on arrival; with a
+            // second GB standing it is also next Main Phase's Gyzarus
+            const st = view.zones[opp].szone.some(c => c) || !!view.zones[opp].szone[5];
+            const partner = faceUpMons(view, me).some(c => hasSetC(cdOf(data, c.code), SETC.GB));
+            return (st ? 2300 : 1200) + (partner ? 500 : 0);
+          }
+          case GB.DARIUS: // revives a GB from our grave on arrival
+            return view.grave[me].some(c => hasSetC(cdOf(data, c), SETC.GB)) ? 2300 : 800;
+          case GB.AUGUSTUS: // special summons a GB from hand on arrival
+            return view.hand[me].some(c => hasSetC(cdOf(data, c.code), SETC.GB)) ? 1850 : 650;
+          case GB.EQUITE: // salvages a GB card from our grave on arrival
+            return view.grave[me].some(c => hasSetC(cdOf(data, c), SETC.GB)) ? 1750 : 750;
+          case GB.LAQUARI: return 1600; // 2100 body when summoned by a GB effect
+          case GB.SECTLOR: return 1350; // next turn it battles and tags out into two
+          case GB.RETIARI: return view.grave[opp].length ? 1150 : 600; // banishes from their grave
+          case GB.SAMNITE: return 1000;
+          case GB.ANDAL: return 950;
+          default: return 1000;
+        }
+      }
       if (ctxCode === CC.FOOLISH_GOODS) {
         // Stage E2b: once Exchange is stocked, Rebellion outranks the
         // self-resetting traps as the send (see activationScore).
