@@ -3796,7 +3796,12 @@ function pickSpsummon(prompt, view, data, mem) {
     // face-up monster we control dies to it), so she only outbids
     // Michael when the wipe is actually worth more than the banish.
     if (deckIdOfList(view.myDeck, data) === 'lightsworn') {
-      if (e.code === LS.MINERVA) bonus = 1000;
+      // minerva-1118: 1000 -> 900. At 1000 Minerva beat Stardust by 100
+      // on equal cost (2000+150+1000 vs 2500+150+400) and crowded her out
+      // (Stardust 0.263 -> 0.067/game in classic3 adoption). At 900 the
+      // two tie on equal cost (3050 = 3050), so Stardust wins when her
+      // materials are cheaper and the negate line comes back.
+      if (e.code === LS.MINERVA) bonus = 900;
       else if (e.code === LS.BLACK_ROSE) {
         const oppClear = faceUpMons(view, view.opp).reduce((s, c) => s + boardValue(c, data), 0)
           + view.zones[view.opp].szone.filter(c => c && c.faceUp).length * 500
