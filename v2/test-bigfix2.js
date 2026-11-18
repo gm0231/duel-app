@@ -74,8 +74,8 @@ async function boot() {
     'BF2-3b (BU-89): the separator has its own style');
   ok(/classList\.contains\('apflash'\) && \(deferrals \|\| 0\) < 6/.test(clientSrc),
     'BF2-3c (BU-89): fxNoticeShow holds the notice while the autopass flash owns the header');
-  ok(/colRight = Math\.max\(colRight, hcr\.left - 6\)/.test(clientSrc),
-    'BF2-3d (BU-89): with the chip up, the notice column extends over the chip seat to the hand chip');
+  ok(!/colRight = Math\.max\(colRight, hcr\.left - 6\)/.test(clientSrc),
+    'BF2-3d (BU-89): notice-center-1118: the notice-column widening is retired with the header seat — the centre band takes its width from the screen (max-width 86%), never from the logline column');
 
   // functional: a notice fired during apflash does NOT appear
   // until the flash clears (jsdom: rects are 0, but the scene /

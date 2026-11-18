@@ -95,19 +95,21 @@ ok(clientSrc.includes("cause.label += sfx; cause.tray += '<span class=\"reask-n\
   ok(iChain > 0 && iCount > iChain && iCount < iNext, 'C99e: the count happens inside uiChain (shown questions only — auto-passed zero-option prompts never reach it)');
 }
 ok(clientSrc.includes('lastChainQ = null; // fix9396c-1115 (BU-99): the re-ask ordinal restarts with the duel'), 'C99f: the ordinal restarts with the duel');
-// BU-94: the notice's seat below row 2
-ok(clientSrc.includes('function fxRow2Bottom()'), 'C94a: the row-2 edge is a shared helper');
-ok(clientSrc.includes('const seatTop = fxBelowRow2Seat();'), 'C94b: the notice seats below row 2 (fxBelowRow2Seat = fxRow2Bottom + 2 in normal duels; BU-115: watch seat below the watchbar)');
-ok(clientSrc.includes("d.style.top = Math.max(0, Math.round(seatTop - lr.top)) + 'px';"), 'C94c: the notice top is set from the row-2 seat');
+// BU-94: the notice's seat below row 2 — retired by
+// notice-center-1118 (USER DECISION 2026-11-18): the notice is
+// a centre band again; the row-2 seat now belongs to the tag.
+ok(clientSrc.includes('function fxRow2Bottom()'), 'C94a: the row-2 edge helper survives (the tag seat)');
+ok(!clientSrc.includes('const seatTop = fxBelowRow2Seat();'), 'C94b: notice-center-1118: the notice no longer seats below row 2');
+ok(!clientSrc.includes("d.style.top = Math.max(0, Math.round(seatTop - lr.top)) + 'px';"), 'C94c: notice-center-1118: the notice top is never set from a seat (CSS top:33%)');
 {
   const tagFn = clientSrc.slice(clientSrc.indexOf('function fxOppTagPosition()'), clientSrc.indexOf('function fxOppTagPosition()') + 2000);
-  ok(tagFn.includes('fxBelowRow2Seat()'), 'C94d: the tag uses the same seat helper as the notice (one seat, no drift; BU-115: the helper is mode-aware)');
+  ok(tagFn.includes('fxBelowRow2Seat()'), 'C94d: the tag still uses the seat helper (BU-115: the helper is mode-aware for the watch bar)');
 }
 ok(!clientSrc.includes('(hr2.bottom - fxTagGrowPx) - lr.top - 2 - d.offsetHeight'), 'C94e: the old bottom-anchor formula is gone (no notice over the logline)');
-ok(!clientSrc.includes("nt.style.fontSize = fs + 'px';"), 'C94f: the notice no longer steps its type down mid-dwell');
-ok(clientSrc.includes('logMo = new MutationObserver(() => anchorNotice());'), 'C94j: the notice re-anchors when the logline text changes (no 2-frame lag)');
-ok(clientSrc.includes('logMo.observe(lg, { childList: true, characterData: true, subtree: true });'), 'C94k: the observer watches the logline');
-ok(clientSrc.includes('if (logMo) { try { logMo.disconnect(); } catch (e) {} }'), 'C94l: the observer is disconnected when the notice leaves');
+ok(!clientSrc.includes("nt.style.fontSize = fs + 'px';"), 'C94f: the notice type is never stepped down mid-dwell');
+ok(!clientSrc.includes('anchorNotice'), 'C94j: notice-center-1118: the per-frame notice anchor (and its logline observer) is gone with the header seat');
+ok(clientSrc.includes("veil.className = 'fx-notice-veil';"), 'C94k: notice-center-1118: the notice raises its input-lock veil');
+ok(clientSrc.includes('onDone() { finish(); }'), 'C94l: notice-center-1118: the notice leaves through finish() (band + veil removed together)');
 // BU-104: dock word-break rule
 ok(html.includes('#dock .ctx,#dock .causename,#dock .cand .cname,#dock .cand .fxline,#dock .sub,#dock .duelsection{word-break:keep-all;overflow-wrap:anywhere;}'), 'C104a: the dock text rule holds words together (keep-all / anywhere)');
 // BU-105: the ordinal is attached before the tray is shown, so both stages carry it
@@ -220,16 +222,16 @@ const CHAIN_MAIN1 = { prompt: { name: 'SELECT_CHAIN', player: 0, forced: false,
   doc.querySelector('#chain-pass').click();
   await sleep(50);
 
-  // BU-94: a live notice seats below row 2 at full type (jsdom
-  // geometry is 0, so row 2's nominal bottom is 71 and the seat
-  // is 73; the old bottom anchor would have set top 0)
+  // notice-center-1118: a live notice is a centre band — its
+  // seat is pure CSS, so no inline top is ever set; the lock
+  // veil stands with it; the type is never stepped down.
   window.eval("fxNoticeShow('攻撃宣言｜《宵闇のルーチェ》が《合体魔神》を攻撃', '', false)");
   const notice = doc.querySelector('#fxlayer .fx-notice');
   ok(!!notice, 'C94g: the notice element is created');
-  const nTop = notice ? parseFloat(notice.style.top) : -1;
-  ok(nTop >= 73, 'C94h: the notice top is below row 2 (top ' + nTop + 'px, row 2 nominal bottom 71)');
+  ok(notice && notice.style.top === '', 'C94h: the notice carries no inline top (the centre seat is the CSS rule: left 50%, top 33%)');
+  ok(!!doc.querySelector('#fxlayer .fx-notice-veil'), 'C94h2: the input-lock veil stands with the notice');
   const nt = notice ? notice.querySelector('.nt') : null;
-  ok(nt && !nt.style.fontSize, 'C94i: the notice type is not stepped down (full 12.5px, header absorbs the height)');
+  ok(nt && !nt.style.fontSize, 'C94i: the notice type is not stepped down (full size; the band sizes to the text)');
 
   // obs-3: the split badge on a narrow sheet (live sheet drive)
   window.eval(`__select.open({ name: 'SELECT_CARD', player: 0, cancelable: true, min: 1, max: 1, context: null,

@@ -234,7 +234,7 @@ async function boot() {
   ok(apChip.classList.contains('flash') && !!apName && apName.textContent === '帝王の烈旋',
     'BF14c (BU-85): flashAutoPass puts the full card name on its own line');
   ok(doc.getElementById('header').classList.contains('apflash'),
-    'BF14d (BU-85): flashing still marks the header (the fxNoticeShow deferral and the anchorNotice guard read apflash; the log line itself now takes its own line, see BF14b)');
+    'BF14d (BU-85): flashing still marks the header (the fxNoticeShow deferral reads apflash; the log line itself now takes its own line, see BF14b)');
   window.eval('autoPassFlashUntil = 0'); window.updateAutoPassChip();
   ok(!doc.getElementById('header').classList.contains('apflash'),
     'BF14e (BU-85): the header mark clears when the flash ends');

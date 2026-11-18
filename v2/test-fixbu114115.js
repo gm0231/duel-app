@@ -24,6 +24,14 @@
  * watchbar in watch mode, for both the notice and the name tag.
  * Normal duels are unchanged (watchbar is display:none there).
  *
+ * notice-center-1118 (USER DECISION 2026-11-18): the notice is a
+ * centre band again, so the BU-115 covering is moot for the notice
+ * itself — the band never reaches the watchbar, and its input-lock
+ * veil starts BELOW the header (the watchbar stays clickable).
+ * fxBelowRow2Seat survives as the name tag's seat, watch-aware as
+ * before; the pins below keep the helper's watch behaviour and pin
+ * the notice's new centre form.
+ *
  * Pinned by source + the seat helper's logic in jsdom; the visual
  * proof is the Chromium probe (probe-bu114115.js): BU-114 pre-fix
  * truncated labels in both observed sheets (post-fix 0, no scroll
@@ -69,7 +77,7 @@ ok(pbBackRule && /position:\s*sticky/.test(pbBackRule) && /right:\s*0/.test(pbBa
 
 // ---------- BU-115 source pins ----------
 ok(clientSrc.includes('function fxBelowRow2Seat()'), 'B115a: the below-row-2 seat helper exists');
-ok(clientSrc.includes('const seatTop = fxBelowRow2Seat();'), 'B115b: the notice seats via fxBelowRow2Seat()');
+ok(!clientSrc.includes('const seatTop = fxBelowRow2Seat();'), 'B115b: notice-center-1118: the notice no longer seats via fxBelowRow2Seat() (centre band; the helper is the tag seat now)');
 ok(clientSrc.includes('let tagTopVp = fxBelowRow2Seat();'), 'B115c: the name tag seats via fxBelowRow2Seat()');
 ok(/function fxBelowRow2Seat\(\)[\s\S]{0,600}watchModeOn/.test(clientSrc), 'B115d: the seat accounts for watch mode');
 ok(/function fxBelowRow2Seat\(\)[\s\S]{0,600}watchbar/.test(clientSrc), 'B115e: the seat measures the watchbar');
@@ -124,13 +132,17 @@ const stubRect = (el, r) => {
   ok(seat() === 102, 'B115g: watch-mode seat clears the watchbar (got ' + seat() + ', want 102)');
   ok(w.eval('fxRow2Bottom()') === 71, 'B115h: row-2 bottom itself is unchanged (71)');
 
-  // The injected notice seats below the watchbar (style.top = seat).
+  // notice-center-1118: the notice is a centre band (no inline
+  // top at all), and its lock veil starts at the header's bottom
+  // edge — below the watchbar, which stays clickable.
   stubRect(doc.getElementById('fxlayer') || doc.body, { x: 0, y: 0, w: 390, h: 620 });
   w.eval("fxNoticeShow('相手の《雷魔神－サンガ》が《花と野原の春化精》に攻撃', '攻撃宣言', true)");
   await sleep(100);
   const n = doc.querySelector('#fxlayer .fx-notice');
   ok(!!n, 'B115i: the notice renders in watch mode');
-  if (n) ok(n.style.top === '102px', 'B115j: the notice top sits below the watchbar (got ' + n.style.top + ', want 102px)');
+  if (n) ok(n.style.top === '', 'B115j: the notice carries no inline top (centre seat is CSS; got "' + n.style.top + '")');
+  const vl = doc.querySelector('#fxlayer .fx-notice-veil');
+  ok(!!vl && vl.style.top === '100px', 'B115j2: the lock veil starts at the header bottom edge (100px, below the watchbar 71..100; got ' + (vl && vl.style.top) + ')');
 
   // Non-watch mode: the seat is unchanged even with a watchbar rect present.
   const w2 = await boot('http://localhost/v2/');

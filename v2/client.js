@@ -4764,7 +4764,18 @@ function fxResetFoundation() {
   fxScenes = []; fxBursts = [];
   // layout-fix J3: scenes die WITHOUT onDone here — the notice
   // queue must not inherit a stuck busy flag across duels.
-  try { fxNoticeQ.length = 0; fxNoticeBusy = false; } catch (e) {}
+  // notice-center-1118: the notice's input-lock veil dies here
+  // too (fxResetDuel also wipes the layer right after) — the
+  // lock must never survive a reset.
+  try {
+    fxNoticeQ.length = 0; fxNoticeBusy = false;
+    if (fxNoticeSafety) { clearTimeout(fxNoticeSafety); fxNoticeSafety = null; }
+    const nl = fxLayerEl();
+    if (nl) {
+      const no = nl.querySelector('.fx-notice'); if (no) no.remove();
+      const nv = nl.querySelector('.fx-notice-veil'); if (nv) nv.remove();
+    }
+  } catch (e) {}
   fxStopUntilWall = 0; fxTimeMs = 0; fxLastWall = 0; fxBeatTail = 0; // beat book restarts with the FX clock
   fxAceSceneRef = null; fxFinisherSceneRef = null; fxAceRecent = null; fxKeycardSceneRef = null; // stage 3 scene refs (hosts are wiped by fxResetDuel)
   fxChainWordScene = null; fxBannerScene = null; // V4 scene refs
@@ -5986,9 +5997,10 @@ function fxAtkBanner() {
 // only, on the shared kill-timer discipline of the other tags.
 let fxOppTagEl = null, fxOppTagTimer = null, fxTagRaf = 0;
 // fix9396b-1115 (BU-94 remainder): the extra header height (px)
-// the opponent-name tag has currently added on top of the
-// notice's own growth. The notice's seat is fxRow2Bottom-based
-// and ignores this; the tag's own loop recomputes it per frame.
+// the opponent-name tag has currently added. The tag's own loop
+// recomputes it per frame. (notice-center-1118: the notice no
+// longer grows the header — it sits at screen centre — so this
+// ledger is the tag's alone now.)
 let fxTagGrowPx = 0;
 function fxOppNameTag(text, detail) {
   fxRecord('oppnametag', detail);
@@ -6009,11 +6021,11 @@ function fxOppNameTag(text, detail) {
   // readout (measured 1,152 px2), the latest-event line
   // (4,411 px2) and the opponent-hand chip (839 px2), and a
   // move notice covered it in turn (4,416 px2). It now gets its
-  // own band BELOW row 2 (below a live notice when one is up),
-  // positioned per frame while it lives: the header grows to
-  // hold it, exactly like the notice's growth, and the board
-  // shifts down for the tag's dwell the same way it already
-  // does for a long notice.
+  // own band BELOW row 2, positioned per frame while it lives:
+  // the header grows to hold it, and the board shifts down
+  // for the tag's dwell. (notice-center-1118: it no longer
+  // stacks below a live notice — the notice sits at screen
+  // centre, outside the header entirely.)
   const step = () => {
     if (!fxOppTagEl || fxOppTagEl !== d) return;
     fxOppTagPosition();
@@ -6040,16 +6052,15 @@ function fxOppNameTag(text, detail) {
 }
 // fix9396b-1115 (BU-94 remainder): one positioning pass for the
 // opponent-name tag. Its band starts below the lowest row-2
-// content (turn readout / event line / chips) — or below a live
-// move notice when one is up, so the two announcements stack
-// instead of covering each other. The header grows by exactly
-// the deficit (sticky, like the notice's growth); the loop runs
-// per frame, so a notice arriving or leaving mid-dwell, or the
-// event line wrapping to a third row, re-stacks it at once.
+// content (turn readout / event line / chips). The header grows
+// by exactly the deficit (sticky); the loop runs per frame, so
+// the event line wrapping to a third row re-seats it at once.
+// (notice-center-1118: the tag used to stack below a live move
+// notice as well; the notice is at screen centre now, outside
+// the header, so the two announcements can never meet.)
 // fix9396c-1115 (BU-94): the lowest row-2 content edge (turn
-// readout / event line / chips) — the seat every floating band
-// (notice, name tag) stacks BELOW. Shared by fxOppTagPosition
-// and the notice anchor so the two can never drift apart.
+// readout / event line / chips) — the seat the name tag's band
+// stacks BELOW.
 function fxRow2Bottom() {
   const hb = document.getElementById('header'); if (!hb) return 0;
   const hr = hb.getBoundingClientRect();
@@ -6062,13 +6073,16 @@ function fxRow2Bottom() {
   }
   return bottom;
 }
-// BU-115 (2026-11-18): the seat for the band below row 2 (event
-// notices, name tag). In watch mode the watchbar is the header's
-// bottom row, so a band seated below row 2 covers the watchbar's
-// label and the 観戦をやめる button (measured in run 17). The seat
-// moves below the watchbar instead; the header growth below
-// absorbs the extra height exactly as in normal duels. In normal
-// duels the watchbar is display:none, so the seat is unchanged.
+// BU-115 (2026-11-18): the seat for the name tag's band below
+// row 2. In watch mode the watchbar is the header's bottom row,
+// so a band seated below row 2 covers the watchbar's label and
+// the 観戦をやめる button (measured in run 17). The seat moves
+// below the watchbar instead; the header growth below absorbs
+// the extra height exactly as in normal duels. In normal duels
+// the watchbar is display:none, so the seat is unchanged.
+// (notice-center-1118: the event notice used this seat too
+// until the 2026-11-18 user decision moved it to screen centre;
+// the tag is now the seat's only tenant.)
 function fxBelowRow2Seat() {
   let seat = fxRow2Bottom() + 2;
   if (watchModeOn) {
@@ -6084,15 +6098,9 @@ function fxOppTagPosition() {
   const lr = layer.getBoundingClientRect(), hr = hb.getBoundingClientRect();
   if (!lr.width || !hr.height) return;
   // lowest row-2 content edge (only visible elements count)
-  const n = layer.querySelector('.fx-notice');
   let tagTopVp = fxBelowRow2Seat();
-  if (n) {
-    const nr = n.getBoundingClientRect();
-    if (nr.height > 0) tagTopVp = nr.bottom + 2;
-  }
   d.style.top = Math.max(0, Math.round(tagTopVp - lr.top)) + 'px';
-  // grow the header so the tag's band stays inside it (the
-  // notice's growth is untouched — this adds on top of it)
+  // grow the header so the tag's band stays inside it
   const need = Math.round(tagTopVp + 24 - hr.bottom);
   if (need > 0) {
     if (fxNoticeHdrPrevMinH == null) fxNoticeHdrPrevMinH = hb.style.minHeight || '';
@@ -6106,35 +6114,25 @@ function fxOppTagPosition() {
   }
 }
 // fix9396b-1115 (BU-94 remainder): when the tag leaves, take
-// only its own growth back — never below the shared base, and
-// never under a live notice (its per-frame anchor re-grows
-// whatever it still needs). When no notice is up either, the
-// shared base record is released, as the notice's restore does.
+// only its own growth back — never below the recorded base —
+// and release the base record.
+// notice-center-1118: the fix-oldbu-1116 (BU-46) hold that used
+// to keep the growth while a notice was live is gone. It
+// existed because the notice's own header growth absorbed the
+// tag's share, so taking the share back shrank the header
+// below the live notice. The notice sits at screen centre now
+// and never grows the header, so nothing depends on the tag's
+// growth and the share is always taken back at once.
 function fxTagRestoreHeader() {
   const hb = document.getElementById('header');
   const grew = fxTagGrowPx; fxTagGrowPx = 0;
   if (!hb || !grew) return;
   const base = parseFloat(fxNoticeHdrPrevMinH || '0') || 0;
   const cur = parseFloat(hb.style.minHeight || '0') || 0;
-  // fix-oldbu-1116 (BU-46): if a notice is live, do NOT take the
-  // tag's share back. The notice's grow absorbed it (its want was
-  // measured while the tag was up: want = offsetHeight + need),
-  // so cur - grew is less than the notice still needs — the
-  // header shrinks below the notice until the notice's next rAF
-  // anchor re-grows it (measured: 3 dips in 5 duels, up to
-  // 9,072px2, 1-7 sampler ticks; the notice's visibility gate
-  // cannot catch them because at anchor time the grow has
-  // already fixed the containment — the dip lives BETWEEN
-  // anchors). The growth stays until the notice leaves; the
-  // notice's own restore then takes back everything (its base
-  // record is the pre-growth base, and fxTagGrowPx is already 0).
-  // The shared base record is kept while the notice lives, as
-  // the line below already does.
-  if (document.querySelector('#fxlayer .fx-notice')) return;
   const want = Math.max(base, cur - grew);
   if (hb.style.minHeight !== want + 'px') hb.style.minHeight = want ? want + 'px' : (fxNoticeHdrPrevMinH || '');
   try { layoutFit(false); } catch (e) {}
-  if (!document.querySelector('#fxlayer .fx-notice')) { fxNoticeHdrPrevMinH = null; fxNoticeHdrGrew = false; }
+  fxNoticeHdrPrevMinH = null; fxNoticeHdrGrew = false;
 }
 // ---- floating notice (layout redesign; user principle
 // 2026-11-12): a situation line shown LARGE, floating at screen
@@ -6326,52 +6324,17 @@ function fxNoticePump() {
   const n = fxNoticeQ.shift();
   if (n) fxNoticeShow(n.text, n.sub, n.noBeat);
 }
-// BU-94 (fix9396-1115, seat revised fix9396c-1115): the notice
-// must never cover the header's own information. The old seat
-// anchored the notice's bottom to the header bottom, which put
-// it over the logline for the whole dwell (a 2-line notice spans
-// y43-77 over row 2's y47-78). The notice now sits in its own
-// band BELOW row 2 (fxRow2Bottom + 2, name tag stacked under
-// it), and the header grows by exactly the notice's height —
-// the same mechanism the logline's third line already uses
-// (BU-73 — the header grows and layoutFit absorbs it). The
-// growth is restored (and layoutFit re-run) when the notice
-// leaves. A normal 2-line notice now always grows the header
-// by its height; the board shrinks transiently for the dwell,
-// which is the price of the event line staying readable.
-let fxNoticeHdrPrevMinH = null; // the header's minHeight before this notice grew it (null = none recorded yet)
-let fxNoticeHdrGrew = false; // whether this notice grew the header at all
-function fxNoticeGrowHeader(over) {
-  const hb = document.getElementById('header'); if (!hb || !(over > 0)) return;
-  if (fxNoticeHdrPrevMinH == null) fxNoticeHdrPrevMinH = hb.style.minHeight || '';
-  const want = (hb.offsetHeight + over) + 'px';
-  if (hb.style.minHeight !== want) {
-    hb.style.minHeight = want;
-    fxNoticeHdrGrew = true;
-    try { layoutFit(false); } catch (e) {}
-  }
-}
-function fxNoticeRestoreHeader() {
-  if (!fxNoticeHdrGrew) return;
-  const hb = document.getElementById('header');
-  // fix9396b-1115 (BU-94 remainder): when a name tag is still up,
-  // its band owns part of the growth — take back only the notice's
-  // share (base + the tag's current growth) and keep the shared
-  // base record for the tag's own restore. The tag's per-frame
-  // loop re-adds any deficit the next frame, so a 1-frame dip is
-  // the worst case.
-  if (hb) {
-    if (fxOppTagEl) {
-      const base = parseFloat(fxNoticeHdrPrevMinH || '0') || 0;
-      hb.style.minHeight = (base + fxTagGrowPx) + 'px';
-      fxNoticeHdrGrew = false;
-    } else {
-      hb.style.minHeight = fxNoticeHdrPrevMinH || '';
-      fxNoticeHdrPrevMinH = null; fxNoticeHdrGrew = false;
-    }
-  } else { fxNoticeHdrPrevMinH = null; fxNoticeHdrGrew = false; }
-  try { layoutFit(false); } catch (e) {}
-}
+// notice-center-1118 (USER DECISION 2026-11-18): the BU-94
+// header seat is retired. The notice sat in its own band below
+// row 2 and grew the header by its height (fxNoticeGrowHeader /
+// fxNoticeRestoreHeader, both removed with the seat); it now
+// sits at screen centre again and never touches the header.
+// The two ledger variables below survive for the name tag's
+// own growth (fxOppTagPosition / fxTagRestoreHeader), which
+// still seats below row 2 and still grows the header.
+let fxNoticeHdrPrevMinH = null; // the header's minHeight before the name tag grew it (null = none recorded yet)
+let fxNoticeHdrGrew = false; // whether the name tag grew the header at all
+let fxNoticeSafety = null; // notice-center-1118: the live notice's wall-clock safety timer (see fxNoticeShow)
 // fix-bu107-1118 (BU-107 remainder): the notice body is one keep-all
 // run, so a phrase with no break opportunity was split mid-word by
 // overflow-wrap:anywhere as a last resort — the ledger case was
@@ -6383,8 +6346,9 @@ function fxNoticeRestoreHeader() {
 // counts as NOT a mid-word split), and a <wbr> break opportunity
 // sits after every particle / punctuation mark and after an "×N"
 // count, so the line breaks BETWEEN phrase units, never inside a
-// word. Font size stays 12.5px (parent decision: no font-fit
-// revival — the readability floor is not traded for cosmetics).
+// word. (The BU-107-era "no font-fit" parent decision was
+// about the header strip; notice-center-1118 restores the
+// centre band's 18px form, and the unitize guard is unchanged.)
 // The recorded text (fxRecord 'notice') keeps the plain string;
 // only the rendered HTML is unitized.
 function fxNoticeUnitize(text) {
@@ -6396,12 +6360,13 @@ function fxNoticeUnitize(text) {
 }
 function fxNoticeShow(text, sub, noBeat, deferrals) {
   // BU-89 (bigfix2-1115): while the auto-pass flash owns the
-  // header (2.6s), the log line's column collapses (mirror-
-  // measured 11px wide) and a notice squeezed into it becomes a
-  // tall 9px strip that collides with the chip. Hold the notice
-  // until the flash settles — bounded: after ~2.7s of retries it
-  // shows regardless. The busy flag stays up across the hold so
-  // the queue behind it keeps its order.
+  // header (2.6s), hold the notice until the flash settles —
+  // bounded: after ~2.7s of retries it shows regardless. The
+  // busy flag stays up across the hold so the queue behind it
+  // keeps its order. (The original reason was the header-strip
+  // seat squeezing into the flash-collapsed log line column;
+  // notice-center-1118's centre seat no longer touches the
+  // header, but the flash/notice serialization is kept as-is.)
   const hd0 = document.getElementById('header');
   if (hd0 && hd0.classList.contains('apflash') && (deferrals || 0) < 6) {
     fxNoticeBusy = true;
@@ -6409,8 +6374,22 @@ function fxNoticeShow(text, sub, noBeat, deferrals) {
     return;
   }
   const layer = fxLayerEl(); if (!layer) return;
-  const old = layer.querySelector('.fx-notice'); if (old) { fxNoticeRestoreHeader(); old.remove(); }
-  fxNoticeBusy = true;  const d = document.createElement('div');
+  // notice-center-1118: a notice this call replaces takes its
+  // veil (the input lock) and its safety timer with it — the
+  // lock never outlives its notice.
+  const old = layer.querySelector('.fx-notice'); if (old) old.remove();
+  const oldVeil = layer.querySelector('.fx-notice-veil'); if (oldVeil) oldVeil.remove();
+  if (fxNoticeSafety) { try { clearTimeout(fxNoticeSafety); } catch (e) {} fxNoticeSafety = null; }
+  fxNoticeBusy = true;
+  // notice-center-1118 (USER DECISION 2026-11-18): while the
+  // notice is up, the board surface is inert. The veil is born
+  // with the notice and removed with it (finish below; the
+  // layer wipe in fxResetDuel; the replacement above), so its
+  // lifetime IS the lock's lifetime — the .fx-turn discipline.
+  const veil = document.createElement('div');
+  veil.className = 'fx-notice-veil';
+  layer.appendChild(veil);
+  const d = document.createElement('div');
   d.className = 'fx-notice';
   // BU-89: a gold separator stands between the label and the
   // body — with only the label's 7px margin the two ran together
@@ -6419,149 +6398,24 @@ function fxNoticeShow(text, sub, noBeat, deferrals) {
   d.innerHTML = '<div class="nt">' + (sub ? '<span class="ns">' + sub + '</span><span class="nsep">｜</span>' : '') + fxNoticeUnitize(text) + '</div>';
   d.style.opacity = '0';
   layer.appendChild(d);
-  /* BU-83 residue (2026-11-14): bottom-anchor the strip inside
-     the header band — its bottom edge sits 2px above the
-     header's bottom edge, so however tall the wrapped text
-     makes it, it grows UP over the header and can never reach
-     the pile row or a zone (see the .fx-notice CSS note). The
-     header is auto-height (a third event line grows it to
-     ~96px), so the anchor is re-measured on EVERY frame of
-     the dwell in render() below: a one-time anchor went stale
-     when the header shrank back mid-dwell and left the strip
-     over the pile row (measured in the wild, bottom 94 vs
-     pile top 80). */
   const hb = document.getElementById('header');
-  /* bigfix-1115 (the BU-83 tradeoff, revisited): a long notice
-     used to span the header's full width and, growing up from
-     its bottom anchor, covered the turn readout and the chips
-     for its whole dwell — the header's own information went
-     unreadable exactly while events were flying. DESIGN
-     DECISION (recorded in bigfix-1115/RECORD.md): the strip
-     keeps its bottom anchor and its full K5 text, but its
-     horizontal span is confined to the LOGLINE's column — the
-     notice temporarily replaces the latest-event line (the same
-     information channel), while the turn readout, the phase
-     name and buttons, the auto-pass chip, the opponent-hand
-     chip and the FX button stay visible. If the confined text
-     would grow past the logline's top edge, the font steps down
-     (12.5 -> 10px floor) before any of row 1 is covered; only a
-     text that still overflows at 10px may rise into row 1, and
-     even then only inside the logline's column. */
-  const lg = document.getElementById('logline');
-  const anchorNotice = () => {
-    if (!hb) { d.style.top = '2px'; return; }
+  // The veil's top edge rides the header's bottom edge, re-set
+  // on every frame of the dwell (the header is auto-height:
+  // the event line can wrap to a third row, the name tag can
+  // grow it). Everything below that edge — both fields, the
+  // pile rows, the LP band, the preview, the hand — takes no
+  // hit while the notice is up. The header itself (turn
+  // readout, history, phase, the watch bar) stays live, and
+  // every decision UI sits above #fxlayer and stays
+  // answerable: the prompt funnel never waits for a notice,
+  // so a chain question that lands mid-dwell is answered on
+  // its own UI, over the veil.
+  const anchorVeil = () => {
+    if (!hb) { veil.style.top = '0px'; return; }
     const lr = layer.getBoundingClientRect(), hr = hb.getBoundingClientRect();
-    // fix9396c-1115 (BU-94): the notice no longer anchors its
-    // BOTTOM to the header bottom — that seat put it over the
-    // logline for the whole dwell (a 2-line notice spans y43-77
-    // over row 2's y47-78, so the latest-event line was covered
-    // 100% of the time while any notice was up; the "same
-    // channel" rationale from bigfix-1115 failed because the
-    // notice lingers ~2-3s while the line moves on to newer
-    // events). The notice now sits in its own band BELOW row 2
-    // (the row-2 edge from fxRow2Bottom), and the header grows
-    // to hold it — the same growth discipline the name tag
-    // already uses. Stack order is fixed: notice directly below
-    // row 2, tag below the notice (the tag's own loop stacks it
-    // under a live notice), so the two per-frame loops cannot
-    // chase each other. The font fit is gone with the old seat:
-    // the notice no longer competes with row 1 for height, so
-    // it stays at full 12.5px and the header absorbs its whole
-    // height (the K5 name grouping bounds the text, so the
-    // growth stays small). Zero-geometry environments (jsdom)
-    // skip the growth entirely.
-    // smallfix3-1116 (BU-89 residual): a flash that starts MID-DWELL
-    // collapses the logline's column to ~11px (bigfix2 mirror
-    // measurement) and the per-frame re-anchor squeezes the live
-    // notice into a one-character column — its offsetHeight then
-    // grows the header to ~594px and pushes the board off-screen
-    // (measured on mainline 8fd5a18 and on this build, single-name
-    // flash included). The deferral in fxNoticeShow only holds
-    // notices that ARRIVE during a flash. While the flash owns
-    // the header, seat the live strip full-width in its own band
-    // below row 2 instead: it cannot cover row 2's chips there,
-    // and the next frame after the flash ends re-confines it to
-    // the restored logline column.
-    if (hb && hb.classList.contains('apflash')) {
-      d.style.left = '6px';
-      d.style.right = '6px';
-    } else if (lg && lr.width) {
-      const gr = lg.getBoundingClientRect();
-      if (gr.width > 0) {
-        // BU-89 (bigfix2-1115): with the auto-pass chip up, the
-        // log line's own column starves (mirror-measured 69px)
-        // and the confined notice still turned into a tall 9px
-        // strip crowding the chip. While the chip is up (not
-        // flashing — the flash defers the notice above), the
-        // notice temporarily takes the chip's seat too: the same
-        // channel replacement the round-3 decision applied to
-        // the log line itself. The chip is a passive indicator
-        // and returns when the notice leaves; the turn readout,
-        // the opponent-hand chip and the FX button stay clear.
-        let colRight = gr.right;
-        const chip = document.getElementById('autopass');
-        if (chip && chip.classList.contains('on') && !chip.classList.contains('flash')) {
-          const hc = document.getElementById('oppHandChip');
-          const hcr = hc ? hc.getBoundingClientRect() : null;
-          if (hcr && hcr.left > gr.left) colRight = Math.max(colRight, hcr.left - 6);
-        }
-        d.style.left = Math.max(0, Math.round(gr.left - lr.left)) + 'px';
-        d.style.right = Math.max(0, Math.round(lr.right - colRight)) + 'px';
-      }
-    }
-    const seatTop = fxBelowRow2Seat();
-    if (d.offsetHeight > 0 && hr.height > 0) {
-      const need = Math.round(seatTop + d.offsetHeight + 2 - hr.bottom);
-      if (need > 0) fxNoticeGrowHeader(need);
-    }
-    d.style.top = Math.max(0, Math.round(seatTop - lr.top)) + 'px';
-    // fix-oldbu-1116 (BU-46): the growth can land AFTER the
-    // notice is already visible. Measured (probe-bu46.js, 5
-    // duels, 113 notices): 4 dips where the header SHRANK
-    // mid-dwell — minHeight 179px -> 96px (and 156px -> 41px)
-    // — while the notice stayed put, covering the opponent
-    // pile row by up to 9,072px2 for ~24-70ms. The shrink is
-    // the shared-minHeight ledger: the name tag leaves on a
-    // setTimeout (fxOppNameTag) and its restore subtracts its
-    // own growth (fxTagRestoreHeader: cur - grew), but the
-    // notice's grow had absorbed the tag's share into its own
-    // minHeight (want = offsetHeight + need, measured while
-    // the tag was up) — so the remainder is less than the
-    // notice still needs. The notice's per-frame anchor
-    // re-grows it on the next rAF tick, but the tag's restore
-    // is timer-driven, so the dip lasts until that tick
-    // (headless rAF is sparse, hence 24-70ms; on a real
-    // phone it is at most one frame). Until the header has
-    // actually grown to contain the notice, keep the notice
-    // invisible — the per-frame anchor re-checks, so it
-    // appears the moment the growth lands. The fresh rect
-    // below is measured AFTER the grow, so a synchronous
-    // growth shows the notice on its very first frame.
-    // Zero-geometry environments (jsdom) report no heights
-    // and skip the gate entirely, as the growth does.
-    if (d.offsetHeight > 0 && hr.height > 0) {
-      const contained = seatTop + d.offsetHeight + 2 <= hb.getBoundingClientRect().bottom + 0.5;
-      d.style.visibility = contained ? '' : 'hidden';
-    } else {
-      d.style.visibility = '';
-    }
+    veil.style.top = Math.max(0, Math.round(hr.bottom - lr.top)) + 'px';
   };
-  anchorNotice();
-  // fix9396c-1115 (BU-94): the per-frame anchor lags a logline
-  // growth by ~2 frames — the logline grows when a new event
-  // arrives, between anchor frames (measured in one duel: a
-  // 3-line logline overlapped the notice for 2 sampler ticks /
-  // 3,837 px2 while the notice sat at its old seat). Re-anchor
-  // synchronously when the logline's text changes, so the notice
-  // moves before the next paint. Disconnected when the notice
-  // leaves (onDone below). The name tag shares the per-frame
-  // design but measured zero overlaps in the same duel, so it is
-  // left alone.
-  let logMo = null;
-  if (lg && window.MutationObserver) {
-    logMo = new MutationObserver(() => anchorNotice());
-    logMo.observe(lg, { childList: true, characterData: true, subtree: true });
-  }
+  anchorVeil();
   const hold = fxReadMs(text + (sub || ''));
   // layout-fix3 K5 (test-fx attribution): the high-frequency
   // move/attack notices present on the notice track only — they
@@ -6570,17 +6424,36 @@ function fxNoticeShow(text, sub, noBeat, deferrals) {
   // compressed), which is exactly the duel-stretching the K5
   // decision told us to avoid; the low-frequency result notices
   // (destroyed, control change, flip) keep their booked dwell.
+  let sc = null;
+  const finish = () => {
+    if (fxNoticeSafety) { try { clearTimeout(fxNoticeSafety); } catch (e) {} fxNoticeSafety = null; }
+    try { d.remove(); } catch (e) {}
+    try { veil.remove(); } catch (e) {}
+    fxNoticeBusy = false; fxNoticePump();
+  };
   const def = {
     kind: 'notice', dur: hold + 480,
     render(t) {
-      anchorNotice(); // BU-83 residue: track the auto-height header every frame
+      anchorVeil(); // the header is auto-height: track its bottom edge every frame
       const a = t < 160 ? t / 160 : (t > hold + 130 ? Math.max(0, 1 - (t - hold - 130) / 350) : 1);
       d.style.opacity = String(a);
     },
-    onDone() { try { d.remove(); } catch (e) {} if (logMo) { try { logMo.disconnect(); } catch (e) {} } fxNoticeRestoreHeader(); fxNoticeBusy = false; fxNoticePump(); },
+    onDone() { finish(); },
   };
   if (!noBeat) def.beat = hold + 200;
-  fxAddScene(def);
+  sc = fxAddScene(def);
+  // Safety (the fxTurnSafety discipline): a scene can die
+  // WITHOUT onDone — a render error marks it dead in fxPump,
+  // and the FX clock freezes with rAF in a backgrounded tab.
+  // A lock-bearing element must never be able to stick, so a
+  // wall-clock timer force-finishes this notice if its element
+  // is still up well past the longest possible dwell (hold +
+  // 480 on the FX clock, plus hit-stop stretch). finish()
+  // clears the timer on the normal path.
+  fxNoticeSafety = setTimeout(() => {
+    fxNoticeSafety = null;
+    if (d.isConnected) { if (sc) sc.dead = true; finish(); }
+  }, hold + 480 + 4000);
 }
 function fxOppTagsFromEvents(evs, state) {
   const opp = 1 - HP;

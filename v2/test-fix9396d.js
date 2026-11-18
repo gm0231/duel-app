@@ -73,7 +73,7 @@ ok(clientSrc.includes('if (fromPt.cy - h / 2 >= hbBottom) return null;'), 'D106o
 ok(clientSrc.includes('return { cx: fromPt.cx, cy: hbBottom + h / 2 + 2 };'), 'D106p: the bend drops vertically at the chip x to below the header');
 ok((clientSrc.match(/fxChipVia\(fromPt, toPt\.w - 2, toPt\.h - 24\)/g) || []).length === 3, 'D106q: the three hand-to-field flights (summon / special summon / set) bend at the chip');
 // BU-107: the notice's text holds words together
-ok(html.includes('.fx-notice .nt{font-size:12.5px;font-weight:800;color:#ffe9a8;line-height:1.3;letter-spacing:.02em;word-break:keep-all;overflow-wrap:anywhere;}'), 'D107a: the notice text holds words together (keep-all / anywhere)');
+ok(html.includes('.fx-notice .nt{font-size:18px;font-weight:800;color:#ffe9a8;line-height:1.45;letter-spacing:.02em;word-break:keep-all;overflow-wrap:anywhere;}'), 'D107a: the notice text holds words together (keep-all / anywhere; notice-center-1118: the centre band restores 18px/1.45)');
 
 // ---------- live behaviour in jsdom ----------
 async function boot() {

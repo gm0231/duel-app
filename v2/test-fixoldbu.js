@@ -161,21 +161,22 @@ async function boot() {
 }
 
 // ---- BU-46: the notice stays invisible until the header contains it ----
-ok(clientSrc.includes("d.style.visibility = contained ? '' : 'hidden';"),
-  'F46a: anchorNotice gates the notice on containment');
+// notice-center-1118 (USER DECISION 2026-11-18): the whole
+// BU-46 mechanism is retired with the header seat — the centre
+// band never grows the header and is never gated on it, so the
+// dip class cannot occur; the tag restore no longer defers for
+// a live notice either (nothing of the notice's rides on the
+// header any more).
+ok(!clientSrc.includes("d.style.visibility = contained ? '' : 'hidden';"),
+  'F46a: notice-center-1118: the containment gate is retired (the centre band never waits for the header)');
 {
-  // the ledger fix: the tag's restore must not take its share
-  // back while a notice is live (the dip lives between anchors,
-  // so the gate alone cannot catch it — see RECORD.md)
   const iFn = clientSrc.indexOf('function fxTagRestoreHeader()');
   const iNext = clientSrc.indexOf('function fxNotice(', iFn);
   const body = clientSrc.slice(iFn, iNext);
-  ok(body.includes("if (document.querySelector('#fxlayer .fx-notice')) return;"),
-    'F46d: the tag restore defers while a notice is live');
-  const iEarly = body.indexOf("if (document.querySelector('#fxlayer .fx-notice')) return;");
-  const iWant = body.indexOf('const want = Math.max(base, cur - grew);');
-  ok(iEarly > 0 && iWant > iEarly,
-    'F46d: the deferral runs before the take-back is computed');
+  ok(!body.includes("if (document.querySelector('#fxlayer .fx-notice')) return;"),
+    'F46d: notice-center-1118: the tag restore no longer defers for a live notice');
+  ok(body.includes('const want = Math.max(base, cur - grew);'),
+    'F46d: the tag restore computes its take-back unconditionally');
 }
 {
   const window = await boot();
@@ -204,16 +205,13 @@ ok(clientSrc.includes("d.style.visibility = contained ? '' : 'hidden';"),
   window.eval('fxNoticeShow("テスト通知：カードの移動", null, true)');
   const n = doc.querySelector('#fxlayer .fx-notice');
   ok(!!n, 'F46b: the notice element exists after fxNoticeShow');
-  ok(n && header.style.minHeight === '155px',
-    'F46b: the header still grows synchronously (minHeight ' + header.style.minHeight + ')');
-  ok(n && n.style.visibility === 'hidden',
-    'F46b: while the measured header bottom (110) is short of the notice bottom (155), the notice is hidden (got ' + (n && n.style.visibility) + ')');
-  // the growth lands: the measured header bottom moves to 155
-  headerBottom = 155;
-  logline.textContent = '新しいイベント行';
-  await sleep(150);
+  ok(n && header.style.minHeight === '',
+    'F46b: notice-center-1118: the header does NOT grow for a notice (minHeight "' + header.style.minHeight + '")');
   ok(n && n.style.visibility === '',
-    'F46c: once the header contains the notice, it appears (got ' + (n && n.style.visibility) + ')');
+    'F46b: the notice is never visibility-gated (got "' + (n && n.style.visibility) + '") — BU-46\'s hidden-until-contained state is gone');
+  const vl = doc.querySelector('#fxlayer .fx-notice-veil');
+  ok(!!vl && vl.style.top === '110px',
+    'F46c: the lock veil stands with the notice, its top at the header bottom edge (got ' + (vl && vl.style.top) + ', want 110px)');
 }
 
 // ---- BU-39: chain-dim on the hand, in real duels ----

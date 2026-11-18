@@ -80,12 +80,12 @@ function srcOf(fnName, from) {
 // band below row 2 — see test-fix9396c.js — and no longer steps
 // its type down; the old bottom-anchor / row-1-cap pins are
 // retired, not loosened)
-ok(clientSrc.includes('function fxNoticeGrowHeader(over)'), 'F94a: fxNoticeGrowHeader exists');
-ok(clientSrc.includes('function fxNoticeRestoreHeader()'), 'F94b: fxNoticeRestoreHeader exists');
-ok(clientSrc.includes('fxNoticeGrowHeader(need)'), 'F94c: the anchor grows the header by the notice height below row 2');
-ok(clientSrc.includes('onDone() { try { d.remove(); } catch (e) {} if (logMo) { try { logMo.disconnect(); } catch (e) {} } fxNoticeRestoreHeader();'), 'F94d: the notice restores the header when it leaves (and disconnects the logline observer)');
-ok(!clientSrc.includes("nt.style.fontSize = fs + 'px';"), 'F94e: the notice no longer steps its type down mid-dwell (full 12.5px, header absorbs the height)');
-ok(clientSrc.includes('const seatTop = fxBelowRow2Seat();'), 'F94f: the notice seats below row 2 (fxBelowRow2Seat = fxRow2Bottom + 2 in normal duels; BU-115: watch seat below the watchbar)');
+ok(!clientSrc.includes('function fxNoticeGrowHeader('), 'F94a: notice-center-1118 (user decision 2026-11-18): the BU-94 header growth is gone with the header seat');
+ok(!clientSrc.includes('function fxNoticeRestoreHeader('), 'F94b: notice-center-1118: the BU-94 header restore is gone with the seat');
+ok(clientSrc.includes("veil.className = 'fx-notice-veil';"), 'F94c: notice-center-1118: fxNoticeShow raises the input-lock veil with the notice');
+ok(clientSrc.includes('onDone() { finish(); }'), 'F94d: notice-center-1118: the notice leaves through finish() (band + veil + busy + queue pump)');
+ok(!clientSrc.includes("nt.style.fontSize = fs + 'px';"), 'F94e: the notice type is never stepped down mid-dwell (full size; the centre band sizes to the text)');
+ok(clientSrc.includes('let tagTopVp = fxBelowRow2Seat();'), 'F94f: the name tag still seats below row 2 (fxBelowRow2Seat survives for the tag; the notice no longer uses it)');
 // BU-95
 {
   const tray = srcOf('showChainTray', 'function showChainTray(');
