@@ -11208,6 +11208,19 @@ function viewportHeights() {
   return { innerHeight: ih, clientHeight: ch, vvHeight: vvH, vvOffsetTop: vvTop,
            baseH, visibleBottom };
 }
+// fix-n2-preview-blank-1118: the band must never show open while it has
+// no card to show. Its visibility used to ride on layout alone
+// (pvShown > 0), so at duel (re)start applyLayout opened it while
+// previewState was still null and it stayed visibly empty until the
+// engine's first state arrived (~0.6 s, triage-1118-ledger3 r3).
+// Gate the class on having content; setPreview re-opens it once
+// content lands (same synchronous task, so no empty frame is painted).
+function syncPreviewVisibility(pvShown) {
+  const el = $('preview');
+  if (!el) return;
+  const shown = pvShown != null ? pvShown : (layoutInfo ? layoutInfo.pvShown : 0);
+  el.className = (previewState && shown > 0) ? (shown < 44 ? 'on compact' : 'on') : '';
+}
 function applyLayoutVars(info) {
   const rs = document.documentElement.style;
   // layout-fix J1: the conservative visible height, published for
@@ -11220,7 +11233,7 @@ function applyLayoutVars(info) {
   rs.setProperty('--hw', info.handW + 'px');
   rs.setProperty('--hh', info.handH + 'px');
   rs.setProperty('--pv', info.pvShown + 'px');
-  $('preview').className = info.pvShown > 0 ? (info.pvShown < 44 ? 'on compact' : 'on') : '';
+  syncPreviewVisibility(info.pvShown); // fix-n2-preview-blank-1118: no open band without content
   // stage 4: at the tile floor the B-15 strip type (9/10px) is
   // wider than the tile — the strip shrinks its type instead of
   // clipping digits (measureStripClip watches both axes now).
@@ -11463,6 +11476,7 @@ function setPreview(code, ref, reason) {
   // one; a bare code resolves by unique deck membership instead.
   const deckKey = ref && ref.con != null ? deckKeyOfSeat(ref.con) : deckKeyOfCode(code);
   previewState = { code, con: ref ? ref.con : null, loc: ref ? ref.loc : null, seq: ref ? ref.seq : null, sig: '', reason: reason || null, deckKey };
+  syncPreviewVisibility(); // fix-n2-preview-blank-1118: decide open/compact BEFORE renderPreview reads the class, so the band opens with content already in it
   renderPreview();
 }
 function renderPreview() {
