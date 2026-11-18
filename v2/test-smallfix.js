@@ -89,18 +89,18 @@ ok(/function dpCueUpdate\(\)/.test(clientSrc) && /dp-compact', viewportHeights\(
 
 // ---------- BU-83 ----------
 const notice = ruleDecls(/\.fx-notice\{([^}]*)\}/);
-ok(!!notice && notice['left'] === '6px' && notice['right'] === '6px' && !('top' in notice) && !('transform' in notice),
-  'SF83a: the notice is a full-width strip with no fixed top — fxNoticeShow anchors it inside the header band (got left=' + (notice && notice['left']) + ', top=' + (notice && notice['top']) + ')');
+ok(!!notice && notice['left'] === '50%' && notice['top'] === '33%' && (notice['transform'] || '').includes('translate(-50%,-50%)'),
+  'SF83a: notice-center-1118 (USER DECISION 2026-11-18, supersedes the BU-83 placement): the notice is the centre band again — left 50%, top 33%, centred transform (got left=' + (notice && notice['left']) + ', top=' + (notice && notice['top']) + ')');
 const noticeT = ruleDecls(/\.fx-notice \.nt\{([^}]*)\}/);
-ok(!!noticeT && noticeT['font-size'] === '12.5px',
-  'SF83b: the notice type is 12.5px so the worst-case grouped text fits the header band (got ' + (noticeT && noticeT['font-size']) + ')');
-ok(!/\.fx-notice\{[^}]*top:33%/.test(html) && !/\.fx-notice\{[^}]*top:84px/.test(html), 'SF83c: neither the old centre band nor the under-header strip remains');
+ok(!!noticeT && noticeT['font-size'] === '18px',
+  'SF83b: the centre band restores the large 18px type (the 12.5px header-strip size is retired) (got ' + (noticeT && noticeT['font-size']) + ')');
+ok(!/\.fx-notice\{[^}]*left:6px;right:6px/.test(html), 'SF83c: the BU-83 header strip seat (left/right 6px) is gone');
 const noticeS = ruleDecls(/\.fx-notice \.ns\{([^}]*)\}/);
 ok(!!noticeS && noticeS['display'] === 'inline',
   'SF83d: the route label rides the notice text flow inline (no second line)');
-ok(/const seatTop = fxBelowRow2Seat\(\);/.test(clientSrc) && /d\.style\.top = Math\.max\(0, Math\.round\(seatTop - lr\.top\)\)/.test(clientSrc)
-  && /render\(t\) \{\s*anchorNotice\(\);/.test(clientSrc),
-  'SF83e: fxNoticeShow seats the strip in its own band BELOW row 2 (fix9396c BU-94: the bottom anchor covered the latest-event line for the whole dwell), re-anchored every frame of the dwell (fxBelowRow2Seat = fxRow2Bottom + 2 in normal duels; BU-115 watch seat)');
+ok(!/const seatTop = fxBelowRow2Seat\(\);/.test(clientSrc) && /veil\.className = 'fx-notice-veil';/.test(clientSrc)
+  && /fxNoticeSafety = setTimeout\(/.test(clientSrc),
+  'SF83e: notice-center-1118: fxNoticeShow no longer seats in the header; it raises the input-lock veil with the band and arms the wall-clock safety');
 
 // ---------- parent re-verification 2026-11-14, item 2.1 ----------
 // The header hand chip is the OPPONENT's count (render writes

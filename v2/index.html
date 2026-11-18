@@ -1092,42 +1092,46 @@
      shown ~1.6 s by fxOppNameTag; it never enters the flow, so
      the board layout cannot move under it. */
   .fx-oppnametag{position:absolute;left:6px;height:24px;line-height:24px;max-width:calc(100% - 12px);padding:0 10px 0 8px;border-left:3px solid #5b8dd9;background:rgba(10,18,34,.9);color:#cfe2ff;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;}
-  /* BU-83 (2026-11-14): the notice used to be a big band at
-     top:33% — it covered the centre of the opponent's field
-     (monster zone, S/T zone, the LP band's left edge) for its
-     whole dwell. First fix: a slim strip directly under the
-     header (top:84px) — but the parent's re-verification
-     (2026-11-14 evening) showed it STILL covered the
-     opponent's pile row (deck/EX/grave/removed, y 80-104) and,
-     once a move text wrapped (long grouped names + reason),
-     the top edge of the monster-zone row: measured bottoms
-     151 (short) / 189 / 208 (long) against a monster-zone top
-     of 179-206. The shrink-to-fit width (~195px) was the
-     multiplier: wrapping multiplied the height.
-     BU-83 residue fix (same day): the strip now lives INSIDE
-     the header's own band — full width (left/right 6px, so
-     wrapping is minimal), bottom-anchored 2px above the
-     header's bottom edge by fxNoticeShow (top set in JS from
-     the measured header rect and re-anchored every frame of
-     the dwell — the header is auto-height, and a one-time
-     anchor went stale when the header shrank back mid-dwell),
-     and the route label rides the SAME text
-     flow as an inline .ns span instead of a second line.
-     Worst-case grouped text (4 names + reason, ~110 chars)
-     measures 4 lines at 12.5px = inside the 77px header.
-     It can cover the header's own rows while it dwells (the
-     chain bar and the name tag already use the header as a
-     transient surface) — it can NEVER reach the pile row or
-     any zone, at any text length. Overlay only: no board
-     height is taken, tile size is untouched. */
-  .fx-notice{position:absolute;left:6px;right:6px;z-index:8;background:linear-gradient(180deg,rgba(19,14,6,.95),rgba(7,5,2,.97));border:1px solid rgba(201,162,39,.7);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.6);padding:3px 8px;pointer-events:none;}
+  /* notice-center-1118 (USER DECISION 2026-11-18): the notice
+     is a big band at screen centre again — the pre-BU-83 form
+     below, restored verbatim (left:50%, top:33%,
+     translate(-50%,-50%), max-width:86%). History: BU-83
+     (2026-11-14) moved it into the header band because the
+     centre band covers the opponent's field centre (monster
+     zone, S/T zone, the LP band's left edge) for its whole
+     dwell; BU-94 then gave it its own band below row 2 with
+     header growth. The user reversed the placement: centre
+     again, and the covering is answered by the input lock
+     instead — while a notice is up, fxNoticeShow's veil
+     (.fx-notice-veil) takes every hit bound for the board
+     surface below the header, so nothing under the band can
+     be operated while it shows. Content is unchanged: K5 full
+     text (wraps, never truncated), the BU-89 label separator,
+     the BU-107 unitized breaks. Overlay only: no board height
+     is taken, tile size is untouched, the header never grows
+     for a notice any more. */
+  .fx-notice{position:absolute;left:50%;top:33%;transform:translate(-50%,-50%);z-index:8;max-width:86%;background:linear-gradient(180deg,rgba(19,14,6,.95),rgba(7,5,2,.97));border:1px solid rgba(201,162,39,.7);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.65);padding:13px 18px;text-align:center;pointer-events:none;}
   /* fix9396d-1115 (BU-107): notice text broke long names
      mid-word (「ゲ／ート」「シャド／ウ」「墓／地」 — 17 of 18
      notices in one wild duel). Same keep-all / anywhere pair
      as the dock and tray. */
-  .fx-notice .nt{font-size:12.5px;font-weight:800;color:#ffe9a8;line-height:1.3;letter-spacing:.02em;word-break:keep-all;overflow-wrap:anywhere;}
-  .fx-notice .ns{display:inline;font-size:11px;font-weight:400;color:var(--txt-dim);margin-right:5px;line-height:1.3;}
-  .fx-notice .nsep{font-size:11px;font-weight:700;color:var(--gold);margin-right:5px;line-height:1.3;}
+  .fx-notice .nt{font-size:18px;font-weight:800;color:#ffe9a8;line-height:1.45;letter-spacing:.02em;word-break:keep-all;overflow-wrap:anywhere;}
+  .fx-notice .ns{display:inline;font-size:12.5px;font-weight:400;color:var(--txt-dim);margin-right:5px;line-height:1.4;}
+  .fx-notice .nsep{font-size:12.5px;font-weight:700;color:var(--gold);margin-right:5px;line-height:1.4;}
+  /* notice-center-1118: the input lock's veil. A child of
+     #fxlayer (pointer-events:none) that alone takes hits,
+     like .fx-turn: its lifetime IS the lock's lifetime — it
+     is born with the notice, removed with it, and a duel
+     reset wipes the whole layer, so the lock cannot stick.
+     It covers everything below the header (its top edge is
+     set per frame by fxNoticeShow to the header's bottom
+     edge), so the header's own controls (history, phase, the
+     watch bar and its stop button) stay live, and
+     every decision UI (dock z-40, chain tray z-40, sheets
+     z-50, modals z-55 and up) sits above #fxlayer (z-25) and
+     stays answerable. z-index 7 keeps it under the notice
+     band (8) and the in-layer confirm card (9). */
+  .fx-notice-veil{position:absolute;left:0;right:0;bottom:0;top:80px;z-index:7;pointer-events:auto;}
   /* Redesign F -> BU-72 (2026-11-13): the LP chip is now ONLY the
      LP-cost stamp. Effect damage and heals used to be chips too;
      the unified grammar presents them as the big ± numerals on

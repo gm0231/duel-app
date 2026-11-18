@@ -41,7 +41,7 @@ ok(clientSrc.includes('function fxNoticeUnitize(text)'), 'B107a: the notice unit
 ok(clientSrc.includes("d.innerHTML = '<div class=\"nt\">' + (sub ? '<span class=\"ns\">' + sub + '</span><span class=\"nsep\">｜</span>' : '') + fxNoticeUnitize(text) + '</div>';"), 'B107b: fxNoticeShow renders the unitized text');
 ok(clientSrc.includes("return esc(p).replace(/([がをにでともはのやかへて、。！？」』）]|×\\d+)/g, '$1<wbr>');"), 'B107c: break opportunities sit after particles / punctuation / ×N counts');
 ok(clientSrc.includes("if (/^《[^》]*》$/.test(p)) return esc(p);"), 'B107d: card names ride intact inside 《》');
-ok(html.includes('.fx-notice .nt{font-size:12.5px;font-weight:800;color:#ffe9a8;line-height:1.3;letter-spacing:.02em;word-break:keep-all;overflow-wrap:anywhere;}'), 'B107e: the notice stays at 12.5px with keep-all / anywhere (no font-fit revival)');
+ok(html.includes('.fx-notice .nt{font-size:18px;font-weight:800;color:#ffe9a8;line-height:1.45;letter-spacing:.02em;word-break:keep-all;overflow-wrap:anywhere;}'), 'B107e: the notice keeps keep-all / anywhere (no font-fit revival; notice-center-1118: the centre band restores the pre-BU-83 18px/1.45 type)');
 ok(!clientSrc.includes('fxNoticeUnitize') || !/font-size:\s*10px/.test(clientSrc.slice(clientSrc.indexOf('function fxNoticeShow'), clientSrc.indexOf('function fxNoticeShow') + 2000)), 'B107f: no font step-down inside fxNoticeShow');
 
 // ---------- live behaviour in jsdom ----------
@@ -112,7 +112,7 @@ async function boot() {
   ok(nt && nt.innerHTML.includes('相手の<wbr>カード5枚が<wbr>手札に<wbr>加わった'), 'B107r: the rendered notice carries the break opportunities');
   ok(nt && nt.textContent.includes('相手のカード5枚が手札に加わった'), 'B107s: the rendered notice reads the full plain text');
   const csNt = nt ? window.getComputedStyle(nt) : null;
-  ok(csNt && csNt.fontSize === '12.5px', 'B107t: the notice stays at 12.5px (font ' + (csNt && csNt.fontSize) + ')');
+  ok(csNt && csNt.fontSize === '18px', 'B107t: notice-center-1118: the centre band restores the 18px type (font ' + (csNt && csNt.fontSize) + ')');
   ok(csNt && csNt.wordBreak === 'keep-all' && csNt.overflowWrap === 'anywhere', 'B107u: keep-all / anywhere still govern the notice text');
 
   console.log(failures === 0 ? 'ALL PASS' : failures + ' FAILURES');

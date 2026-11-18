@@ -82,15 +82,15 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 // BU-94: tag own band
 ok(!html.includes('.fx-oppnametag{position:absolute;top:47px;'), 'B94a: the tag no longer has a fixed top:47px (row 2 band)');
 ok(clientSrc.includes('function fxOppTagPosition()'), 'B94b: fxOppTagPosition positions the tag per frame');
-ok(clientSrc.includes('tagTopVp = nr.bottom + 2'), 'B94c: with a notice up the tag stacks below the notice');
-ok(clientSrc.includes('function fxRow2Bottom()'), 'B94d: the row-2 edge is a shared helper (tag and notice use the same seat)');
+ok(!clientSrc.includes('tagTopVp = nr.bottom + 2'), 'B94c: notice-center-1118: the tag no longer stacks under a notice (the notice is a centre band; the tag keeps the row-2 seat)');
+ok(clientSrc.includes('function fxRow2Bottom()'), 'B94d: the row-2 edge helper survives (the tag seat)');
 ok(clientSrc.includes('let bottom = hr.top + 71;'), 'B94d2: the row-2 edge starts at the nominal row-2 bottom');
-ok(clientSrc.includes('const seatTop = fxBelowRow2Seat();'), 'B94e: the notice seats below row 2 (fxBelowRow2Seat = fxRow2Bottom + 2 in normal duels; BU-115: watch seat below the watchbar)');
-ok(clientSrc.includes('fxNoticeGrowHeader(need)'), 'B94f: the notice grows the header by its own height below row 2');
-ok(clientSrc.includes("d.style.top = Math.max(0, Math.round(seatTop - lr.top)) + 'px';"), 'B94g: the notice top is set from the row-2 seat');
+ok(!clientSrc.includes('const seatTop = fxBelowRow2Seat();'), 'B94e: notice-center-1118: the notice no longer seats below row 2 (the tag uses fxBelowRow2Seat directly)');
+ok(!clientSrc.includes('fxNoticeGrowHeader(need)'), 'B94f: notice-center-1118: the notice no longer grows the header');
+ok(!clientSrc.includes("d.style.top = Math.max(0, Math.round(seatTop - lr.top)) + 'px';"), 'B94g: notice-center-1118: the notice top is CSS (top:33%), never set from a seat');
 ok(clientSrc.includes('function fxTagRestoreHeader()'), 'B94h: the tag restores only its own growth when it leaves');
-ok(clientSrc.includes('if (fxOppTagEl) {'), 'B94i: the notice restore preserves a live tag band');
-ok(clientSrc.includes("hb.style.minHeight = (base + fxTagGrowPx) + 'px';"), 'B94j: the notice restore keeps base + tag growth while the tag lives');
+ok(clientSrc.includes('if (fxOppTagEl) {'), 'B94i: the tag clear path still guards on the live tag element');
+ok(clientSrc.includes("hb.style.minHeight = want ? want + 'px' : (fxNoticeHdrPrevMinH || '');"), 'B94j: the tag restore returns the header toward its base height (want = max(base, cur - grew))');
 // obs-1: hint refinement
 ok(engineSrc.includes('return { type, name: \'SELECT_CHAIN\', player, speCount, forced: !!forced, entries, hint0, hint1 };'), 'O1a: parsePrompt keeps hint0/hint1 on the SELECT_CHAIN prompt');
 ok(engineSrc.includes("const refined = (h0 & 0x4000000) ? 'BATTLE_STEP_END' : (h0 & 0x10) ? 'BATTLE' : null;"), 'O1b: the trigger is refined from the asked player hint_timing mask');
@@ -107,9 +107,11 @@ ok(clientSrc.includes('function locBadgeHTML(label)'), 'O3a4: locBadgeHTML split
 ok(clientSrc.includes("'<span class=\"loc-txt\">' + m[1] + '</span><span class=\"loc-num\">' + m[2] + '</span>'"), 'O3a5: the split keeps the wording unchanged');
 ok(clientSrc.includes("sheet.querySelectorAll('.gcard .loc').forEach"), 'O3b: sheetOpen fits every tile location badge');
 ok(clientSrc.includes('while (txt.scrollWidth > txt.clientWidth + 1 && fs > 8)'), 'O3c: the TEXT part steps down to the 8px floor before clipping (the number is never shrunk)');
-// BU-94 single-notice growth still intact (fix9396 pins, kept)
-ok(clientSrc.includes('function fxNoticeGrowHeader(over)'), 'B94k: fxNoticeGrowHeader still exists');
-ok(clientSrc.includes('fxNoticeGrowHeader(need)'), 'B94l: the notice anchor grows the header by its own height below row 2');
+// BU-94 single-notice growth: retired by notice-center-1118
+// (USER DECISION 2026-11-18 — the notice is a centre band again
+// and locks board input while up; the header never grows for it)
+ok(!clientSrc.includes('function fxNoticeGrowHeader('), 'B94k: notice-center-1118: fxNoticeGrowHeader is removed');
+ok(!clientSrc.includes('function fxNoticeRestoreHeader('), 'B94l: notice-center-1118: fxNoticeRestoreHeader is removed');
 
 // ---------- live behaviour in jsdom ----------
 async function boot() {

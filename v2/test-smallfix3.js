@@ -50,14 +50,14 @@ ok(/flashAutoPass\(names\)/.test(fs.readFileSync(path.join(V2, 'client.js'), 'ut
 // during a flash; a notice already dwelling got re-anchored
 // every frame into the flash-collapsed (~11px) logline column
 // and grew the header to ~594px, pushing the board off-screen
-// (measured on mainline 8fd5a18). While apflash owns the
-// header, anchorNotice seats the live strip full-width in its
-// own band below row 2 instead.
+// (measured on mainline 8fd5a18). notice-center-1118 retired
+// the whole anchor: the notice is a centre band again (USER
+// DECISION 2026-11-18) whose seat is pure CSS, so a mid-dwell
+// flash cannot squeeze it at all — the hazard class is gone,
+// and the arrival deferral above is unchanged.
 const clientSrc = fs.readFileSync(path.join(V2, 'client.js'), 'utf8');
-const anchorSrc = (clientSrc.match(/const anchorNotice = \(\) => \{([\s\S]*?)\n  \};/) || [])[1] || '';
-ok(/hb\.classList\.contains\('apflash'\)/.test(anchorSrc)
-  && /d\.style\.left = '6px';\s*\n\s*d\.style\.right = '6px';/.test(anchorSrc),
-  'SF3-89a: anchorNotice seats a dwelling notice full-width while apflash owns the header (no 11px squeeze)');
+ok(!clientSrc.includes('anchorNotice'),
+  'SF3-89a: notice-center-1118: no per-frame notice anchor remains (the centre seat is CSS-only; a mid-dwell flash cannot squeeze the band)');
 
 // ---------- BU-90: few-candidate rows centre at standard width ----------
 const grid = ruleDecls(/\.grid\{([^}]*)\}/);
