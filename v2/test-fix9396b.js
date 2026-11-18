@@ -85,7 +85,7 @@ ok(clientSrc.includes('function fxOppTagPosition()'), 'B94b: fxOppTagPosition po
 ok(clientSrc.includes('tagTopVp = nr.bottom + 2'), 'B94c: with a notice up the tag stacks below the notice');
 ok(clientSrc.includes('function fxRow2Bottom()'), 'B94d: the row-2 edge is a shared helper (tag and notice use the same seat)');
 ok(clientSrc.includes('let bottom = hr.top + 71;'), 'B94d2: the row-2 edge starts at the nominal row-2 bottom');
-ok(clientSrc.includes('const seatTop = fxRow2Bottom() + 2;'), 'B94e: the notice seats below row 2 (no longer bottom-anchored over the logline)');
+ok(clientSrc.includes('const seatTop = fxBelowRow2Seat();'), 'B94e: the notice seats below row 2 (fxBelowRow2Seat = fxRow2Bottom + 2 in normal duels; BU-115: watch seat below the watchbar)');
 ok(clientSrc.includes('fxNoticeGrowHeader(need)'), 'B94f: the notice grows the header by its own height below row 2');
 ok(clientSrc.includes("d.style.top = Math.max(0, Math.round(seatTop - lr.top)) + 'px';"), 'B94g: the notice top is set from the row-2 seat');
 ok(clientSrc.includes('function fxTagRestoreHeader()'), 'B94h: the tag restores only its own growth when it leaves');

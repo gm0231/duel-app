@@ -97,11 +97,11 @@ ok(clientSrc.includes("cause.label += sfx; cause.tray += '<span class=\"reask-n\
 ok(clientSrc.includes('lastChainQ = null; // fix9396c-1115 (BU-99): the re-ask ordinal restarts with the duel'), 'C99f: the ordinal restarts with the duel');
 // BU-94: the notice's seat below row 2
 ok(clientSrc.includes('function fxRow2Bottom()'), 'C94a: the row-2 edge is a shared helper');
-ok(clientSrc.includes('const seatTop = fxRow2Bottom() + 2;'), 'C94b: the notice seats below row 2');
+ok(clientSrc.includes('const seatTop = fxBelowRow2Seat();'), 'C94b: the notice seats below row 2 (fxBelowRow2Seat = fxRow2Bottom + 2 in normal duels; BU-115: watch seat below the watchbar)');
 ok(clientSrc.includes("d.style.top = Math.max(0, Math.round(seatTop - lr.top)) + 'px';"), 'C94c: the notice top is set from the row-2 seat');
 {
   const tagFn = clientSrc.slice(clientSrc.indexOf('function fxOppTagPosition()'), clientSrc.indexOf('function fxOppTagPosition()') + 2000);
-  ok(tagFn.includes('fxRow2Bottom()'), 'C94d: the tag uses the same row-2 helper (one seat, no drift)');
+  ok(tagFn.includes('fxBelowRow2Seat()'), 'C94d: the tag uses the same seat helper as the notice (one seat, no drift; BU-115: the helper is mode-aware)');
 }
 ok(!clientSrc.includes('(hr2.bottom - fxTagGrowPx) - lr.top - 2 - d.offsetHeight'), 'C94e: the old bottom-anchor formula is gone (no notice over the logline)');
 ok(!clientSrc.includes("nt.style.fontSize = fs + 'px';"), 'C94f: the notice no longer steps its type down mid-dwell');

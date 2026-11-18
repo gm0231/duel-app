@@ -6062,6 +6062,21 @@ function fxRow2Bottom() {
   }
   return bottom;
 }
+// BU-115 (2026-11-18): the seat for the band below row 2 (event
+// notices, name tag). In watch mode the watchbar is the header's
+// bottom row, so a band seated below row 2 covers the watchbar's
+// label and the 観戦をやめる button (measured in run 17). The seat
+// moves below the watchbar instead; the header growth below
+// absorbs the extra height exactly as in normal duels. In normal
+// duels the watchbar is display:none, so the seat is unchanged.
+function fxBelowRow2Seat() {
+  let seat = fxRow2Bottom() + 2;
+  if (watchModeOn) {
+    const wb = document.getElementById('watchbar');
+    if (wb) { const wr = wb.getBoundingClientRect(); if (wr.height > 0) seat = wr.bottom + 2; }
+  }
+  return seat;
+}
 function fxOppTagPosition() {
   const d = fxOppTagEl; if (!d) return;
   const layer = fxLayerEl(); const hb = document.getElementById('header');
@@ -6069,9 +6084,8 @@ function fxOppTagPosition() {
   const lr = layer.getBoundingClientRect(), hr = hb.getBoundingClientRect();
   if (!lr.width || !hr.height) return;
   // lowest row-2 content edge (only visible elements count)
-  let row2Bottom = fxRow2Bottom();
   const n = layer.querySelector('.fx-notice');
-  let tagTopVp = row2Bottom + 2;
+  let tagTopVp = fxBelowRow2Seat();
   if (n) {
     const nr = n.getBoundingClientRect();
     if (nr.height > 0) tagTopVp = nr.bottom + 2;
@@ -6495,7 +6509,7 @@ function fxNoticeShow(text, sub, noBeat, deferrals) {
         d.style.right = Math.max(0, Math.round(lr.right - colRight)) + 'px';
       }
     }
-    const seatTop = fxRow2Bottom() + 2;
+    const seatTop = fxBelowRow2Seat();
     if (d.offsetHeight > 0 && hr.height > 0) {
       const need = Math.round(seatTop + d.offsetHeight + 2 - hr.bottom);
       if (need > 0) fxNoticeGrowHeader(need);
