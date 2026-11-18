@@ -98,9 +98,9 @@ ok(!/\.fx-notice\{[^}]*top:33%/.test(html) && !/\.fx-notice\{[^}]*top:84px/.test
 const noticeS = ruleDecls(/\.fx-notice \.ns\{([^}]*)\}/);
 ok(!!noticeS && noticeS['display'] === 'inline',
   'SF83d: the route label rides the notice text flow inline (no second line)');
-ok(/const seatTop = fxRow2Bottom\(\) \+ 2;/.test(clientSrc) && /d\.style\.top = Math\.max\(0, Math\.round\(seatTop - lr\.top\)\)/.test(clientSrc)
+ok(/const seatTop = fxBelowRow2Seat\(\);/.test(clientSrc) && /d\.style\.top = Math\.max\(0, Math\.round\(seatTop - lr\.top\)\)/.test(clientSrc)
   && /render\(t\) \{\s*anchorNotice\(\);/.test(clientSrc),
-  'SF83e: fxNoticeShow seats the strip in its own band BELOW row 2 (fix9396c BU-94: the bottom anchor covered the latest-event line for the whole dwell), re-anchored every frame of the dwell');
+  'SF83e: fxNoticeShow seats the strip in its own band BELOW row 2 (fix9396c BU-94: the bottom anchor covered the latest-event line for the whole dwell), re-anchored every frame of the dwell (fxBelowRow2Seat = fxRow2Bottom + 2 in normal duels; BU-115 watch seat)');
 
 // ---------- parent re-verification 2026-11-14, item 2.1 ----------
 // The header hand chip is the OPPONENT's count (render writes

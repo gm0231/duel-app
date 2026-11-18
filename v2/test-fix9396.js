@@ -85,7 +85,7 @@ ok(clientSrc.includes('function fxNoticeRestoreHeader()'), 'F94b: fxNoticeRestor
 ok(clientSrc.includes('fxNoticeGrowHeader(need)'), 'F94c: the anchor grows the header by the notice height below row 2');
 ok(clientSrc.includes('onDone() { try { d.remove(); } catch (e) {} if (logMo) { try { logMo.disconnect(); } catch (e) {} } fxNoticeRestoreHeader();'), 'F94d: the notice restores the header when it leaves (and disconnects the logline observer)');
 ok(!clientSrc.includes("nt.style.fontSize = fs + 'px';"), 'F94e: the notice no longer steps its type down mid-dwell (full 12.5px, header absorbs the height)');
-ok(clientSrc.includes('const seatTop = fxRow2Bottom() + 2;'), 'F94f: the notice seats below row 2 (fxRow2Bottom + 2)');
+ok(clientSrc.includes('const seatTop = fxBelowRow2Seat();'), 'F94f: the notice seats below row 2 (fxBelowRow2Seat = fxRow2Bottom + 2 in normal duels; BU-115: watch seat below the watchbar)');
 // BU-95
 {
   const tray = srcOf('showChainTray', 'function showChainTray(');

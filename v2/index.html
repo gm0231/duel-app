@@ -632,19 +632,28 @@
      whenever the sheet is peeked, even with no answer to mirror. */
   /* BU-55: ONE row of answer buttons (was flex-wrap:wrap, up to two
      rows / 112px, which ate the hand's bottom edge at short heights).
-     Buttons keep the 52px tap height; labels shrink before the row
-     ever wraps. */
-  #peekbar{display:none;position:absolute;left:0;right:0;bottom:0;z-index:52;background:#1d1811;border-top:2px solid var(--gold);padding:8px;flex-wrap:nowrap;gap:6px;max-height:34dvh;overflow-y:auto;}
+     Buttons keep the 52px tap height; the row never wraps.
+     BU-114 (2026-11-18): the equal-share flex (flex:1 1 0) made every
+     label shrink to the row's narrowest share, so standard labels
+     cut off mid-word ("モンスターをセット" -> "モンスターを…").
+     The band now keeps each button at its natural width (flex:1 1
+     auto, no ellipsis) and scrolls horizontally when the row
+     overflows, instead of truncating labels. The × and 選択に戻る
+     chrome buttons stick to their edges so the escape hatches stay
+     visible while scrolling. Shortening the labels was rejected:
+     "モンスターをセット" and "魔法・罠をセット" would both collapse
+     to "セット" and become indistinguishable. */
+  #peekbar{display:none;position:absolute;left:0;right:0;bottom:0;z-index:52;background:#1d1811;border-top:2px solid var(--gold);padding:8px;flex-wrap:nowrap;gap:6px;max-height:34dvh;overflow-x:auto;overflow-y:auto;}
   #sheetwrap.peek #peekbar.onbar{display:flex;}
-  #peekbar .bigbtn{flex:1 1 0;min-width:0;font-size:12.5px;padding-left:4px;padding-right:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  #peekbar .bigbtn{flex:1 1 auto;font-size:12.5px;padding-left:4px;padding-right:4px;white-space:nowrap;}
   /* BU-36: the chrome buttons that ride in the fold band.
      .pb-back is the 選択に戻る toggle — gold and 52px like the
      floating 盤面を見る it replaces (2026-11-13: big and gold
      everywhere). .pb-x is the view-sheet close, same dark seat
      as the floating ×. Both are fixed-width: the answer mirrors
      share whatever is left, as before. */
-  #peekbar .bigbtn.pb-x{flex:0 0 auto;width:48px;min-height:52px;font-size:17px;padding:12px 0;background:#241a0e;color:var(--gold);border:1px solid var(--gold-dim);}
-  #peekbar .bigbtn.pb-back{flex:0 0 auto;min-height:52px;font-size:15px;padding:12px 18px;background:linear-gradient(#e6c877,var(--gold));color:#191104;border:1px solid #e6c877;}
+  #peekbar .bigbtn.pb-x{flex:0 0 auto;width:48px;min-height:52px;font-size:17px;padding:12px 0;background:#241a0e;color:var(--gold);border:1px solid var(--gold-dim);position:sticky;left:0;z-index:2;}
+  #peekbar .bigbtn.pb-back{flex:0 0 auto;min-height:52px;font-size:15px;padding:12px 18px;background:linear-gradient(#e6c877,var(--gold));color:#191104;border:1px solid #e6c877;position:sticky;right:0;z-index:2;}
   #sheet .seg button{min-height:44px;}
   #header.busy::after{content:'';position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);background-size:40% 100%;background-repeat:no-repeat;animation:busyslide 1.1s linear infinite;pointer-events:none;z-index:4;}
   @keyframes busyslide{from{background-position:-40% 0;}to{background-position:140% 0;}}
