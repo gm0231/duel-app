@@ -89,8 +89,8 @@ ok(/function dpCueUpdate\(\)/.test(clientSrc) && /dp-compact', viewportHeights\(
 
 // ---------- BU-83 ----------
 const notice = ruleDecls(/\.fx-notice\{([^}]*)\}/);
-ok(!!notice && notice['left'] === '50%' && notice['top'] === '33%' && (notice['transform'] || '').includes('translate(-50%,-50%)'),
-  'SF83a: notice-center-1118 (USER DECISION 2026-11-18, supersedes the BU-83 placement): the notice is the centre band again — left 50%, top 33%, centred transform (got left=' + (notice && notice['left']) + ', top=' + (notice && notice['top']) + ')');
+ok(!!notice && notice['left'] === '7%' && notice['right'] === '7%' && notice['top'] === '33%' && (notice['transform'] || '').includes('translate(0,-50%)'),
+  'SF83a: notice-center-1118 (USER DECISION 2026-11-18, supersedes the BU-83 placement) + fix-bu116-119-1119 BU-117: the notice is the centre band again — explicit 86% width (left/right 7%), top 33%, vertical centre on the transform (got left=' + (notice && notice['left']) + ', top=' + (notice && notice['top']) + ')');
 const noticeT = ruleDecls(/\.fx-notice \.nt\{([^}]*)\}/);
 ok(!!noticeT && noticeT['font-size'] === '18px',
   'SF83b: the centre band restores the large 18px type (the 12.5px header-strip size is retired) (got ' + (noticeT && noticeT['font-size']) + ')');

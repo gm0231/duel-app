@@ -4276,6 +4276,10 @@ function fxPhaseBanner(fam) {
 //    3000 ms. The FX clock freezes with rAF in a backgrounded
 //    tab; a lock-bearing element must never be able to stick.
 let fxTurnEl = null, fxTurnScene = null, fxTurnPending = null, fxTurnSafety = null;
+// fix-bu116-119-1119 (BU-116 reverse race): a notice element is
+// live in the layer (finish() removes it the moment the notice
+// retires, so the signal is exact — no polling lag).
+function fxNoticeLive() { const l = fxLayerEl(); return !!(l && l.querySelector('.fx-notice')); }
 function fxTurnBannerBusy() { return !!fxTurnEl; }
 function fxTurnBannerActive() { return !!(fxTurnEl || fxTurnPending); }
 // BU-98: resolves once no turn banner is live or waiting. The
@@ -4302,12 +4306,25 @@ function fxTurnBannerCut() {
 }
 function fxTurnBanner(mine, turnNo) {
   const layer = fxLayerEl(); if (!layer) return;
-  if (fxDecisionUiOpen()) {
+  // fix-bu116-119-1119 (BU-116 reverse race): the notice deferral
+  // covers a notice that STARTS while a banner is up; the mirror
+  // case is a banner that starts while a notice is up — the probe
+  // caught it twice (the duel-start initial-draw notice vs the
+  // turn-1 banner, and a 《カオスハンター》 move notice; both a
+  // 1-2px graze against the banner container while it faded).
+  // Hold the banner the same way until the notice retires: the
+  // header readout already shows whose turn it is, so a delayed
+  // banner loses nothing. Same 2.6s cap as the decision-UI path,
+  // then it drops silently. No deadlock with the notice hold:
+  // a HELD notice is not live, so the banner's poll never waits
+  // for one; a live notice retires on its own dwell or its
+  // safety timer.
+  if (fxDecisionUiOpen() || fxNoticeLive()) {
     if (fxTurnPending) { fxTurnPending.mine = mine; fxTurnPending.turnNo = turnNo; fxTurnPending.since = performance.now(); return; }
     const pend = { mine, turnNo, since: performance.now(), timer: null };
     pend.timer = setInterval(() => {
       if (fxTurnPending !== pend) { try { clearInterval(pend.timer); } catch (e) {} return; }
-      if (!fxDecisionUiOpen()) { clearInterval(pend.timer); fxTurnPending = null; fxTurnBanner(pend.mine, pend.turnNo); }
+      if (!fxDecisionUiOpen() && !fxNoticeLive()) { clearInterval(pend.timer); fxTurnPending = null; fxTurnBanner(pend.mine, pend.turnNo); }
       else if (performance.now() - pend.since > 2600) { clearInterval(pend.timer); fxTurnPending = null; }
     }, 120);
     fxTurnPending = pend;
@@ -4768,7 +4785,7 @@ function fxResetFoundation() {
   // too (fxResetDuel also wipes the layer right after) — the
   // lock must never survive a reset.
   try {
-    fxNoticeQ.length = 0; fxNoticeBusy = false;
+    fxNoticeQ.length = 0; fxNoticeBusy = false; fxNoticeGen++; // fix-bu116-119-1119 (BU-116): retires any held show
     if (fxNoticeSafety) { clearTimeout(fxNoticeSafety); fxNoticeSafety = null; }
     const nl = fxLayerEl();
     if (nl) {
@@ -6151,6 +6168,7 @@ function fxTagRestoreHeader() {
 // queue is capped at 3 waiting (a flood drops its tail, recorded).
 const fxNoticeQ = [];
 let fxNoticeBusy = false;
+let fxNoticeGen = 0; // fix-bu116-119-1119 (BU-116): a deferred show (apflash/banner hold) must not resurrect a notice after a duel reset retired it
 // layout-fix3 K5: the grouped movement emission. Registrations
 // from one processing batch are grouped by (seat, from, to) into
 // ONE notice naming every card that moved together (the user's
@@ -6340,25 +6358,46 @@ let fxNoticeSafety = null; // notice-center-1118: the live notice's wall-clock s
 // overflow-wrap:anywhere as a last resort — the ledger case was
 // "相手のカードが手札に加わっ／た" (16-char run, fix9396d section;
 // parent re-verification: 23+ notices, 0 splits, this one case
-// unobserved). Unitize the text at render time: card names ride
-// intact inside 《》 (keep-all already confines their breaks to the
-// "－" / "・" / "～" separators, which the fix9396d verification
-// counts as NOT a mid-word split), and a <wbr> break opportunity
-// sits after every particle / punctuation mark and after an "×N"
-// count, so the line breaks BETWEEN phrase units, never inside a
-// word. (The BU-107-era "no font-fit" parent decision was
+// unobserved). Unitize the text at render time: a <wbr> break
+// opportunity sits after every particle / punctuation mark and
+// after an "×N" count, so the line breaks BETWEEN phrase units,
+// never inside a word. (The BU-107-era "no font-fit" parent decision was
 // about the header strip; notice-center-1118 restores the
 // centre band's 18px form, and the unitize guard is unchanged.)
+// fix-bu116-119-1119 (BU-117): names are no longer left wholly
+// intact inside 《》. At the widened 335px seat every name with a
+// separator still fits or breaks at it, but the longest
+// separator-less names (e.g. 《第１９層『襲来干渉！漆黒の超量士！！』》,
+// 21 chars incl. 《》) exceed even one full line, so keep-all +
+// overflow-wrap:anywhere would split them mid-word as a last
+// resort. Names now carry EXPLICIT <wbr> opportunities at their
+// own separators and punctuation (after － / ・ / ～ / 〜 / 、 / 。
+// / ！ / ？ / ＠, before 『 / 「 / （) — exactly the
+// points the fix9396d verification already counts as NOT a
+// mid-word split — so every rendered break lands on a boundary
+// the reader accepts. Close brackets (』 / 」 / ）) never sit
+// mid-name in the pool, so no opportunity is placed after
+// them — a break there would strand 》 alone on the next line.
+// Two names back to back (《A》《B》, the move-notice shape)
+// get an explicit <wbr> between them as well: the UAX#14 》《
+// boundary already breaks there in Chrome (probe w620, the
+// run-18 N1 notice rides intact), but an explicit opportunity
+// makes it engine-independent — Safari/WKWebView is the real
+// target, and keep-all + overflow-wrap:anywhere must never be
+// the thing deciding it.
+// The plain recorded text is untouched.
 // The recorded text (fxRecord 'notice') keeps the plain string;
 // only the rendered HTML is unitized.
 function fxNoticeUnitize(text) {
   const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return String(text).split(/(《[^》]*》)/g).map((p) => {
-    if (/^《[^》]*》$/.test(p)) return esc(p);
+    if (/^《[^》]*》$/.test(p)) return esc(p).replace(/([－・～〜、。！？＠])/g, '$1<wbr>').replace(/(?=[『「（])/g, '<wbr>');
     return esc(p).replace(/([がをにでともはのやかへて、。！？」』）]|×\d+)/g, '$1<wbr>');
-  }).join('');
+  }).join('').replace(/》(?=《)/g, '》<wbr>');
 }
-function fxNoticeShow(text, sub, noBeat, deferrals) {
+function fxNoticeShow(text, sub, noBeat, deferrals, gen) {
+  if (gen == null) gen = fxNoticeGen;
+  if (gen !== fxNoticeGen) return; // retired by a reset while held (fxResetFoundation)
   // BU-89 (bigfix2-1115): while the auto-pass flash owns the
   // header (2.6s), hold the notice until the flash settles —
   // bounded: after ~2.7s of retries it shows regardless. The
@@ -6370,7 +6409,23 @@ function fxNoticeShow(text, sub, noBeat, deferrals) {
   const hd0 = document.getElementById('header');
   if (hd0 && hd0.classList.contains('apflash') && (deferrals || 0) < 6) {
     fxNoticeBusy = true;
-    setTimeout(() => fxNoticeShow(text, sub, noBeat, (deferrals || 0) + 1), 450);
+    setTimeout(() => fxNoticeShow(text, sub, noBeat, (deferrals || 0) + 1, gen), 450);
+    return;
+  }
+  // fix-bu116-119-1119 (BU-116): the centre notice and the turn
+  // banner share the screen centre — a notice born at a turn change
+  // lands on 「自分のターン」/「相手のターン」. Hold the notice
+  // until the banner retires (the BU-89 deferral pattern: busy
+  // stays up, the queue keeps its order). Bounded: the banner's
+  // worst case is a 2.6 s pending wait + the 1.3 s span, so 10
+  // retries x 450 ms (~4.5 s) covers it; past the cap the notice
+  // shows regardless, so a notice is never swallowed by a stuck
+  // banner. While held, the banner itself is the input lock
+  // (.fx-turn is inset:0, pointer-events:auto), so the board is
+  // never operable under an unseen notice.
+  if (fxTurnBannerActive() && (deferrals || 0) < 10) {
+    fxNoticeBusy = true;
+    setTimeout(() => fxNoticeShow(text, sub, noBeat, (deferrals || 0) + 1, gen), 450);
     return;
   }
   const layer = fxLayerEl(); if (!layer) return;
@@ -8531,6 +8586,20 @@ function clearPeekBar() {
   const bar = $('peekbar'); if (!bar) return;
   bar.innerHTML = ''; bar.classList.remove('onbar');
 }
+// fix-bu116-119-1119 (BU-119): a long activation label ("効果を
+// 発動：① 手札を１枚捨てて発動できる。攻撃力が…") reads only as
+// its head in the fold band. Shorten the MIRROR's label to its
+// first sentence — the mirror only names the action; the tap still
+// fires the original button, so the full wording is not lost and
+// the sheet behind it still shows it. Standard labels (<=30 chars)
+// are untouched.
+function peekBarLabel(text) {
+  const t = (text || '').trim();
+  if (t.length <= 30) return t;
+  const dot = t.indexOf('。');
+  if (dot >= 0 && dot < 40) return t.slice(0, dot + 1);
+  return t.slice(0, 30) + '…';
+}
 function syncPeekBar() {
   const bar = $('peekbar'); if (!bar) return;
   clearPeekBar();
@@ -8554,21 +8623,39 @@ function syncPeekBar() {
     x.addEventListener('click', () => { const sx = $('sheetx'); if (sx) sx.click(); });
     bar.appendChild(x);
   }
+  // fix-bu116-119-1119 (BU-119): the mirrors ride in their own
+  // inner scroller (.pb-scroll); the chrome buttons are fixed
+  // flex siblings with reserved slots, so no label ever slides
+  // under 選択に戻る (a sticky button overlays whatever scrolls
+  // beneath it — no padding can keep it clear).
+  const sc = document.createElement('div');
+  sc.className = 'pb-scroll';
   const srcs = $('sheet').querySelectorAll('button.bigbtn:not(#sheet-cancel), button.optbtn, .posbtn');
   srcs.forEach(el => {
     const b = document.createElement('button');
     b.className = 'bigbtn' + (el.classList.contains('sub') ? ' sub' : '');
-    b.textContent = (el.textContent || '').trim();
+    b.textContent = peekBarLabel((el.textContent || '').trim());
     if (el.disabled) b.disabled = true;
     b.addEventListener('click', () => { el.click(); });
-    bar.appendChild(b);
+    sc.appendChild(b);
   });
+  bar.appendChild(sc);
   const back = document.createElement('button');
   back.className = 'bigbtn pb-back';
   back.textContent = '選択に戻る';
   back.addEventListener('click', () => { const pk = $('peekbtn'); if (pk) pk.click(); });
   bar.appendChild(back);
   bar.classList.add('onbar');
+  // the scroll fade: while the row overflows, the scroller's
+  // right edge fades so the user can see there is more; once
+  // scrolled to the end the fade lifts.
+  const updFade = () => {
+    const can = sc.scrollWidth > sc.clientWidth + 1;
+    sc.classList.toggle('canscroll', can);
+    sc.classList.toggle('scrolled-end', can && sc.scrollLeft + sc.clientWidth >= sc.scrollWidth - 1);
+  };
+  sc.addEventListener('scroll', updFade, { passive: true });
+  updFade();
 }
 // R-SEL-1: a read-only detail that floats OVER whatever selection
 // is in progress — opening or closing it never answers, toggles
@@ -11352,6 +11439,42 @@ function setPreview(code, ref, reason) {
   syncPreviewVisibility(); // fix-n2-preview-blank-1118: decide open/compact BEFORE renderPreview reads the class, so the band opens with content already in it
   renderPreview();
 }
+// fix-bu116-119-1119 (BU-118): the 700 band is 52px tall, but the
+// stack above .pv-text (padding 12 + .pv-top + .pv-meta + the
+// reason row) leaves ~11px for it — less than one 17.8px effect
+// line — so the first effect line renders cut mid-glyph, and the
+// band's overflow:hidden gives no way to reach it. Fit whole
+// lines only: measure the space left for .pv-text and clamp it
+// to that many whole lines (0 = hide it outright — the band
+// then shows name / stats / meta / reason only, all whole, and
+// the full text stays one tap away on the band itself).
+// Re-measured on every renderPreview (selection AND layout
+// changes), so a resize can never strand a half-cut line.
+function fitPreviewText() {
+  const el = $('preview');
+  if (!el || !previewState) return;
+  const textEl = el.querySelector('.pv-text');
+  if (!textEl) return;
+  // compact hides .pv-text in CSS; a band with no layout (jsdom,
+  // hidden) has nothing to fit — leave the styles alone.
+  if (el.classList.contains('compact') || !el.classList.contains('on')) return;
+  const bandH = el.clientHeight;
+  if (!bandH) return;
+  const cs = (typeof getComputedStyle === 'function') ? getComputedStyle(textEl) : null;
+  const fs = cs ? parseFloat(cs.fontSize) || 11.5 : 11.5;
+  let lh = cs ? parseFloat(cs.lineHeight) : NaN;
+  if (!lh) lh = fs * 1.55;
+  else if (lh < 3) lh = lh * fs; // a unitless multiplier (jsdom returns the declared value)
+  const hOf = (sel) => { const n = el.querySelector(sel); return n ? n.offsetHeight : 0; };
+  const avail = bandH - 12 - hOf('.pv-top') - hOf('.pv-meta') - hOf('.pv-reason') - 2; // 12 = band padding, 2 = .pv-text margin-top
+  const n = Math.floor(avail / lh);
+  if (n <= 0) { textEl.style.display = 'none'; textEl.style.maxHeight = ''; textEl.style.overflow = ''; }
+  else {
+    textEl.style.display = '';
+    textEl.style.maxHeight = (n * lh) + 'px';
+    textEl.style.overflow = 'hidden';
+  }
+}
 function renderPreview() {
   const el = $('preview');
   if (!el || !previewState) return;
@@ -11379,7 +11502,7 @@ function renderPreview() {
   // stacked form.
   const compact = el.classList.contains('compact');
   const sig = previewState.code + '|' + stats + '|' + (card ? card.pos : '') + '|' + (card ? (card.materials || 0) : '') + '|' + (previewState.reason || '') + '|' + (compact ? 'c' : '') + '|' + (previewState.deckKey || '');
-  if (sig === previewState.sig) return; // no DOM churn on unrelated re-renders
+  if (sig === previewState.sig) { fitPreviewText(); return; } // no DOM churn on unrelated re-renders (the fit still re-runs: a resize changes the band, not the sig)
   previewState.sig = sig;
   el.innerHTML = '<div class="pv-art"' + artInline(previewState.code, false, previewState.deckKey) + '>' + marksChipHTML(previewState.code) + '</div><div class="pv-body">' +
     '<div class="pv-top"><span class="pv-name' + kindCls(previewState.code) + '">' + cardName(previewState.code) + '</span>' +
@@ -11392,6 +11515,7 @@ function renderPreview() {
     '<div class="pv-meta">' + cardMetaLine(previewState.code, card ? (card.materials || 0) : null) + '</div>' +
     (!compact && previewState.reason ? '<div class="pv-reason">' + previewState.reason + '</div>' : '') +
     '<div class="pv-text">' + (cardText(previewState.code) || '') + '</div></div>';
+  fitPreviewText(); // fix-bu116-119-1119 (BU-118): whole lines only, never a half-cut row
 }
 function updatePreviewFromState(state) {
   if (!previewState) {
