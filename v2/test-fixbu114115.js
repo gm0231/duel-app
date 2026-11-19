@@ -16,6 +16,18 @@
  * shortening the labels was rejected ("モンスターをセット" and
  * "魔法・罠をセット" would both collapse to "セット").
  *
+ * fix-bu116-119-1119 (BU-119, run 18): the sticky chrome itself
+ * became the defect — a long activation label reads only as its
+ * head because 選択に戻る floats over its continuation while it
+ * scrolls. Sticky cannot be kept clear by padding (it overlays
+ * whatever scrolls beneath it), so the chrome leaves the scroll
+ * flow: the mirrors ride in an inner scroller (.pb-scroll) and
+ * × / 選択に戻る are fixed flex siblings with reserved slots.
+ * The mirror label is shortened to its first sentence (the tap
+ * still fires the original button). B114e/h/i below pin the new
+ * mechanism; the requirement they carried — chrome never covers
+ * a label, labels never truncate — is kept, and strengthened.
+ *
  * BU-115: in watch mode (?watch=1) event notices covered the
  * watchbar ("観戦中（開発者用・両席CPU）／観戦をやめる"), because
  * the notice band seats below row 2 and the watchbar IS the header's
@@ -61,6 +73,7 @@ const rule = (sel) => {
 };
 const peekBtnRule = rule('#peekbar .bigbtn');
 const peekBarRule = rule('#peekbar');
+const pbScrollRule = rule('#peekbar .pb-scroll');
 const pbxRule = rule('#peekbar .bigbtn.pb-x');
 const pbBackRule = rule('#peekbar .bigbtn.pb-back');
 
@@ -69,11 +82,14 @@ ok(peekBtnRule && /flex:\s*1\s+1\s+auto/.test(peekBtnRule), 'B114a: peekbar butt
 ok(peekBtnRule && !/flex:\s*1\s+1\s+0/.test(peekBtnRule), 'B114b: no more equal-share flex (flex:1 1 0 is gone)');
 ok(peekBtnRule && !/text-overflow:\s*ellipsis/.test(peekBtnRule), 'B114c: no ellipsis truncation on peekbar buttons');
 ok(peekBtnRule && !/overflow:\s*hidden/.test(peekBtnRule), 'B114d: no overflow:hidden clipping peekbar labels');
-ok(peekBarRule && /overflow-x:\s*auto/.test(peekBarRule), 'B114e: the band scrolls horizontally on overflow');
+ok(pbScrollRule && /overflow-x:\s*auto/.test(pbScrollRule), 'B114e: the inner scroller scrolls horizontally on overflow (fix-bu116-119-1119 BU-119: the scroll moved off #peekbar itself into .pb-scroll, so the chrome siblings never overlay it)');
+ok(peekBarRule && !/overflow-x:\s*auto/.test(peekBarRule), 'B114e2: #peekbar itself is no longer the scroller');
 ok(peekBarRule && /flex-wrap:\s*nowrap/.test(peekBarRule), 'B114f: still one row (BU-55: no wrap)');
 ok(peekBtnRule && /font-size:\s*12\.5px/.test(peekBtnRule), 'B114g: labels stay at 12.5px (readability floor)');
-ok(pbxRule && /position:\s*sticky/.test(pbxRule) && /left:\s*0/.test(pbxRule), 'B114h: × sticks to the left edge while scrolling');
-ok(pbBackRule && /position:\s*sticky/.test(pbBackRule) && /right:\s*0/.test(pbBackRule), 'B114i: 選択に戻る sticks to the right edge while scrolling');
+ok(pbxRule && !/position:\s*sticky/.test(pbxRule) && /flex:\s*0\s+0\s+auto/.test(pbxRule), 'B114h: × is a fixed flex sibling, not a sticky overlay (fix-bu116-119-1119 BU-119: sticky covered scrolling labels)');
+ok(pbBackRule && !/position:\s*sticky/.test(pbBackRule) && /flex:\s*0\s+0\s+auto/.test(pbBackRule), 'B114i: 選択に戻る is a fixed flex sibling, not a sticky overlay (BU-119)');
+ok(clientSrc.includes("sc.className = 'pb-scroll';"), 'B114h2: syncPeekBar builds the inner scroller for the mirrors');
+ok(/function peekBarLabel\(text\)/.test(clientSrc), 'B114h3: long mirror labels shorten to their first sentence (BU-119)');
 
 // ---------- BU-115 source pins ----------
 ok(clientSrc.includes('function fxBelowRow2Seat()'), 'B115a: the below-row-2 seat helper exists');

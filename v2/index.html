@@ -642,9 +642,26 @@
      chrome buttons stick to their edges so the escape hatches stay
      visible while scrolling. Shortening the labels was rejected:
      "モンスターをセット" and "魔法・罠をセット" would both collapse
-     to "セット" and become indistinguishable. */
-  #peekbar{display:none;position:absolute;left:0;right:0;bottom:0;z-index:52;background:#1d1811;border-top:2px solid var(--gold);padding:8px;flex-wrap:nowrap;gap:6px;max-height:34dvh;overflow-x:auto;overflow-y:auto;}
+     to "セット" and become indistinguishable.
+     fix-bu116-119-1119 (BU-119): run 18 showed the other end
+     of the same scroll: a long activation label ("効果を発動：
+     ① 手札を１枚捨てて発動できる。攻撃力が…") reads only as
+     its head at first paint, because the sticky 選択に戻る
+     floats over the label's continuation while it scrolls. A
+     sticky button can never be kept clear by padding - it
+     overlays whatever scrolls beneath it - so the chrome
+     leaves the scroll flow: the mirrors ride in their own
+     inner scroller (.pb-scroll) and × / 選択に戻る are fixed
+     flex siblings with their own reserved slots, never
+     overlaying content. The scroller fades its right edge
+     (mask) while there is more to scroll, and the mirror
+     label itself is shortened to its first sentence (the tap
+     still fires the original button, so nothing is lost). */
+  #peekbar{display:none;position:absolute;left:0;right:0;bottom:0;z-index:52;background:#1d1811;border-top:2px solid var(--gold);padding:8px;flex-wrap:nowrap;gap:6px;max-height:34dvh;}
   #sheetwrap.peek #peekbar.onbar{display:flex;}
+  #peekbar .pb-scroll{flex:1 1 auto;min-width:0;display:flex;flex-wrap:nowrap;gap:6px;overflow-x:auto;overflow-y:hidden;}
+  #peekbar .pb-scroll.canscroll{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 26px),transparent 100%);mask-image:linear-gradient(90deg,#000 calc(100% - 26px),transparent 100%);}
+  #peekbar .pb-scroll.canscroll.scrolled-end{-webkit-mask-image:none;mask-image:none;}
   #peekbar .bigbtn{flex:1 1 auto;font-size:12.5px;padding-left:4px;padding-right:4px;white-space:nowrap;}
   /* BU-36: the chrome buttons that ride in the fold band.
      .pb-back is the 選択に戻る toggle — gold and 52px like the
@@ -652,8 +669,8 @@
      everywhere). .pb-x is the view-sheet close, same dark seat
      as the floating ×. Both are fixed-width: the answer mirrors
      share whatever is left, as before. */
-  #peekbar .bigbtn.pb-x{flex:0 0 auto;width:48px;min-height:52px;font-size:17px;padding:12px 0;background:#241a0e;color:var(--gold);border:1px solid var(--gold-dim);position:sticky;left:0;z-index:2;}
-  #peekbar .bigbtn.pb-back{flex:0 0 auto;min-height:52px;font-size:15px;padding:12px 18px;background:linear-gradient(#e6c877,var(--gold));color:#191104;border:1px solid #e6c877;position:sticky;right:0;z-index:2;}
+  #peekbar .bigbtn.pb-x{flex:0 0 auto;width:48px;min-height:52px;font-size:17px;padding:12px 0;background:#241a0e;color:var(--gold);border:1px solid var(--gold-dim);}
+  #peekbar .bigbtn.pb-back{flex:0 0 auto;min-height:52px;font-size:15px;padding:12px 18px;background:linear-gradient(#e6c877,var(--gold));color:#191104;border:1px solid #e6c877;}
   #sheet .seg button{min-height:44px;}
   #header.busy::after{content:'';position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);background-size:40% 100%;background-repeat:no-repeat;animation:busyslide 1.1s linear infinite;pointer-events:none;z-index:4;}
   @keyframes busyslide{from{background-position:-40% 0;}to{background-position:140% 0;}}
@@ -1109,8 +1126,16 @@
      text (wraps, never truncated), the BU-89 label separator,
      the BU-107 unitized breaks. Overlay only: no board height
      is taken, tile size is untouched, the header never grows
-     for a notice any more. */
-  .fx-notice{position:absolute;left:50%;top:33%;transform:translate(-50%,-50%);z-index:8;max-width:86%;background:linear-gradient(180deg,rgba(19,14,6,.95),rgba(7,5,2,.97));border:1px solid rgba(201,162,39,.7);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.65);padding:13px 18px;text-align:center;pointer-events:none;}
+     for a notice any more.
+     fix-bu116-119-1119 (BU-117): the restored seat measured
+     only 195px wide in run 18 - left:50% with no explicit
+     width makes shrink-to-fit cap the usable width at
+     390-195, so long notices wrapped card names mid-word
+     (《丘と芽吹の春化精》 -> 「春化／精」). The seat is now
+     an explicit width (left/right 7%, i.e. 86% of the screen;
+     border-box is global, so padding stays inside it) and the
+     vertical centre rides translate(0,-50%) on top:33%. */
+  .fx-notice{position:absolute;left:7%;right:7%;top:33%;transform:translate(0,-50%);z-index:8;background:linear-gradient(180deg,rgba(19,14,6,.95),rgba(7,5,2,.97));border:1px solid rgba(201,162,39,.7);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.65);padding:13px 18px;text-align:center;pointer-events:none;}
   /* fix9396d-1115 (BU-107): notice text broke long names
      mid-word (「ゲ／ート」「シャド／ウ」「墓／地」 — 17 of 18
      notices in one wild duel). Same keep-all / anywhere pair

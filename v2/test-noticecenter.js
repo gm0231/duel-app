@@ -37,8 +37,8 @@ const ok = (cond, label) => { console.log((cond ? 'PASS' : 'FAIL'), label); if (
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // ---------- source pins: the centre seat ----------
-ok(html.includes('.fx-notice{position:absolute;left:50%;top:33%;transform:translate(-50%,-50%);z-index:8;max-width:86%;'),
-  'NC1a: the notice band is seated at screen centre (the pre-BU-83 form: left 50%, top 33%, centred transform)');
+ok(html.includes('.fx-notice{position:absolute;left:7%;right:7%;top:33%;transform:translate(0,-50%);z-index:8;'),
+  'NC1a: the notice band is seated at screen centre with an explicit width (fix-bu116-119-1119 BU-117: left/right 7% — the left:50% shrink-to-fit seat measured only 195px wide and wrapped names mid-word; top 33%, vertical centre on the transform)');
 ok(html.includes('.fx-notice .nt{font-size:18px;'), 'NC1b: the centre band restores the large 18px body');
 ok(!/\.fx-notice\{[^}]*left:6px;right:6px/.test(html), 'NC1c: the header-strip seat (left/right 6px) is gone');
 {

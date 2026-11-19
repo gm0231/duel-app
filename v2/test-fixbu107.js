@@ -20,6 +20,19 @@
  * pre-fix 5 genuine bad breaks in 18 cases (the exact ledger
  * case "加わっ／た" reproduced), post-fix 0 bad breaks in 18
  * cases, 0 horizontal overflow, font 12.5px throughout.
+ *
+ * fix-bu116-119-1119 (BU-117, run 18): names are no longer left
+ * wholly intact inside 《》. At the widened 335px seat every
+ * separator name still fits or breaks at its separator, but the
+ * longest separator-less name (《第１９層『襲来干渉！漆黒の超量士！！》》,
+ * 21 chars incl. 《》) exceeds even one full line, so keep-all +
+ * overflow-wrap:anywhere would split it mid-word as a last
+ * resort. Names now carry EXPLICIT <wbr> at their own separators
+ * and punctuation (after － / ・ / ～ / 〜 / 、 / 。 / ！ / ？ / ＠,
+ * before 『 / 「 / （) — the same points the fix9396d
+ * verification already counts as NOT a mid-word split. B107d/j/k
+ * below pin the new mechanism; the requirement they carried — no
+ * mid-word split, no lost text — is kept, and strengthened.
  */
 const fs = require('fs');
 const path = require('path');
@@ -40,7 +53,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 ok(clientSrc.includes('function fxNoticeUnitize(text)'), 'B107a: the notice unitizer exists');
 ok(clientSrc.includes("d.innerHTML = '<div class=\"nt\">' + (sub ? '<span class=\"ns\">' + sub + '</span><span class=\"nsep\">｜</span>' : '') + fxNoticeUnitize(text) + '</div>';"), 'B107b: fxNoticeShow renders the unitized text');
 ok(clientSrc.includes("return esc(p).replace(/([がをにでともはのやかへて、。！？」』）]|×\\d+)/g, '$1<wbr>');"), 'B107c: break opportunities sit after particles / punctuation / ×N counts');
-ok(clientSrc.includes("if (/^《[^》]*》$/.test(p)) return esc(p);"), 'B107d: card names ride intact inside 《》');
+ok(clientSrc.includes("if (/^《[^》]*》$/.test(p)) return esc(p).replace(/([－・～〜、。！？＠])/g, '$1<wbr>').replace(/(?=[『「（])/g, '<wbr>');"), 'B107d: card names carry explicit <wbr> at their own separators/punctuation (fix-bu116-119-1119 BU-117: wholly-intact names split mid-word once they exceed one full line)');
 ok(html.includes('.fx-notice .nt{font-size:18px;font-weight:800;color:#ffe9a8;line-height:1.45;letter-spacing:.02em;word-break:keep-all;overflow-wrap:anywhere;}'), 'B107e: the notice keeps keep-all / anywhere (no font-fit revival; notice-center-1118: the centre band restores the pre-BU-83 18px/1.45 type)');
 ok(!clientSrc.includes('fxNoticeUnitize') || !/font-size:\s*10px/.test(clientSrc.slice(clientSrc.indexOf('function fxNoticeShow'), clientSrc.indexOf('function fxNoticeShow') + 2000)), 'B107f: no font step-down inside fxNoticeShow');
 
@@ -84,11 +97,16 @@ async function boot() {
   ok(stripWbr(exact) === '相手のカード5枚が手札に加わった', 'B107h: unitizing loses no text');
   ok(!/加わっ<wbr>|加<wbr>わ/.test(exact), 'B107i: "加わった" is never split');
 
-  // names stay intact: no <wbr> between 《 and 》
+  // names break only at their own separators/punctuation, never mid-word
   const named = unitize('相手の《合体魔神－ゲート・ガーディアン》が直接攻撃');
-  ok(named === '相手の<wbr>《合体魔神－ゲート・ガーディアン》が<wbr>直接攻撃', 'B107j: a long name rides intact — "' + named + '"');
+  ok(named === '相手の<wbr>《合体魔神－<wbr>ゲート・<wbr>ガーディアン》が<wbr>直接攻撃', 'B107j: a long name breaks at its separators — "' + named + '"');
   const nameInner = named.match(/《([^》]*)》/);
-  ok(nameInner && !nameInner[1].includes('<wbr>'), 'B107k: no break opportunity inside a card name');
+  const innerBreaks = nameInner ? nameInner[1].replace(/([－・～〜、。！？＠])<wbr>/g, '').replace(/<wbr>(?=[『「（])/g, '') : null;
+  ok(nameInner && innerBreaks != null && !innerBreaks.includes('<wbr>'), 'B107k: every break inside a card name sits on a separator/punctuation boundary');
+  // the longest separator-less name in the pool (21 chars incl. 《》)
+  const longest = unitize('相手の《第１９層『襲来干渉！漆黒の超量士！！』》が墓地へ送られた');
+  ok(longest === '相手の<wbr>《第１９層<wbr>『襲来干渉！<wbr>漆黒の超量士！<wbr>！<wbr>』》が<wbr>墓地へ<wbr>送られた', 'B107k2: the longest name breaks only at ！/『 — "' + longest + '"');
+  ok(!/襲来干渉<wbr>|漆黒<wbr>|超量士<wbr>漆/.test(longest), 'B107k3: no mid-word split inside the longest name');
 
   // ×N counts: the opportunity sits after the digits, never between × and the digits
   const multi = unitize('相手の《合体魔神－ゲート・ガーディアン》×2《宵闇のルーチェ》が墓地へ送られた');
