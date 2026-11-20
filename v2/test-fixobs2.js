@@ -114,7 +114,7 @@ const bytesOf = (v) => JSON.stringify(Array.from(v || []));
   pr2.then(() => { settled2 = true; }, () => { settled2 = true; });
   await tick(50);
   ok(!settled2, 'FO-2a: unsuppressed EFFECTYN waits for an answer');
-  ok(sheetEl.innerHTML.includes('この効果の確認を、このデュエル中は省略する'),
+  ok(sheetEl.innerHTML.includes('この効果の確認を省略（このデュエル中）'),
     'FO-2b: the sheet carries the 省略する button');
   ok(sheetEl.innerHTML.includes('剣神官ムドラ'), 'FO-2c: the sheet names the card');
   T.answerCurrent(E.i32resp(0));

@@ -6390,9 +6390,46 @@ let fxNoticeSafety = null; // notice-center-1118: the live notice's wall-clock s
 // only the rendered HTML is unitized.
 function fxNoticeUnitize(text) {
   const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // BU-121: compound particles and verb forms are single words —
+  // a break may sit BEFORE / AFTER one, never inside it. The
+  // particle rule below would put one after と/て inside 「として」
+  // (the filed 620-056 split 「と／して」), after か inside
+  // 「から」「加えた」「加わった」, after も inside 「戻った」,
+  // after と inside 「取り除いた」, after て inside 「捨てた」
+  // 「捨てられた」「失って」 — every one of these occurs in the
+  // notice templates (fxMoveClsText / the move verb / the
+  // destroy, control and attack notices). The protected phrases
+  // are WHOLE forms: 「捨てられた」, not the stem 「捨てられ」,
+  // or the trailing <wbr> would split it from its た. Split the
+  // gap text on the protected phrases, run the particle rule on
+  // the gaps only, and rejoin with a <wbr> on both sides of each
+  // phrase, so the line can still break at the phrase boundary.
+  const PROT = /として|から|加えた|加わった|戻った|取り除いた|捨てた|捨てられた|失って/g;
+  const plain = (s) => s.replace(/([がをにでともはのやかへて、。！？」』）]|×\d+)/g, '$1<wbr>');
+  const unitizePlain = (s) => {
+    const out = [];
+    let last = 0, m;
+    PROT.lastIndex = 0;
+    while ((m = PROT.exec(s)) !== null) {
+      // the gap's own trailing <wbr> (e.g. after に in 「手札に」)
+      // would double with the phrase's leading one — drop it; the
+      // phrase's <wbr> is the break opportunity (B107g pins the
+      // exact string, no <wbr><wbr>).
+      let gap = plain(s.slice(last, m.index));
+      if (gap.endsWith('<wbr>')) gap = gap.slice(0, -'<wbr>'.length);
+      out.push(gap);
+      // no trailing <wbr> when the phrase ends the text: there is
+      // nothing after it to break onto a new line (B107g again).
+      const atEnd = m.index + m[0].length >= s.length;
+      out.push('<wbr>' + m[0] + (atEnd ? '' : '<wbr>'));
+      last = m.index + m[0].length;
+    }
+    out.push(plain(s.slice(last)));
+    return out.join('');
+  };
   return String(text).split(/(《[^》]*》)/g).map((p) => {
     if (/^《[^》]*》$/.test(p)) return esc(p).replace(/([－・～〜、。！？＠])/g, '$1<wbr>').replace(/(?=[『「（])/g, '<wbr>');
-    return esc(p).replace(/([がをにでともはのやかへて、。！？」』）]|×\d+)/g, '$1<wbr>');
+    return unitizePlain(esc(p));
   }).join('').replace(/》(?=《)/g, '》<wbr>');
 }
 function fxNoticeShow(text, sub, noBeat, deferrals, gen) {
@@ -8595,6 +8632,14 @@ function clearPeekBar() {
 // are untouched.
 function peekBarLabel(text) {
   const t = (text || '').trim();
+  // BU-120: the suppression label rides third in a yes/no band
+  // (after 発動する / 発動しない); the Chromium probe measured
+  // only ~114px of it visible at first paint in the 255px
+  // scroller, so its mirror must carry the verb AND the scope in
+  // ~8 chars. The sheet keeps the full wording plus its
+  // explanatory sub, so nothing is lost — the mirror is the
+  // BU-119-style short form for the band only.
+  if (t === 'この効果の確認を省略（このデュエル中）') return '省略（デュエル中）';
   if (t.length <= 30) return t;
   const dot = t.indexOf('。');
   if (dot >= 0 && dot < 40) return t.slice(0, dot + 1);
@@ -10595,7 +10640,7 @@ function uiYesNo(prompt, state) {
     '<button class="optbtn" id="yn-no">' + (fx && fx.follow ? '行わない' : (isEff || named ? '発動しない' : 'いいえ')) + '</button>' +
     // C-27 (audit round): an effectyn class can be suppressed for
     // the rest of the duel; the auto-answer is then 発動しない.
-    (isEff ? '<button class="optbtn" id="yn-suppress">この効果の確認を、このデュエル中は省略する</button><div class="sub">省略すると、次回からは自動で「発動しない」として進みます</div>' : ''));
+    (isEff ? '<button class="optbtn" id="yn-suppress">この効果の確認を省略（このデュエル中）</button><div class="sub">省略すると、次回からは自動で「発動しない」として進みます</div>' : ''));
   $('yn-yes').addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(1)); });
   $('yn-no').addEventListener('click', () => { playClick(); finishPrompt(E.i32resp(0)); });
   const sup = $('yn-suppress');
