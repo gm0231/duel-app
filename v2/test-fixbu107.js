@@ -33,6 +33,19 @@
  * verification already counts as NOT a mid-word split. B107d/j/k
  * below pin the new mechanism; the requirement they carried — no
  * mid-word split, no lost text — is kept, and strengthened.
+ *
+ * fix-bu120-121-1120 (BU-121, run 19): the particle rule also split
+ * INSIDE compound particles and verb forms (として → と／して —
+ * the filed 620-056 case; か inside から／加えた／加わった, も
+ * inside 戻った, と inside 取り除いた, て inside 捨てた／捨てられた／
+ * 失って). The rule now runs on the gaps between those whole
+ * phrases only, rejoining with a <wbr> on both sides of each
+ * phrase — so the line can still break at the phrase boundary
+ * but never inside a word. B107c (source pin) and B107n (the
+ * fusion-reason expectation, which used to encode the と<wbr>して
+ * split) were updated to the fixed behaviour; B107g/r pin the
+ * exact strings, so the join emits no <wbr><wbr> and no trailing
+ * <wbr> after a phrase at the end of the text.
  */
 const fs = require('fs');
 const path = require('path');
@@ -52,7 +65,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 // ---------- source pins ----------
 ok(clientSrc.includes('function fxNoticeUnitize(text)'), 'B107a: the notice unitizer exists');
 ok(clientSrc.includes("d.innerHTML = '<div class=\"nt\">' + (sub ? '<span class=\"ns\">' + sub + '</span><span class=\"nsep\">｜</span>' : '') + fxNoticeUnitize(text) + '</div>';"), 'B107b: fxNoticeShow renders the unitized text');
-ok(clientSrc.includes("return esc(p).replace(/([がをにでともはのやかへて、。！？」』）]|×\\d+)/g, '$1<wbr>');"), 'B107c: break opportunities sit after particles / punctuation / ×N counts');
+ok(clientSrc.includes("const plain = (s) => s.replace(/([がをにでともはのやかへて、。！？」』）]|×\\d+)/g, '$1<wbr>');"), 'B107c: break opportunities sit after particles / punctuation / ×N counts (BU-121: the same regex now runs on the gaps between protected phrases — the rule itself is unchanged)');
 ok(clientSrc.includes("if (/^《[^》]*》$/.test(p)) return esc(p).replace(/([－・～〜、。！？＠])/g, '$1<wbr>').replace(/(?=[『「（])/g, '<wbr>');"), 'B107d: card names carry explicit <wbr> at their own separators/punctuation (fix-bu116-119-1119 BU-117: wholly-intact names split mid-word once they exceed one full line)');
 ok(html.includes('.fx-notice .nt{font-size:18px;font-weight:800;color:#ffe9a8;line-height:1.45;letter-spacing:.02em;word-break:keep-all;overflow-wrap:anywhere;}'), 'B107e: the notice keeps keep-all / anywhere (no font-fit revival; notice-center-1118: the centre band restores the pre-BU-83 18px/1.45 type)');
 ok(!clientSrc.includes('fxNoticeUnitize') || !/font-size:\s*10px/.test(clientSrc.slice(clientSrc.indexOf('function fxNoticeShow'), clientSrc.indexOf('function fxNoticeShow') + 2000)), 'B107f: no font step-down inside fxNoticeShow');
@@ -115,7 +128,7 @@ async function boot() {
 
   // reason-class verbs break at particles, not inside the verb
   const fused = unitize('相手の《迷宮の重魔戦車》が融合素材として墓地へ送られた');
-  ok(fused === '相手の<wbr>《迷宮の重魔戦車》が<wbr>融合素材と<wbr>して<wbr>墓地へ<wbr>送られた', 'B107n: the fusion-reason text unitizes at particles — "' + fused + '"');
+  ok(fused === '相手の<wbr>《迷宮の重魔戦車》が<wbr>融合素材<wbr>として<wbr>墓地へ<wbr>送られた', 'B107n: the fusion-reason text unitizes at particles — and として stays whole (BU-121: the old expectation encoded the と<wbr>して split) — "' + fused + '"');
   ok(!/送ら<wbr>|送<wbr>ら/.test(fused), 'B107o: "送られた" is never split');
 
   // HTML is escaped: a stray "<" cannot become markup
