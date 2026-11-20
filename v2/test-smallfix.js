@@ -1,8 +1,11 @@
 'use strict';
 /* test-smallfix.js — the 2026-11-14 backlog sweep pins.
-   BU-78 (hand overflow): .hcard shrinks to fit with a 46px
+   BU-78 (hand overflow): .hcard shrinks to fit with a 56px
      floor; #hand.canscroll carries the right-edge fade cue;
-     handCueUpdate drives it from render.
+     handCueUpdate drives it from render. (BU-122 / v3 B-16,
+     2026-11-21: the floor was 46px, which let the name band
+     fall to 2 chars + "…" — 56px is the name floor, holding
+     5 chars at the 10px name; see test-fixbu122123.js.)
    BU-79 (selection grid): 1-2 candidate grids keep the
      standard column width via the :has override (auto-fill);
      the base rule for 3+ is untouched (FX5-4 stays valid).
@@ -51,8 +54,8 @@ const ruleDecls = (re) => {
 
 // ---------- BU-78 ----------
 const hcard = ruleDecls(/\.hcard\{([^}]*)\}/);
-ok(!!hcard && (hcard['flex'] || '') === '0 1 auto' && hcard['min-width'] === '46px',
-  'SF78a: hand cards shrink to fit (flex 0 1) with a 46px floor (got flex=' + (hcard && hcard['flex']) + ', min-width=' + (hcard && hcard['min-width']) + ')');
+ok(!!hcard && (hcard['flex'] || '') === '0 1 auto' && hcard['min-width'] === '56px',
+  'SF78a: hand cards shrink to fit (flex 0 1) with a 56px floor (BU-122/B-16 name floor; got flex=' + (hcard && hcard['flex']) + ', min-width=' + (hcard && hcard['min-width']) + ')');
 ok(/#hand\.canscroll\{[^}]*mask-image/.test(html),
   'SF78b: the hand bar has the .canscroll right-edge fade cue');
 ok(/function handCueUpdate\(\)/.test(clientSrc) && /classList\.toggle\('canscroll'/.test(clientSrc),

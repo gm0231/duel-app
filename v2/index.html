@@ -362,18 +362,28 @@
      (440px) overflow the 390px bar — the 6th card showed only
      a sliver at the right edge with no scroll cue (the bar
      hides its scrollbar). Cards now shrink to fit (flex
-     shrink, floor 46px: at the floor the bar scrolls as
+     shrink, floor 56px: at the floor the bar scrolls as
      before), and .canscroll fades the right edge while more
-     cards wait off-screen — the scroll cue the bar lacked. */
-  .hcard{width:var(--hw);height:var(--hh);flex:0 1 auto;min-width:46px;border:1px solid var(--tile-edge);border-radius:5px;background:var(--tile);position:relative;padding:0;display:flex;flex-direction:column;overflow:hidden;cursor:pointer;}
+     cards wait off-screen — the scroll cue the bar lacked.
+     (BU-122 / v3 B-16, 2026-11-21: the floor was 46px, which
+     let the name band fall to 2 chars + "…" — same-family
+     names collided. 56px is the name floor: with the 10px
+     name below, the band holds 5 chars and the family
+     distinguishes. The floor matches --hw's own floor in
+     layoutParts, so the two cannot drift apart.) */
+  .hcard{width:var(--hw);height:var(--hh);flex:0 1 auto;min-width:56px;border:1px solid var(--tile-edge);border-radius:5px;background:var(--tile);position:relative;padding:0;display:flex;flex-direction:column;overflow:hidden;cursor:pointer;}
   #hand.canscroll{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 26px),rgba(0,0,0,.2));mask-image:linear-gradient(90deg,#000 calc(100% - 26px),rgba(0,0,0,.2));}
   .himg{flex:1 1 auto;position:relative;background:#3a2f1d url('../assets/card-art-placeholder-s.jpg') center/cover;}
   .hcard .cnt{position:absolute;top:1px;right:1px;font-size:9px;font-weight:700;color:#191104;background:var(--gold);border-radius:6px;padding:0 4px;z-index:2;}
   .hcard.dim{opacity:.5;filter:saturate(.6);}
   .hcard.placing{box-shadow:0 0 0 2px var(--gold);}
-  .hband{height:16px;flex:0 0 auto;display:flex;align-items:center;gap:4px;padding:0 3px;background:rgba(10,8,4,.78);border-top:1px solid rgba(74,61,34,.6);overflow:hidden;}
+  .hband{height:16px;flex:0 0 auto;display:flex;align-items:center;gap:4px;padding:0 2px;background:rgba(10,8,4,.78);border-top:1px solid rgba(74,61,34,.6);overflow:hidden;}
   .hband:is(.k-spell,.k-trap,.k-normal,.k-effect,.k-ritual,.k-fusion,.k-synchro,.k-xyz){background:var(--kcd);}
-  .hband .nm{flex:1 1 auto;min-width:0;font-size:10.5px;line-height:1.2;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  /* BU-122 / v3 B-16 (2026-11-21): the name is 10px in a 50px
+     field (56px tile - 2px border - 2x2px padding) so 5 full-width
+     chars fit — the identification floor. Was 10.5px in a 40px
+     field (48px tile): 2 chars + "…". */
+  .hband .nm{flex:1 1 auto;min-width:0;font-size:10px;line-height:1.2;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .hband.k-synchro .nm{color:#211d14;}
   /* hand stat plate: a monster's ATK/DEF at the art's bottom
      edge (the board plate's seat) — name + stats shared one
@@ -1435,7 +1445,11 @@
   #deckpage .srow .sl{width:86px;flex:none;font-size:12px;color:#c9b586;text-align:left;}
   #deckpage .srow .seg{flex:1;margin-top:0;flex-wrap:nowrap;}
   #deckpage .srow .seg button{flex:1;font-size:11.5px;padding:5px 2px;min-height:40px;line-height:1.35;}
-  #deckpage .srow .seg button small{display:block;font-size:9.5px;font-weight:400;color:var(--txt-dim);}
+  /* BU-123 (2026-11-21): the smalls wrap as whole words — the
+     notice small used to split "浮かせ" mid-word ("浮／かせ").
+     keep-all leaves the break to spaces only; the notice text
+     itself is shortened below so it fits on one line. */
+  #deckpage .srow .seg button small{display:block;font-size:9.5px;font-weight:400;color:var(--txt-dim);word-break:keep-all;}
   #deckpage .srow .seg button.sel small{color:#d8bc7a;}
   .switch{position:relative;width:52px;height:30px;flex:none;background:#171008;border:1px solid #3a2c12;border-radius:15px;cursor:pointer;padding:0;}
   .switch .knob{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#6d5a30;transition:transform .18s,background .18s;}
@@ -1703,7 +1717,7 @@
         </div>
         <div class="srow"><div class="sl">出来事の通知</div>
           <div class="seg" id="seg-notice">
-            <button data-v="on" class="sel">出す<small>カードの移動・攻撃などを浮かせ表示</small></button>
+            <button data-v="on" class="sel">出す<small>移動・攻撃を浮かせ表示</small></button>
             <button data-v="off">出さない</button>
           </div>
         </div>

@@ -11104,7 +11104,13 @@ $('menubtn').addEventListener('click', () => {
 // Slot: width W, image height round(W×1.22), slotH = imgH + 24
 // (the 20px plate + the tile's own offsets; a monster's art box
 // is imgH + 2 — 2px TALLER than the two-line-strip era).
-// Hand: width round(W×56/47), art round(handW×1.22), +16px band.
+// Hand: width max(56, round(W×56/47)), art round(handW×1.22), +16px band.
+// (BU-122 / v3 B-16: the 56px floor is the name floor — below it the
+// name band holds 2-3 chars + "…" and same-family names collide
+// (run20: three 帝王 cards all "帝王の…"). 56px + the 10px name
+// below holds 5 chars, the identification floor. The floor rides
+// the formula's own distribution: at short heights the preview
+// absorbs it (pv 38 -> 30 at 620) and the board unit is untouched.)
 // ABSOLUTE FLOOR (user, 2026-11-12): the tile unit NEVER drops
 // below the pre-redesign build's unit for the same viewport —
 // board art may only grow in this redesign. legacyTileW keeps
@@ -11118,7 +11124,9 @@ let layoutInfo = null;
 function layoutParts(W) {
   const imgH = Math.round(W * 1.22);
   const slotH = imgH + 24;
-  const handW = Math.round(W * 56 / 47);
+  // BU-122 / v3 B-16: the hand never drops below 56px wide (see the
+  // redesign note above for why — the name floor).
+  const handW = Math.max(56, Math.round(W * 56 / 47));
   const handImgH = Math.round(handW * 1.22);
   const handH = handImgH + 16;
   return { imgH, slotH, handW, handImgH, handH };
