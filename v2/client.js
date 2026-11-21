@@ -8139,6 +8139,47 @@ function chainbarScrollUpdate(state, savedScroll) {
   }
   chainbarCueUpdate();
 }
+// BU-126 (fix-bu124-126-1122): hand names that share a long prefix
+// collide in the 5-char band — "ライトロード・サモナー ルミナス",
+// "ライトロード・アサシン ライデン" and "ライトロード・ハンター
+// ライコウ" all read "ライトロ…". The band cannot grow: the hand
+// is floored at 56px and the board dimensions are frozen (BU-122),
+// so colliding cards show their distinguishing TAIL instead of
+// their head: the last word after the final ' ' or '・' (ルミナス
+// / ライデン / ライコウ), prefixed with '…' while it still fits
+// the 5-glyph field. Non-colliding cards are untouched (full name
+// in the DOM, CSS ellipsis as before); the preview band still
+// shows the full name on tap, so the tail is a disambiguator, not
+// the identification. Same-code copies share one display (the ×N
+// badge already counts them). If two tails would collide too,
+// those cards keep the head — no worse than today. v3 B-16 asks
+// for unique identification, not the full name.
+const HAND_NAME_CAP = 5;
+function handNameHead(name) { return name.length <= HAND_NAME_CAP ? name : name.slice(0, HAND_NAME_CAP - 1) + '…'; }
+function handNameTail(name) {
+  const cut = Math.max(name.lastIndexOf(' '), name.lastIndexOf('・'));
+  const word = cut >= 0 ? name.slice(cut + 1) : name;
+  if (word.length >= 1 && word.length <= HAND_NAME_CAP) return word.length <= HAND_NAME_CAP - 1 ? '…' + word : word;
+  return name.slice(-HAND_NAME_CAP);
+}
+function handNameDisplays(names) {
+  const out = names.map(handNameHead);
+  const groups = new Map();
+  out.forEach((h, i) => { if (!groups.has(h)) groups.set(h, []); groups.get(h).push(i); });
+  for (const idxs of groups.values()) {
+    if (idxs.length < 2) continue;
+    if (new Set(idxs.map(i => names[i])).size < 2) continue; // same-name copies: the ×N badge counts them
+    for (const i of idxs) {
+      const t = handNameTail(names[i]);
+      // unique across the hand among different cards, counting
+      // tails already assigned in this group — otherwise it trades
+      // one collision for another.
+      if (out.some((d, j) => j !== i && names[j] !== names[i] && d === t)) continue;
+      out[i] = t;
+    }
+  }
+  return out;
+}
 function render(state) {
   duelState = state;
   const me = state.players[HP], op = state.players[1 - HP];
@@ -8210,6 +8251,10 @@ function render(state) {
     if (!open) return null;
     return new Set((currentPrompt.prompt.entries || []).map(e => e.con + ':' + e.loc + ':' + e.seq));
   })();
+  // BU-126: colliding same-family names show their distinguishing
+  // tail in the band (see handNameDisplays); the full name stays
+  // in the preview band on tap.
+  const handDisplays = handNameDisplays(me.hand.map(c => c.code != null ? cardName(c.code) : '？'));
   $('hand').innerHTML = me.hand.map((c, i) => {
     const key = HP + ':' + E.LOC.HAND + ':' + i;
     // BU-39: on the opponent's turn (no prompt of mine live) the
@@ -8223,7 +8268,7 @@ function render(state) {
     // measured wider than the card in live play — the name was
     // squeezed out entirely); a monster's stats ride a plate at
     // the art's bottom edge, the board plate's seat.
-    const band = '<div class="hband' + (c.code != null ? kindCls(c.code) : '') + '"><span class="nm">' + (c.code != null ? cardName(c.code) : '？') + '</span></div>';
+    const band = '<div class="hband' + (c.code != null ? kindCls(c.code) : '') + '"><span class="nm">' + handDisplays[i] + '</span></div>';
     const hplate = (c.code != null && isMonster(c.code)) ? '<div class="hplate' + (big5 ? ' big5' : '') + '"><b class="a">' + cardData(c.code).atk + '</b><span class="sep">/</span><b class="d">' + cardData(c.code).def + '</b></div>' : '';
     return '<div class="hcard' + act + '" data-act="' + key + '"' + (c.code != null ? ' data-code="' + c.code + '"' : '') + '>' +
       (c.code != null && handCounts[c.code] > 1 ? '<div class="cnt">×' + handCounts[c.code] + '</div>' : '') +
@@ -8397,6 +8442,18 @@ const effectYnKey = (p) => p.code + '|' + p.desc;
 
 // ---------------------------------------------------------------- prompt UI
 let sheetKind = 'prompt';
+// BU-125 (fix-bu124-126-1122): the idle action sheet is a 'view'
+// sheet (openActionSheet uses sheetOpenView), so any other view
+// sheet — FX settings, the auto-pass manager, a pile sheet —
+// replaces it, and closing that sheet used to leave the pending
+// idle choice with no sheet at all (the player had to re-tap the
+// card to get the choice back). Remember which action sheet is on
+// screen so a view sheet that covers it can give the choice back
+// when it closes: idleSheetKey is the action sheet now showing,
+// viewOverIdle is the { prompt, key } stashed while a view sheet
+// covers it.
+let idleSheetKey = null;
+let viewOverIdle = null;
 let sheetAnimGen = 0, sheetCloseTimer = null, sheetBlockerOn = false;
 function sheetAnimCancel(el) { if (el && el.getAnimations) { try { for (const a of el.getAnimations()) a.cancel(); } catch (e) {} } }
 function sheetOpenView(html) { sheetOpen(html, 'view'); }
@@ -8514,6 +8571,20 @@ function sheetOpen(html, kind) {
   fxPhaseBannerCut(); fxTurnBannerCut(); // BU-44/BU-92: a decision UI opening settles any live phase banner and releases the turn lock
   closeInfoPop();
   const wrap = $('sheetwrap'), sheet = $('sheet');
+  // BU-125: a view sheet opening over the idle action sheet stashes
+  // the choice so sheetClose can restore it. The stash needs the
+  // action sheet to actually be the one on screen (wrap open, not
+  // mid-close) and the same idle prompt still pending; a modal
+  // prompt arriving, an answer, or a duel end all leave
+  // currentPrompt different or null, and then there is nothing to
+  // restore. The action sheet itself opens through here too —
+  // openActionSheet drops the stash right after, since that is a
+  // new choice, not a cover.
+  if (kind === 'view' && idleSheetKey != null && currentPrompt && currentPrompt.prompt && isIdlePromptName(currentPrompt.prompt.name) &&
+      wrap.classList.contains('on') && !wrap.dataset.closing) {
+    viewOverIdle = { prompt: currentPrompt, key: idleSheetKey };
+  }
+  idleSheetKey = null; // the outgoing sheet is replaced whatever it was
   // layout-fix5 M1: the sheet's height budget (--appvh) was frozen
   // at duel start (one-shot layout, no resize listener), so a
   // visible area that shrank afterwards (app chrome) left the sheet
@@ -8606,6 +8677,17 @@ function sheetClose() {
     // layout-fix J5: a history read from the result screen hands
     // the screen back to the result when it closes.
     if (histFromResult) { histFromResult = false; const r = $('result'); if (r) r.style.display = 'flex'; }
+    // BU-125: a view sheet that covered the idle action sheet gives
+    // the choice back — but only while the SAME idle prompt is
+    // still pending. A newer prompt, an answer, or a duel end all
+    // fail the identity check, and then there is nothing to
+    // restore; the stash is dropped either way.
+    if (viewOverIdle && currentPrompt === viewOverIdle.prompt && currentPrompt.prompt && isIdlePromptName(currentPrompt.prompt.name)) {
+      const k = viewOverIdle.key; viewOverIdle = null;
+      openActionSheet(k);
+    } else {
+      viewOverIdle = null;
+    }
   }, 185);
 }
 // BU-22 (R-SEL-2): peeking the sheet down to look at the board
@@ -8924,6 +9006,9 @@ function clearInteraction() {
   sheetClose(); dockClose(); chainTrayClose();
   cmdPromptOpen = false;
   actionMap = new Map(); phaseAction = null; menuActions = [];
+  // BU-125: the prompt is answered or replaced — a stashed idle
+  // choice belongs to the old prompt and must not come back.
+  viewOverIdle = null; idleSheetKey = null;
   if (placeCtx) lastPlaceCard = null; // a finished placement consumes the marker
   placeCtx = null;
   $('placehint').className = '';
@@ -9293,6 +9378,14 @@ function openActionSheet(key) {
     // choice — closing it returns to that choice, so it takes
     // the selection-context label, not the viewing one.
     '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">選択に戻る</button></div>');
+  // BU-125: this sheet is the pending idle choice — remember its
+  // key so a view sheet that covers it can restore it on close.
+  // A stash from the sheet this one just replaced is dropped: the
+  // player is making a new choice, not returning to the old one.
+  // (No idle prompt live — e.g. an info view outside a prompt —
+  // means there is no choice to restore.)
+  viewOverIdle = null;
+  idleSheetKey = (currentPrompt && currentPrompt.prompt && isIdlePromptName(currentPrompt.prompt.name)) ? key : null;
   $('sheet').querySelectorAll('[data-action-idx]').forEach(b => b.addEventListener('click', () => {
     const a = acts[+b.dataset.actionIdx];
     if (a.label === '通常召喚' || a.label === '特殊召喚' || a.label === 'モンスターをセット' || a.label === '魔法・罠をセット') lastPlaceCard = { key, code: a.code };

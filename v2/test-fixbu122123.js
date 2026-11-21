@@ -113,13 +113,14 @@ ok(!html.includes('カードの移動・攻撃などを浮かせ表示'), 'F123b
 const dpSmall = ruleDecls(/#deckpage \.srow \.seg button small\{([^}]*)\}/);
 ok(!!dpSmall && dpSmall['word-break'] === 'keep-all',
   'F123c: the deck-page smalls break at word boundaries only (word-break ' + (dpSmall && dpSmall['word-break']) + ')');
-// the other deck-page smalls: the spaced one breaks at its space,
-// the other two fit one line at 9.5px in the measured ~129px button
-// inner width (10-11 chars x 9.5px = 95-105px).
-ok(html.includes('「聞かない」設定だけ自動パス') && html.includes('すべてのチェーンで聞く') && html.includes('必須以外は聞かずにパス'),
-  'F123d: the chain-confirmation smalls are unchanged');
-ok('すべてのチェーンで聞く'.length <= 11 && '必須以外は聞かずにパス'.length <= 11,
-  'F123e: the unspaced smalls fit one line at 9.5px (10-11 chars)');
+// the other deck-page smalls: the spaced one breaks at its space;
+// the chain-confirmation smalls now break at a phrase boundary
+// (BU-124, fix-bu124-126-1122): same wording, <br> between the
+// phrases, each line <= 8 chars so all three buttons fit the row.
+ok(html.includes('「聞かない」設定<br>だけ自動パス') && html.includes('すべての<br>チェーンで聞く') && html.includes('必須以外は<br>聞かずにパス'),
+  'F123d: the chain-confirmation smalls break at phrase boundaries');
+ok('「聞かない」設定'.length <= 8 && 'だけ自動パス'.length <= 8 && 'すべての'.length <= 8 && 'チェーンで聞く'.length <= 8 && '必須以外は'.length <= 8 && '聞かずにパス'.length <= 8,
+  'F123e: every small line is <= 8 chars for the ~80px button content');
 
 // ---------- live behaviour in jsdom: the formula ----------
 async function boot(url) {
