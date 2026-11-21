@@ -11,10 +11,12 @@
  * 46px to the same 56px so flex-shrink cannot drop below the
  * floor — overflow scrolls instead, with the BU-78 fade cue;
  * (c) the name is 10px in a 50px field (56 - 2 border - 2x2
- * padding) so 5 full-width chars fit. The floor rides the
- * formula's own distribution: at 620 the preview absorbs it
- * (pv 38 -> 30, still the compact strip) and the board unit
- * stays at 40.
+ * padding) so 5 full-width chars fit. The floor's 8px is funded
+ * by the zone-row margins (1px top/bottom per row -> 0), NOT by
+ * the preview: the first version let the preview absorb it
+ * (pv 38 -> 30) and the live probe caught the preview hiding in
+ * 84% of samples (baseline 8%) whenever the header grew, so the
+ * preview keeps its standing 38px and the board unit stays at 40.
  *
  * BU-123: the deck-page "出来事の通知" = "出す" button's small
  * "カードの移動・攻撃などを浮かせ表示" wrapped as "…などを浮" /
@@ -156,6 +158,8 @@ async function boot(url) {
     'F122i: at 390x620 the hand is 56px wide (handH ' + l620.handH + ') while the board stays at its 40px floor (got handW ' + l620.handW + ', tileW ' + l620.tileW + ')');
   ok(l620.contentH <= 612 && l620.pvShown >= 24,
     'F122j: at 390x620 the stack still fits the 612px budget with the preview strip kept (contentH ' + l620.contentH + ', pvShown ' + l620.pvShown + ', pv ' + l620.pv + ')');
+  ok(l620.pv === 38 && l620.pvShown === 38,
+    'F122j2: at 390x620 the preview keeps its baseline standing 38px — the hand floor is funded by the zone-row margins, not the preview (first version: pv 30, live probe showed the preview hidden 84% of samples vs baseline 8%; got pv ' + l620.pv + ')');
   const l660 = L(390, 652); // 390x660
   ok(l660.handW === 56 && l660.contentH <= 652 && l660.tileW >= 42,
     'F122k: at 390x660 the hand floor holds and the board stays at/above its legacy floor (handW ' + l660.handW + ', tileW ' + l660.tileW + ', contentH ' + l660.contentH + ')');
