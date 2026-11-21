@@ -8,11 +8,13 @@
        #header (2 rows) and #lpband (opponent plate over mine)
        carry every element the old bars carried; the chain bar
        overlays the header at right:144px; the preduel rule hides
-       the new sections; the mode table is full 224 / compact 206.
+       the new sections; the mode table is full 216 / compact 198
+       (224 / 206 before BU-122).
      DMG-L* layout formula: computeLayout at the design's own
-       budgets (620 / 700) meets the design targets — tile 41 /
-       hand 80 at 620, tile 52 / hand 94 at 700 — and never drops
-       below the legacy board floor.
+       budgets (620 / 700) meets the design targets — tile 42 /
+       hand 84 at 620, tile 53 / hand 94 at 700 — and never drops
+       below the legacy board floor. (41/80 and 52/94 before BU-122,
+       whose zone-row-margin funding cut the mode table 8px.)
      DMG-F* FX contract: every damage records dmgnum {player,
        amount, tier, battle} and floats ONE unified numeral at
        the tier size; heals record healnum and float the green
@@ -86,8 +88,8 @@ const ruleDecls = (re) => {
   const pre = html.match(/#app\.preduel>([^{]*)\{/);
   ok(!!pre && pre[1].includes('#header') && pre[1].includes('#lpband') && !pre[1].includes('#topbar') && !pre[1].includes('#midbar') && !pre[1].includes('#mybar'),
     'DMG-S10: the preduel rule hides #header and #lpband (BU-69 read across to the new sections)');
-  ok(/full: \{ fixedNoPv: 224/.test(clientSrc) && /compact: \{ fixedNoPv: 206/.test(clientSrc),
-    'DMG-S11: the layout mode table is full 224 / compact 206 (BU-73 budgets)');
+  ok(/full: \{ fixedNoPv: 216/.test(clientSrc) && /compact: \{ fixedNoPv: 198/.test(clientSrc),
+    'DMG-S11: the layout mode table is full 216 / compact 198 (BU-73 budgets, minus 8 for the BU-122 zone-row-margin funding)');
   ok(!clientSrc.includes('function fxHealFloat') && !clientSrc.includes('function fitLogline') &&
      clientSrc.includes("fxRecord('dmgnum'") && clientSrc.includes("fxRecord('healnum'"),
     'DMG-S12: fxHealFloat and fitLogline are abolished; the fxRecord contract carries dmgnum / healnum');
@@ -141,11 +143,11 @@ function fakeState(mut) {
 
   // ---------- layout formula ----------
   const L620 = ev('computeLayout(390, 620)');
-  ok(L620.tileW === 41 && L620.handH === 80 && L620.tileW >= ev('legacyTileW(390, 620)'),
-    'DMG-L1: budget 620 — tile ' + L620.tileW + ' (target 41), hand ' + L620.handH + ' (target 80), at/above the legacy floor');
+  ok(L620.tileW === 42 && L620.handH === 84 && L620.tileW >= ev('legacyTileW(390, 620)'),
+    'DMG-L1: budget 620 — tile ' + L620.tileW + ' (target 42), hand ' + L620.handH + ' (target 84), at/above the legacy floor');
   const L700 = ev('computeLayout(390, 700)');
-  ok(L700.tileW === 52 && L700.handH === 94 && L700.tileW >= ev('legacyTileW(390, 700)'),
-    'DMG-L2: budget 700 — tile ' + L700.tileW + ' (target 52), hand ' + L700.handH + ' (target 94), at/above the legacy floor');
+  ok(L700.tileW === 53 && L700.handH === 94 && L700.tileW >= ev('legacyTileW(390, 700)'),
+    'DMG-L2: budget 700 — tile ' + L700.tileW + ' (target 53), hand ' + L700.handH + ' (target 94), at/above the legacy floor');
 
   // ---------- FX grammar ----------
   const fx = window.__fx;
