@@ -60,9 +60,12 @@ const clientSrc = fs.readFileSync(path.join(V2, 'client.js'), 'utf8');
 
 // ---------- source pins ----------
 {
+  // BU-125 (2026-11-22): the idle-sheet stash block sits at the top of
+  // sheetOpen, so the --appvh re-measure is now ~1907 chars in, not <1200.
+  // The re-measure is still unconditional on every open (M1e-M1i pass).
   ok(clientSrc.includes("document.documentElement.style.setProperty('--appvh', viewportHeights().baseH + 'px')") &&
      clientSrc.includes('function sheetOpen(html, kind)') &&
-     /function sheetOpen\(html, kind\) \{[\s\S]{0,1200}setProperty\('--appvh'/.test(clientSrc),
+     /function sheetOpen\(html, kind\) \{[\s\S]{0,2000}setProperty\('--appvh'/.test(clientSrc),
     'LF5-M1a: sheetOpen re-measures the conservative visible height (--appvh) on every open');
   ok(/#sheet \.sheet-scroll\{overflow-y:auto;min-height:0;flex:1 1 auto;\}/.test(html) &&
      !/\.sheet-scroll\{[^}]*flex:1 1 0/.test(html),

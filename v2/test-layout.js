@@ -278,10 +278,15 @@ async function clickUntilDock(window, timeoutMs) {
       const curName = doc.querySelector('#preview .pv-name') ? doc.querySelector('#preview .pv-name').textContent : '';
       const target = cards.find(c => { const nm = c.querySelector('.nm'); return nm && nm.textContent !== curName; }) || cards[0];
       const targetName = target.querySelector('.nm').textContent;
+      // BU-126 (2026-11-22): the tile shows the display string (head/tail
+      // when names collide); the preview always shows the full name, so
+      // compare the preview against the tapped card's full name, not its
+      // tile text. The live probe confirms the preview follows the tap.
+      const targetFull = (target.dataset.code && data.names && data.names[String(target.dataset.code)]) || targetName;
       target.click();
       await new Promise(r => setTimeout(r, 60));
       const pvName = doc.querySelector('#preview .pv-name');
-      ok(!!pvName && pvName.textContent === targetName, 'LAY-d2: tapping hand card "' + targetName + '" updates the preview (now "' + (pvName ? pvName.textContent : 'none') + '")');
+      ok(!!pvName && pvName.textContent === targetFull, 'LAY-d2: tapping hand card "' + targetName + '" updates the preview to its full name "' + targetFull + '" (now "' + (pvName ? pvName.textContent : 'none') + '")');
       const pvText = doc.querySelector('#preview .pv-text');
       ok(!!pvText && pvText.textContent.length > 0, 'LAY-d3: preview carries the card\'s effect text');
     }
