@@ -332,7 +332,7 @@ async function clickUntilDock(window, timeoutMs) {
     // the assertion's point stands: the shortfall is visibly
     // paid, not silently absorbed.
     ok(L.tileW < tileWAt[800], 'LAY-e2: the 760 layout pays for the shorter visible height — tile unit stepped down vs the full-800 layout (' + L.tileW + ' < ' + tileWAt[800] + '; the preview is at its cap in both)');
-    ok(L.tileW === 57, 'LAY-e3: under B-14 the preview floor is funded by the tiles, so a 40px visible shortfall steps the tile unit down to the funded size (tileW ' + L.tileW + '; was 59 under the pre-B-14 slack-first order, 57 under LAYOUT_FIXED 215 and under the redesign mode table — the round-5 engine read 56 here, its own budget being 5px heavier)');
+    ok(L.tileW === 58, 'LAY-e3: under B-14 the preview floor is funded by the tiles, so a 40px visible shortfall steps the tile unit down to the funded size (tileW ' + L.tileW + '; was 59 under the pre-B-14 slack-first order, 57 under LAYOUT_FIXED 215 and under the redesign mode table — the round-5 engine read 56 here, its own budget being 5px heavier; 58 since BU-122, whose zone-row-margin funding cut fixedNoPv 224 -> 216)');
     window.close();
   }
 

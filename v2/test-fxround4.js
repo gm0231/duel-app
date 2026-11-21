@@ -183,8 +183,8 @@ async function boot() {
   const header = ruleDecls(/#header\{([^}]*)\}/);
   ok(!!header && !('height' in header) && !('min-height' in header),
     'FX4-13: H3 successor (BU-73) — the header carries the old band\'s role at 81px by construction (never a frozen height; two lines for the latest event at full type)');
-  ok(/const LAYOUT_MODES = \{/.test(clientSrc) && /full: \{ fixedNoPv: 224/.test(clientSrc) && /compact: \{ fixedNoPv: 206/.test(clientSrc),
-    'FX4-14: H3 successor (BU-73) — the layout budget is the mode table (full 224 / compact 206, + preview base)');
+  ok(/const LAYOUT_MODES = \{/.test(clientSrc) && /full: \{ fixedNoPv: 216/.test(clientSrc) && /compact: \{ fixedNoPv: 198/.test(clientSrc),
+    'FX4-14: H3 successor (BU-73) — the layout budget is the mode table (full 216 / compact 198, + preview base; 224/206 before BU-122 funded the hand floor from the zone-row margins)');
   const link = ruleDecls(/\.link\{([^}]*)\}/);
   ok(!!link && link['line-height'] === '1.2',
     'FX4-15: H3 — the chain chips carry the fitting line-height (content fits the 21px floor at default size)');

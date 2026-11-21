@@ -11091,12 +11091,16 @@ $('menubtn').addEventListener('click', () => {
 // status bars and the mid band):
 //   full    (vh > 700):  header 81 + opp field (pad 4 + piles 28)
 //     + LP band 61 + my field (pad 4 + piles 28) + preview 38
-//     + handbar extras 10 + zone-row margins 8 = 262
-//     (fixedNoPv 224)
+//     + handbar extras 10 + zone-row margins 0 = 254
+//     (fixedNoPv 216)
 //   compact (vh <= 700): header 81 + opp field (pad 4 + piles 24)
 //     + LP band 53 + my field (pad 4 + piles 24) + preview 28
-//     + handbar extras 8 + zone-row margins 8 = 234
-//     (fixedNoPv 206)
+//     + handbar extras 8 + zone-row margins 0 = 226
+//     (fixedNoPv 198)
+// The zone-row margins were 8px (1px top/bottom on each of the 4
+// zone rows) until BU-122: the hand name floor's 8px is funded
+// from there (rows now touch; slots keep their own borders), so
+// the preview keeps its standing value and the board is untouched.
 // The header is 81px in both modes: row 1 is the buttons' 46px
 // press floor (not split by tier) and row 2 is the latest-event
 // line at two lines, in full. The LP band is 53/61: two 1-line
@@ -11104,21 +11108,33 @@ $('menubtn').addEventListener('click', () => {
 // Slot: width W, image height round(W×1.22), slotH = imgH + 24
 // (the 20px plate + the tile's own offsets; a monster's art box
 // is imgH + 2 — 2px TALLER than the two-line-strip era).
-// Hand: width round(W×56/47), art round(handW×1.22), +16px band.
+// Hand: width max(56, round(W×56/47)), art round(handW×1.22), +16px band.
+// (BU-122 / v3 B-16: the 56px floor is the name floor — below it the
+// name band holds 2-3 chars + "…" and same-family names collide
+// (run20: three 帝王 cards all "帝王の…"). 56px + the 10px name
+// below holds 5 chars, the identification floor. The floor's 8px
+// is funded by the zone-row margins (1px top/bottom per row -> 0),
+// NOT by the preview: the first version let the preview absorb
+// it (pv 38 -> 30 at 620) and the live probe caught the preview
+// hiding in 84% of samples (baseline 8%) whenever the header
+// grew — the preview is a primary surface, so its standing 38px
+// is kept and the board unit is untouched.)
 // ABSOLUTE FLOOR (user, 2026-11-12): the tile unit NEVER drops
 // below the pre-redesign build's unit for the same viewport —
 // board art may only grow in this redesign. legacyTileW keeps
 // the old formula verbatim as that floor.
 const LAYOUT_SAFETY = 8; // px kept free below the stack, always (round 3: 6 → 8)
 const LAYOUT_MODES = {
-  full: { fixedNoPv: 224, pvBase: 38 },
-  compact: { fixedNoPv: 206, pvBase: 28 },
+  full: { fixedNoPv: 216, pvBase: 38 },
+  compact: { fixedNoPv: 198, pvBase: 28 },
 };
 let layoutInfo = null;
 function layoutParts(W) {
   const imgH = Math.round(W * 1.22);
   const slotH = imgH + 24;
-  const handW = Math.round(W * 56 / 47);
+  // BU-122 / v3 B-16: the hand never drops below 56px wide (see the
+  // redesign note above for why — the name floor).
+  const handW = Math.max(56, Math.round(W * 56 / 47));
   const handImgH = Math.round(handW * 1.22);
   const handH = handImgH + 16;
   return { imgH, slotH, handW, handImgH, handH };
