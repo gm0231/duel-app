@@ -91,11 +91,18 @@ ok(clientSrc.includes('Math.floor(avail / lh)'), 'F118b: the fit counts whole li
   ok(clientSrc.includes("if (n <= 0) { textEl.style.display = 'none';"), 'F118d: zero whole lines hides the text outright (never a half-cut row)');
 }
 // BU-119: the scroller + fixed chrome + label shortener
-ok(html.includes('#peekbar .pb-scroll{flex:1 1 auto;min-width:0;display:flex;flex-wrap:nowrap;gap:6px;overflow-x:auto;overflow-y:hidden;}'),
+// fix-bu127-128-1123 (BU-127): the scroller wraps now — the short
+// form alone cannot fix the band (the effect mirror sits third,
+// ~87px left at first paint), so mirrors flow to a second row.
+// The fade stays for a single over-wide mirror.
+ok(html.includes('#peekbar .pb-scroll{flex:1 1 auto;min-width:0;display:flex;flex-wrap:wrap;align-content:flex-start;gap:6px;overflow-x:auto;overflow-y:hidden;}'),
   'F119a: the mirrors ride in an inner scroller (.pb-scroll)');
 ok(html.includes('.pb-scroll.canscroll{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 26px),transparent 100%);'),
   'F119b: the scroller fades its right edge while there is more to scroll');
-ok(clientSrc.includes('function peekBarLabel(text)'), 'F119c: the mirror-label shortener exists');
+// fix-bu127-128-1123 (BU-127): the shortener takes the sheet card
+// name as a second argument (activation mirrors shorten to
+// "効果を発動：<card>①"); single-arg calls keep the BU-119 rule.
+ok(clientSrc.includes('function peekBarLabel(text, cardName)'), 'F119c: the mirror-label shortener exists');
 {
   const sync = clientSrc.slice(clientSrc.indexOf('function syncPeekBar()'), clientSrc.indexOf('// R-SEL-1:'));
   ok(sync.includes("sc.className = 'pb-scroll';"), 'F119d: syncPeekBar builds the inner scroller');
