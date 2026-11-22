@@ -113,6 +113,18 @@
   #app.compactui .lpplate .lp{font-size:24px;}
   .lp-div{height:1px;background:var(--gold-dim);opacity:.55;margin:0 2px;}
   .handchip{flex:0 0 auto;font-size:10.5px;line-height:1.3;color:var(--txt-dim);background:var(--panel2);border:1px solid var(--tile-edge);border-radius:9px;padding:1px 7px;white-space:nowrap;margin-top:1px;}
+  /* fix-bu127-128-1123 (BU-128): the opponent hand-count chip is HUD —
+     it must stay readable while the draw ghost flies into it. #header
+     creates no stacking context (position:relative, no z-index, no
+     transform), so the chip's own z-index competes in the root
+     context against #fxlayer (z-25): 26 puts the chip above every
+     ghost, and the ghost slides UNDER the chip instead of covering
+     "相手の手札". Only this chip is raised — the logline's locus
+     stays exactly as BU-108 left it (user decision pending), and
+     the pile counts stay under the flight grammar (a card flying
+     into a pile is the landing signal, not a cover). Cut-ins
+     (z-35) and sheets (z-50) still paint above the chip, as before. */
+  #oppHandChip{position:relative;z-index:26;}
   .handchip b{color:var(--txt);font-size:11px;}
   #menubtn{flex:0 0 auto;width:38px;height:36px;background:var(--panel2);color:var(--txt);border:1px solid var(--tile-edge);border-radius:6px;font-size:17px;padding:0;cursor:pointer;}
   #menubtn:disabled{opacity:.38;}
@@ -666,10 +678,21 @@
      overlaying content. The scroller fades its right edge
      (mask) while there is more to scroll, and the mirror
      label itself is shortened to its first sentence (the tap
-     still fires the original button, so nothing is lost). */
+     still fires the original button, so nothing is lost).
+     fix-bu127-128-1123 (BU-127): the short form alone cannot
+     fix the band — the effect mirror sits third (after × and
+     the set button), so only ~87px of the 201px scroller is
+     left for it at first paint, and 0 chars of its effect were
+     readable in the 700 case. The scroller therefore wraps:
+     mirrors flow to a second row instead of hiding behind the
+     fade, so every mirror is fully readable at first paint.
+     The band's max-height (34dvh) still caps it; the fade
+     stays for the one case wrapping cannot fix (a single
+     mirror wider than the scroller — the 15-char label cap in
+     peekBarLabel keeps activation mirrors under that width). */
   #peekbar{display:none;position:absolute;left:0;right:0;bottom:0;z-index:52;background:#1d1811;border-top:2px solid var(--gold);padding:8px;flex-wrap:nowrap;gap:6px;max-height:34dvh;}
   #sheetwrap.peek #peekbar.onbar{display:flex;}
-  #peekbar .pb-scroll{flex:1 1 auto;min-width:0;display:flex;flex-wrap:nowrap;gap:6px;overflow-x:auto;overflow-y:hidden;}
+  #peekbar .pb-scroll{flex:1 1 auto;min-width:0;display:flex;flex-wrap:wrap;align-content:flex-start;gap:6px;overflow-x:auto;overflow-y:hidden;}
   #peekbar .pb-scroll.canscroll{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 26px),transparent 100%);mask-image:linear-gradient(90deg,#000 calc(100% - 26px),transparent 100%);}
   #peekbar .pb-scroll.canscroll.scrolled-end{-webkit-mask-image:none;mask-image:none;}
   #peekbar .bigbtn{flex:1 1 auto;font-size:12.5px;padding-left:4px;padding-right:4px;white-space:nowrap;}

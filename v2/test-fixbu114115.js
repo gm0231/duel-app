@@ -89,7 +89,7 @@ ok(peekBtnRule && /font-size:\s*12\.5px/.test(peekBtnRule), 'B114g: labels stay 
 ok(pbxRule && !/position:\s*sticky/.test(pbxRule) && /flex:\s*0\s+0\s+auto/.test(pbxRule), 'B114h: × is a fixed flex sibling, not a sticky overlay (fix-bu116-119-1119 BU-119: sticky covered scrolling labels)');
 ok(pbBackRule && !/position:\s*sticky/.test(pbBackRule) && /flex:\s*0\s+0\s+auto/.test(pbBackRule), 'B114i: 選択に戻る is a fixed flex sibling, not a sticky overlay (BU-119)');
 ok(clientSrc.includes("sc.className = 'pb-scroll';"), 'B114h2: syncPeekBar builds the inner scroller for the mirrors');
-ok(/function peekBarLabel\(text\)/.test(clientSrc), 'B114h3: long mirror labels shorten to their first sentence (BU-119)');
+ok(/function peekBarLabel\(text, cardName\)/.test(clientSrc), 'B114h3: long mirror labels shorten to their first sentence (BU-119) — fix-bu127-128-1123: the shortener takes the sheet card name as a second argument, so activation mirrors shorten to 効果を発動：<card>① instead; single-arg calls keep the first-sentence rule');
 
 // ---------- BU-115 source pins ----------
 ok(clientSrc.includes('function fxBelowRow2Seat()'), 'B115a: the below-row-2 seat helper exists');

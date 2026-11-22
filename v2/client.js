@@ -8712,7 +8712,20 @@ function clearPeekBar() {
 // fires the original button, so the full wording is not lost and
 // the sheet behind it still shows it. Standard labels (<=30 chars)
 // are untouched.
-function peekBarLabel(text) {
+// fix-bu127-128-1123 (BU-127): the first-sentence short form still
+// never names the CARD ("効果を発動：① 手札から「帝王」魔法・罠
+// カード１枚を墓地へ送って発動でき…") — and in the fold band the
+// button sits third, so only ~87px of it is visible at first paint:
+// the player cannot tell WHICH card's effect it is. When the
+// sheet's title names the card (action sheets only — the label
+// prefix is created in uiCmd and nowhere else), the mirror carries
+// "効果を発動：<card>①" / "カードを発動：<card>" instead. The name
+// is capped so the whole label fits the narrowest band scroller
+// (201px at 12.5px type: 15 chars): a long name keeps its tail
+// ("…<last 7 chars>"), the part that distinguishes family members
+// (BU-126's lesson: heads collide, tails distinguish). Without a
+// card name the behaviour is exactly the BU-119 rule.
+function peekBarLabel(text, cardName) {
   const t = (text || '').trim();
   // BU-120: the suppression label rides third in a yes/no band
   // (after 発動する / 発動しない); the Chromium probe measured
@@ -8722,6 +8735,16 @@ function peekBarLabel(text) {
   // explanatory sub, so nothing is lost — the mirror is the
   // BU-119-style short form for the band only.
   if (t === 'この効果の確認を省略（このデュエル中）') return '省略（デュエル中）';
+  if (cardName) {
+    const m = t.match(/^(効果を発動|カードを発動)：([①-⑳])?\s?/);
+    if (m) {
+      const verb = m[1], num = m[2] || '';
+      const budget = 15 - verb.length - 1 - num.length; // '：' + number
+      let name = cardName;
+      if (name.length > budget) name = '…' + name.slice(-(budget - 1));
+      return verb + '：' + name + num;
+    }
+  }
   if (t.length <= 30) return t;
   const dot = t.indexOf('。');
   if (dot >= 0 && dot < 40) return t.slice(0, dot + 1);
@@ -8757,11 +8780,18 @@ function syncPeekBar() {
   // beneath it — no padding can keep it clear).
   const sc = document.createElement('div');
   sc.className = 'pb-scroll';
+  // fix-bu127-128-1123 (BU-127): the sheet's title names the card
+  // whose actions these mirrors are (action sheets only — see
+  // peekBarLabel). Other sheets' titles (pile names, history,
+  // settings) never reach the short form, because only uiCmd
+  // creates the "効果を発動：" / "カードを発動：" prefix.
+  const ttlEl = $('sheet').querySelector('.ttl');
+  const sheetCard = ttlEl ? (ttlEl.textContent || '').trim() : null;
   const srcs = $('sheet').querySelectorAll('button.bigbtn:not(#sheet-cancel), button.optbtn, .posbtn');
   srcs.forEach(el => {
     const b = document.createElement('button');
     b.className = 'bigbtn' + (el.classList.contains('sub') ? ' sub' : '');
-    b.textContent = peekBarLabel((el.textContent || '').trim());
+    b.textContent = peekBarLabel((el.textContent || '').trim(), sheetCard);
     if (el.disabled) b.disabled = true;
     b.addEventListener('click', () => { el.click(); });
     sc.appendChild(b);
