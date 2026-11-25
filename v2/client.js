@@ -8818,6 +8818,25 @@ function syncPeekBar() {
 // is in progress — opening or closing it never answers, toggles
 // or cancels anything, so a choice can be checked mid-selection
 // and the selection is exactly as it was left.
+// BU-130: the sticky close row covers the text tail when the pop
+// overflows (same structure as BU-129: the scroller is #infopop
+// itself and .btnrow is position:sticky; bottom:0, opaque). Shrink
+// the art band in 20px steps until the whole content fits, so the
+// full effect text reads at first paint. The band keeps its full
+// 180px whenever it fits and never goes below 70px; the loop runs
+// synchronously inside openInfoPop, before first paint, so there is
+// no visible jump. Re-run on the fx <details> toggle, since
+// expanding it grows the content after the open.
+function fitInfoPop() {
+  const pop = $('infopop'); if (!pop || !pop.className.includes('on')) return;
+  const art = pop.querySelector('.popart'); if (!art) return;
+  art.style.height = ''; // reset: re-fit from the full band every time,
+  // so closing the fx <details> grows the band back
+  let h = Math.round(art.getBoundingClientRect().height);
+  while (pop.scrollHeight > pop.clientHeight && h > 70) {
+    h = Math.max(70, h - 20); art.style.height = h + 'px';
+  }
+}
 function openInfoPop(code, ref, fx) {
   if (code == null || !DATA || !cardData(code)) return; // BU-102: cardData, not DATA.cards — tokens have no pool row but do have display data
   setPreview(code, ref || null);
@@ -8845,6 +8864,9 @@ function openInfoPop(code, ref, fx) {
     '<div class="btnrow"><button class="bigbtn sub" id="infopop-close">' + (currentPrompt ? '選択に戻る' : '閉じる') + '</button></div>';
   $('infopop').className = 'on';
   $('infopop-close').addEventListener('click', () => { playClick(); closeInfoPop(); });
+  fitInfoPop();
+  const det = $('infopop').querySelector('details.fxfull');
+  if (det) det.addEventListener('toggle', fitInfoPop);
 }
 function closeInfoPop() { const p = $('infopop'); if (p && p.className) { p.className = ''; p.innerHTML = ''; } }
 // The one visibility rule for board info (opponent-info round):
