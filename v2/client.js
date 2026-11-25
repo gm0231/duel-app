@@ -8830,6 +8830,8 @@ function syncPeekBar() {
 function fitInfoPop() {
   const pop = $('infopop'); if (!pop || !pop.className.includes('on')) return;
   const art = pop.querySelector('.popart'); if (!art) return;
+  art.style.height = ''; // reset: re-fit from the full band every time,
+  // so closing the fx <details> grows the band back
   let h = Math.round(art.getBoundingClientRect().height);
   while (pop.scrollHeight > pop.clientHeight && h > 70) {
     h = Math.max(70, h - 20); art.style.height = h + 'px';

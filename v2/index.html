@@ -716,6 +716,12 @@
   #infopop .ttl{font-size:15px;font-weight:700;color:var(--gold);}
   #infopop .sub{font-size:12px;color:var(--txt-dim);margin:2px 0 6px;}
   #infopop .cardtext{font-size:12.5px;line-height:1.65;}
+  /* BU-130 (fx variant): opening the full-text <details> adds the
+     segment + label + summary (~60px) on top of the full text, so
+     the longest cards still overflow at 620 even with the band at
+     its 70px floor. While the details are open the pop may grow
+     to 82% of the viewport so the tail fits without hiding the art. */
+  #infopop:has(details.fxfull[open]){max-height:82%;}
   #infopop .popart{position:relative;width:100%;height:min(180px,30dvh);border-radius:8px;border:1px solid var(--gold-dim);background:#3a2f1d url('../assets/card-art-placeholder.jpg') center/cover;margin-bottom:10px;}
   #sheet .ttl{font-size:16px;font-weight:700;color:var(--gold);}
   #sheet .purpose{font-size:15px;font-weight:700;color:#ffe9a8;margin:4px 0 2px;}
