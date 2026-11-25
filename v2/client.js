@@ -9743,7 +9743,7 @@ function openFxSettings() {
       '<button data-v="auto"' + (fxSettings.resp === 'auto' ? ' class="sel"' : '') + '>おまかせ</button>' +
       '<button data-v="on"' + (fxSettings.resp === 'on' ? ' class="sel"' : '') + '>毎回</button>' +
       '<button data-v="off"' + (fxSettings.resp === 'off' ? ' class="sel"' : '') + '>自動</button></div>' +
-      '<div class="sub">おまかせ：「聞かない」にしたカードだけ自動でパス。それ以外は毎回確認します<br>毎回：すべてのチェーンで毎回確認します（「聞かない」設定は無効）<br>自動：任意のチェーン確認は全て自動でパス。必須の確認だけ表示します</div>' +
+      '<div class="sub">おまかせ：「聞かない」にしたカードだけ自動でパス。それ以外は毎回確認します<br>毎回：全てのチェーンで確認します（「聞かない」設定は無効）<br>自動：任意のチェーン確認は全てパス。必須だけ表示します</div>' +
       '<div class="btnrow"><button class="bigbtn sub" id="sheet-cancel">閉じる</button></div>');
     const wire = (id, apply) => {
       const el = $(id); if (!el) return;
