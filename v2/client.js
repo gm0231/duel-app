@@ -2897,7 +2897,12 @@ function handTapReason(code, key) {
 //       monsterRevivedReason trusts: a human mark from this turn
 //       carrying a 'summon' or 'set' kind. The mark dies when
 //       the monster leaves the field, so absence means "unknown",
-//       never "not spent" — silence, not a guessed reason.
+//       never "not spent" — silence, not a guessed reason. The
+//       kind attribution in trackFieldSummons covers the
+//       split-batch order too (the arrival observed in one
+//       update, its SUMMONING announcement in the next), so a
+//       kind-less mark alone never arms this reason — an
+//       arrival without its event could be a special summon.
 // A spell/trap with zero actions is out of scope here: its
 // activation-missing case already rides the 効果を発動 row above,
 // and its set-missing reasons are stated by handTapReason's
@@ -2908,7 +2913,10 @@ function handNoActionReason(code, state) {
   if (!st || !st.players || !st.players[HP] || code == null) return null;
   const d = cardData(code); if (!d) return null;
   if (!(d.type & 0x1)) return null;
-  if (st.turnPlayer !== HP) return '相手のターンです';
+  // a state that does not say whose turn it is says nothing:
+  // an absent turnPlayer is "unknown", never the opponent's
+  // turn (a synthetic state must stay silent, not guess).
+  if (st.turnPlayer != null && st.turnPlayer !== HP) return '相手のターンです';
   if (st.phaseName && NON_MAIN_PHASES.indexOf(st.phaseName) >= 0) {
     if (st.phaseName === 'BATTLE' || st.phaseName === 'BATTLE_START' || st.phaseName === 'BATTLE_STEP' || st.phaseName === 'DAMAGE' || st.phaseName === 'DAMAGE_CAL') return 'バトルフェイズ中は通常召喚できません';
     return 'このフェイズでは通常召喚できません';
@@ -3140,6 +3148,21 @@ function trackFieldSummons(evs, state) {
   // (the same evidence noteReviveFromEvents reads). Summon /
   // set / special summon events name con + code only, so they
   // attribute to the fresh arrivals they can only mean.
+  // BU-132 follow-up: the arrival and its announcement can
+  // land in DIFFERENT observations — the engine MOVEs the card
+  // into the zone in one message and announces SUMMONING in
+  // the next, and onUpdate fires between them. The mark is
+  // then already there (kind-less) when the event arrives, so
+  // attribute by (con, code, turn) as well: the event itself
+  // proves a summon/set of that code happened this turn. The
+  // reverse order (event before arrival) cannot happen: within
+  // the SUMMONING message the placement precedes the event,
+  // and the MOVE precedes the announcement — so no pending
+  // queue is needed. Same-code over-attribution needs two
+  // copies of one selfSummonBlock card out the same turn by
+  // different kinds; the pool holds one such card (迷宮の重魔戦車),
+  // so the risk is negligible against the spent-summon reason
+  // this attribution carries.
   if (evs) {
     for (const ev of evs) {
       if (ev.kind !== 'summon' && ev.kind !== 'spsummon' && ev.kind !== 'set' && ev.kind !== 'flipsummon') continue;
@@ -3165,6 +3188,13 @@ function trackFieldSummons(evs, state) {
         const [kcon] = key.split(':').map(Number);
         const mk = summonMarks.get(key);
         if (kcon === ev.con && mk && mk.code === ev.code) mk.kinds.add(ev.kind);
+      }
+      // BU-132: the arrival may already be marked (kind-less)
+      // from an earlier observation — attribute the event to
+      // that mark by (con, code, turn) as well.
+      for (const [key, mk] of summonMarks.entries()) {
+        const [kcon] = key.split(':').map(Number);
+        if (kcon === ev.con && mk.code === ev.code && mk.turn === state.turnCount) mk.kinds.add(ev.kind);
       }
     }
   }

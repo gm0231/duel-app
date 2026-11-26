@@ -80,6 +80,26 @@
  * real duels at both heights (baseline 6/33 = 18%), and the
  * zero-action sheet with its reason row in real play (plus a
  * staged synthetic-state shot if no zero-action sheet occurs).
+ *
+ * Probe results (mirror-239b006): 620 — 8 turn changes, 8
+ * shown, 0 missed (max delay 2785 ms, a banner held past the
+ * old 2.6 s drop); 700 — 10 changes, 10 shown, 0 missed (max
+ * delay 2830 ms). Zero-action hand sheets: 620 カルダーン
+ * (battle reason, shot 116) and 700 エイドス x2 (tribute
+ * reason, shot 094 — the filed run-26 case reproduced — and
+ * battle reason, shot 101).
+ *
+ * Follow-up fixes found by the probe + the suite (same round):
+ * the 620 probe caught a live zero-action sheet with NO reason
+ * (《地久神－カルボン》, second copy in hand just after the
+ * first was summoned): trackFieldSummons only attributed the
+ * 'summon' kind to arrivals fresh in the event's own batch,
+ * but the engine MOVEs the card in one message and announces
+ * SUMMONING in the next — the mark was kind-less when the
+ * sheet opened. The tracker now attributes by (con, code,
+ * turn) as well (F132w1/w2). The suite caught H30b: a state
+ * without turnPlayer was misread as the opponent's turn; an
+ * absent turnPlayer is now "unknown", never a claim (F132x).
  */
 const fs = require('fs');
 const path = require('path');
@@ -229,6 +249,36 @@ const RITUAL = 51522296; // 凶導の白き天底, Ritual monster (type 0xA1)
   ev('__atkblock.track([{kind:"summon", code:' + JUNK + ', con:0}], ' + JSON.stringify(fakeState([JUNK], [JUNK], 'MAIN1', 0, 5)) + ')');
   ok(reason(JUNK, oldState) === null,
     'F132r: a summon mark from turn 5 does not claim turn 6 is spent');
+  // BU-132 follow-up (probe 620, duel 2, turn 1): the human
+  // summoned 《地久神－カルボン》 and then tapped a second copy
+  // in hand — the sheet showed zero actions and NO reason.
+  // The arrival was observed in one update and its SUMMONING
+  // announcement in the next, so the mark was kind-less when
+  // the sheet opened. The tracker now attributes the event to
+  // the existing mark by (con, code, turn).
+  ev('__atkblock.reset()');
+  const splitState = fakeState([JUNK], [JUNK]);
+  ev('__atkblock.track([], ' + JSON.stringify(splitState) + ')');
+  ok(reason(JUNK, splitState) === null,
+    'F132w1: an arrival WITHOUT its summon event does not claim the summon is spent (it could be a special summon)');
+  ev('__atkblock.track([{kind:"summon", code:' + JUNK + ', con:0}], ' + JSON.stringify(splitState) + ')');
+  ok(reason(JUNK, splitState) === 'このターン通常召喚済みです',
+    'F132w2: the same arrival WITH its later summon event -> summon-done reason (got ' + JSON.stringify(reason(JUNK, splitState)) + ')');
+  // BU-132 follow-up (test-fixhandreason H30b): a state that
+  // does not say whose turn it is must stay silent, not claim
+  // the opponent's turn — the H30b fixture builds such a state
+  // (no turnPlayer field) and expects no grey row. Isolated
+  // from the F132w mark (reset first: any spent-summon mark
+  // would rightly arm the (f) reason for any hand card).
+  ev('__atkblock.reset()');
+  const noTpState = fakeState([JUNK], []);
+  delete noTpState.turnPlayer;
+  ok(reason(JUNK, noTpState) === null,
+    'F132x: turnPlayer absent -> no reason (unknown is not the opponent\u2019s turn, got ' + JSON.stringify(reason(JUNK, noTpState)) + ')');
+  // re-seed the split-batch mark for the F132w3 sheet check
+  // below (the reset above cleared it).
+  ev('__atkblock.track([], ' + JSON.stringify(splitState) + ')');
+  ev('__atkblock.track([{kind:"summon", code:' + JUNK + ', con:0}], ' + JSON.stringify(splitState) + ')');
 
   // ----- BU-132 live: the sheet itself, zero actions -----
   ev('duelState = ' + JSON.stringify(fakeState([EIDOS], [])) + '; currentPrompt = null; cmdPromptOpen = false; actionMap.clear();');
@@ -243,6 +293,15 @@ const RITUAL = 51522296; // 凶導の白き天底, Ritual monster (type 0xA1)
   const ttl = sheet.querySelector('.ttl');
   ok(ttl && ttl.textContent.includes('冥帝王エイドス'),
     'F132u: the sheet is for Eidos (got ' + JSON.stringify(ttl && ttl.textContent) + ')');
+  // the split-batch spent case reaches the sheet too: the
+  // F132w mark is still seeded, so reopening the hand JUNK
+  // shows the summon-done row (the live カルボン case).
+  ev('duelState = ' + JSON.stringify(splitState) + '; currentPrompt = null; cmdPromptOpen = false; actionMap.clear();');
+  ev("openActionSheet('0:2:0')");
+  await sleep(100);
+  const rowsSpent = [...sheet.querySelectorAll('.optbtn.disabled')].map(el => el.textContent.replace(/\s+/g, ' ').trim());
+  ok(rowsSpent.some(t => t.includes('通常召喚・セット') && t.includes('このターン通常召喚済みです')),
+    'F132w3: the zero-action sheet shows the summon-done row for the split-batch mark (got ' + JSON.stringify(rowsSpent) + ')');
   // a hand card WITH an offered action gets no zero-action row:
   // put a summon in the action map and reopen.
   ev('actionMap.set("0:2:0", [{ label: "通常召喚", code: ' + EIDOS + ' }]);');
