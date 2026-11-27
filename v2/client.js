@@ -5774,12 +5774,21 @@ function fxFloatNum(con, num, numDelay) {
 }
 function fxLpCount(con, to, startAtFx, opts) {
   const el = fxLpEl(con); if (!el) return;
+  // BU-133 (fix-bu133-1128): the engine keeps overkill LP (negative)
+  // in the snapshot until the trailing MSG_WIN batch, and render()
+  // already wrote it to the plate — the plate must never SHOW a
+  // negative value. Clamp the DISPLAY target at 0 (the engine value,
+  // the lpchange records and the overkill accounting stay raw; the
+  // result screen already clamps the same way). MD stops the
+  // counter at 0: a lethal count runs start -> 0, never below.
+  to = Math.max(0, to);
+  let start = fxLpShown[con];
+  if (start != null && start < 0) { start = 0; fxLpShown[con] = 0; }
   // V3 stage 3: while a finisher scene owns this seat's counter
   // (its LP drain), no count scene is started for it
   if (fxLpScenes[con] && !fxLpScenes[con].dead && fxLpScenes[con].kind === 'finisher') return;
   if (fxLpScenes[con] && !fxLpScenes[con].dead) { const old = fxLpScenes[con]; old.dead = true; if (old.cleanup) old.cleanup(); }
   fxLpScenes[con] = null;
-  const start = fxLpShown[con];
   if (start == null || start === to) { fxLpShown[con] = to; el.textContent = to; return; }
   // Redesign A / F1: pin the counter to the START value the moment
   // the scene is created. render() runs BEFORE fxProcess in
@@ -8288,8 +8297,15 @@ function render(state) {
   const me = state.players[HP], op = state.players[1 - HP];
   // round B (B7): while an LP count animation owns a counter, render
   // must not stomp it — the count lands exactly on the state value
-  if (!fxLpBusy(1 - HP)) $('oppLp').textContent = op.lp;
-  if (!fxLpBusy(HP)) $('myLp').textContent = me.lp;
+  // BU-133 (fix-bu133-1128): the engine LP can be negative (overkill
+  // until the trailing MSG_WIN batch); the plate never shows it.
+  // This also covers the same-batch winner case, where render writes
+  // the final value and fxLpCount returns early (finisher owns the
+  // seat), so nothing would correct a negative write until the
+  // finisher drain starts. Display-only clamp — the engine value
+  // and the overkill accounting stay raw.
+  if (!fxLpBusy(1 - HP)) $('oppLp').textContent = Math.max(0, op.lp);
+  if (!fxLpBusy(HP)) $('myLp').textContent = Math.max(0, me.lp);
   // LP plates (BU-73): each side's deck name rides its own plate
   // in the central band; the opponent's hand count is the header
   // row-2 chip. The turn player's plate carries the gold frame
