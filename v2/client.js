@@ -2871,6 +2871,75 @@ function handTapReason(code, key) {
   if (!currentPrompt && duelState.winner == null && duelState.turnPlayer !== HP) return '相手のターンです';
   return null;
 }
+// fix-bu131-132-1127 (BU-132): why a hand MONSTER's action sheet
+// offers NO action at all. The sheet exists to be READ (R-SEL-1):
+// with zero buttons and no reason the player can only guess
+// whether the card is broken, the summon was spent, or a tribute
+// is missing (run 26: 冥帝王エイドス, level 6, empty field —
+// the sheet showed art + text + 「選択に戻る」 and nothing else).
+// Only mechanically certain reasons, in the order the sheet's own
+// evidence supports:
+//   (a) not the human's turn;
+//   (b) a non-main phase (a normal summon/set is a Main Phase
+//       action — the battle-phase wording matches handTapReason);
+//   (c) a monster that cannot be normal summoned at all
+//       (Ritual / Fusion / Synchro / Xyz / Link, or a text that
+//       says so) — the tribute arithmetic below would lie for it;
+//   (d) a level 5+ monster with fewer releasable monsters on the
+//       field than the tribute count (level 5-6: 1, level 7+: 2).
+//       Every own monster counts as releasable: restrictions can
+//       only shrink the count, so a shortfall on the full count
+//       is certain. A tribute frees its own zone, so a full zone
+//       never blocks a tribute summon and is not checked here;
+//   (e) a level 4-or-lower monster with a full monster zone;
+//   (f) the turn's normal summon/set already spent — read off
+//       summonMarks, the same arrival evidence
+//       monsterRevivedReason trusts: a human mark from this turn
+//       carrying a 'summon' or 'set' kind. The mark dies when
+//       the monster leaves the field, so absence means "unknown",
+//       never "not spent" — silence, not a guessed reason. The
+//       kind attribution in trackFieldSummons covers the
+//       split-batch order too (the arrival observed in one
+//       update, its SUMMONING announcement in the next), so a
+//       kind-less mark alone never arms this reason — an
+//       arrival without its event could be a special summon.
+// A spell/trap with zero actions is out of scope here: its
+// activation-missing case already rides the 効果を発動 row above,
+// and its set-missing reasons are stated by handTapReason's
+// preview. Anything else returns null and the sheet stays as it
+// was — never a guessed reason.
+function handNoActionReason(code, state) {
+  const st = state || duelState;
+  if (!st || !st.players || !st.players[HP] || code == null) return null;
+  const d = cardData(code); if (!d) return null;
+  if (!(d.type & 0x1)) return null;
+  // a state that does not say whose turn it is says nothing:
+  // an absent turnPlayer is "unknown", never the opponent's
+  // turn (a synthetic state must stay silent, not guess).
+  if (st.turnPlayer != null && st.turnPlayer !== HP) return '相手のターンです';
+  if (st.phaseName && NON_MAIN_PHASES.indexOf(st.phaseName) >= 0) {
+    if (st.phaseName === 'BATTLE' || st.phaseName === 'BATTLE_START' || st.phaseName === 'BATTLE_STEP' || st.phaseName === 'DAMAGE' || st.phaseName === 'DAMAGE_CAL') return 'バトルフェイズ中は通常召喚できません';
+    return 'このフェイズでは通常召喚できません';
+  }
+  // a monster that cannot be normal summoned at all
+  if ((d.type & 0x80) || (d.type & 0x40) || (d.type & 0x2000) || (d.type & 0x800000) || (d.type & 0x4000000)) return 'このカードは通常召喚できません';
+  const txt = cardText(code) || '';
+  if (/通常召喚できない/.test(txt)) return 'このカードは通常召喚できません';
+  const lv = d.level & 0xff;
+  const me = st.players[HP];
+  if (lv >= 5) {
+    const need = lv <= 6 ? 1 : 2;
+    const rel = (me.mzone || []).filter(c => c && c.code != null).length;
+    if (rel < need) return 'リリースできるモンスターがいません（レベル' + lv + 'はリリース' + need + '体が必要です）';
+  } else {
+    if ((me.mzone || []).slice(0, 5).every(c => c)) return 'モンスターゾーンに空きがありません';
+  }
+  for (const [key, m] of summonMarks.entries()) {
+    const [kcon] = key.split(':').map(Number);
+    if (kcon === HP && m.turn === st.turnCount && (m.kinds.has('summon') || m.kinds.has('set'))) return 'このターン通常召喚済みです';
+  }
+  return null;
+}
 let _graveSentCards = null; // Map code -> printed number of the segment carrying the clause
 function graveSentCards() {
   if (_graveSentCards) return _graveSentCards;
@@ -2961,7 +3030,7 @@ function exLockReason(lock) {
 // Test surface for the pool-coverage checks (same spirit as __mlock).
 window.__poolcov = {
   resolveYesNo, scopedEffect, optCovered, optCoverage, fieldCandidates, optUsedReason,
-  handCandidates, handUsedReason, handTargetReason, trapHandReason, trapConditionReason, fieldPhaseReason,
+  handCandidates, handUsedReason, handTargetReason, handNoActionReason, trapHandReason, trapConditionReason, fieldPhaseReason,
   trackUsedFx,
   usedFx() { return [...usedFxByCode.entries()].map(([code, r]) => ({ code, n: [...r.n], any: r.any })); },
   noteRevive(evs, state) { noteReviveFromEvents(evs, state); },
@@ -3079,6 +3148,21 @@ function trackFieldSummons(evs, state) {
   // (the same evidence noteReviveFromEvents reads). Summon /
   // set / special summon events name con + code only, so they
   // attribute to the fresh arrivals they can only mean.
+  // BU-132 follow-up: the arrival and its announcement can
+  // land in DIFFERENT observations — the engine MOVEs the card
+  // into the zone in one message and announces SUMMONING in
+  // the next, and onUpdate fires between them. The mark is
+  // then already there (kind-less) when the event arrives, so
+  // attribute by (con, code, turn) as well: the event itself
+  // proves a summon/set of that code happened this turn. The
+  // reverse order (event before arrival) cannot happen: within
+  // the SUMMONING message the placement precedes the event,
+  // and the MOVE precedes the announcement — so no pending
+  // queue is needed. Same-code over-attribution needs two
+  // copies of one selfSummonBlock card out the same turn by
+  // different kinds; the pool holds one such card (迷宮の重魔戦車),
+  // so the risk is negligible against the spent-summon reason
+  // this attribution carries.
   if (evs) {
     for (const ev of evs) {
       if (ev.kind !== 'summon' && ev.kind !== 'spsummon' && ev.kind !== 'set' && ev.kind !== 'flipsummon') continue;
@@ -3104,6 +3188,13 @@ function trackFieldSummons(evs, state) {
         const [kcon] = key.split(':').map(Number);
         const mk = summonMarks.get(key);
         if (kcon === ev.con && mk && mk.code === ev.code) mk.kinds.add(ev.kind);
+      }
+      // BU-132: the arrival may already be marked (kind-less)
+      // from an earlier observation — attribute the event to
+      // that mark by (con, code, turn) as well.
+      for (const [key, mk] of summonMarks.entries()) {
+        const [kcon] = key.split(':').map(Number);
+        if (kcon === ev.con && mk.code === ev.code && mk.turn === state.turnCount) mk.kinds.add(ev.kind);
       }
     }
   }
@@ -4269,9 +4360,19 @@ function fxPhaseBanner(fam) {
 //    cut wiring stays for every non-prompt opener (views and
 //    other programmatic sheets keep the old priority).
 //  - defer: if a decision UI is already open at the flip, the
-//    banner waits on a 120 ms poll (cap ~2.6 s, then dropped
-//    silently — the header readout always shows whose turn it
-//    is, so nothing is lost).
+//    banner waits on a 120 ms poll until it closes, then shows.
+//    fix-bu131-132-1127 (BU-131): the old ~2.6 s cap dropped the
+//    banner silently when a notice chain outlasted it — run 26
+//    measured 6 of 33 flips missed (18%), every one with a
+//    notice live at the flip (initial-draw notice, end-phase
+//    discard -> draw chains). A delayed banner loses nothing
+//    (the header readout already shows whose turn it is) but a
+//    dropped one loses the turn-change signal itself, so the
+//    cap is gone: the banner waits until the notice retires and
+//    then shows. The wait is still bounded in practice — a
+//    re-flip replaces the pending, any decision-UI opener cuts
+//    it (sheet/tray/dock/place-hint), a reset cuts it, and a
+//    live notice retires on its own dwell or its safety timer.
 //  - safety: a wall-clock timer force-cuts the banner at
 //    3000 ms. The FX clock freezes with rAF in a backgrounded
 //    tab; a lock-bearing element must never be able to stick.
@@ -4285,9 +4386,13 @@ function fxTurnBannerActive() { return !!(fxTurnEl || fxTurnPending); }
 // BU-98: resolves once no turn banner is live or waiting. The
 // prompt funnel (humanAnswerer) awaits this at a turn change so
 // the banner completes before any decision UI is presented.
-// Capped above every retirement path (pending drop ~2.6 s +
-// span 1.3 s; safety cut 3000 ms), then proceeds regardless —
-// the hold can delay a prompt, never swallow it.
+// Capped at 4200 ms, then proceeds regardless — the hold can
+// delay a prompt, never swallow it. fix-bu131-132-1127 (BU-131):
+// the pending no longer drops at ~2.6 s, so a long notice chain
+// can still be waiting when the cap hits; the hold then proceeds
+// and the prompt opener cuts the pending, so the prompt is never
+// swallowed and the banner is dropped only when a decision UI
+// actually needs the seat.
 function fxTurnBannerHold() {
   if (!fxTurnBannerActive()) return Promise.resolve();
   return new Promise((res) => {
@@ -4306,26 +4411,24 @@ function fxTurnBannerCut() {
 }
 function fxTurnBanner(mine, turnNo) {
   const layer = fxLayerEl(); if (!layer) return;
-  // fix-bu116-119-1119 (BU-116 reverse race): the notice deferral
-  // covers a notice that STARTS while a banner is up; the mirror
-  // case is a banner that starts while a notice is up — the probe
-  // caught it twice (the duel-start initial-draw notice vs the
-  // turn-1 banner, and a 《カオスハンター》 move notice; both a
-  // 1-2px graze against the banner container while it faded).
-  // Hold the banner the same way until the notice retires: the
-  // header readout already shows whose turn it is, so a delayed
-  // banner loses nothing. Same 2.6s cap as the decision-UI path,
-  // then it drops silently. No deadlock with the notice hold:
-  // a HELD notice is not live, so the banner's poll never waits
-  // for one; a live notice retires on its own dwell or its
-  // safety timer.
+  // fix-bu131-132-1127 (BU-131): the 2.6 s silent drop is gone.
+  // Run 26 measured 6 of 33 flips missed (18%) exactly when a
+  // notice chain outlasted the cap (initial-draw notice, end-phase
+  // discard -> draw chains). Hold the banner until the notice
+  // retires, then show it: the header readout already shows whose
+  // turn it is, so a delayed banner loses nothing, while a dropped
+  // one loses the turn-change signal. No deadlock with the notice
+  // hold: a HELD notice is not live, so the banner's poll never
+  // waits for one; a live notice retires on its own dwell or its
+  // safety timer. The wait stays bounded in practice: a re-flip
+  // replaces the pending, any decision-UI opener cuts it, a reset
+  // cuts it.
   if (fxDecisionUiOpen() || fxNoticeLive()) {
-    if (fxTurnPending) { fxTurnPending.mine = mine; fxTurnPending.turnNo = turnNo; fxTurnPending.since = performance.now(); return; }
-    const pend = { mine, turnNo, since: performance.now(), timer: null };
+    if (fxTurnPending) { fxTurnPending.mine = mine; fxTurnPending.turnNo = turnNo; return; }
+    const pend = { mine, turnNo, timer: null };
     pend.timer = setInterval(() => {
       if (fxTurnPending !== pend) { try { clearInterval(pend.timer); } catch (e) {} return; }
       if (!fxDecisionUiOpen() && !fxNoticeLive()) { clearInterval(pend.timer); fxTurnPending = null; fxTurnBanner(pend.mine, pend.turnNo); }
-      else if (performance.now() - pend.since > 2600) { clearInterval(pend.timer); fxTurnPending = null; }
     }, 120);
     fxTurnPending = pend;
     return;
@@ -9378,6 +9481,17 @@ function openActionSheet(key) {
     // (trapHandReason). The set button stays above the row.
     const hReason = nameLimitReason(zoneCode) || handUsedReason(zoneCode) || handTargetReason(zoneCode) || trapHandReason(zoneCode);
     if (hReason) unusable = '<div class="optbtn disabled">効果を発動<span class="reason">' + hReason + '</span></div>';
+  }
+  // fix-bu131-132-1127 (BU-132): a hand MONSTER with NO action at
+  // all gets its own reason row — the 効果を発動 row above only
+  // covers a missing activation, and a monster with no summon/set
+  // offered showed nothing at all (run 26: Eidos, level 6, empty
+  // field). Same greyed-row form as the effect row; the label
+  // names the two missing actions. A spell/trap with zero actions
+  // stays out of scope (see handNoActionReason).
+  if (zoneCode != null && con === HP && loc === E.LOC.HAND && acts.length === 0 && isMonster(zoneCode)) {
+    const naReason = handNoActionReason(zoneCode);
+    if (naReason) unusable += '<div class="optbtn disabled">通常召喚・セット<span class="reason">' + naReason + '</span></div>';
   }
   if (zoneCode != null && con === HP && (loc === E.LOC.MZONE || loc === E.LOC.SZONE) && !acts.some(a => a.activate)) {
     let faceup = true;
